@@ -7,13 +7,13 @@ export type SongQueryVariables = {
     id: string;
 };
 export type SongQueryResponse = {
-    readonly songsByIds: ReadonlyArray<{
+    readonly songById: {
         readonly name: string;
         readonly nameYomi: string;
         readonly artistName: string;
         readonly artistNameYomi: string;
         readonly lyricsPreview: string | null;
-    }>;
+    };
 };
 export type SongQuery = {
     readonly response: SongQueryResponse;
@@ -26,7 +26,7 @@ export type SongQuery = {
 query SongQuery(
   $id: String!
 ) {
-  songsByIds(ids: [$id]) {
+  songById(id: $id) {
     name
     nameYomi
     artistName
@@ -47,15 +47,9 @@ var v0 = [
 ],
 v1 = [
   {
-    "items": [
-      {
-        "kind": "Variable",
-        "name": "ids.0",
-        "variableName": "id"
-      }
-    ],
-    "kind": "ListValue",
-    "name": "ids"
+    "kind": "Variable",
+    "name": "id",
+    "variableName": "id"
   }
 ],
 v2 = {
@@ -105,8 +99,8 @@ return {
         "args": (v1/*: any*/),
         "concreteType": "Song",
         "kind": "LinkedField",
-        "name": "songsByIds",
-        "plural": true,
+        "name": "songById",
+        "plural": false,
         "selections": [
           (v2/*: any*/),
           (v3/*: any*/),
@@ -131,8 +125,8 @@ return {
         "args": (v1/*: any*/),
         "concreteType": "Song",
         "kind": "LinkedField",
-        "name": "songsByIds",
-        "plural": true,
+        "name": "songById",
+        "plural": false,
         "selections": [
           (v2/*: any*/),
           (v3/*: any*/),
@@ -152,14 +146,14 @@ return {
     ]
   },
   "params": {
-    "cacheID": "5556c37287eeb176d4a0562cf6b75490",
+    "cacheID": "08d01793ede361228d0fe6b66e17fe31",
     "id": null,
     "metadata": {},
     "name": "SongQuery",
     "operationKind": "query",
-    "text": "query SongQuery(\n  $id: String!\n) {\n  songsByIds(ids: [$id]) {\n    name\n    nameYomi\n    artistName\n    artistNameYomi\n    lyricsPreview\n    id\n  }\n}\n"
+    "text": "query SongQuery(\n  $id: String!\n) {\n  songById(id: $id) {\n    name\n    nameYomi\n    artistName\n    artistNameYomi\n    lyricsPreview\n    id\n  }\n}\n"
   }
 };
 })();
-(node as any).hash = '51d6f8b86e1e2a56c442fdf5094536e7';
+(node as any).hash = '9d6cab335ee60ef84c9a875d9d07435a';
 export default node;
