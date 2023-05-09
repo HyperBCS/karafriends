@@ -4,7 +4,7 @@ import invariant from "ts-invariant";
 
 import { toRomaji } from "wanakana";
 
-import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "./JoysoundRenderer";
+import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "./constants";
 
 export interface JoysoundPaletteColor {
   id: number;
@@ -89,10 +89,27 @@ const SUTEGANA = [
 const SOKUON_KANA = ["っ"];
 
 const sjisDecoder = new TextDecoder("sjis");
+const eucKrDecoder = new TextDecoder("euc-kr");
 
-export function decodeSJIS(charCode: number): string {
-  if (charCode >= 0x20 && charCode <= 0xff) {
-    return String.fromCharCode(charCode);
+export function decodeJoysoundText(
+  charCode: number,
+  fontCode: number = 0
+): string {
+  switch (fontCode) {
+    case 0:
+      return decodeSJIS(charCode);
+      break;
+    case 1:
+      return decodeEucKR(charCode);
+      break;
+    default:
+      return decodeSJIS(charCode);
+  }
+}
+
+function decodeSJIS(charCode: number): string {
+  if (charCode <= 0xff) {
+    return sjisDecoder.decode(new Uint8Array([charCode]));
   }
 
   if (charCode === 0x819b) {
@@ -108,6 +125,12 @@ export function decodeSJIS(charCode: number): string {
   const bytes = new Uint8Array([Math.floor(charCode / 256), charCode % 256]);
 
   return sjisDecoder.decode(bytes);
+}
+
+function decodeEucKR(charCode: number): string {
+  const bytes = new Uint8Array([Math.floor(charCode / 256), charCode % 256]);
+
+  return eucKrDecoder.decode(bytes);
 }
 
 function isKatakanaUnicodeChar(unicodeChar: string) {
@@ -126,63 +149,70 @@ function getMainRomajiBlocks(chars: JoysoundLyricsChar[]) {
   const mainRomajiBlocks = [];
 
   let i = 0;
+
   let currXPos = 0;
+  let currPhrase = "";
+  let currPhraseWidth = 0;
+  let prevGlyph = null;
 
   while (i < chars.length) {
-    const glyph = chars[i];
-    let unicodeChar = decodeSJIS(glyph.charCode);
+    const currGlyph = chars[i];
+
+    const unicodeChar = decodeJoysoundText(currGlyph.charCode);
 
     if (!isKanaUnicodeChar(unicodeChar) || unicodeChar === "・") {
-      currXPos += glyph.width;
+      mainRomajiBlocks.push({
+        phrase: toRomaji(currPhrase),
+        xPos: currXPos,
+        sourceWidth: currPhraseWidth,
+      });
+
+      currXPos += currPhraseWidth + currGlyph.width;
+      currPhrase = "";
+      currPhraseWidth = 0;
+      prevGlyph = currGlyph;
       i += 1;
 
       continue;
     }
 
-    let kanaPhrase = unicodeChar;
-    let sourceWidth = glyph.width;
+    const prevUnicodeChar = prevGlyph
+      ? decodeJoysoundText(prevGlyph.charCode)
+      : "";
 
-    let nextGlyph: JoysoundLyricsChar | null | undefined;
+    if (
+      !prevGlyph ||
+      (isKatakanaUnicodeChar(unicodeChar) &&
+        isKatakanaUnicodeChar(prevUnicodeChar)) ||
+      prevUnicodeChar === "っ" ||
+      SUTEGANA.includes(unicodeChar)
+    ) {
+      currPhrase += unicodeChar;
+      currPhraseWidth += currGlyph.width;
+      prevGlyph = currGlyph;
+      i += 1;
 
-    // tslint:disable-next-line:no-conditional-assignment
-    while ((nextGlyph = chars[i + 1])) {
-      const nextUnicodeChar = decodeSJIS(nextGlyph.charCode);
-
-      if (!isKanaUnicodeChar(nextUnicodeChar)) {
-        break;
-      }
-
-      if (
-        isKatakanaUnicodeChar(unicodeChar) &&
-        isKatakanaUnicodeChar(nextUnicodeChar)
-      ) {
-        kanaPhrase += nextUnicodeChar;
-        sourceWidth += nextGlyph.width;
-        unicodeChar = nextUnicodeChar;
-
-        i += 1;
-        continue;
-      } else if (unicodeChar === "っ" || SUTEGANA.includes(nextUnicodeChar)) {
-        kanaPhrase += nextUnicodeChar;
-        sourceWidth += nextGlyph.width;
-        unicodeChar = nextUnicodeChar;
-
-        i += 1;
-        continue;
-      }
-
-      break;
+      continue;
     }
 
     mainRomajiBlocks.push({
-      phrase: toRomaji(kanaPhrase),
+      phrase: toRomaji(currPhrase),
       xPos: currXPos,
-      sourceWidth,
+      sourceWidth: currPhraseWidth,
     });
 
-    currXPos += sourceWidth;
+    currXPos += currPhraseWidth;
+    currPhrase = unicodeChar;
+    currPhraseWidth = currGlyph.width;
+    prevGlyph = currGlyph;
     i += 1;
   }
+
+  mainRomajiBlocks.push({
+    phrase: toRomaji(currPhrase),
+    xPos: currXPos,
+    sourceWidth: currPhraseWidth,
+  });
 
   return mainRomajiBlocks;
 }
@@ -192,7 +222,7 @@ function getFuriganaRomajiBlocks(furigana: JoysoundLyricsFurigana[]) {
 
   for (const furiganaBlock of furigana) {
     const furiganaPhrase = furiganaBlock.chars
-      .map((charCode) => decodeSJIS(charCode))
+      .map((charCode) => decodeJoysoundText(charCode))
       .join("");
     const romajiPhrase = toRomaji(furiganaPhrase);
 
@@ -305,19 +335,17 @@ function readSJISString(view: DataView, offset: number, size: number): string {
     if (firstByte <= 0x7f || (firstByte > 0xa0 && firstByte <= 0xdf)) {
       charCode = view.getUint8(currOffset);
 
-      unicodeString += decodeSJIS(charCode);
+      unicodeString += decodeJoysoundText(charCode);
       currOffset += 1;
 
       continue;
     }
 
     charCode = view.getUint16(currOffset);
-    unicodeString += decodeSJIS(charCode);
+    unicodeString += decodeJoysoundText(charCode);
 
     currOffset += 2;
   }
-
-  console.log(unicodeString);
 
   return unicodeString;
 }
@@ -525,6 +553,14 @@ function parseJoysoundData(data: ArrayBuffer): JoysoundTelopData {
     lyrics: lyricsData,
     timeline,
   };
+}
+
+export function getSongDuration(data: ArrayBuffer): number {
+  const offsetView = new DataView(data, 6, 4);
+  const metadataOffset = offsetView.getUint32(0, true);
+  const metadataView = new DataView(data, metadataOffset, 20);
+
+  return metadataView.getUint16(18, true);
 }
 
 export default parseJoysoundData;
