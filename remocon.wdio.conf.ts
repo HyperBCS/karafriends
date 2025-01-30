@@ -1,7 +1,11 @@
-const { execFileSync } = require("child_process");
-const fs = require("fs");
+import { execFileSync } from "child_process";
+import "fs";
 
-exports.config = {
+console.log(
+  `Dev port: ${process.env.KARAFRIENDS_DEV_PORT}, remocon port: ${process.env.KARAFRIENDS_REMOCON_PORT}`,
+);
+
+export const config = {
   capabilities: [
     {
       browserName: "chrome",
@@ -19,14 +23,16 @@ exports.config = {
         },
       },
     },
-    ...(process.platform === "darwin" && [
-      {
-        browserName: "Safari",
-        platformName: "iOS",
-        "safari:deviceType": "iPhone",
-        "safari:useSimulator": true,
-      },
-    ]),
+    ...(process.platform === "darwin"
+      ? [
+          {
+            browserName: "Safari",
+            platformName: "iOS",
+            "safari:deviceType": "iPhone",
+            "safari:useSimulator": true,
+          },
+        ]
+      : []),
   ],
   connectionRetryTimeout: 10 * 60 * 1000,
   framework: "mocha",
