@@ -30,6 +30,9 @@ export type HubMessage =
 // that gives none, owns nothing.
 export interface Viewer {
   deviceId: string | null;
+  // The phone's admin session token (adminLogin), for admin-only events.
+  // Nothing sends any yet.
+  adminToken?: string | null;
   isDisplay?: boolean;
 }
 

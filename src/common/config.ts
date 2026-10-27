@@ -3,58 +3,15 @@ import fs from "fs";
 import path from "path";
 import { parse, stringify } from "yaml";
 
+import {
+  configFromFile,
+  DEFAULT_CONFIG,
+  type KarafriendsConfig,
+} from "./configSchema";
+
+export type { KarafriendsConfig } from "./configSchema";
+
 app.setName("karafriends");
-
-export interface KarafriendsConfig {
-  // Whether to use the low bitrate URLs for DAM songs
-  useLowBitrateUrl: boolean;
-  // Whether to download DAM songs locally instead of streaming them
-  paxSongQueueLimit: number;
-  // Which port to listen on for the remocon server
-  remoconPort: number;
-  // DAM username for DAM creds
-  damUsername: string;
-  // DAM password for DAM creds
-  damPassword: string;
-  // Joysound email for joysound creds
-  joysoundEmail: string;
-  // Joysound password for joysound creds
-  joysoundPassword: string;
-  // Deprecated, and no longer makes anyone an admin, since anyone can take a
-  // nickname. Still read, to warn that it no longer counts (src/main/api.ts).
-  adminNicks?: string[];
-  // List of admins by deviceId: the only way to make a phone an admin.
-  adminDeviceIds: string[];
-  // Whether to enable supervised mode
-  supervisedMode: boolean;
-  // Whether to use a HTTP proxy (for outgoing connections)
-  proxyEnable: boolean;
-  // hostname or address of the HTTP proxy to use
-  proxyHost: string;
-  // port of the HTTP proxy to use
-  proxyPort: number;
-  // HTTP Basic username of the HTTP proxy to use
-  proxyUser: string;
-  // HTTP Basic password of the HTTP proxy to use
-  proxyPass: string;
-}
-
-const DEFAULT_CONFIG: KarafriendsConfig = {
-  useLowBitrateUrl: false,
-  paxSongQueueLimit: 1,
-  remoconPort: 8080,
-  damUsername: "YOUR_USERNAME_HERE",
-  damPassword: "YOUR_PASSWORD_HERE",
-  joysoundEmail: "YOUR_EMAIL_HERE",
-  joysoundPassword: "YOUR_PASSWORD_HERE",
-  adminDeviceIds: [],
-  supervisedMode: false,
-  proxyEnable: false,
-  proxyHost: "PROXY_HOST_HERE",
-  proxyPort: 1234,
-  proxyUser: "PROXY_USER_HERE",
-  proxyPass: "PROXY_PASS_HERE",
-};
 
 function applyEnvironmentOverrides(config: KarafriendsConfig) {
   if (process.env.KARAFRIENDS_REMOCON_PORT)
@@ -62,46 +19,59 @@ function applyEnvironmentOverrides(config: KarafriendsConfig) {
   return config;
 }
 
-function getConfig(): KarafriendsConfig {
-  // Refer to https://www.electronjs.org/docs/latest/api/app#appgetpathname
-  // for where the config file should be placed. On Windows, it should be %APPDATA%/karafriends/config.yaml
-  let config = DEFAULT_CONFIG;
+// Refer to https://www.electronjs.org/docs/latest/api/app#appgetpathname
+// for where the config file should be placed. On Windows, it should be %APPDATA%/karafriends/config.yaml
+function configFilePath(): string {
+  return path.join(app.getPath("userData"), "config.yaml");
+}
 
-  const configFilepath: string = path.join(
-    app.getPath("userData"),
-    "config.yaml",
+// Writes config to config.yaml through a temp file, so an interrupted write
+// can't leave half a file.
+function writeConfigFile(config: KarafriendsConfig) {
+  const configFilepath = configFilePath();
+  fs.mkdirSync(path.dirname(configFilepath), { recursive: true });
+  const tmpPath = `${configFilepath}.tmp`;
+  fs.writeFileSync(tmpPath, stringify(config));
+  fs.renameSync(tmpPath, configFilepath);
+}
+
+// What config.yaml says, with the defaults for anything it leaves out. Throws
+// if it isn't valid YAML.
+function readConfigFile(): KarafriendsConfig {
+  const configFilepath = configFilePath();
+  if (!fs.existsSync(configFilepath)) return { ...DEFAULT_CONFIG };
+  const { config, problems } = configFromFile(
+    parse(fs.readFileSync(configFilepath, { encoding: "utf8", flag: "r" })),
   );
+  for (const problem of problems) console.warn(problem);
+  return config;
+}
 
+function getConfig(): KarafriendsConfig {
+  const configFilepath = configFilePath();
   console.log(`Checking ${configFilepath} for configs`);
 
-  if (fs.existsSync(configFilepath)) {
-    console.log(`Configs found. Loading them up.`);
-    try {
-      const localConfig: KarafriendsConfig = parse(
-        fs.readFileSync(configFilepath, { encoding: "utf8", flag: "r" }),
-      );
-      config = { ...DEFAULT_CONFIG, ...localConfig };
-    } catch (err) {
-      // config.yaml is hand-edited by the user (for DAM/Joysound credentials),
-      // so a YAML typo must not crash the app on startup. Fall back to defaults
-      // for this session and, crucially, return before the write-back below so
-      // the user's (fixable) config -- and their credentials -- are preserved.
-      console.error(
-        `Failed to parse ${configFilepath}; using defaults for this session. ` +
-          "Fix the YAML and relaunch to restore your settings:",
-        err,
-      );
-      return applyEnvironmentOverrides({ ...DEFAULT_CONFIG });
-    }
-  } else {
-    console.log("No local configs found. Using default.");
+  let config: KarafriendsConfig;
+  try {
+    config = readConfigFile();
+  } catch (err) {
+    // config.yaml is hand-edited by the user (for DAM/Joysound credentials),
+    // so a YAML typo must not crash the app on startup. Fall back to defaults
+    // for this session and, crucially, return before the write-back below so
+    // the user's (fixable) config -- and their credentials -- are preserved.
+    console.error(
+      `Failed to parse ${configFilepath}; using defaults for this session. ` +
+        "Fix the YAML and relaunch to restore your settings:",
+      err,
+    );
+    return applyEnvironmentOverrides({ ...DEFAULT_CONFIG });
   }
 
-  // write back defaults (persists any newly-added config fields); best-effort
-  // so an unwritable userData directory doesn't crash startup.
+  // write back defaults (persists any newly-added config fields, and drops
+  // the obsolete ones); best-effort so an unwritable userData directory
+  // doesn't crash startup.
   try {
-    fs.mkdirSync(path.dirname(configFilepath), { recursive: true });
-    fs.writeFileSync(configFilepath, stringify(config));
+    writeConfigFile(config);
   } catch (err) {
     console.error(`Failed to write config to ${configFilepath}:`, err);
   }
@@ -110,6 +80,14 @@ function getConfig(): KarafriendsConfig {
 }
 
 const karafriendsConfig: KarafriendsConfig = getConfig();
+
+// Changes some settings, in config.yaml and in the running app. The rest of
+// the file stays as it is (environment overrides aren't written). Throws if
+// config.yaml can't be read or written.
+export function updateConfig(values: Partial<KarafriendsConfig>) {
+  writeConfigFile({ ...readConfigFile(), ...values });
+  Object.assign(karafriendsConfig, values);
+}
 
 // KARAFRIENDS_LOCAL_ONLY=1 keeps the app off the network: the server listens
 // on 127.0.0.1 only and mDNS is skipped, so phones can't connect. Tests and

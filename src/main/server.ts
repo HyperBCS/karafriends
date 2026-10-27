@@ -3,12 +3,14 @@
 //   POST /api/<method>  JSON in, JSON out (src/common/api.ts has the types).
 //                       415 unless Content-Type is application/json, 404 for
 //                       an unknown method, 400 for bad input, 403 when the
-//                       caller may not do it.
+//                       caller may not do it. adminLogin answers 429 after
+//                       ADMIN_LOGIN_LIMIT tries from one address.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
 //                       every change, plus emote and queueAdded events. A
 //                       phone adds ?deviceId=<its ID> to see which songs are
-//                       its own; no device IDs are sent. 503 when too many
-//                       are open (STREAM_LIMITS).
+//                       its own (and &adminToken=<its token> once signed in
+//                       as an admin); no device IDs are sent. 503 when too
+//                       many are open (STREAM_LIMITS).
 //
 // No CORS headers: requiring a JSON content type then keeps other web pages
 // from driving the queue (a cross-site form can't send it, and fetch() would
@@ -17,12 +19,17 @@ import compression from "compression";
 import express, { NextFunction, Request, Response, Router } from "express";
 
 import {
+  EVENTS_ADMIN_TOKEN_PARAM,
   EVENTS_DEVICE_ID_PARAM,
   type ApiMethod,
   type LiveEvent,
 } from "../common/api";
 import type { ApiHandlers } from "./api";
-import { callerFromHeaders, deviceIdFromQuery } from "./caller";
+import {
+  adminTokenFromQuery,
+  callerFromHeaders,
+  deviceIdFromQuery,
+} from "./caller";
 import { errorAnswer, isMethod, runMethod } from "./dispatch";
 import type { LiveHub } from "./live";
 
@@ -143,6 +150,48 @@ export function serializeEvent(event: LiveEvent): string {
   return json;
 }
 
+// How many adminLogin tries one address gets in a window, so a phone can't
+// guess the password at speed. Through a proxy on this machine (the dev
+// server, a tunnel) every phone shares one address, and so one limit.
+export interface RateLimit {
+  tries: number;
+  windowMs: number;
+}
+
+export const ADMIN_LOGIN_LIMIT: RateLimit = { tries: 5, windowMs: 60_000 };
+
+// Counts tries by key (a remote address) over a sliding window.
+export function rateLimiter(
+  { tries, windowMs }: RateLimit,
+  now: () => number = Date.now,
+) {
+  // Each key's tries in the window, oldest first.
+  const recent = new Map<string, number[]>();
+  return {
+    // Counts one more try from key, or returns false if it's one too many
+    // (which doesn't count).
+    tryHit(key: string): boolean {
+      const time = now();
+      // Forget addresses whose tries are all old, now and then.
+      if (recent.size > 1000) {
+        for (const [other, times] of recent) {
+          if (times[times.length - 1] <= time - windowMs) recent.delete(other);
+        }
+      }
+      const times = (recent.get(key) ?? []).filter(
+        (then) => then > time - windowMs,
+      );
+      if (times.length >= tries) {
+        recent.set(key, times);
+        return false;
+      }
+      times.push(time);
+      recent.set(key, times);
+      return true;
+    },
+  };
+}
+
 function isJson(req: Request): boolean {
   const type = req.headers["content-type"] ?? "";
   return type.split(";")[0].trim().toLowerCase() === "application/json";
@@ -152,9 +201,11 @@ export function apiRouter(
   handlers: ApiHandlers,
   hub: LiveHub,
   streamLimits: StreamLimits = STREAM_LIMITS,
+  loginLimit: RateLimit = ADMIN_LOGIN_LIMIT,
 ): Router {
   const router = express.Router();
   const streams = streamCounter(streamLimits);
+  const logins = rateLimiter(loginLimit);
 
   router.get("/events", (req, res) => {
     const address = req.socket.remoteAddress ?? "";
@@ -168,6 +219,7 @@ export function apiRouter(
     }
     const viewer = {
       deviceId: deviceIdFromQuery(req.query[EVENTS_DEVICE_ID_PARAM]),
+      adminToken: adminTokenFromQuery(req.query[EVENTS_ADMIN_TOKEN_PARAM]),
     };
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -204,6 +256,18 @@ export function apiRouter(
       }
       if (!isMethod(req.params.method)) {
         res.status(404).json({ error: `No API method ${req.params.method}` });
+        return;
+      }
+      if (
+        req.params.method === "adminLogin" &&
+        !logins.tryHit(req.socket.remoteAddress ?? "")
+      ) {
+        res
+          .status(429)
+          .set("Retry-After", String(Math.ceil(loginLimit.windowMs / 1000)))
+          .json({
+            error: "Too many sign-in tries. Wait a minute, then try again.",
+          });
         return;
       }
       next();

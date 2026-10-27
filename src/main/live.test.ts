@@ -79,7 +79,7 @@ describe("toLiveState", () => {
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
       // Not passed on.
-      adminDeviceIds: ["secret"],
+      adminPasswordHash: "secret",
     } as { supervisedMode: boolean });
     assert.deepEqual(live.config, { supervisedMode: true });
     assert.deepEqual(live.queue, [shared(false)]);

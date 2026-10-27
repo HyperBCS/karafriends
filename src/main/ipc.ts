@@ -36,6 +36,7 @@ export interface DisplayIpcOptions {
 export const DISPLAY_CALLER: Caller = {
   deviceId: null,
   nickname: null,
+  adminToken: null,
   isDisplay: true,
 };
 

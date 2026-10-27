@@ -265,4 +265,10 @@ export const validators: {
   },
   popSong: nothing,
   whoami: nothing,
+  adminLogin: (raw) => {
+    const password = string(fields(raw, ["password"]), "password", 200);
+    if (password === "") fail(`"password" must not be empty`);
+    return { password };
+  },
+  adminLogout: nothing,
 };

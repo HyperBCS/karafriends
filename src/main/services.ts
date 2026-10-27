@@ -1,12 +1,13 @@
 // The main process's single instances: the shared state (saved in queue.json
-// next to the downloads), the DAM/Joysound/YouTube clients, the live-state
-// hub, and the API handlers built on them, which the JSON RPC router
-// serves.
+// next to the downloads), the admin sessions (adminSessions.json in
+// userData), the DAM/Joysound/YouTube clients, the live-state hub, and the
+// API handlers built on them, which the JSON RPC router serves.
 import path from "path";
 
+import { app } from "electron";
 import { Innertube } from "youtubei.js";
 
-import karafriendsConfig from "../common/config";
+import karafriendsConfig, { updateConfig } from "../common/config";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -15,6 +16,7 @@ import {
   getNicoVideoInfo,
   TEMP_FOLDER,
 } from "../common/videoDownloader";
+import { createAdminSessions, createSetAdminPassword } from "./adminAuth";
 import { createApi } from "./api";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { setProxy } from "./http";
@@ -25,6 +27,18 @@ import { createStateStore } from "./state";
 export const store = createStateStore(path.resolve(TEMP_FOLDER, "queue.json"));
 
 export const hub = createLiveHub(store, karafriendsConfig);
+
+export const adminSessions = createAdminSessions(
+  path.join(app.getPath("userData"), "adminSessions.json"),
+);
+
+// Sets the admin password ("" for none) and signs every phone out. For the
+// display's settings (phase A3); no phone can call it.
+export const setAdminPassword = createSetAdminPassword({
+  config: karafriendsConfig,
+  saveConfig: updateConfig,
+  sessions: adminSessions,
+});
 
 // Like memoize, but forgets a rejected promise so a failed login (wrong
 // credentials, no Japanese IP, service down) is retried on the next request
@@ -107,6 +121,7 @@ function innertubeApiProvider(): Promise<Innertube> {
 export const api = createApi({
   config: karafriendsConfig,
   store,
+  adminSessions,
   ...upstreamClients,
   youtube: innertubeApiProvider,
   getNicoVideoInfo,
