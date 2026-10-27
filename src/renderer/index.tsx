@@ -5,6 +5,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { RelayEnvironmentProvider } from "react-relay";
 
+import { LiveStateProvider } from "../common/apiClient";
 import environment from "../common/graphqlEnvironment";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import App from "./App";
@@ -31,7 +32,9 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <RelayEnvironmentProvider environment={environment}>
-        <App kuroshiro={kuroshiroSingleton} audio={audio} />
+        <LiveStateProvider>
+          <App kuroshiro={kuroshiroSingleton} audio={audio} />
+        </LiveStateProvider>
       </RelayEnvironmentProvider>
     </ErrorBoundary>
   </React.StrictMode>,
