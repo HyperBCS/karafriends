@@ -11,7 +11,8 @@
 // The tests drive the UI the way a person would (the display window and the
 // remote's pages), not the server API, so they keep working when the API and
 // the bundler are replaced. The exceptions are api.spec.ts, which tests the
-// JSON RPC API itself, and the device-ID checks in live.spec.ts.
+// JSON RPC API itself (admin sign-in included), and the device-ID checks in
+// live.spec.ts.
 //
 // The server has no GraphQL any more, and neither client may ask for it:
 // every test fails if the display or a phone sends a request to /graphql
@@ -34,12 +35,27 @@ import {
 } from "@playwright/test";
 import { parse, stringify } from "yaml";
 
+import {
+  hashAdminPassword,
+  newAdminSalt,
+} from "../../src/common/adminPassword";
+
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const MAIN_ENTRY = path.join(REPO_ROOT, "build", "prod", "main", "index.js");
 
 // The nickname the remote uses. Setting it up front skips the prompt() that
 // asks for one on first visit.
 export const NICKNAME = "e2e";
+
+// config.yaml's admin password settings for password, for appConfig: phones
+// that sign in with it are admins.
+export function adminPasswordConfig(password: string) {
+  const adminPasswordSalt = newAdminSalt();
+  return {
+    adminPasswordSalt,
+    adminPasswordHash: hashAdminPassword(password, adminPasswordSalt),
+  };
+}
 
 export type MediaTools =
   // Empty placeholder ffmpeg and yt-dlp: the app sees fresh copies and never
