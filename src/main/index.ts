@@ -62,7 +62,9 @@ if (isDev && inspector.url() === undefined) inspector.open();
 try {
   nativeAudio.allocConsole();
 } catch (e) {
-  console.error(e);
+  // Started from a terminal, the process already has a console and Windows
+  // refuses a second one with "Access is denied" (os error 5). That's fine.
+  if (!String(e).includes("os error 5")) console.error(e);
 }
 
 if (!LOCAL_ONLY) setupMdns();
