@@ -46,4 +46,5 @@ yarn test:e2e
 - `@net` tests queue a YouTube video. They copy ffmpeg and yt-dlp from the installed app's data folder (`%APPDATA%\karafriends\externalResources` on Windows), so start the app once beforehand.
 - `@jp` tests search DAM and Joysound with the logins from the installed app's `config.yaml`, queue a song from each (the Joysound one downloads, with the installed app's ffmpeg) and take it straight off the queue. They need a Japanese IP and only run on request: `KARAFRIENDS_E2E_JP=1 yarn test:e2e --grep @jp`.
 - There's no GraphQL any more: a test checks that `/graphql` answers 404, and every test fails if the display or the remote requests it.
+- The display uses IPC: every test fails if the display requests `/api`, and one launches with the remote port already taken.
 - `yarn test:e2e:ci` leaves out `@net` and `@jp`; CI runs it on Windows and Linux.

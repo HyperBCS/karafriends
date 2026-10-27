@@ -15,7 +15,8 @@
 //
 // The server has no GraphQL any more, and neither client may ask for it:
 // every test fails if the display or a phone sends a request to /graphql
-// (see forbidGraphql).
+// (see forbidGraphql). And the display talks to the main process over IPC,
+// so every test also fails if it sends one to /api (see isApiRequest).
 
 import fs from "fs";
 import net from "net";
@@ -56,6 +57,9 @@ type Options = {
   realCredentials: boolean;
   // More config.yaml settings, e.g. { supervisedMode: true }.
   appConfig: Record<string, unknown>;
+  // Take the remote's port before the app starts, so its server can't
+  // listen.
+  occupyPort: boolean;
 };
 
 export type Karafriends = {
@@ -64,9 +68,22 @@ export type Karafriends = {
   display: Page;
   // Console errors and uncaught exceptions from the display window.
   displayErrors: string[];
+  // Every URL the display window requested, as Playwright saw it.
+  displayRequests: string[];
   // The phone remote's address.
   remoconUrl: string;
 };
+
+// A request to the JSON API (/api/<method> or /api/events), which the display
+// must not make: it uses IPC.
+export function isApiRequest(url: string): boolean {
+  try {
+    const { protocol, pathname } = new URL(url);
+    return protocol.startsWith("http") && /^\/api(\/|$)/.test(pathname);
+  } catch {
+    return false;
+  }
+}
 
 type Fixtures = {
   // The /graphql requests the clients made, which must stay empty.
@@ -208,6 +225,17 @@ function freePort(): Promise<number> {
   });
 }
 
+// Holds a port on 127.0.0.1, where the app listens with LOCAL_ONLY, until
+// closed.
+async function occupy(port: number): Promise<net.Server> {
+  const server = net.createServer((socket) => socket.destroy());
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+  return server;
+}
+
 async function launchKarafriends(
   options: Options,
   graphqlRequests: string[],
@@ -221,6 +249,7 @@ async function launchKarafriends(
   const userDataDir = path.join(tempDir, "user-data");
   fs.mkdirSync(userDataDir);
   let app: ElectronApplication | undefined;
+  let portHolder: net.Server | undefined;
   const mainLog: string[] = [];
 
   const close = async (
@@ -233,6 +262,10 @@ async function launchKarafriends(
         new Promise((resolve) => setTimeout(resolve, 15_000)),
       ]);
       if (proc.exitCode === null && proc.signalCode === null) proc.kill();
+    }
+    if (portHolder) {
+      const holder = portHolder;
+      await new Promise((resolve) => holder.close(resolve));
     }
     // On failure, keep the main process's output and the app's download logs
     // (yt-dlp, ffmpeg) with the report. Not with real logins: DAM stream URLs
@@ -270,6 +303,7 @@ async function launchKarafriends(
 
   try {
     const port = await freePort();
+    if (options.occupyPort) portHolder = await occupy(port);
     fs.writeFileSync(
       path.join(userDataDir, "config.yaml"),
       stringify({
@@ -326,6 +360,11 @@ async function launchKarafriends(
       timeout: 60_000,
     });
     await forbidGraphql(app.context(), graphqlRequests);
+    // The app's only pages are the display's.
+    const displayRequests: string[] = [];
+    app.context().on("request", (request) => {
+      displayRequests.push(request.url());
+    });
 
     // The main process logs DAM tokens and Joysound cookies once logged in,
     // so its output is only kept when the test runs without real logins.
@@ -364,21 +403,24 @@ async function launchKarafriends(
     const display = await app.firstWindow();
 
     const remoconUrl = `http://127.0.0.1:${port}/`;
-    await expect
-      .poll(
-        async () => {
-          try {
-            return (await fetch(remoconUrl)).status;
-          } catch {
-            return 0;
-          }
-        },
-        { message: "the remote server never came up", timeout: 30_000 },
-      )
-      .toBe(200);
+    // (With the port taken, it never does.)
+    if (!options.occupyPort) {
+      await expect
+        .poll(
+          async () => {
+            try {
+              return (await fetch(remoconUrl)).status;
+            } catch {
+              return 0;
+            }
+          },
+          { message: "the remote server never came up", timeout: 30_000 },
+        )
+        .toBe(200);
+    }
 
     return {
-      karafriends: { app, display, displayErrors, remoconUrl },
+      karafriends: { app, display, displayErrors, displayRequests, remoconUrl },
       close,
     };
   } catch (err) {
@@ -392,6 +434,7 @@ export const test = base.extend<Options & Fixtures>({
   mediaTools: ["stub", { option: true }],
   realCredentials: [false, { option: true }],
   appConfig: [{}, { option: true }],
+  occupyPort: [false, { option: true }],
 
   // Checked once the test (and every fixture using it) is done.
   // oxlint-disable-next-line no-empty-pattern
@@ -410,17 +453,28 @@ export const test = base.extend<Options & Fixtures>({
   },
 
   karafriends: async (
-    { seedQueue, mediaTools, realCredentials, appConfig, graphqlRequests },
+    {
+      seedQueue,
+      mediaTools,
+      realCredentials,
+      appConfig,
+      occupyPort,
+      graphqlRequests,
+    },
     use,
     testInfo,
   ) => {
     const { karafriends, close } = await launchKarafriends(
-      { seedQueue, mediaTools, realCredentials, appConfig },
+      { seedQueue, mediaTools, realCredentials, appConfig, occupyPort },
       graphqlRequests,
       testInfo,
     );
     try {
       await use(karafriends);
+      expect(
+        karafriends.displayRequests.filter(isApiRequest),
+        "the display must use IPC, not the HTTP API",
+      ).toEqual([]);
     } finally {
       await close();
     }
