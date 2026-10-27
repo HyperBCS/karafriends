@@ -1,0 +1,5 @@
+#!/bin/sh
+# A stand-in for yt-dlp that fails the way it does for a removed video.
+# tests/e2e/downloadFailure.spec.ts points KARAFRIENDS_YTDLP_PATH here.
+echo "ERROR: [youtube] fixture: Video unavailable. This video is no longer available" >&2
+exit 1

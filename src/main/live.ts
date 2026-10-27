@@ -22,30 +22,27 @@ import type { State, StateStore } from "./state";
 // without the device IDs.
 export type HubMessage =
   | { type: "emote"; emote: string; user: UserIdentity }
-  | { type: "queueAdded"; item: QueueItem };
+  | { type: "queueAdded"; item: QueueItem }
+  // Goes only to the phone that queued item, and the display.
+  | { type: "queueFailed"; item: QueueItem; reason: string };
 
 // Who is listening: a phone gives its device ID; the display, or a phone
 // that gives none, owns nothing.
 export interface Viewer {
   deviceId: string | null;
+  isDisplay?: boolean;
 }
 
 const NOBODY: Viewer = { deviceId: null };
 
 export interface LiveHub {
-  // Sends an emote or queueAdded event to every listener.
+  // Sends an emote or queueAdded event to every listener, or a queueFailed
+  // event to its phone and the display.
   publish(message: HubMessage): void;
   // The listener gets the current state at once, then every state change
   // (throttled) and every message. Returns a function that stops it.
   subscribe(listener: (event: LiveEvent) => void, viewer?: Viewer): () => void;
 }
-
-// DownloadQueueItem.downloadType, as videoDownloader numbers them.
-const DOWNLOAD_KINDS: DownloadProgress["kind"][] = [
-  "joysound",
-  "youtube",
-  "nico",
-];
 
 // A queue item as deviceId's phone may see it: the singer's nickname, and
 // whether that phone queued it.
@@ -75,22 +72,16 @@ export function toLiveState(
     playbackState: state.playbackState,
     pitchShiftSemis: state.pitchShiftSemis,
     adhocLyrics: state.currentSongAdhocLyrics,
-    downloads: state.downloadQueue.flatMap((download) => {
-      const kind = DOWNLOAD_KINDS[download.downloadType];
-      return kind
-        ? [
-            {
-              kind,
-              songId: download.songId,
-              suffix: download.suffix,
-              progress: download.progress,
-              isMine:
-                deviceId !== null &&
-                download.userIdentity.deviceId === deviceId,
-            },
-          ]
-        : [];
-    }),
+    downloads: state.downloadQueue.map((download): DownloadProgress => ({
+      id: download.id,
+      kind: download.kind,
+      songId: download.songId,
+      suffix: download.suffix,
+      progress: download.progress,
+      status: download.status,
+      reason: download.reason,
+      isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
+    })),
     config: { supervisedMode: config.supervisedMode },
   };
 }
@@ -130,7 +121,10 @@ function stateEvents(
   };
 }
 
-function messageEvents(message: HubMessage) {
+// The event each viewer gets for message, or null for none.
+function messageEvents(
+  message: HubMessage,
+): (viewer: Viewer) => LiveEvent | null {
   switch (message.type) {
     case "emote": {
       const event: LiveEvent = {
@@ -154,6 +148,29 @@ function messageEvents(message: HubMessage) {
           item: shareQueueItem(item, viewer.deviceId),
         };
         return mine;
+      };
+    }
+    case "queueFailed": {
+      const { item, reason } = message;
+      let forDisplay: LiveEvent | null = null;
+      let forOwner: LiveEvent | null = null;
+      return (viewer: Viewer): LiveEvent | null => {
+        if (viewer.isDisplay) {
+          forDisplay ??= {
+            type: "queueFailed",
+            item: shareQueueItem(item, null),
+            reason,
+          };
+          return forDisplay;
+        }
+        if (viewer.deviceId === null || viewer.deviceId !== item.user.deviceId)
+          return null;
+        forOwner ??= {
+          type: "queueFailed",
+          item: shareQueueItem(item, viewer.deviceId),
+          reason,
+        };
+        return forOwner;
       };
     }
   }
@@ -182,9 +199,10 @@ export function createLiveHub(
     }
   };
 
-  const deliver = (eventFor: (viewer: Viewer) => LiveEvent) => {
+  const deliver = (eventFor: (viewer: Viewer) => LiveEvent | null) => {
     for (const [listener, viewer] of listeners) {
-      tell(listener, eventFor(viewer));
+      const event = eventFor(viewer);
+      if (event) tell(listener, event);
     }
   };
 
@@ -213,7 +231,7 @@ export function createLiveHub(
   store.onChange(scheduleFlush);
 
   // videoDownloader updates downloads in place, without going through the
-  // store, so look at them while any are running (or just finished).
+  // store, so look at them while any are running or failed (or just went).
   let downloadsSent = 0;
   const watchDownloads = () => {
     const running = store.getState().downloadQueue.length;

@@ -85,20 +85,27 @@ export interface ApiDeps {
   youtube: () => Promise<{ getBasicInfo(videoId: string): Promise<unknown> }>;
   getNicoVideoInfo: (videoId: string) => Promise<NicoVideoInfo>;
   // Start a download. The non-DAM ones call onReady once the video is ready
-  // to play, and only then is the song queued.
+  // to play, and only then is the song queued; or onFailed with a reason for
+  // guests if it can't be downloaded.
   downloads: {
     dam(url: string, songId: string, suffix: string): void;
     joysound(
       item: JoysoundQueueItem,
       pushToHead: boolean,
       onReady: (item: JoysoundQueueItem, pushToHead: boolean) => void,
+      onFailed: (reason: string) => void,
     ): void;
     youtube(
       item: YoutubeQueueItem,
       captionCode: string | null,
       onReady: () => void,
+      onFailed: (reason: string) => void,
     ): void;
-    nico(item: NicoQueueItem, onReady: () => void): void;
+    nico(
+      item: NicoQueueItem,
+      onReady: () => void,
+      onFailed: (reason: string) => void,
+    ): void;
   };
   publish: (message: HubMessage) => void;
   now?: () => number;
@@ -202,8 +209,11 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     const queued = songQueue.filter(
       (item) => item.user.deviceId === user.deviceId,
     ).length;
+    // A failed download is shown for a while, but frees its slot at once.
     const downloading = downloadQueue.filter(
-      (item) => item.userIdentity.deviceId === user.deviceId,
+      (item) =>
+        item.status === "downloading" &&
+        item.userIdentity.deviceId === user.deviceId,
     ).length;
     console.log(
       `hasMaxSongsInQueue: user ${user.nickname} has ${queued}, ${downloading} downloading`,
@@ -258,6 +268,12 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       }
     });
     deps.publish({ type: "queueAdded", item });
+  };
+
+  // Tells item's phone (and the display) that it won't be queued.
+  const queueFailed = (item: QueueItem) => (reason: string) => {
+    console.log(`queueFailed: ${item.kind} ${item.songId}: ${reason}`);
+    deps.publish({ type: "queueFailed", item, reason });
   };
 
   const streamingUrls = async (songId: string) =>
@@ -547,18 +563,21 @@ export function createApi(deps: ApiDeps): ApiHandlers {
           pushSongToQueue(item, pushToHead);
           break;
         }
-        case "joysound":
+        case "joysound": {
+          const item: JoysoundQueueItem = {
+            kind: "joysound",
+            ...base,
+            isRomaji: input.isRomaji,
+            youtubeVideoId: input.youtubeVideoId,
+          };
           deps.downloads.joysound(
-            {
-              kind: "joysound",
-              ...base,
-              isRomaji: input.isRomaji,
-              youtubeVideoId: input.youtubeVideoId,
-            },
+            item,
             pushToHead,
             pushSongToQueue,
+            queueFailed(item),
           );
           break;
+        }
         case "youtube": {
           const lyrics = (input.adhocLyrics ?? "")
             .split("\n")
@@ -582,24 +601,33 @@ export function createApi(deps: ApiDeps): ApiHandlers {
           };
           // The lyrics are kept only once the song is queued: a download
           // that fails never is.
-          deps.downloads.youtube(item, input.captionCode, () => {
-            if (!item.hasAdhocLyrics) {
-              pushSongToQueue(item, pushToHead);
-            } else if (fits()) {
-              pushSongToQueue(item, pushToHead, lyrics);
-            } else {
-              // Others came in while it downloaded.
-              console.warn(
-                `Queueing ${item.songId} without its lyrics: the queue holds too many`,
-              );
-              pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
-            }
-          });
+          deps.downloads.youtube(
+            item,
+            input.captionCode,
+            () => {
+              if (!item.hasAdhocLyrics) {
+                pushSongToQueue(item, pushToHead);
+              } else if (fits()) {
+                pushSongToQueue(item, pushToHead, lyrics);
+              } else {
+                // Others came in while it downloaded.
+                console.warn(
+                  `Queueing ${item.songId} without its lyrics: the queue holds too many`,
+                );
+                pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
+              }
+            },
+            queueFailed(item),
+          );
           break;
         }
         case "nico": {
           const item: NicoQueueItem = { kind: "nico", ...base };
-          deps.downloads.nico(item, () => pushSongToQueue(item, pushToHead));
+          deps.downloads.nico(
+            item,
+            () => pushSongToQueue(item, pushToHead),
+            queueFailed(item),
+          );
           break;
         }
       }

@@ -17,6 +17,8 @@ import {
   isStale,
   ResourcePaths,
   resourcePathsFor,
+  TOOL_PATH_ENV,
+  toolOverrides,
   Versions,
 } from "./externalResourcesPlan";
 
@@ -49,10 +51,20 @@ const extractorPath = path.join(
 const cacheDir = path.join(app.getPath("userData"), "externalResources");
 const versionsFile = path.join(cacheDir, "versions.json");
 
-const resourcePaths: ResourcePaths = resourcePathsFor(
-  process.platform,
-  cacheDir,
-);
+// KARAFRIENDS_YTDLP_PATH and KARAFRIENDS_FFMPEG_PATH, if set: those tools are
+// used as they are, and never downloaded.
+const overrides = toolOverrides(process.env);
+
+const resourcePaths: ResourcePaths = {
+  ...resourcePathsFor(process.platform, cacheDir),
+  ...overrides,
+};
+
+for (const [id, file] of Object.entries(overrides)) {
+  console.info(
+    `Using ${file} for ${id} (${TOOL_PATH_ENV[id as keyof ResourcePaths]})`,
+  );
+}
 
 export function getResourcePaths(): ResourcePaths {
   return resourcePaths;
@@ -247,7 +259,9 @@ async function ensureAsset(
 }
 
 async function doEnsure(): Promise<void> {
-  const plans = assetPlans(process.platform, resourcePaths);
+  const plans = assetPlans(process.platform, resourcePaths).filter(
+    (plan) => !(plan.id in overrides),
+  );
   const versions = readVersions();
 
   const changed = await Promise.all(
@@ -258,6 +272,13 @@ async function doEnsure(): Promise<void> {
     await writeVersions(versions);
   }
 
+  for (const [id, file] of Object.entries(overrides)) {
+    if (!fs.existsSync(file)) {
+      throw new Error(
+        `${TOOL_PATH_ENV[id as keyof ResourcePaths]} names ${file}, which doesn't exist`,
+      );
+    }
+  }
   if (
     !fs.existsSync(resourcePaths.ffmpeg) ||
     !fs.existsSync(resourcePaths.ytdlp)

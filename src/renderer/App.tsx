@@ -75,6 +75,12 @@ function App(props: {
     toast(`${item.name} - ${item.artistName}`, { heading: true });
   });
 
+  useLiveEvent("queueFailed", ({ item, reason }) => {
+    toast(
+      `Couldn't download ${item.name} for ${item.user.nickname}: ${reason}`,
+    );
+  });
+
   const onChangeMic = (index: number, newMic: InputDevice) => {
     const updatedMics = [...mics];
     const oldMic = updatedMics.splice(index, 1, newMic)[0];

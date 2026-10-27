@@ -8,11 +8,25 @@ import { promisify } from "util";
 import invariant from "ts-invariant";
 
 import type { JoysoundAPI } from "../main/joysoundApi";
-import type { DownloadQueueItem } from "../main/state";
+import {
+  FAILED_DOWNLOAD_KEPT_MS,
+  failDownload,
+  isDownloading,
+  removeDownload,
+  startDownload,
+  type DownloadQueueItem,
+} from "../main/state";
 import type { JoysoundQueueItem, UserIdentity } from "./api";
 
 import { isCaptionCode } from "./captionCode";
 import { envWithoutHttpProxy } from "./childEnv";
+import {
+  DownloadFailure,
+  failureReason,
+  REASONS,
+  toolCommand,
+  ytdlpFailureReason,
+} from "./downloadFailure";
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 import {
@@ -56,26 +70,6 @@ function safeRename(from: string, to: string): void {
   }
 }
 
-// A spawned binary (ffmpeg / yt-dlp) emits an "error" event if it can't be
-// launched (missing, not executable, etc). Unhandled, an EventEmitter "error"
-// throws and crashes the app -- a real risk now that these binaries are
-// downloaded at runtime. Log it and run the caller's cleanup instead of letting
-// one failed download take everything down.
-function handleProcessError(
-  proc: ChildProcess,
-  label: string,
-  cleanup: () => void,
-): void {
-  proc.on("error", (err) => {
-    console.error(`${label} failed to run:`, err);
-    try {
-      cleanup();
-    } catch (cleanupErr) {
-      console.error(`${label} cleanup failed:`, cleanupErr);
-    }
-  });
-}
-
 // A log write stream can emit "error" (bad path, disk full); unhandled, it
 // crashes the app. Logging is best-effort, so swallow it.
 function attachLogStreamErrorHandler(
@@ -87,6 +81,8 @@ function attachLogStreamErrorHandler(
   });
 }
 
+// Deletes one song's files in TEMP_FOLDER: prefix followed by "-" or ".".
+// Not its logs, which say why a download failed.
 function deleteTempFiles(prefix: string): void {
   let filenames: string[];
   try {
@@ -96,12 +92,28 @@ function deleteTempFiles(prefix: string): void {
     return;
   }
   for (const filename of filenames) {
-    if (filename && filename.includes(prefix)) {
+    if (
+      (filename.startsWith(`${prefix}-`) ||
+        filename.startsWith(`${prefix}.`)) &&
+      !filename.endsWith(".log")
+    ) {
       // NB: readdirSync returns bare names; they must be joined with
       // TEMP_FOLDER or the unlink targets the wrong (cwd-relative) path.
       safeUnlink(path.join(TEMP_FOLDER, filename));
     }
   }
+}
+
+// Creates tempFilename, which marks a download as started (in case the app
+// stops halfway). One left from an earlier run means the files with prefix
+// are half-done: they go first.
+function prepareTempFile(prefix: string, tempFilename: string): void {
+  fs.mkdirSync(TEMP_FOLDER, { recursive: true });
+  if (fs.existsSync(tempFilename)) {
+    console.error(`${tempFilename} exists but was not in the download queue.`);
+    deleteTempFiles(prefix);
+  }
+  fs.closeSync(fs.openSync(tempFilename, "w"));
 }
 
 function handleFFmpegDownloadLog(
@@ -132,33 +144,213 @@ function handleYoutubeDownloadLog(
   }
 }
 
-function isVideoCurrentlyDownloading(
-  filename: string,
-  downloadQueue: DownloadQueueItem[],
-  downloadType: number,
-  songId: string,
-  suffix: string | null = null,
-): boolean {
-  if (!fs.existsSync(filename)) {
-    return false;
-  }
+// The longest one yt-dlp or ffmpeg run may take before it's stopped. A song
+// downloads in a minute or two; this is for one that hangs.
+const TOOL_TIMEOUT_MS = 15 * 60 * 1000;
 
-  const prevDownloadQueueItem = downloadQueue.find(
-    (item) =>
-      item.downloadType === downloadType &&
-      item.songId === songId &&
-      item.suffix === suffix,
-  );
+// How much of a tool's output to keep for working out why it failed.
+const OUTPUT_TAIL_CHARS = 8192;
 
-  return Boolean(prevDownloadQueueItem);
+interface ToolRun {
+  // For the console and the log: "yt-dlp (YouTube <id>)".
+  label: string;
+  bin: string;
+  args: string[];
+  // Gets the tool's output. Appended to, unless freshLog.
+  logFilename: string;
+  freshLog?: boolean;
+  env?: NodeJS.ProcessEnv;
+  stdin?: Buffer | string | null;
+  onStdout?: (text: string) => void;
+  onStderr?: (text: string) => void;
+  // The reason for guests when the tool exits non-zero, from the end of
+  // its output.
+  reasonForExit: (output: string) => string;
 }
 
-function removeVideoDownloadFromQueue(
+// Runs a tool to the end, its output going to the console and the log.
+// Resolves when it exits 0. Rejects with a DownloadFailure when it can't
+// start, exits non-zero, or runs longer than TOOL_TIMEOUT_MS (then it's
+// stopped). Never throws: a throw in a spawn callback would crash the app.
+function runTool(run: ToolRun): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const log = fs.createWriteStream(run.logFilename, {
+      flags: run.freshLog ? "w" : "a",
+    });
+    attachLogStreamErrorHandler(log, run.label);
+
+    let output = "";
+    const keep = (text: string) => {
+      output = (output + text).slice(-OUTPUT_TAIL_CHARS);
+    };
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (failure: DownloadFailure | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (failure) {
+        log.write(`\nkarafriends: ${failure.detail}\n`);
+        reject(failure);
+      } else {
+        resolve();
+      }
+      log.end();
+    };
+    const failedToStart = (err: unknown) =>
+      settle(
+        new DownloadFailure(
+          REASONS.toolFailedToStart,
+          `${run.label} failed to run (${run.bin}): ${err}`,
+        ),
+      );
+
+    const command = toolCommand(run.bin, run.args);
+    let proc: ChildProcess;
+    try {
+      proc = spawn(command.file, command.args, {
+        env: run.env,
+        stdio: [run.stdin ? "pipe" : "ignore", "pipe", "pipe"],
+        windowsHide: true,
+        windowsVerbatimArguments: command.windowsVerbatimArguments,
+      });
+    } catch (err) {
+      // Node refuses some paths outright (on Windows, a .bat it can't run).
+      failedToStart(err);
+      return;
+    }
+
+    invariant(proc.stdout);
+    invariant(proc.stderr);
+    proc.stdout.pipe(process.stdout);
+    proc.stdout.pipe(log, { end: false });
+    proc.stderr.pipe(process.stderr);
+    proc.stderr.pipe(log, { end: false });
+    proc.stdout.on("data", (data: Buffer) => {
+      const text = data.toString();
+      keep(text);
+      run.onStdout?.(text);
+    });
+    proc.stderr.on("data", (data: Buffer) => {
+      const text = data.toString();
+      keep(text);
+      run.onStderr?.(text);
+    });
+
+    // Emitted when the tool can't be launched (missing, not executable).
+    // Unhandled, an "error" event crashes the app.
+    proc.on("error", failedToStart);
+    proc.on("close", (code, signal) => {
+      if (code === 0) {
+        settle(null);
+      } else {
+        settle(
+          new DownloadFailure(
+            run.reasonForExit(output),
+            `${run.label} exited with code=${code}, signal=${signal}, log=${run.logFilename}`,
+          ),
+        );
+      }
+    });
+    timer = setTimeout(() => {
+      // Its last words would come after the log is closed.
+      proc.stdout?.unpipe(log);
+      proc.stderr?.unpipe(log);
+      settle(
+        new DownloadFailure(
+          REASONS.timedOut,
+          `${run.label} took longer than ${TOOL_TIMEOUT_MS / 1000} s; stopped it`,
+        ),
+      );
+      proc.kill();
+    }, TOOL_TIMEOUT_MS);
+
+    if (run.stdin && proc.stdin) {
+      // The tool may exit before reading it all (EPIPE).
+      proc.stdin.on("error", (err) =>
+        console.error(`${run.label} stdin error:`, err),
+      );
+      proc.stdin.end(run.stdin);
+    }
+  });
+}
+
+// Marks item failed with the reason for err, tells onFailed, and takes item
+// out of the download queue FAILED_DOWNLOAD_KEPT_MS later, so the phone that
+// asked for it can show why in the meantime. Never throws.
+function failDownloadItem(
   downloadQueue: DownloadQueueItem[],
-  downloadQueueItem: DownloadQueueItem,
+  item: DownloadQueueItem,
+  description: string,
+  err: unknown,
+  onFailed: (reason: string) => void,
 ): void {
-  downloadQueue.splice(downloadQueue.indexOf(downloadQueueItem), 1);
+  const reason = failureReason(err);
+  console.error(`Error downloading ${description} (${reason}):`, err);
+  if (!failDownload(downloadQueue, item, reason)) return;
+  // startDownload also removes failures this old, should the timer be late.
+  setTimeout(
+    () => removeDownload(downloadQueue, item),
+    FAILED_DOWNLOAD_KEPT_MS,
+  );
+  try {
+    onFailed(reason);
+  } catch (callbackErr) {
+    console.error(
+      `Reporting the failure of ${description} failed:`,
+      callbackErr,
+    );
+  }
 }
+
+// Gets the tools, runs download for item, and takes item out of the
+// download queue when it's done, then calls onReady with its result. If any
+// of that fails, cleanUp runs and item is marked failed (failDownloadItem).
+// Fire and forget: nothing it does can throw to the caller or go unhandled.
+function runDownload<T>(
+  downloadQueue: DownloadQueueItem[],
+  item: DownloadQueueItem,
+  description: string,
+  download: () => Promise<T>,
+  onReady: (result: T) => void,
+  cleanUp: () => void,
+  onFailed: (reason: string) => void,
+): void {
+  ensureExternalResources()
+    .catch((err) => {
+      throw new DownloadFailure(
+        REASONS.noTools,
+        `couldn't get ffmpeg and yt-dlp: ${err}`,
+      );
+    })
+    .then(download)
+    .then(
+      (result) => {
+        removeDownload(downloadQueue, item);
+        try {
+          onReady(result);
+        } catch (err) {
+          console.error(`Queueing ${description} failed:`, err);
+        }
+      },
+      (err) => {
+        try {
+          cleanUp();
+        } catch (cleanupErr) {
+          console.error(`Cleaning up after ${description} failed:`, cleanupErr);
+        }
+        failDownloadItem(downloadQueue, item, description, err, onFailed);
+      },
+    );
+}
+
+// A failed Joysound API call, for guests.
+function joysoundFailure(err: unknown): never {
+  throw new DownloadFailure(REASONS.joysound, String(err));
+}
+
+// A tool exited non-zero while making the video out of downloaded files.
+const processingFailed = () => REASONS.videoProcessing;
 
 function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
   const FIELD_TAG = new Uint8Array([
@@ -210,6 +402,8 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
   return parseInt(playtimeString, 10);
 }
 
+// DAM songs join the queue at once and stream until their download is
+// done, so a failure here is only logged.
 export function downloadDamVideo(
   m3u8Url: string,
   songId: string,
@@ -218,18 +412,16 @@ export function downloadDamVideo(
   ensureExternalResources()
     .then(() => downloadDamVideoImpl(m3u8Url, songId, suffix))
     .catch((err) =>
-      console.error(`Error preparing external resources: ${err}`),
+      console.error(`Error downloading DAM video with ID ${songId}:`, err),
     );
 }
 
-function downloadDamVideoImpl(
+async function downloadDamVideoImpl(
   m3u8Url: string,
   songId: string,
   suffix: string,
-): void {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
+): Promise<void> {
+  fs.mkdirSync(TEMP_FOLDER, { recursive: true });
 
   const filename = `${TEMP_FOLDER}/${songId}-${suffix}.mp4`;
   const tempFilename = `${filename}.tmp`;
@@ -241,236 +433,131 @@ function downloadDamVideoImpl(
 
   console.info(`Downloading DAM video to ${filename}`);
 
-  const ffmpegLogFilename = `${TEMP_FOLDER}/dam-${songId}.log`;
-  const ffmpegLogStream = fs.createWriteStream(ffmpegLogFilename);
-  attachLogStreamErrorHandler(ffmpegLogStream, "ffmpeg (DAM)");
-
-  const ffmpeg = spawn(
-    resourcePaths.ffmpeg,
-    [
-      "-y",
-      "-i",
-      m3u8Url,
-      "-c",
-      "copy",
-      "-movflags",
-      "faststart",
-      "-f",
-      "mp4",
-      tempFilename,
-    ],
-    { stdio: ["ignore", "pipe", "pipe"] },
-  );
-
-  invariant(ffmpeg.stdout);
-  invariant(ffmpeg.stderr);
-  ffmpeg.stdout.pipe(process.stdout);
-  ffmpeg.stdout.pipe(ffmpegLogStream);
-  ffmpeg.stderr.pipe(process.stderr);
-  ffmpeg.stderr.pipe(ffmpegLogStream);
-
-  handleProcessError(ffmpeg, "ffmpeg (DAM)", () => safeUnlink(tempFilename));
-
-  ffmpeg.on("exit", (code, signal) => {
-    if (code === 0) {
-      safeRename(tempFilename, filename);
-    } else {
-      console.error(
-        `Error downloading DAM video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-      );
-    }
-  });
+  try {
+    await runTool({
+      label: `ffmpeg (DAM ${songId})`,
+      bin: resourcePaths.ffmpeg,
+      args: [
+        "-y",
+        "-i",
+        m3u8Url,
+        "-c",
+        "copy",
+        "-movflags",
+        "faststart",
+        "-f",
+        "mp4",
+        tempFilename,
+      ],
+      logFilename: `${TEMP_FOLDER}/dam-${songId}.log`,
+      freshLog: true,
+      reasonForExit: () => REASONS.other,
+    });
+  } catch (err) {
+    safeUnlink(tempFilename);
+    throw err;
+  }
+  safeRename(tempFilename, filename);
 }
 
-function makeJoysoundFFmpegCall(
+function runJoysoundFFmpeg(
   songId: string,
   ffmpegArgs: string[],
   ffmpegLogFilename: string,
-  onStderrData: null | ((data: Buffer) => any),
-  onExit: null | ((code: number, signal: number) => any),
-  stdinBuffer: Buffer | string | null,
-): void {
-  const ffmpegLogStream = fs.createWriteStream(ffmpegLogFilename, {
-    flags: "a",
+  options: Pick<ToolRun, "onStderr" | "stdin"> &
+    Partial<Pick<ToolRun, "reasonForExit">> = {},
+): Promise<void> {
+  return runTool({
+    label: `ffmpeg (Joysound ${songId})`,
+    bin: resourcePaths.ffmpeg,
+    args: ffmpegArgs,
+    logFilename: ffmpegLogFilename,
+    reasonForExit: processingFailed,
+    ...options,
   });
-  attachLogStreamErrorHandler(ffmpegLogStream, "ffmpeg (Joysound)");
-
-  const ffmpeg = spawn(resourcePaths.ffmpeg, ffmpegArgs, {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  invariant(ffmpeg.stdin);
-  invariant(ffmpeg.stdout);
-  invariant(ffmpeg.stderr);
-
-  ffmpeg.stdout.pipe(process.stdout);
-  ffmpeg.stdout.pipe(ffmpegLogStream);
-  ffmpeg.stderr.pipe(process.stderr);
-  ffmpeg.stderr.pipe(ffmpegLogStream);
-
-  if (onStderrData) {
-    ffmpeg.stderr.on("data", onStderrData);
-  }
-
-  if (onExit) {
-    ffmpeg.on("exit", onExit);
-  }
-
-  // If ffmpeg can't be launched at all, drive the same exit path (non-zero
-  // code) so the wrapping promise rejects instead of hanging or crashing.
-  handleProcessError(ffmpeg, "ffmpeg (Joysound)", () => {
-    if (onExit) {
-      onExit(-1, 0);
-    }
-  });
-
-  if (stdinBuffer) {
-    ffmpeg.stdin.write(stdinBuffer);
-    ffmpeg.stdin.end();
-  }
 }
 
 function downloadJoysoundVideoPromise(
   songId: string,
   videoUrl: string,
-  downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
   tempFilename: string,
   ffmpegLogFilename: string,
-): Promise<number> {
-  return new Promise((resolve, reject) => {
-    let songFrames = 0;
+): Promise<void> {
+  let songFrames = 0;
 
-    const ffmpegArgs = [
-      "-i",
-      videoUrl,
-      "-c",
-      "copy",
-      "-movflags",
-      "faststart",
-      "-f",
-      "mp4",
-      "-y",
-      tempFilename,
-    ];
+  const ffmpegArgs = [
+    "-i",
+    videoUrl,
+    "-c",
+    "copy",
+    "-movflags",
+    "faststart",
+    "-f",
+    "mp4",
+    "-y",
+    tempFilename,
+  ];
 
-    const onStderrData = (ffmpegData: Buffer) => {
-      const ffmpegLog = ffmpegData.toString();
+  const onStderr = (ffmpegLog: string) => {
+    const durationMatchData = ffmpegLog.match(/Duration:\s*(\d+):(\d+):(\d+)/);
 
-      const durationMatchData = ffmpegLog.match(
-        /Duration:\s*(\d+):(\d+):(\d+)/,
-      );
+    if (durationMatchData) {
+      let songDuration = 0;
 
-      if (durationMatchData) {
-        let songDuration = 0;
+      songDuration += parseInt(durationMatchData[1], 10) * 3600;
+      songDuration += parseInt(durationMatchData[2], 10) * 60;
+      songDuration += parseInt(durationMatchData[3], 10);
 
-        songDuration += parseInt(durationMatchData[1], 10) * 3600;
-        songDuration += parseInt(durationMatchData[2], 10) * 60;
-        songDuration += parseInt(durationMatchData[3], 10);
+      songFrames = songDuration * 30;
+    }
 
-        songFrames = songDuration * 30;
-      }
+    handleFFmpegDownloadLog(ffmpegLog, songFrames, downloadQueueItem);
+  };
 
-      handleFFmpegDownloadLog(ffmpegLog, songFrames, downloadQueueItem);
-    };
-
-    const onExit = (code: number, signal: number) => {
-      if (code === 0) {
-        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-
-        resolve(code);
-      } else {
-        console.error(
-          `Error downloading Joysound video with ID ${songId}: url=${videoUrl}, code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-        );
-
-        reject(code);
-      }
-    };
-
-    makeJoysoundFFmpegCall(
-      songId,
-      ffmpegArgs,
-      ffmpegLogFilename,
-      onStderrData,
-      onExit,
-      null,
-    );
+  // ffmpeg fetches the video from Joysound's servers.
+  return runJoysoundFFmpeg(songId, ffmpegArgs, ffmpegLogFilename, {
+    onStderr,
+    reasonForExit: () => REASONS.joysound,
   });
 }
 
-function downloadJoysoundYoutubeVideoPromise(
+async function downloadJoysoundYoutubeVideoPromise(
   songId: string,
   youtubeVideoId: string,
-  downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
   tempFilename: string,
-): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const ytdlpLogFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}.log`;
-    const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
-    attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
-
-    const ytdlp = spawn(
-      resourcePaths.ytdlp,
-      [
-        "-S",
-        "res:720,ext:mp4",
-        "-f",
-        "bv",
-        "--recode",
-        "mp4",
-        "-N",
-        "4",
-        "--ffmpeg-location",
-        resourcePaths.ffmpeg,
-        "-o",
-        tempFilename + ".mp4",
-        "--",
-        youtubeVideoId!,
-      ],
-      {
-        env: envWithoutHttpProxy(),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-
-    invariant(ytdlp.stdout);
-    invariant(ytdlp.stderr);
-
-    ytdlp.stdout.pipe(process.stdout);
-    ytdlp.stdout.pipe(ytdlpLogStream);
-    ytdlp.stderr.pipe(process.stderr);
-    ytdlp.stderr.pipe(ytdlpLogStream);
-
-    ytdlp.stdout.on("data", (data) => {
-      handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
-    });
-
-    handleProcessError(ytdlp, "yt-dlp (Joysound/YouTube)", () => {
-      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-      reject(-1);
-    });
-
-    ytdlp.on("exit", (code, signal) => {
-      if (code === 0) {
-        safeUnlink(tempFilename);
-        safeRename(tempFilename + ".mp4", tempFilename);
-
-        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-
-        resolve(code);
-      } else {
-        console.error(
-          `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
-        );
-        reject(code);
-      }
-    });
+): Promise<void> {
+  await runTool({
+    label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
+    bin: resourcePaths.ytdlp,
+    args: [
+      "-S",
+      "res:720,ext:mp4",
+      "-f",
+      "bv",
+      "--recode",
+      "mp4",
+      "-N",
+      "4",
+      "--ffmpeg-location",
+      resourcePaths.ffmpeg,
+      "-o",
+      tempFilename + ".mp4",
+      "--",
+      youtubeVideoId,
+    ],
+    logFilename: `${TEMP_FOLDER}/yt-${youtubeVideoId}.log`,
+    freshLog: true,
+    env: envWithoutHttpProxy(),
+    onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+    reasonForExit: ytdlpFailureReason,
   });
+  safeUnlink(tempFilename);
+  safeRename(tempFilename + ".mp4", tempFilename);
 }
 
-function composeJoysoundVideoPromise(
+async function composeJoysoundVideoPromise(
   songId: string,
   telopBuffer: Buffer,
   oggBuffer: Buffer,
@@ -478,90 +565,65 @@ function composeJoysoundVideoPromise(
   videoFilename: string,
   ffmpegLogFilename: string,
 ): Promise<JoysoundVideoData> {
-  return new Promise((resolve, reject) => {
-    let videoPlaytime = 0;
+  let videoPlaytime = 0;
 
-    const ffmpegArgs = [
-      "-stream_loop",
-      "-1",
-      "-i",
-      tempFilename,
-      "-i",
-      "-",
-      "-c",
-      "copy",
-      "-shortest",
-      "-movflags",
-      "faststart",
-      "-f",
-      "mp4",
-      videoFilename,
-    ];
+  const ffmpegArgs = [
+    "-stream_loop",
+    "-1",
+    "-i",
+    tempFilename,
+    "-i",
+    "-",
+    "-c",
+    "copy",
+    "-shortest",
+    "-movflags",
+    "faststart",
+    "-f",
+    "mp4",
+    videoFilename,
+  ];
 
-    const onStderrData = (ffmpegData: Buffer) => {
-      const ffmpegLog = ffmpegData.toString();
-
-      const durationMatchData = ffmpegLog.match(
-        /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
-      );
-
-      // XXX: We assume that the video duration always comes first
-      if (durationMatchData && videoPlaytime === 0) {
-        videoPlaytime += parseInt(durationMatchData[1], 10) * 3600;
-        videoPlaytime += parseInt(durationMatchData[2], 10) * 60;
-        videoPlaytime += parseInt(durationMatchData[3], 10);
-        videoPlaytime =
-          videoPlaytime * 1000 + parseInt(durationMatchData[4], 10) * 10;
-      }
-    };
-
-    const onExit = (code: number, signal: number) => {
-      safeUnlink(tempFilename);
-
-      if (code === 0) {
-        // This runs in a child-process exit callback, so an exception here
-        // would be uncaught and take down the whole app; fail just this song.
-        try {
-          const metadata: JoysoundVideoData = {
-            songDuration: getSongDuration(telopBuffer) * 1000,
-            songPlaytime: getJoysoundOggPlaytime(oggBuffer),
-            songId,
-            oggBuffer,
-            videoPlaytime,
-          };
-
-          resolve(metadata);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        console.error(
-          `Error downloading Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-        );
-
-        reject(code);
-      }
-    };
-
-    makeJoysoundFFmpegCall(
-      songId,
-      ffmpegArgs,
-      ffmpegLogFilename,
-      onStderrData,
-      onExit,
-      oggBuffer,
+  const onStderr = (ffmpegLog: string) => {
+    const durationMatchData = ffmpegLog.match(
+      /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
     );
-  });
+
+    // XXX: We assume that the video duration always comes first
+    if (durationMatchData && videoPlaytime === 0) {
+      videoPlaytime += parseInt(durationMatchData[1], 10) * 3600;
+      videoPlaytime += parseInt(durationMatchData[2], 10) * 60;
+      videoPlaytime += parseInt(durationMatchData[3], 10);
+      videoPlaytime =
+        videoPlaytime * 1000 + parseInt(durationMatchData[4], 10) * 10;
+    }
+  };
+
+  try {
+    await runJoysoundFFmpeg(songId, ffmpegArgs, ffmpegLogFilename, {
+      onStderr,
+      stdin: oggBuffer,
+    });
+  } finally {
+    safeUnlink(tempFilename);
+  }
+
+  return {
+    songDuration: getSongDuration(telopBuffer) * 1000,
+    songPlaytime: getJoysoundOggPlaytime(oggBuffer),
+    songId,
+    oggBuffer,
+    videoPlaytime,
+  };
 }
 
-function padJoysoundVideoPromise(
+// Pads the start of a YouTube background with its first frame, so it lines
+// up with the song.
+async function padJoysoundVideoPromise(
   data: JoysoundVideoData,
   videoFilename: string,
   ffmpegLogFilename: string,
-  queueItem: JoysoundQueueItem,
-  pushToHead: boolean,
-  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
-): Promise<number> {
+): Promise<void> {
   const videoBaseFilename = videoFilename.substr(0, videoFilename.length - 4);
 
   const videoNoSoundFilename = videoBaseFilename + "-no-sound.mp4";
@@ -572,211 +634,92 @@ function padJoysoundVideoPromise(
   const videoOutFilename = videoBaseFilename + "-out.mp4";
   const videoListFilename = videoBaseFilename + "-list.txt";
 
-  return new Promise<number>((resolve, reject) => {
-    const ffmpegArgs = [
-      "-i",
-      videoFilename,
-      "-c",
-      "copy",
-      "-an",
-      "-y",
-      videoNoSoundFilename,
-    ];
+  const ffmpeg = (ffmpegArgs: string[]) =>
+    runJoysoundFFmpeg(data.songId, ffmpegArgs, ffmpegLogFilename);
 
-    const onExit = (code: number, signal: number) => {
-      if (code === 0) {
-        resolve(code);
-      } else {
-        console.error(
-          `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-        );
+  await ffmpeg([
+    "-i",
+    videoFilename,
+    "-c",
+    "copy",
+    "-an",
+    "-y",
+    videoNoSoundFilename,
+  ]);
 
-        reject(code);
-      }
-    };
+  await ffmpeg([
+    "-i",
+    videoNoSoundFilename,
+    "-frames:v",
+    "1",
+    "-c:v",
+    "copy",
+    "-an",
+    "-y",
+    videoPadFrameFilename,
+  ]);
 
-    makeJoysoundFFmpegCall(
-      data.songId,
-      ffmpegArgs,
-      ffmpegLogFilename,
-      null,
-      onExit,
-      null,
-    );
-  })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const ffmpegArgs = [
-          "-i",
-          videoNoSoundFilename,
-          "-frames:v",
-          "1",
-          "-c:v",
-          "copy",
-          "-an",
-          "-y",
-          videoPadFrameFilename,
-        ];
+  const offset = Math.max(data.songPlaytime - data.videoPlaytime, 0);
+  await ffmpeg([
+    "-stream_loop",
+    "-1",
+    "-i",
+    videoPadFrameFilename,
+    "-c",
+    "copy",
+    "-t",
+    `${offset}ms`,
+    "-y",
+    videoPadFilename,
+  ]);
 
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
+  let listFile = "";
+  listFile += `file '${videoPadFilename.replace(/\\/g, "/")}'`;
+  listFile += "\n";
+  listFile += `file '${videoNoSoundFilename.replace(/\\/g, "/")}'`;
+  fs.writeFileSync(videoListFilename, listFile);
 
-            reject(code);
-          }
-        };
+  await ffmpeg([
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    videoListFilename,
+    "-c",
+    "copy",
+    "-y",
+    videoConcatFilename,
+  ]);
 
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
-    })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const offset = Math.max(data.songPlaytime - data.videoPlaytime, 0);
+  await ffmpeg([
+    "-i",
+    videoFilename,
+    "-i",
+    videoConcatFilename,
+    "-map",
+    "0:a",
+    "-map",
+    "1:v",
+    "-c",
+    "copy",
+    "-shortest",
+    "-y",
+    videoOutFilename,
+  ]);
 
-        const ffmpegArgs = [
-          "-stream_loop",
-          "-1",
-          "-i",
-          videoPadFrameFilename,
-          "-c",
-          "copy",
-          "-t",
-          `${offset}ms`,
-          "-y",
-          videoPadFilename,
-        ];
+  safeRename(videoFilename, videoTempFilename);
+  safeRename(videoOutFilename, videoFilename);
 
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
-    })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        let listFile = "";
-
-        listFile += `file '${videoPadFilename.replace(/\\/g, "/")}'`;
-        listFile += "\n";
-        listFile += `file '${videoNoSoundFilename.replace(/\\/g, "/")}'`;
-
-        fs.writeFileSync(videoListFilename, listFile);
-
-        const ffmpegArgs = [
-          "-f",
-          "concat",
-          "-safe",
-          "0",
-          "-i",
-          videoListFilename,
-          "-c",
-          "copy",
-          "-y",
-          videoConcatFilename,
-        ];
-
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
-    })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const ffmpegArgs = [
-          "-i",
-          videoFilename,
-          "-i",
-          videoConcatFilename,
-          "-map",
-          "0:a",
-          "-map",
-          "1:v",
-          "-c",
-          "copy",
-          "-shortest",
-          "-y",
-          videoOutFilename,
-        ];
-
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            safeRename(videoFilename, videoTempFilename);
-            safeRename(videoOutFilename, videoFilename);
-
-            safeUnlink(videoNoSoundFilename);
-            safeUnlink(videoPadFrameFilename);
-            safeUnlink(videoPadFilename);
-            safeUnlink(videoTempFilename);
-            safeUnlink(videoConcatFilename);
-
-            pushSongToQueue(queueItem, pushToHead);
-
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
-    });
+  safeUnlink(videoNoSoundFilename);
+  safeUnlink(videoPadFrameFilename);
+  safeUnlink(videoPadFilename);
+  safeUnlink(videoTempFilename);
+  safeUnlink(videoConcatFilename);
 }
 
+// Downloads a Joysound song and its video, then queues it with
+// pushSongToQueue; or calls onFailed with the reason for guests.
 export function downloadJoysoundData(
   downloadQueue: DownloadQueueItem[],
   userIdentity: UserIdentity,
@@ -784,35 +727,8 @@ export function downloadJoysoundData(
   queueItem: JoysoundQueueItem,
   pushToHead: boolean,
   pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
+  onFailed: (reason: string) => void,
 ): void {
-  ensureExternalResources()
-    .then(() =>
-      downloadJoysoundDataImpl(
-        downloadQueue,
-        userIdentity,
-        joysoundApi,
-        queueItem,
-        pushToHead,
-        pushSongToQueue,
-      ),
-    )
-    .catch((err) =>
-      console.error(`Error preparing external resources: ${err}`),
-    );
-}
-
-function downloadJoysoundDataImpl(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
-  joysoundApi: JoysoundAPI,
-  queueItem: JoysoundQueueItem,
-  pushToHead: boolean,
-  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
-): void {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
-
   const songId = queueItem.songId;
 
   const videoFilenameSuffix = queueItem.youtubeVideoId
@@ -828,191 +744,140 @@ function downloadJoysoundDataImpl(
 
   const tempFilename = `${videoFilename}.tmp`;
 
+  const key = {
+    kind: "joysound" as const,
+    songId,
+    suffix: queueItem.youtubeVideoId,
+  };
+  if (isDownloading(downloadQueue, key)) {
+    console.error(`${videoFilename} was already queued, not redownloading`);
+    return;
+  }
+
+  // Downloaded before: queue it at once.
   if (fs.existsSync(videoFilename)) {
-    console.info(`${videoFilename} already exists, not redownloading`);
-
     if (fs.existsSync(telopFilename)) {
-      const telopBuffer = fs.readFileSync(telopFilename);
-
-      queueItem = {
-        ...queueItem,
-        playtime: getSongDuration(telopBuffer),
-      };
-
-      pushSongToQueue(queueItem, pushToHead);
-      return;
+      console.info(`${videoFilename} already exists, not redownloading`);
+      try {
+        const telopBuffer = fs.readFileSync(telopFilename);
+        pushSongToQueue(
+          { ...queueItem, playtime: getSongDuration(telopBuffer) },
+          pushToHead,
+        );
+        return;
+      } catch (err) {
+        console.error(`Couldn't use the downloaded ${videoFilename}:`, err);
+      }
     } else {
       console.error(
         `${videoFilename} already exists, but ${telopFilename} does not.`,
       );
-
-      safeUnlink(videoFilename);
     }
+    safeUnlink(videoFilename);
   }
 
-  if (
-    isVideoCurrentlyDownloading(
-      tempFilename,
-      downloadQueue,
-      0,
-      songId,
-      queueItem.youtubeVideoId,
-    )
-  ) {
-    console.error(`${videoFilename} was already queued, not redownloading`);
-
-    return;
-  } else if (fs.existsSync(tempFilename)) {
-    console.error(`${tempFilename} exists but was not in the download queue.`);
-
-    deleteTempFiles(filenamePrefix);
-  }
-
-  fs.closeSync(fs.openSync(tempFilename, "w"));
-
-  const downloadQueueItem: DownloadQueueItem = {
-    downloadType: 0,
+  const downloadQueueItem = startDownload(downloadQueue, {
+    ...key,
     userIdentity,
-    songId,
-    suffix: queueItem.youtubeVideoId,
-    progress: 0.0,
+  });
+
+  const download = async (): Promise<JoysoundQueueItem> => {
+    prepareTempFile(filenamePrefix, tempFilename);
+
+    console.info(`Downloading Joysound video to ${videoFilename}`);
+
+    const songDataPromise = joysoundApi
+      .getSongRawData(songId)
+      .catch(joysoundFailure);
+    const videoDataPromise = queueItem.youtubeVideoId
+      ? downloadJoysoundYoutubeVideoPromise(
+          songId,
+          queueItem.youtubeVideoId,
+          downloadQueueItem,
+          tempFilename,
+        )
+      : joysoundApi
+          .getMovieUrls(songId)
+          .catch(joysoundFailure)
+          .then((data) =>
+            downloadJoysoundVideoPromise(
+              songId,
+              data.movie.mov1,
+              downloadQueueItem,
+              tempFilename,
+              ffmpegLogFilename,
+            ),
+          );
+
+    const [, joysoundSongRawData] = await Promise.all([
+      videoDataPromise,
+      songDataPromise,
+    ]);
+
+    const telopBase64 = joysoundSongRawData.telop;
+    const oggBase64 = joysoundSongRawData.ogg;
+
+    const telopBuffer = Buffer.from(
+      telopBase64.slice(30) + telopBase64.slice(0, 30),
+      "base64",
+    );
+
+    const oggBuffer = Buffer.from(
+      oggBase64.slice(30) + oggBase64.slice(0, 30),
+      "base64",
+    );
+
+    if (!fs.existsSync(telopFilename)) {
+      fs.writeFileSync(telopFilename, telopBuffer);
+    }
+
+    const data = await composeJoysoundVideoPromise(
+      songId,
+      telopBuffer,
+      oggBuffer,
+      tempFilename,
+      videoFilename,
+      ffmpegLogFilename,
+    );
+
+    if (
+      queueItem.youtubeVideoId &&
+      Math.abs(data.songDuration - data.videoPlaytime) < 10000
+    ) {
+      await padJoysoundVideoPromise(data, videoFilename, ffmpegLogFilename);
+    }
+
+    if (!fs.existsSync(videoFilename)) {
+      throw new DownloadFailure(
+        REASONS.videoProcessing,
+        `ffmpeg left no ${videoFilename}`,
+      );
+    }
+
+    return { ...queueItem, playtime: Math.floor(data.songPlaytime / 1000) };
   };
 
-  downloadQueue.push(downloadQueueItem);
-
-  const songDataPromise = joysoundApi.getSongRawData(songId);
-  let videoDataPromise;
-
-  if (queueItem.youtubeVideoId) {
-    videoDataPromise = downloadJoysoundYoutubeVideoPromise(
-      songId,
-      queueItem.youtubeVideoId,
-      downloadQueue,
-      downloadQueueItem,
-      tempFilename,
-    );
-  } else {
-    videoDataPromise = joysoundApi.getMovieUrls(songId).then((data) => {
-      const videoUrl = data.movie.mov1;
-
-      return downloadJoysoundVideoPromise(
-        songId,
-        videoUrl,
-        downloadQueue,
-        downloadQueueItem,
-        tempFilename,
-        ffmpegLogFilename,
-      );
-    });
-  }
-
-  console.info(`Downloading Joysound video to ${videoFilename}`);
-
-  Promise.all([videoDataPromise, songDataPromise])
-    .then((values) => {
-      const joysoundSongRawData = values[1];
-
-      const telopBase64 = joysoundSongRawData.telop;
-      const oggBase64 = joysoundSongRawData.ogg;
-
-      const telopBuffer = Buffer.from(
-        telopBase64.slice(30) + telopBase64.slice(0, 30),
-        "base64",
-      );
-
-      const oggBuffer = Buffer.from(
-        oggBase64.slice(30) + oggBase64.slice(0, 30),
-        "base64",
-      );
-
-      if (!fs.existsSync(telopFilename)) {
-        fs.writeFileSync(telopFilename, telopBuffer);
-      }
-
-      return composeJoysoundVideoPromise(
-        songId,
-        telopBuffer,
-        oggBuffer,
-        tempFilename,
-        videoFilename,
-        ffmpegLogFilename,
-      );
-    })
-    .then((data) => {
-      queueItem = {
-        ...queueItem,
-        playtime: Math.floor(data.songPlaytime / 1000),
-      };
-
-      if (
-        queueItem.youtubeVideoId &&
-        Math.abs(data.songDuration - data.videoPlaytime) < 10000
-      ) {
-        return padJoysoundVideoPromise(
-          data,
-          videoFilename,
-          ffmpegLogFilename,
-          queueItem,
-          pushToHead,
-          pushSongToQueue,
-        );
-      } else {
-        pushSongToQueue(queueItem, pushToHead);
-      }
-    })
-    .catch((err) => {
-      // This chain is fire-and-forget (not awaited by the caller), so an
-      // unhandled rejection here — a Joysound API failure, an ffmpeg/yt-dlp
-      // launch failure, bad telop/ogg data, etc. — would otherwise reach the
-      // process-level handler and crash the app. Fail just this download.
-      console.error(`Error downloading Joysound video with ID ${songId}:`, err);
-      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-      deleteTempFiles(filenamePrefix);
-    });
+  runDownload(
+    downloadQueue,
+    downloadQueueItem,
+    `Joysound song ${songId}`,
+    download,
+    (item) => pushSongToQueue(item, pushToHead),
+    () => deleteTempFiles(filenamePrefix),
+    onFailed,
+  );
 }
 
+// Downloads a YouTube video (and its captions, if captionCode), then calls
+// onComplete; or onFailed with the reason for guests.
 export function downloadYoutubeVideo(
   downloadQueue: DownloadQueueItem[],
   userIdentity: UserIdentity,
   videoId: string,
   captionCode: string | null,
-  onComplete: () => any,
+  onComplete: () => void,
+  onFailed: (reason: string) => void,
 ): void {
-  ensureExternalResources()
-    .then(() =>
-      downloadYoutubeVideoImpl(
-        downloadQueue,
-        userIdentity,
-        videoId,
-        captionCode,
-        onComplete,
-      ),
-    )
-    .catch((err) =>
-      console.error(`Error preparing external resources: ${err}`),
-    );
-}
-
-function downloadYoutubeVideoImpl(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
-  videoId: string,
-  captionCode: string | null,
-  onComplete: () => any,
-): void {
-  // validate.ts already refuses these; this keeps a bad code off yt-dlp's
-  // command line whoever calls.
-  if (captionCode !== null && !isCaptionCode(captionCode)) {
-    console.error(
-      `Error downloading Youtube Video. ${captionCode} is not a valid caption code`,
-    );
-    return;
-  }
-
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
-
   const filenamePrefix = `yt-${videoId}`;
   const writeBasePath = `${TEMP_FOLDER}/${filenamePrefix}`;
 
@@ -1022,85 +887,69 @@ function downloadYoutubeVideoImpl(
 
   const tempFilename = `${videoFilename}.tmp`;
 
-  if (isVideoCurrentlyDownloading(tempFilename, downloadQueue, 1, videoId)) {
+  const key = { kind: "youtube" as const, songId: videoId, suffix: null };
+  if (isDownloading(downloadQueue, key)) {
     console.error(`${videoFilename} was already queued, not redownloading`);
-
     return;
-  } else if (fs.existsSync(tempFilename)) {
-    console.error(`${tempFilename} exists but was not in the download queue.`);
-
-    deleteTempFiles(filenamePrefix);
   }
 
-  fs.closeSync(fs.openSync(tempFilename, "w"));
-
-  const downloadQueueItem: DownloadQueueItem = {
-    downloadType: 1,
+  const downloadQueueItem = startDownload(downloadQueue, {
+    ...key,
     userIdentity,
-    songId: videoId,
-    suffix: null,
-    progress: 0.0,
-  };
-
-  downloadQueue.push(downloadQueueItem);
-
-  console.info(`Downloading YouTube video to ${videoFilename}`);
-
-  const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
-
-  attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
-
-  const captionArgs = captionCode
-    ? ["--write-subs", "--sub-langs", captionCode]
-    : [];
-
-  const ytdlp = spawn(
-    resourcePaths.ytdlp,
-    [
-      ...captionArgs,
-      "-S",
-      "res:720,ext:mp4:m4a",
-      "--recode",
-      "mp4",
-      "-N",
-      "4",
-      "--ffmpeg-location",
-      resourcePaths.ffmpeg,
-      "-o",
-      `${videoFilename}`,
-      "--",
-      videoId,
-    ],
-    { env: envWithoutHttpProxy(), stdio: ["ignore", "pipe", "pipe"] },
-  );
-
-  invariant(ytdlp.stdout);
-  invariant(ytdlp.stderr);
-
-  ytdlp.stdout.pipe(process.stdout);
-  ytdlp.stdout.pipe(ytdlpLogStream);
-  ytdlp.stderr.pipe(process.stderr);
-  ytdlp.stderr.pipe(ytdlpLogStream);
-
-  ytdlp.stdout.on("data", (data) => {
-    handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
-  handleProcessError(ytdlp, "yt-dlp", () => {
-    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-    safeUnlink(tempFilename);
-  });
-
-  ytdlp.on("exit", (code, signal) => {
-    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-
-    safeUnlink(tempFilename);
-
-    if (code !== 0) {
-      console.error(
-        `Error downloading Youtube Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
+  const download = async () => {
+    // validate.ts already refuses these; this keeps a bad code off yt-dlp's
+    // command line whoever calls.
+    if (captionCode !== null && !isCaptionCode(captionCode)) {
+      throw new DownloadFailure(
+        REASONS.other,
+        `${captionCode} is not a valid caption code`,
       );
-      return;
+    }
+
+    prepareTempFile(filenamePrefix, tempFilename);
+
+    console.info(`Downloading YouTube video to ${videoFilename}`);
+
+    const captionArgs = captionCode
+      ? ["--write-subs", "--sub-langs", captionCode]
+      : [];
+
+    try {
+      await runTool({
+        label: `yt-dlp (YouTube ${videoId})`,
+        bin: resourcePaths.ytdlp,
+        args: [
+          ...captionArgs,
+          "-S",
+          "res:720,ext:mp4:m4a",
+          "--recode",
+          "mp4",
+          "-N",
+          "4",
+          "--ffmpeg-location",
+          resourcePaths.ffmpeg,
+          "-o",
+          `${videoFilename}`,
+          "--",
+          videoId,
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        env: envWithoutHttpProxy(),
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+      });
+    } finally {
+      safeUnlink(tempFilename);
+    }
+
+    if (!fs.existsSync(videoFilename)) {
+      throw new DownloadFailure(
+        REASONS.other,
+        `yt-dlp exited 0 but left no ${videoFilename}; log=${ytdlpLogFilename}`,
+      );
     }
 
     if (captionCode) {
@@ -1112,9 +961,17 @@ function downloadYoutubeVideoImpl(
         );
       }
     }
+  };
 
-    onComplete();
-  });
+  runDownload(
+    downloadQueue,
+    downloadQueueItem,
+    `YouTube video ${videoId}`,
+    download,
+    onComplete,
+    () => {},
+    onFailed,
+  );
 }
 
 // Look up a Niconico video's metadata with yt-dlp, which already downloads
@@ -1123,16 +980,19 @@ async function lookUpNicoVideoInfo(
   videoId: string,
 ): Promise<NicoVideoMetadata> {
   await ensureExternalResources();
-  const { stdout } = await execFileAsync(
-    resourcePaths.ytdlp,
-    ["--dump-single-json", "--skip-download", "--", nicoWatchUrl(videoId)],
-    {
-      env: envWithoutHttpProxy(),
-      timeout: 30000,
-      maxBuffer: 16 * 1024 * 1024,
-      windowsHide: true,
-    },
-  );
+  const command = toolCommand(resourcePaths.ytdlp, [
+    "--dump-single-json",
+    "--skip-download",
+    "--",
+    nicoWatchUrl(videoId),
+  ]);
+  const { stdout } = await execFileAsync(command.file, command.args, {
+    env: envWithoutHttpProxy(),
+    timeout: 30000,
+    maxBuffer: 16 * 1024 * 1024,
+    windowsHide: true,
+    windowsVerbatimArguments: command.windowsVerbatimArguments,
+  });
   return parseNicoVideoInfo(stdout);
 }
 
@@ -1157,31 +1017,15 @@ export async function getNicoVideoInfo(
   return limitedNicoVideoInfo(videoId);
 }
 
+// Downloads a Niconico video, then calls onComplete; or onFailed with the
+// reason for guests.
 export function downloadNicoVideo(
   downloadQueue: DownloadQueueItem[],
   userIdentity: UserIdentity,
   videoId: string,
-  onComplete: () => any,
+  onComplete: () => void,
+  onFailed: (reason: string) => void,
 ): void {
-  ensureExternalResources()
-    .then(() =>
-      downloadNicoVideoImpl(downloadQueue, userIdentity, videoId, onComplete),
-    )
-    .catch((err) =>
-      console.error(`Error preparing external resources: ${err}`),
-    );
-}
-
-function downloadNicoVideoImpl(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
-  videoId: string,
-  onComplete: () => any,
-): void {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
-
   const filenamePrefix = `nico-${videoId}`;
   const writeBasePath = `${TEMP_FOLDER}/${filenamePrefix}`;
 
@@ -1190,78 +1034,59 @@ function downloadNicoVideoImpl(
 
   const tempFilename = `${videoFilename}.tmp`;
 
-  if (isVideoCurrentlyDownloading(tempFilename, downloadQueue, 2, videoId)) {
+  const key = { kind: "nico" as const, songId: videoId, suffix: null };
+  if (isDownloading(downloadQueue, key)) {
     console.error(`${videoFilename} was already queued, not redownloading`);
-
     return;
-  } else if (fs.existsSync(tempFilename)) {
-    console.error(`${tempFilename} exists but was not in the download queue.`);
-
-    deleteTempFiles(filenamePrefix);
   }
 
-  fs.closeSync(fs.openSync(tempFilename, "w"));
-
-  const downloadQueueItem: DownloadQueueItem = {
-    downloadType: 2,
+  const downloadQueueItem = startDownload(downloadQueue, {
+    ...key,
     userIdentity,
-    songId: videoId,
-    suffix: null,
-    progress: 0.0,
-  };
-
-  downloadQueue.push(downloadQueueItem);
-
-  console.info(`Downloading Niconico video to ${videoFilename}`);
-
-  const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
-
-  attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
-
-  const ytdlp = spawn(
-    resourcePaths.ytdlp,
-    [
-      "-N",
-      "4",
-      "-o",
-      `${videoFilename}`,
-      "--",
-      `https://www.nicovideo.jp/watch/${videoId}`,
-    ],
-    {
-      env: envWithoutHttpProxy(),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-
-  invariant(ytdlp.stdout);
-  invariant(ytdlp.stderr);
-
-  ytdlp.stdout.pipe(process.stdout);
-  ytdlp.stdout.pipe(ytdlpLogStream);
-  ytdlp.stderr.pipe(process.stderr);
-  ytdlp.stderr.pipe(ytdlpLogStream);
-
-  ytdlp.stdout.on("data", (data) => {
-    handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
-  handleProcessError(ytdlp, "yt-dlp", () => {
-    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-    safeUnlink(tempFilename);
-  });
+  const download = async () => {
+    prepareTempFile(filenamePrefix, tempFilename);
 
-  ytdlp.on("exit", (code, signal) => {
-    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+    console.info(`Downloading Niconico video to ${videoFilename}`);
 
-    safeUnlink(tempFilename);
+    try {
+      await runTool({
+        label: `yt-dlp (Niconico ${videoId})`,
+        bin: resourcePaths.ytdlp,
+        args: [
+          "-N",
+          "4",
+          "-o",
+          `${videoFilename}`,
+          "--",
+          `https://www.nicovideo.jp/watch/${videoId}`,
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        env: envWithoutHttpProxy(),
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+      });
+    } finally {
+      safeUnlink(tempFilename);
+    }
 
-    if (code === 0) {
-      onComplete();
-    } else {
-      console.error(
-        `Error downloading Niconico Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
+    if (!fs.existsSync(videoFilename)) {
+      throw new DownloadFailure(
+        REASONS.other,
+        `yt-dlp exited 0 but left no ${videoFilename}; log=${ytdlpLogFilename}`,
       );
     }
-  });
+  };
+
+  runDownload(
+    downloadQueue,
+    downloadQueueItem,
+    `Niconico video ${videoId}`,
+    download,
+    onComplete,
+    () => {},
+    onFailed,
+  );
 }

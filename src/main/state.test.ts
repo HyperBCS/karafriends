@@ -9,7 +9,14 @@ import type { QueueItem } from "../common/api";
 import {
   adhocLyricsKey,
   createStateStore,
+  type DownloadQueueItem,
+  FAILED_DOWNLOAD_KEPT_MS,
+  failDownload,
+  isDownloading,
   loadState,
+  removeDownload,
+  removeExpiredDownloads,
+  startDownload,
   type State,
 } from "./state";
 
@@ -93,12 +100,11 @@ describe("createStateStore", () => {
       state.songQueue.push(song(2));
       state.pitchShiftSemis = 3;
       state.currentSongAdhocLyrics.push({ lyric: "la", lyricIndex: 0 });
-      state.downloadQueue.push({
-        downloadType: 1,
+      startDownload(state.downloadQueue, {
+        kind: "youtube",
         userIdentity: song(3).user,
         songId: "video3",
         suffix: null,
-        progress: 0.5,
       });
     });
 
@@ -268,5 +274,122 @@ describe("loadState", () => {
     assert.deepEqual(state.songQueue, []);
     assert.equal(fs.existsSync(`${file}.corrupt`), true);
     assert.equal(fs.existsSync(file), false);
+  });
+});
+
+describe("the download queue", () => {
+  const alice = { deviceId: "alice-device", nickname: "alice" };
+  const video = {
+    kind: "youtube" as const,
+    songId: "jNQXAC9IVRw",
+    suffix: null,
+  };
+  const T = 1_700_000_000_000;
+
+  test("a download starts, then fails with a reason", () => {
+    const queue: DownloadQueueItem[] = [];
+    const item = startDownload(queue, { ...video, userIdentity: alice }, T);
+    assert.deepEqual(queue, [item]);
+    assert.equal(item.status, "downloading");
+    assert.equal(item.reason, null);
+    assert.equal(isDownloading(queue, video), true);
+
+    assert.equal(failDownload(queue, item, "Video unavailable", T + 1), true);
+    assert.equal(item.status, "failed");
+    assert.equal(item.reason, "Video unavailable");
+    assert.equal(item.failedAt, T + 1);
+    // Still shown, but not in progress.
+    assert.deepEqual(queue, [item]);
+    assert.equal(isDownloading(queue, video), false);
+
+    // Only once.
+    assert.equal(failDownload(queue, item, "Download timed out", T + 2), false);
+    assert.equal(item.reason, "Video unavailable");
+  });
+
+  test("a download that's gone can't fail", () => {
+    const queue: DownloadQueueItem[] = [];
+    const item = startDownload(queue, { ...video, userIdentity: alice }, T);
+    removeDownload(queue, item);
+    assert.deepEqual(queue, []);
+    assert.equal(failDownload(queue, item, "Video unavailable", T), false);
+    assert.equal(item.status, "downloading");
+  });
+
+  test("removing one that's gone leaves the others", () => {
+    const queue: DownloadQueueItem[] = [];
+    const a = startDownload(queue, { ...video, userIdentity: alice }, T);
+    const b = startDownload(
+      queue,
+      { ...video, songId: "other", userIdentity: alice },
+      T,
+    );
+    removeDownload(queue, a);
+    removeDownload(queue, a);
+    assert.deepEqual(queue, [b]);
+  });
+
+  test("a failure goes after FAILED_DOWNLOAD_KEPT_MS", () => {
+    const queue: DownloadQueueItem[] = [];
+    const failed = startDownload(queue, { ...video, userIdentity: alice }, T);
+    failDownload(queue, failed, "Video unavailable", T);
+    const running = startDownload(
+      queue,
+      { ...video, songId: "other", userIdentity: alice },
+      T,
+    );
+    assert.equal(
+      removeExpiredDownloads(queue, T + FAILED_DOWNLOAD_KEPT_MS - 1),
+      false,
+    );
+    assert.deepEqual(queue, [failed, running]);
+    assert.equal(
+      removeExpiredDownloads(queue, T + FAILED_DOWNLOAD_KEPT_MS),
+      true,
+    );
+    // A download in progress stays, however long it takes.
+    assert.deepEqual(queue, [running]);
+  });
+
+  test("starting any download clears out expired failures", () => {
+    const queue: DownloadQueueItem[] = [];
+    const failed = startDownload(queue, { ...video, userIdentity: alice }, T);
+    failDownload(queue, failed, "Video unavailable", T);
+    const next = startDownload(
+      queue,
+      { ...video, songId: "other", userIdentity: alice },
+      T + FAILED_DOWNLOAD_KEPT_MS,
+    );
+    assert.deepEqual(queue, [next]);
+  });
+
+  test("trying a failed download again replaces the failure", () => {
+    const queue: DownloadQueueItem[] = [];
+    const first = startDownload(queue, { ...video, userIdentity: alice }, T);
+    failDownload(queue, first, "Video unavailable", T);
+    const again = startDownload(
+      queue,
+      { ...video, userIdentity: { deviceId: "bob", nickname: "bob" } },
+      T + 1,
+    );
+    assert.deepEqual(queue, [again]);
+    assert.notEqual(again.id, first.id);
+    assert.equal(again.status, "downloading");
+    assert.equal(isDownloading(queue, video), true);
+    // The old failure's timer finds nothing to remove.
+    removeDownload(queue, first);
+    assert.deepEqual(queue, [again]);
+  });
+
+  test("a Joysound song's backgrounds are separate downloads", () => {
+    const queue: DownloadQueueItem[] = [];
+    const song = { kind: "joysound" as const, songId: "123" };
+    startDownload(queue, { ...song, suffix: "abc", userIdentity: alice }, T);
+    assert.equal(isDownloading(queue, { ...song, suffix: "abc" }), true);
+    assert.equal(isDownloading(queue, { ...song, suffix: null }), false);
+    assert.equal(
+      isDownloading(queue, { kind: "youtube", songId: "123", suffix: "abc" }),
+      false,
+    );
   });
 });

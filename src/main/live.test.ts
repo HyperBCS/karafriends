@@ -7,8 +7,14 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { LiveEvent, QueueItem } from "../common/api";
-import { createLiveHub, toLiveState } from "./live";
-import { createStateStore, type StateStore } from "./state";
+import { createLiveHub, toLiveState, type Viewer } from "./live";
+import {
+  createStateStore,
+  failDownload,
+  removeDownload,
+  startDownload,
+  type StateStore,
+} from "./state";
 
 const INTERVAL_MS = 50;
 
@@ -55,13 +61,20 @@ describe("toLiveState", () => {
   test("shares no secrets and names download kinds", () => {
     store.update((state) => {
       state.songQueue.push(item);
-      state.downloadQueue.push({
-        downloadType: 1,
+      const download = startDownload(state.downloadQueue, {
+        kind: "youtube",
         userIdentity: { deviceId: "d", nickname: "n" },
         songId: "jNQXAC9IVRw",
         suffix: null,
-        progress: 0.25,
       });
+      download.progress = 0.25;
+      const failed = startDownload(state.downloadQueue, {
+        kind: "joysound",
+        userIdentity: { deviceId: "d", nickname: "n" },
+        songId: "123",
+        suffix: "jNQXAC9IVRw",
+      });
+      failDownload(state.downloadQueue, failed, "Video unavailable");
     });
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
@@ -70,12 +83,26 @@ describe("toLiveState", () => {
     } as { supervisedMode: boolean });
     assert.deepEqual(live.config, { supervisedMode: true });
     assert.deepEqual(live.queue, [shared(false)]);
+    const [download, failed] = store.getState().downloadQueue;
     assert.deepEqual(live.downloads, [
       {
+        id: download.id,
         kind: "youtube",
         songId: "jNQXAC9IVRw",
         suffix: null,
         progress: 0.25,
+        status: "downloading",
+        reason: null,
+        isMine: false,
+      },
+      {
+        id: failed.id,
+        kind: "joysound",
+        songId: "123",
+        suffix: "jNQXAC9IVRw",
+        progress: 0,
+        status: "failed",
+        reason: "Video unavailable",
         isMine: false,
       },
     ]);
@@ -85,22 +112,18 @@ describe("toLiveState", () => {
     store.update((state) => {
       state.currentSong = otherItem;
       state.songQueue.push(item, { ...otherItem, timestamp: "3" });
-      state.downloadQueue.push(
-        {
-          downloadType: 2,
-          userIdentity: { deviceId: "d", nickname: "n" },
-          songId: "sm1",
-          suffix: null,
-          progress: 0,
-        },
-        {
-          downloadType: 2,
-          userIdentity: { deviceId: "other", nickname: "o" },
-          songId: "sm2",
-          suffix: null,
-          progress: 0,
-        },
-      );
+      startDownload(state.downloadQueue, {
+        kind: "nico",
+        userIdentity: { deviceId: "d", nickname: "n" },
+        songId: "sm1",
+        suffix: null,
+      });
+      startDownload(state.downloadQueue, {
+        kind: "nico",
+        userIdentity: { deviceId: "other", nickname: "o" },
+        songId: "sm2",
+        suffix: null,
+      });
     });
     const mine = (deviceId: string | null) => {
       const live = toLiveState(store.getState(), config, deviceId);
@@ -188,6 +211,75 @@ describe("createLiveHub: who sees what", () => {
     for (const list of events.values()) {
       assert.doesNotMatch(JSON.stringify(list), /deviceId|"other"|"d"/);
     }
+  });
+
+  test("a failed download is told to the phone that queued it and the display, no one else", () => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const failures = new Map<string, LiveEvent[]>();
+    const watch = (name: string, viewer: Viewer) => {
+      failures.set(name, []);
+      return hub.subscribe((event) => {
+        if (event.type !== "state") failures.get(name)!.push(event);
+      }, viewer);
+    };
+    const stops = [
+      watch("d", { deviceId: "d" }),
+      watch("d again", { deviceId: "d" }),
+      watch("other", { deviceId: "other" }),
+      watch("no ID", { deviceId: null }),
+      watch("display", { deviceId: null, isDisplay: true }),
+    ];
+    hub.publish({ type: "queueFailed", item, reason: "Video unavailable" });
+    stops.forEach((stop) => stop());
+
+    const mine = {
+      type: "queueFailed",
+      item: shared(true),
+      reason: "Video unavailable",
+    };
+    assert.deepEqual(failures.get("d"), [mine]);
+    assert.deepEqual(failures.get("d again"), [mine]);
+    assert.deepEqual(failures.get("display"), [
+      { ...mine, item: shared(false) },
+    ]);
+    assert.deepEqual(failures.get("other"), []);
+    assert.deepEqual(failures.get("no ID"), []);
+  });
+
+  test("a failed download stays in the state until it's removed", async () => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const seen: string[][] = [];
+    const stop = hub.subscribe(
+      (event) => {
+        if (event.type === "state") {
+          seen.push(
+            event.state.downloads.map(
+              (d) => `${d.status}:${d.reason}:${d.isMine}`,
+            ),
+          );
+        }
+      },
+      { deviceId: "d" },
+    );
+    const { downloadQueue } = store.getState();
+    const download = startDownload(downloadQueue, {
+      kind: "youtube",
+      userIdentity: item.user,
+      songId: "jNQXAC9IVRw",
+      suffix: null,
+    });
+    await sleep(INTERVAL_MS * 3);
+    failDownload(downloadQueue, download, "Private video");
+    await sleep(INTERVAL_MS * 3);
+    removeDownload(downloadQueue, download);
+    await sleep(INTERVAL_MS * 3);
+    stop();
+    assert.deepEqual(seen, [
+      [],
+      ["downloading:null:true"],
+      ["failed:Private video:true"],
+      [],
+    ]);
   });
 });
 
@@ -280,15 +372,13 @@ describe("createLiveHub", () => {
         progress.push(event.state.downloads.map((d) => d.progress));
       }
     });
-    const download = {
-      downloadType: 2,
+    const { downloadQueue } = store.getState();
+    const download = startDownload(downloadQueue, {
+      kind: "nico",
       userIdentity: { deviceId: "d", nickname: "n" },
       songId: "sm9",
       suffix: null,
-      progress: 0,
-    };
-    const { downloadQueue } = store.getState();
-    downloadQueue.push(download);
+    });
     await sleep(INTERVAL_MS * 3);
     download.progress = 0.5;
     await sleep(INTERVAL_MS * 3);

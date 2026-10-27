@@ -60,6 +60,8 @@ type Options = {
   // Take the remote's port before the app starts, so its server can't
   // listen.
   occupyPort: boolean;
+  // More environment variables for the app, e.g. KARAFRIENDS_YTDLP_PATH.
+  appEnv: Record<string, string>;
 };
 
 export type Karafriends = {
@@ -341,6 +343,7 @@ async function launchKarafriends(
       KARAFRIENDS_LOCAL_ONLY: "1",
       // Keep the full-screen display window off the user's screen.
       KARAFRIENDS_HIDE_WINDOW: "1",
+      ...options.appEnv,
     });
 
     app = await electron.launch({
@@ -435,6 +438,7 @@ export const test = base.extend<Options & Fixtures>({
   realCredentials: [false, { option: true }],
   appConfig: [{}, { option: true }],
   occupyPort: [false, { option: true }],
+  appEnv: [{}, { option: true }],
 
   // Checked once the test (and every fixture using it) is done.
   // oxlint-disable-next-line no-empty-pattern
@@ -459,13 +463,21 @@ export const test = base.extend<Options & Fixtures>({
       realCredentials,
       appConfig,
       occupyPort,
+      appEnv,
       graphqlRequests,
     },
     use,
     testInfo,
   ) => {
     const { karafriends, close } = await launchKarafriends(
-      { seedQueue, mediaTools, realCredentials, appConfig, occupyPort },
+      {
+        seedQueue,
+        mediaTools,
+        realCredentials,
+        appConfig,
+        occupyPort,
+        appEnv,
+      },
       graphqlRequests,
       testInfo,
     );
