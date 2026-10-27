@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Navigate } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
 import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
@@ -15,7 +15,6 @@ type Props = {
 };
 
 function AdhocLyricsControls({ id }: Props) {
-  const navigate = useNavigate();
   // Undefined until the live state arrives.
   const currentSong = useLiveState((state) =>
     state === null ? undefined : state.currentSong,
@@ -44,13 +43,8 @@ function AdhocLyricsControls({ id }: Props) {
     (currentSong !== undefined &&
       !isYouTubeVideoWithLyricsPlaying(currentSong, id))
   ) {
-    navigate("/");
-
-    return (
-      <div className={styles.noLyrics}>
-        Cannot find lyrics for the song with ID: {id}
-      </div>
-    );
+    // Not (or no longer) this phone's song with lyrics: back to search.
+    return <Navigate replace to="/" />;
   }
 
   const onSendLine = () => {

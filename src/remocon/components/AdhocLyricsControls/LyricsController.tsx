@@ -1,20 +1,17 @@
 import React from "react";
 
-import { CgTapSingle } from "../../icons";
+import { t } from "../../i18n";
 import * as styles from "./AdhocLyricsControls.module.scss";
 
 interface Props {
   onSendLine: () => void;
 }
 
-const LyricsController = ({ onSendLine }: Props) => {
-  return (
-    <div className={styles.controller} onClick={onSendLine}>
-      <div>
-        <strong>TAP HERE</strong> <CgTapSingle /> to send lyrics.
-      </div>
-    </div>
-  );
-};
+// The big target that shows the next line on the display.
+const LyricsController = ({ onSendLine }: Props) => (
+  <button type="button" className={styles.controller} onClick={onSendLine}>
+    {t("lyrics.sendLine")}
+  </button>
+);
 
 export default LyricsController;

@@ -1,0 +1,20 @@
+@use "../tokens" as *;
+
+// When and who, on two lines at the end of a row.
+.when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 9em;
+  padding-left: $kf-space-2;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.who {
+  max-width: 100%;
+  overflow: hidden;
+  color: $kf-text;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

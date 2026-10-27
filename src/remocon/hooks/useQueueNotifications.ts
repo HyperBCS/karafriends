@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import formatDuration from "format-duration";
 import { useLiveEvent } from "../../common/apiClient";
 import useQueue from "../../common/hooks/useQueue";
+import { t } from "../i18n";
 
 async function registerServiceWorker() {
   // static/notificationServiceWorker.js, served at the root.
@@ -14,7 +15,7 @@ async function registerServiceWorker() {
 async function showNotification(
   ...args: ConstructorParameters<typeof Notification>
 ) {
-  // Until the phone allows them (EnableNotificationsButton), showing one
+  // Until the phone allows them (on the profile screen), showing one
   // only throws.
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;
@@ -27,8 +28,9 @@ async function showNotification(
 }
 
 // Whenever the queue changes, tells this phone about its songs due within
-// ten minutes; and about its songs that couldn't be downloaded. It updates with the queue, so use it in a component of its
-// own (QueueNotifications), not one with the pages under it.
+// ten minutes, and about its songs that couldn't be downloaded. It updates
+// with the queue, so use it in a component of its own (QueueNotifications),
+// not one with the pages under it.
 export default function useQueueNotifications() {
   const queue = useQueue();
 
@@ -44,9 +46,10 @@ export default function useQueueNotifications() {
     for (const [item, eta] of queue) {
       if (item.isMine && eta <= 10 * 60) {
         showNotification("karafriends", {
-          body: `Your song ${
-            item.name
-          } is coming up soon! Estimated wait: T-${formatDuration(eta * 1000)}`,
+          body: t("notification.upSoon", {
+            name: item.name,
+            eta: formatDuration(eta * 1000),
+          }),
         }).catch((err) => console.warn("Couldn't show a notification:", err));
       }
     }
@@ -55,7 +58,7 @@ export default function useQueueNotifications() {
   // The server sends these only to the phone that queued the song.
   useLiveEvent("queueFailed", ({ item, reason }) => {
     showNotification("karafriends", {
-      body: `Couldn't download ${item.name}: ${reason}`,
+      body: t("notification.failed", { name: item.name, reason }),
     }).catch((err) => console.warn("Couldn't show a notification:", err));
   });
 }
