@@ -14,36 +14,37 @@ Download the zip for your computer from the [Releases page](https://github.com/H
 
 - The app opens full-screen on the main display. Plug in the TV before starting it, or move the window there.
 - The first start downloads ffmpeg and yt-dlp (for YouTube and Niconico songs), so be online and give it a minute.
-- To use your own copy of yt-dlp or ffmpeg (a newer yt-dlp when YouTube downloads keep failing, say), set `KARAFRIENDS_YTDLP_PATH` or `KARAFRIENDS_FFMPEG_PATH` to the program's full path before starting the app. karafriends then runs that file and never downloads that tool.
 - Windows asks whether to let karafriends through the firewall. Allow it on private networks, or phones can't connect.
-- Press `Q` to show or hide the sidebar: the QR code, the hostname and microphone settings, and the queue.
+- Until a DAM or Joysound login is set, the app opens on its Settings screen, with a line at the top saying so. Add a login there, or close Settings and use YouTube and Niconico songs only.
 
-### Settings: `config.yaml`
+### Settings
 
-The first start writes a `config.yaml` with every setting. Edit it with any text editor while the app is closed, then start the app again. A settings screen on the display is coming in a later update (phase D), with Export and Import buttons that move this whole file, DAM and Joysound logins and the admin password included, to another computer, so keep an exported file as safe as the logins themselves.
+Open Settings with the gear on the idle screen, or press `S`. Escape or Close puts it away. Each field saves when you leave it.
 
-| System  | Where it is                                             |
-| ------- | ------------------------------------------------------- |
-| Windows | `%APPDATA%\karafriends\config.yaml`                     |
-| macOS   | `~/Library/Application Support/karafriends/config.yaml` |
-| Linux   | `~/.config/karafriends/config.yaml`                     |
+- **DAM login** and **Joysound login**: your username (for Joysound, your email) and password. Test login signs in once and says whether it worked. DAM and Joysound only answer from a Japanese IP address: outside Japan, run a VPN to Japan on this computer, or set a proxy in Japan below. Without a login, only YouTube and Niconico songs work.
+- **Admin password**: a guest who types it on the phone's profile screen becomes an admin. Changing or clearing it signs every phone out. With none set, no phone can be an admin; the display always is one.
+- **Queue**: supervised mode (only a song's singer or an admin can pause, skip or remove it), and how many songs each phone may have queued at once (0 for no limit).
+- **Remote port and proxy**: the port phones connect to (8080 unless you change it), and a proxy for DAM and Joysound. These take effect after a restart, and Settings shows a Restart button once you change one. If another program already uses the port, the display says phones can't connect; pick another port.
+- **QR code address**: what the QR code on the idle screen points at. If a phone can't open `karafriends.local`, pick this computer's IP address here and scan again.
+- **Microphones**: pick each microphone and its channel. Clear mics removes them all.
+- **Tools**: the yt-dlp and ffmpeg versions in use. When the display says YouTube downloads are failing, press Update tools: it downloads both again, which takes a few minutes. To use your own copy instead (a newer yt-dlp, say), set `KARAFRIENDS_YTDLP_PATH` or `KARAFRIENDS_FFMPEG_PATH` to the program's full path before starting the app; karafriends then never downloads that tool.
+- **Config file**: Export config saves everything on this screen to a file, the DAM and Joysound logins and the admin password included, so keep the file as safe as the logins. Import config reads such a file back, on this computer or another, lists anything it couldn't use, and tests both logins.
 
-- `damUsername` and `damPassword`, `joysoundEmail` and `joysoundPassword`: your DAM and Joysound logins. Without them, only YouTube and Niconico songs work.
-- DAM and Joysound only answer from a Japanese IP address. Outside Japan, run a VPN to Japan on this computer, or set `proxyEnable`, `proxyHost` and `proxyPort` (and `proxyUser` and `proxyPass` if it needs them) to a proxy in Japan.
-- `remoconPort`: the port phones connect to, 8080 unless you change it. If another program already uses it, the display still works and shows a banner saying phones can't connect; pick another port.
-- `supervisedMode: true`: only an admin or the person singing can pause, skip or change the key.
-- `paxSongQueueLimit`: how many songs each person may have queued at once (0 for no limit).
-- `adminPasswordSalt` and `adminPasswordHash`: the admin password. A guest who types it on the phone's profile page (the person icon, top right) becomes an admin until they sign out; the display is always one. Without it, no phone can be an admin. Once the display has its Settings screen, you'll set the password there. Until then, run this with your password in place of `your password` (it uses scrypt with a random 16-byte salt, a 64-byte key and N=16384, r=8, p=1, as the app does), and, with the app closed, replace the `adminPasswordSalt` and `adminPasswordHash` lines in `config.yaml` with the two it prints:
-
-  ```sh
-  node -e "const c=require('crypto'),s=c.randomBytes(16).toString('hex'),h=c.scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1}).toString('hex');console.log('adminPasswordSalt: '+JSON.stringify(s)+'\nadminPasswordHash: '+JSON.stringify(h))" "your password"
-  ```
-
-  Phones stay signed in when the app restarts. The older `adminDeviceIds` and `adminNicks` settings no longer do anything, and the app removes them from `config.yaml`.
+The settings live in `config.yaml` in the app's data folder (`%APPDATA%\karafriends` on Windows, `~/Library/Application Support/karafriends` on macOS, `~/.config/karafriends` on Linux); to move them to another computer, use Export config and Import config.
 
 ### Phones
 
-Phones join the same Wi-Fi as the computer and scan the QR code in the sidebar. If a phone can't open `karafriends.local`, pick the computer's IP address under Hostname in the sidebar and scan again. Guests choose a nickname, search DAM, Joysound, YouTube or Niconico, and queue songs; the queue plays in order.
+- Phones join the same Wi-Fi as the computer and scan the QR code on the idle screen.
+- A new phone first picks a nickname on the profile screen. It shows next to the songs that phone queues, and the profile button (top right) changes it later.
+- One search box covers DAM and Joysound: search by title or by artist, in both catalogs or just one. To queue a YouTube or Niconico video, paste its link (or its video ID) into the same box.
+- The queue is in the now-playing bar at the bottom of the phone's screen. Songs play in the order they were queued.
+- The profile screen also switches the remote between English and Japanese (日本語), and turns on notifications for when your song is up soon.
+- To become an admin, a guest types the admin password on the profile screen and presses Sign in. An admin can move any song to the top, up or down, and pause, skip or remove any song. Sign out is on the same screen. Phones stay signed in when the app restarts.
+
+### Keys on the display
+
+- `Q`: show or hide the up-next strip under a playing song.
+- `S`: open Settings. Escape closes it.
 
 ## Building
 
