@@ -8,6 +8,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - The display and the phone remote are dark now, with one accent color and larger type. The remote can be switched to Japanese (it picks the phone's language at first).
 - Admins sign in on the phone with an admin password (`adminPasswordSalt` and `adminPasswordHash` in `config.yaml`) from a new profile page, and stay signed in across restarts. `adminDeviceIds` and `adminNicks` are gone; device IDs still decide whose song is whose.
 - The app can now change its settings while it runs, test the DAM and Joysound logins, and export and import the whole config (logins included) for the coming settings screen. Changing a login takes effect at the next search; the port and proxy still need a restart.
+- Admins can reorder the queue (`moveSong`: to the top, or to any place in it); the phone buttons for it come with the remote's refresh.
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 
 ## 0.1.0
