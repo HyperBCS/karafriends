@@ -795,8 +795,12 @@ const resolvers = {
       return db.songQueue;
     },
     config: () => {
+      // Every phone can read this, so return only what the schema exposes,
+      // never the whole config with its DAM/Joysound/proxy credentials.
       return {
-        ...karafriendsConfig,
+        adminNicks: karafriendsConfig.adminNicks,
+        adminDeviceIds: karafriendsConfig.adminDeviceIds,
+        supervisedMode: karafriendsConfig.supervisedMode,
         __typename: "KarafriendsConfig",
       };
     },
