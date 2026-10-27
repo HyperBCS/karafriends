@@ -1,5 +1,4 @@
-import M from "materialize-css";
-import React, { useEffect } from "react";
+import React, { useId } from "react";
 
 import "./global";
 import { InputDevice } from "./nativeAudio";
@@ -22,15 +21,14 @@ interface Props {
 }
 
 export default function MicrophoneSetting({ mic, onChange }: Props) {
-  useEffect(() => {
-    M.AutoInit();
-  }, []);
+  const id = useId();
 
   console.log(window.karafriends.nativeAudio.inputDevices());
 
   return (
     <div className="input-field">
       <select
+        id={id}
         value={mic ? `${mic.name}_${mic.channelSelection}` : ""}
         onChange={(e) => {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
@@ -56,7 +54,7 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
             )),
           )}
       </select>
-      <label>Microphone</label>
+      <label htmlFor={id}>Microphone</label>
     </div>
   );
 }

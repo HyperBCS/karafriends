@@ -4,7 +4,6 @@ import invariant from "ts-invariant";
 import FadeIn from "react-fade-in";
 import type { AdhocLyricsEntry } from "../common/api";
 import { useLiveState } from "../common/apiClient";
-import { withLoader } from "../common/components/Loader";
 
 import "./AdhocLyrics.css";
 
@@ -98,4 +97,4 @@ function AdhocLyrics() {
   );
 }
 
-export default withLoader(AdhocLyrics);
+export default AdhocLyrics;

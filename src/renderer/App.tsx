@@ -1,13 +1,11 @@
-import M from "materialize-css";
-import "materialize-css/dist/css/materialize.css";
 import React, { useEffect, useState } from "react";
 
 import { useLiveEvent } from "../common/apiClient";
 import { HOSTNAME } from "../common/constants";
 import { KuroshiroSingleton } from "../common/joysoundParser";
+import "./ui.css";
 import "./App.css";
 import Effects from "./Effects";
-import escapeHtml from "./escapeHtml";
 import HostnameSetting from "./HostnameSetting";
 import MicrophoneSetting from "./MicrophoneSetting";
 import { InputDevice } from "./nativeAudio";
@@ -15,6 +13,7 @@ import Player from "./Player";
 import QRCode from "./QRCode";
 import Queue from "./Queue";
 import RemoconNotice from "./RemoconNotice";
+import toast from "./toast";
 import KarafriendsAudio from "./webAudio";
 
 interface SavedMic {
@@ -73,9 +72,7 @@ function App(props: {
   }, [sidebarVisible]);
 
   useLiveEvent("queueAdded", ({ item }) => {
-    M.toast({
-      html: `<h3>${escapeHtml(item.name)} - ${escapeHtml(item.artistName)}</h3>`,
-    });
+    toast(`${item.name} - ${item.artistName}`, { heading: true });
   });
 
   const onChangeMic = (index: number, newMic: InputDevice) => {
@@ -91,7 +88,7 @@ function App(props: {
   };
 
   return (
-    <div className="appMainContainer black row">
+    <div className="appMainContainer row">
       <RemoconNotice />
       <div
         className={`appPlayer col ${
@@ -102,7 +99,7 @@ function App(props: {
         <Effects />
       </div>
       {sidebarVisible && (
-        <div className="appSidebar col s1 grey lighten-3">
+        <div className="appSidebar col s1">
           <QRCode hostname={hostname} />
           <nav className="center-align">Settings</nav>
           <div className="section center-align">
