@@ -1,6 +1,7 @@
-import { spawn } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
+import path from "path";
 import process from "process";
 
 import invariant from "ts-invariant";
@@ -13,22 +14,11 @@ import {
 } from "../main/graphql";
 import { JoysoundAPI, JoysoundSongRawData } from "../main/joysoundApi";
 
+import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
 const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
-
-const extraResourcesPath: string =
-  process.env.NODE_ENV === "development"
-    ? `${app.getAppPath()}/../../../extraResources/`
-    : `${process.resourcesPath}/extraResources/`;
-
-interface ResourcePaths {
-  // Path to the directory containing the ffmpeg executable
-  ffmpeg: string;
-  // Path to the ytdlp executable
-  ytdlp: string;
-}
 
 interface JoysoundVideoData {
   songId: string;
@@ -38,36 +28,71 @@ interface JoysoundVideoData {
   oggBuffer: Buffer;
 }
 
-const linuxResourcePaths: ResourcePaths = {
-  ffmpeg: `${extraResourcesPath}ffmpeg/linux/ffmpeg`,
-  ytdlp: `${extraResourcesPath}/ytdlp/yt-dlp`,
-};
+const resourcePaths = getResourcePaths();
 
-const macosResourcePaths: ResourcePaths = {
-  ffmpeg: `${extraResourcesPath}ffmpeg/macos/ffmpeg`,
-  ytdlp: `${extraResourcesPath}ytdlp/yt-dlp_macos`,
-};
+// Filesystem cleanup helpers. These run inside async spawn/exit callbacks where
+// an uncaught throw would crash the whole app, so they must never throw: a
+// missing or already-removed file during cleanup is not fatal.
+function safeUnlink(filename: string): void {
+  try {
+    fs.rmSync(filename, { force: true });
+  } catch (err) {
+    console.error(`Failed to remove ${filename}:`, err);
+  }
+}
 
-const winResourcePaths: ResourcePaths = {
-  ffmpeg: `${extraResourcesPath}ffmpeg/win/ffmpeg.exe`,
-  ytdlp: `${extraResourcesPath}ytdlp/yt-dlp.exe`,
-};
+function safeRename(from: string, to: string): void {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    console.error(`Failed to rename ${from} -> ${to}:`, err);
+  }
+}
 
-const resourcePaths: ResourcePaths =
-  process.platform === "win32"
-    ? winResourcePaths
-    : process.platform === "darwin"
-    ? macosResourcePaths
-    : linuxResourcePaths;
+// A spawned binary (ffmpeg / yt-dlp) emits an "error" event if it can't be
+// launched (missing, not executable, etc). Unhandled, an EventEmitter "error"
+// throws and crashes the app -- a real risk now that these binaries are
+// downloaded at runtime. Log it and run the caller's cleanup instead of letting
+// one failed download take everything down.
+function handleProcessError(
+  proc: ChildProcess,
+  label: string,
+  cleanup: () => void,
+): void {
+  proc.on("error", (err) => {
+    console.error(`${label} failed to run:`, err);
+    try {
+      cleanup();
+    } catch (cleanupErr) {
+      console.error(`${label} cleanup failed:`, cleanupErr);
+    }
+  });
+}
+
+// A log write stream can emit "error" (bad path, disk full); unhandled, it
+// crashes the app. Logging is best-effort, so swallow it.
+function attachLogStreamErrorHandler(
+  stream: fs.WriteStream,
+  label: string,
+): void {
+  stream.on("error", (err) => {
+    console.error(`${label} log stream error:`, err);
+  });
+}
 
 function deleteTempFiles(prefix: string): void {
-  for (const filename of fs.readdirSync(TEMP_FOLDER)) {
-    if (!filename) {
-      continue;
-    }
-
-    if (filename.includes(prefix)) {
-      fs.unlinkSync(filename);
+  let filenames: string[];
+  try {
+    filenames = fs.readdirSync(TEMP_FOLDER);
+  } catch (err) {
+    console.error(`Failed to list ${TEMP_FOLDER} for cleanup:`, err);
+    return;
+  }
+  for (const filename of filenames) {
+    if (filename && filename.includes(prefix)) {
+      // NB: readdirSync returns bare names; they must be joined with
+      // TEMP_FOLDER or the unlink targets the wrong (cwd-relative) path.
+      safeUnlink(path.join(TEMP_FOLDER, filename));
     }
   }
 }
@@ -75,7 +100,7 @@ function deleteTempFiles(prefix: string): void {
 function handleFFmpegDownloadLog(
   log: string,
   songFrames: number,
-  downloadQueueItem: DownloadQueueItem
+  downloadQueueItem: DownloadQueueItem,
 ): void {
   const frameMatchData = log.match(/frame=\s*(\d+)\s*/);
 
@@ -89,7 +114,7 @@ function handleFFmpegDownloadLog(
 
 function handleYoutubeDownloadLog(
   log: string,
-  downloadQueueItem: DownloadQueueItem
+  downloadQueueItem: DownloadQueueItem,
 ): void {
   const matchData = log.match(/\[download\]\s*(\d+\.\d)%/);
 
@@ -105,7 +130,7 @@ function isVideoCurrentlyDownloading(
   downloadQueue: DownloadQueueItem[],
   downloadType: number,
   songId: string,
-  suffix: string | null = null
+  suffix: string | null = null,
 ): boolean {
   if (!fs.existsSync(filename)) {
     return false;
@@ -115,7 +140,7 @@ function isVideoCurrentlyDownloading(
     (item) =>
       item.downloadType === downloadType &&
       item.songId === songId &&
-      item.suffix === suffix
+      item.suffix === suffix,
   );
 
   return Boolean(prevDownloadQueueItem);
@@ -125,13 +150,13 @@ export function getVideoDownloadProgress(
   downloadQueue: DownloadQueueItem[],
   downloadType: number,
   songId: string,
-  suffix: string | null = null
+  suffix: string | null = null,
 ): number {
   const downloadQueueItem = downloadQueue.find(
     (item) =>
       item.downloadType === downloadType &&
       item.songId === songId &&
-      item.suffix === suffix
+      item.suffix === suffix,
   );
 
   if (downloadQueueItem) {
@@ -143,7 +168,7 @@ export function getVideoDownloadProgress(
 
 function removeVideoDownloadFromQueue(
   downloadQueue: DownloadQueueItem[],
-  downloadQueueItem: DownloadQueueItem
+  downloadQueueItem: DownloadQueueItem,
 ): void {
   downloadQueue.splice(downloadQueue.indexOf(downloadQueueItem), 1);
 }
@@ -182,7 +207,7 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
 
   const playtimeBuffer = oggBuffer.subarray(
     fieldOffset,
-    fieldOffset + fieldLength
+    fieldOffset + fieldLength,
   );
 
   let playtimeString = "";
@@ -197,7 +222,19 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
 export function downloadDamVideo(
   m3u8Url: string,
   songId: string,
-  suffix: string
+  suffix: string,
+): void {
+  ensureExternalResources()
+    .then(() => downloadDamVideoImpl(m3u8Url, songId, suffix))
+    .catch((err) =>
+      console.error(`Error preparing external resources: ${err}`),
+    );
+}
+
+function downloadDamVideoImpl(
+  m3u8Url: string,
+  songId: string,
+  suffix: string,
 ): void {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);
@@ -215,6 +252,7 @@ export function downloadDamVideo(
 
   const ffmpegLogFilename = `${TEMP_FOLDER}/dam-${songId}.log`;
   const ffmpegLogStream = fs.createWriteStream(ffmpegLogFilename);
+  attachLogStreamErrorHandler(ffmpegLogStream, "ffmpeg (DAM)");
 
   const ffmpeg = spawn(
     resourcePaths.ffmpeg,
@@ -230,7 +268,7 @@ export function downloadDamVideo(
       "mp4",
       tempFilename,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] }
+    { stdio: ["ignore", "pipe", "pipe"] },
   );
 
   invariant(ffmpeg.stdout);
@@ -240,12 +278,14 @@ export function downloadDamVideo(
   ffmpeg.stderr.pipe(process.stderr);
   ffmpeg.stderr.pipe(ffmpegLogStream);
 
+  handleProcessError(ffmpeg, "ffmpeg (DAM)", () => safeUnlink(tempFilename));
+
   ffmpeg.on("exit", (code, signal) => {
     if (code === 0) {
-      fs.renameSync(tempFilename, filename);
+      safeRename(tempFilename, filename);
     } else {
       console.error(
-        `Error downloading DAM video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+        `Error downloading DAM video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
       );
     }
   });
@@ -257,11 +297,12 @@ function makeJoysoundFFmpegCall(
   ffmpegLogFilename: string,
   onStderrData: null | ((data: Buffer) => any),
   onExit: null | ((code: number, signal: number) => any),
-  stdinBuffer: Buffer | string | null
+  stdinBuffer: Buffer | string | null,
 ): void {
   const ffmpegLogStream = fs.createWriteStream(ffmpegLogFilename, {
     flags: "a",
   });
+  attachLogStreamErrorHandler(ffmpegLogStream, "ffmpeg (Joysound)");
 
   const ffmpeg = spawn(resourcePaths.ffmpeg, ffmpegArgs, {
     stdio: ["pipe", "pipe", "pipe"],
@@ -284,6 +325,14 @@ function makeJoysoundFFmpegCall(
     ffmpeg.on("exit", onExit);
   }
 
+  // If ffmpeg can't be launched at all, drive the same exit path (non-zero
+  // code) so the wrapping promise rejects instead of hanging or crashing.
+  handleProcessError(ffmpeg, "ffmpeg (Joysound)", () => {
+    if (onExit) {
+      onExit(-1, 0);
+    }
+  });
+
   if (stdinBuffer) {
     ffmpeg.stdin.write(stdinBuffer);
     ffmpeg.stdin.end();
@@ -296,7 +345,7 @@ function downloadJoysoundVideoPromise(
   downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
   tempFilename: string,
-  ffmpegLogFilename: string
+  ffmpegLogFilename: string,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     let songFrames = 0;
@@ -318,7 +367,7 @@ function downloadJoysoundVideoPromise(
       const ffmpegLog = ffmpegData.toString();
 
       const durationMatchData = ffmpegLog.match(
-        /Duration:\s*(\d+):(\d+):(\d+)/
+        /Duration:\s*(\d+):(\d+):(\d+)/,
       );
 
       if (durationMatchData) {
@@ -341,7 +390,7 @@ function downloadJoysoundVideoPromise(
         resolve(code);
       } else {
         console.error(
-          `Error downloading Joysound video with ID ${songId}: url=${videoUrl}, code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+          `Error downloading Joysound video with ID ${songId}: url=${videoUrl}, code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
         );
 
         reject(code);
@@ -354,7 +403,7 @@ function downloadJoysoundVideoPromise(
       ffmpegLogFilename,
       onStderrData,
       onExit,
-      null
+      null,
     );
   });
 }
@@ -364,11 +413,16 @@ function downloadJoysoundYoutubeVideoPromise(
   youtubeVideoId: string,
   downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
-  tempFilename: string
+  tempFilename: string,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const ytdlpLogFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}.log`;
     const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
+    attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
+
+    const env = { ...process.env };
+    // Don't need a proxy to download from YouTube
+    delete process.env.http_proxy;
 
     const ytdlp = spawn(
       resourcePaths.ytdlp,
@@ -388,7 +442,10 @@ function downloadJoysoundYoutubeVideoPromise(
         "--",
         youtubeVideoId!,
       ],
-      { stdio: ["ignore", "pipe", "pipe"] }
+      {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
 
     invariant(ytdlp.stdout);
@@ -403,17 +460,22 @@ function downloadJoysoundYoutubeVideoPromise(
       handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
     });
 
+    handleProcessError(ytdlp, "yt-dlp (Joysound/YouTube)", () => {
+      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+      reject(-1);
+    });
+
     ytdlp.on("exit", (code, signal) => {
       if (code === 0) {
-        fs.unlinkSync(tempFilename);
-        fs.renameSync(tempFilename + ".mp4", tempFilename);
+        safeUnlink(tempFilename);
+        safeRename(tempFilename + ".mp4", tempFilename);
 
         removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
 
         resolve(code);
       } else {
         console.error(
-          `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`
+          `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
         );
         reject(code);
       }
@@ -427,7 +489,7 @@ function composeJoysoundVideoPromise(
   oggBuffer: Buffer,
   tempFilename: string,
   videoFilename: string,
-  ffmpegLogFilename: string
+  ffmpegLogFilename: string,
 ): Promise<JoysoundVideoData> {
   return new Promise((resolve, reject) => {
     let videoPlaytime = 0;
@@ -453,7 +515,7 @@ function composeJoysoundVideoPromise(
       const ffmpegLog = ffmpegData.toString();
 
       const durationMatchData = ffmpegLog.match(
-        /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/
+        /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
       );
 
       // XXX: We assume that the video duration always comes first
@@ -467,7 +529,7 @@ function composeJoysoundVideoPromise(
     };
 
     const onExit = (code: number, signal: number) => {
-      fs.unlinkSync(tempFilename);
+      safeUnlink(tempFilename);
 
       if (code === 0) {
         const metadata: JoysoundVideoData = {
@@ -481,7 +543,7 @@ function composeJoysoundVideoPromise(
         resolve(metadata);
       } else {
         console.error(
-          `Error downloading Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+          `Error downloading Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
         );
 
         reject(code);
@@ -494,7 +556,7 @@ function composeJoysoundVideoPromise(
       ffmpegLogFilename,
       onStderrData,
       onExit,
-      oggBuffer
+      oggBuffer,
     );
   });
 }
@@ -507,8 +569,8 @@ function padJoysoundVideoPromise(
   pushToHead: boolean,
   pushSongToQueue: (
     queueItem: JoysoundQueueItem,
-    pushToHead: boolean
-  ) => QueueSongResult
+    pushToHead: boolean,
+  ) => QueueSongResult,
 ): Promise<number> {
   const videoBaseFilename = videoFilename.substr(0, videoFilename.length - 4);
 
@@ -536,7 +598,7 @@ function padJoysoundVideoPromise(
         resolve(code);
       } else {
         console.error(
-          `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+          `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
         );
 
         reject(code);
@@ -549,7 +611,7 @@ function padJoysoundVideoPromise(
       ffmpegLogFilename,
       null,
       onExit,
-      null
+      null,
     );
   })
     .then(() => {
@@ -571,7 +633,7 @@ function padJoysoundVideoPromise(
             resolve(code);
           } else {
             console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
             );
 
             reject(code);
@@ -584,7 +646,7 @@ function padJoysoundVideoPromise(
           ffmpegLogFilename,
           null,
           onExit,
-          null
+          null,
         );
       });
     })
@@ -610,7 +672,7 @@ function padJoysoundVideoPromise(
             resolve(code);
           } else {
             console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
             );
 
             reject(code);
@@ -623,7 +685,7 @@ function padJoysoundVideoPromise(
           ffmpegLogFilename,
           null,
           onExit,
-          null
+          null,
         );
       });
     })
@@ -655,7 +717,7 @@ function padJoysoundVideoPromise(
             resolve(code);
           } else {
             console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
             );
 
             reject(code);
@@ -668,7 +730,7 @@ function padJoysoundVideoPromise(
           ffmpegLogFilename,
           null,
           onExit,
-          null
+          null,
         );
       });
     })
@@ -692,21 +754,21 @@ function padJoysoundVideoPromise(
 
         const onExit = (code: number, signal: number) => {
           if (code === 0) {
-            fs.renameSync(videoFilename, videoTempFilename);
-            fs.renameSync(videoOutFilename, videoFilename);
+            safeRename(videoFilename, videoTempFilename);
+            safeRename(videoOutFilename, videoFilename);
 
-            fs.unlinkSync(videoNoSoundFilename);
-            fs.unlinkSync(videoPadFrameFilename);
-            fs.unlinkSync(videoPadFilename);
-            fs.unlinkSync(videoTempFilename);
-            fs.unlinkSync(videoConcatFilename);
+            safeUnlink(videoNoSoundFilename);
+            safeUnlink(videoPadFrameFilename);
+            safeUnlink(videoPadFilename);
+            safeUnlink(videoTempFilename);
+            safeUnlink(videoConcatFilename);
 
             pushSongToQueue(queueItem, pushToHead);
 
             resolve(code);
           } else {
             console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`
+              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
             );
 
             reject(code);
@@ -719,7 +781,7 @@ function padJoysoundVideoPromise(
           ffmpegLogFilename,
           null,
           onExit,
-          null
+          null,
         );
       });
     });
@@ -733,8 +795,35 @@ export function downloadJoysoundData(
   pushToHead: boolean,
   pushSongToQueue: (
     queueItem: JoysoundQueueItem,
-    pushToHead: boolean
-  ) => QueueSongResult
+    pushToHead: boolean,
+  ) => QueueSongResult,
+): void {
+  ensureExternalResources()
+    .then(() =>
+      downloadJoysoundDataImpl(
+        downloadQueue,
+        userIdentity,
+        joysoundApi,
+        queueItem,
+        pushToHead,
+        pushSongToQueue,
+      ),
+    )
+    .catch((err) =>
+      console.error(`Error preparing external resources: ${err}`),
+    );
+}
+
+function downloadJoysoundDataImpl(
+  downloadQueue: DownloadQueueItem[],
+  userIdentity: UserIdentity,
+  joysoundApi: JoysoundAPI,
+  queueItem: JoysoundQueueItem,
+  pushToHead: boolean,
+  pushSongToQueue: (
+    queueItem: JoysoundQueueItem,
+    pushToHead: boolean,
+  ) => QueueSongResult,
 ): void {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);
@@ -770,10 +859,10 @@ export function downloadJoysoundData(
       return;
     } else {
       console.error(
-        `${videoFilename} already exists, but ${telopFilename} does not.`
+        `${videoFilename} already exists, but ${telopFilename} does not.`,
       );
 
-      fs.unlinkSync(videoFilename);
+      safeUnlink(videoFilename);
     }
   }
 
@@ -783,7 +872,7 @@ export function downloadJoysoundData(
       downloadQueue,
       0,
       songId,
-      queueItem.youtubeVideoId
+      queueItem.youtubeVideoId,
     )
   ) {
     console.error(`${videoFilename} was already queued, not redownloading`);
@@ -816,7 +905,7 @@ export function downloadJoysoundData(
       queueItem.youtubeVideoId,
       downloadQueue,
       downloadQueueItem,
-      tempFilename
+      tempFilename,
     );
   } else {
     videoDataPromise = joysoundApi.getMovieUrls(songId).then((data) => {
@@ -828,7 +917,7 @@ export function downloadJoysoundData(
         downloadQueue,
         downloadQueueItem,
         tempFilename,
-        ffmpegLogFilename
+        ffmpegLogFilename,
       );
     });
   }
@@ -844,12 +933,12 @@ export function downloadJoysoundData(
 
       const telopBuffer = Buffer.from(
         telopBase64.slice(30) + telopBase64.slice(0, 30),
-        "base64"
+        "base64",
       );
 
       const oggBuffer = Buffer.from(
         oggBase64.slice(30) + oggBase64.slice(0, 30),
-        "base64"
+        "base64",
       );
 
       if (!fs.existsSync(telopFilename)) {
@@ -862,7 +951,7 @@ export function downloadJoysoundData(
         oggBuffer,
         tempFilename,
         videoFilename,
-        ffmpegLogFilename
+        ffmpegLogFilename,
       );
     })
     .then((data) => {
@@ -881,11 +970,20 @@ export function downloadJoysoundData(
           ffmpegLogFilename,
           queueItem,
           pushToHead,
-          pushSongToQueue
+          pushSongToQueue,
         );
       } else {
         pushSongToQueue(queueItem, pushToHead);
       }
+    })
+    .catch((err) => {
+      // This chain is fire-and-forget (not awaited by the caller), so an
+      // unhandled rejection here — a Joysound API failure, an ffmpeg/yt-dlp
+      // launch failure, bad telop/ogg data, etc. — would otherwise reach the
+      // process-level handler and crash the app. Fail just this download.
+      console.error(`Error downloading Joysound video with ID ${songId}:`, err);
+      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+      deleteTempFiles(filenamePrefix);
     });
 }
 
@@ -894,11 +992,33 @@ export function downloadYoutubeVideo(
   userIdentity: UserIdentity,
   videoId: string,
   captionCode: string | null,
-  onComplete: () => any
+  onComplete: () => any,
+): void {
+  ensureExternalResources()
+    .then(() =>
+      downloadYoutubeVideoImpl(
+        downloadQueue,
+        userIdentity,
+        videoId,
+        captionCode,
+        onComplete,
+      ),
+    )
+    .catch((err) =>
+      console.error(`Error preparing external resources: ${err}`),
+    );
+}
+
+function downloadYoutubeVideoImpl(
+  downloadQueue: DownloadQueueItem[],
+  userIdentity: UserIdentity,
+  videoId: string,
+  captionCode: string | null,
+  onComplete: () => any,
 ): void {
   if (captionCode !== null && !captionCodeRe.test(captionCode)) {
     console.error(
-      `Error downloading Youtube Video. ${captionCode} is not a valid caption code`
+      `Error downloading Youtube Video. ${captionCode} is not a valid caption code`,
     );
     return;
   }
@@ -942,6 +1062,8 @@ export function downloadYoutubeVideo(
 
   const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
 
+  attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
+
   const captionArgs = captionCode
     ? ["--write-subs", "--sub-langs", captionCode]
     : [];
@@ -963,7 +1085,7 @@ export function downloadYoutubeVideo(
       "--",
       videoId,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] }
+    { stdio: ["ignore", "pipe", "pipe"] },
   );
 
   invariant(ytdlp.stdout);
@@ -978,14 +1100,19 @@ export function downloadYoutubeVideo(
     handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
+  handleProcessError(ytdlp, "yt-dlp", () => {
+    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+    safeUnlink(tempFilename);
+  });
+
   ytdlp.on("exit", (code, signal) => {
     removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
 
-    fs.unlinkSync(tempFilename);
+    safeUnlink(tempFilename);
 
     if (code !== 0) {
       console.error(
-        `Error downloading Youtube Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`
+        `Error downloading Youtube Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
       );
       return;
     }
@@ -995,7 +1122,7 @@ export function downloadYoutubeVideo(
         fs.renameSync(`${writeBasePath}.${captionCode}.vtt`, vttFilename);
       } catch (fsError) {
         console.error(
-          `Error trying to rename caption file ${writeBasePath}.${captionCode}.vtt to ${writeBasePath}.vtt: ${fsError}`
+          `Error trying to rename caption file ${writeBasePath}.${captionCode}.vtt to ${writeBasePath}.vtt: ${fsError}`,
         );
       }
     }
@@ -1008,7 +1135,22 @@ export function downloadNicoVideo(
   downloadQueue: DownloadQueueItem[],
   userIdentity: UserIdentity,
   videoId: string,
-  onComplete: () => any
+  onComplete: () => any,
+): void {
+  ensureExternalResources()
+    .then(() =>
+      downloadNicoVideoImpl(downloadQueue, userIdentity, videoId, onComplete),
+    )
+    .catch((err) =>
+      console.error(`Error preparing external resources: ${err}`),
+    );
+}
+
+function downloadNicoVideoImpl(
+  downloadQueue: DownloadQueueItem[],
+  userIdentity: UserIdentity,
+  videoId: string,
+  onComplete: () => any,
 ): void {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);
@@ -1048,6 +1190,12 @@ export function downloadNicoVideo(
 
   const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
 
+  attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
+
+  const env = { ...process.env };
+  // Don't need a proxy to download from Niconico
+  delete process.env.http_proxy;
+
   const ytdlp = spawn(
     resourcePaths.ytdlp,
     [
@@ -1058,7 +1206,10 @@ export function downloadNicoVideo(
       "--",
       `https://www.nicovideo.jp/watch/${videoId}`,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] }
+    {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
 
   invariant(ytdlp.stdout);
@@ -1073,16 +1224,21 @@ export function downloadNicoVideo(
     handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
+  handleProcessError(ytdlp, "yt-dlp", () => {
+    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+    safeUnlink(tempFilename);
+  });
+
   ytdlp.on("exit", (code, signal) => {
     removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
 
-    fs.unlinkSync(tempFilename);
+    safeUnlink(tempFilename);
 
     if (code === 0) {
       onComplete();
     } else {
       console.error(
-        `Error downloading Niconico Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`
+        `Error downloading Niconico Video with ID ${videoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
       );
     }
   });

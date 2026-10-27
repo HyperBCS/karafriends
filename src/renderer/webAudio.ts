@@ -12,7 +12,7 @@ export default class KarafriendsAudio {
     this.vocoderNode = null;
     try {
       this.audioContext.audioWorklet
-        .addModule(new URL("./audio/phazeAudioWorklet.ts", import.meta.url))
+        .addModule(new URL("worklet:./audio/phazeAudioWorklet.ts", import.meta.url))
         .then(() => {
           try {
             // Operations that might throw synchronous errors
@@ -46,7 +46,7 @@ export default class KarafriendsAudio {
       // @ts-expect-error i swear there's a .get method on this object.
       this.vocoderNode.parameters.get("pitchFactor").value = Math.pow(
         2,
-        semitones / 12
+        semitones / 12,
       );
     }
   }

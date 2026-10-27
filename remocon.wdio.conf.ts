@@ -1,9 +1,15 @@
-const { execFileSync } = require("child_process");
+import { execFileSync } from "child_process";
+import "fs";
 
-exports.config = {
+console.log(
+  `Dev port: ${process.env.KARAFRIENDS_DEV_PORT}, remocon port: ${process.env.KARAFRIENDS_REMOCON_PORT}`,
+);
+
+export const config = {
   capabilities: [
     {
       browserName: "chrome",
+      browserVersion: "stable",
       "goog:chromeOptions": {
         mobileEmulation: {
           // Pixel 6-esque settings
@@ -17,22 +23,24 @@ exports.config = {
         },
       },
     },
-    ...(process.platform === "darwin" && [
-      {
-        browserName: "Safari",
-        platformName: "iOS",
-        "safari:deviceType": "iPhone",
-        "safari:useSimulator": true,
-      },
-    ]),
+    ...(process.platform === "darwin"
+      ? [
+          {
+            browserName: "Safari",
+            platformName: "iOS",
+            "safari:deviceType": "iPhone",
+            "safari:useSimulator": true,
+          },
+        ]
+      : []),
   ],
-  connectionRetryTimeout: 5 * 60 * 1000,
+  connectionRetryTimeout: 10 * 60 * 1000,
   framework: "mocha",
+  logLevel: "warn",
   mochaOpts: {
-    timeout: 5 * 60 * 1000,
+    timeout: 10 * 60 * 1000,
   },
   runner: "local",
-  services: [["chromedriver"], ["safaridriver"]],
   specs: ["tests/wdio/remocon/**"],
   beforeSession: (_config, caps, _specs) => {
     if (caps["safari:useSimulator"] === true) {
@@ -42,14 +50,21 @@ exports.config = {
           "simctl",
           "create",
           "karafriendsIntegrationDevice",
-          "com.apple.CoreSimulator.SimDeviceType.iPhone-12",
-          "com.apple.CoreSimulator.SimRuntime.iOS-15-5",
+          "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+          "com.apple.CoreSimulator.SimRuntime.iOS-18-1",
         ],
-        { encoding: "utf-8" }
+        { encoding: "utf-8" },
       ).trim();
       execFileSync("xcrun", ["simctl", "bootstatus", udid, "-b"], {
         stdio: "inherit",
       });
+      execFileSync(
+        "xcrun",
+        ["simctl", "launch", udid, "com.apple.mobilesafari"],
+        {
+          stdio: "inherit",
+        },
+      );
       caps["safari:deviceUDID"] = udid;
     }
   },

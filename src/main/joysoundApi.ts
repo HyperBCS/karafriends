@@ -1,5 +1,6 @@
-import { RESTDataSource } from "apollo-datasource-rest";
-import fetch from "node-fetch";
+import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
+import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
+import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
 const COOKIE_IDS: string[] = ["AWSALB", "AWSALBCORS", "JSESSIONID"];
@@ -60,7 +61,7 @@ interface ServiceTypeData {
 
 function generateCookieString(cookies: JoysoundCookies) {
   return COOKIE_IDS.map(
-    (cookieId) => cookieId + "=" + cookies[cookieId as keyof JoysoundCookies]
+    (cookieId) => cookieId + "=" + cookies[cookieId as keyof JoysoundCookies],
   ).join("; ");
 }
 
@@ -115,12 +116,14 @@ function unescapeJoysoundString(str: string) {
 }
 
 export class JoysoundAPI extends RESTDataSource {
+  override baseURL = "https://www.sound-cafe.jp";
   credsProvider: JoysoundCredentialsProvider;
 
-  constructor(credsProvider: JoysoundCredentialsProvider) {
-    super();
-
-    this.baseURL = "https://www.sound-cafe.jp";
+  constructor(
+    credsProvider: JoysoundCredentialsProvider,
+    options: DataSourceConfig,
+  ) {
+    super(options);
     this.credsProvider = credsProvider;
   }
 
@@ -135,18 +138,19 @@ export class JoysoundAPI extends RESTDataSource {
       `[joysound] curl ${
         this.baseURL
       }${url} -d "${body}" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Cookie: ${generateCookieString(
-        creds.cookies
-      )}" -H "X-CSRF-TOKEN: ${creds.csrfToken}"`
+        creds.cookies,
+      )}" -H "X-CSRF-TOKEN: ${creds.csrfToken}"`,
     );
 
-    return super.post(url, body, {
+    return super.post(url, {
+      body,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         Cookie: generateCookieString(creds.cookies),
-        "X-CSRF-TOKEN": creds.csrfToken,
         Referer: "https://www.sound-cafe.jp/player",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
+        "X-CSRF-TOKEN": creds.csrfToken,
       },
     });
   }
@@ -166,9 +170,13 @@ export class JoysoundAPI extends RESTDataSource {
   }
 
   async getMovieUrls(id: string) {
-    return this.post<JoysoundMovieList>("/player/contentsInfo", {
-      songNumber: id,
-      serviceType: "003000761",
+    return promiseRetry((retryFn, retryCount: number) => {
+      console.log(`contentsInfo for songId: ${id}, retry no. ${retryCount}`);
+
+      return this.post<JoysoundMovieList>("/player/contentsInfo", {
+        songNumber: id,
+        serviceType: "003000761",
+      }).catch(retryFn);
     });
   }
 
@@ -186,15 +194,13 @@ export class JoysoundAPI extends RESTDataSource {
       };
     }
 
-    const data = await this.get(
-      `songdetail/${id}`,
-      {},
-      { headers: { Cookie: generateCookieString(creds.cookies) } }
-    );
+    const data = await this.get(`songdetail/${id}`, {
+      headers: { Cookie: generateCookieString(creds.cookies) },
+    });
 
     const re = new RegExp(
       /<div class="flex items-center w-full border-b border-gray">([^<>]*)/,
-      "g"
+      "g",
     );
 
     const results: string[] = [];
@@ -213,7 +219,7 @@ export class JoysoundAPI extends RESTDataSource {
     invariant(tieUp !== undefined);
 
     const lyricsPreview = data.match(
-      /<div class="flex items-center w-full border-b select-none border-gray">([^<>]*)/
+      /<div class="flex items-center w-full border-b select-none border-gray">([^<>]*)/,
     )[1];
     invariant(lyricsPreview !== undefined);
 
@@ -255,9 +261,13 @@ export class JoysoundAPI extends RESTDataSource {
   }
 
   async getSongRawData(id: string) {
-    return this.post<JoysoundSongRawData>("/player/getFME", {
-      songNumber: id,
-      serviceType: "003000761",
+    return promiseRetry((retryFn, retryCount: number) => {
+      console.log(`getFME for songId: ${id}, retry no. ${retryCount}`);
+
+      return this.post<JoysoundSongRawData>("/player/getFME", {
+        songNumber: id,
+        serviceType: "003000761",
+      }).catch(retryFn);
     });
   }
 
@@ -284,7 +294,7 @@ export class JoysoundAPI extends RESTDataSource {
       })
       .then((respBody) => {
         const matchData = respBody.match(
-          /<meta name="_csrf" content="([^"]+)" \/>/
+          /<meta name="_csrf" content="([^"]+)" \/>/,
         );
         invariant(matchData);
 
@@ -349,7 +359,7 @@ export class JoysoundAPI extends RESTDataSource {
       })
       .then((respBody) => {
         const matchData = respBody.match(
-          /<meta name="_csrf" content="([^"]+)" \/>/
+          /<meta name="_csrf" content="([^"]+)" \/>/,
         );
         invariant(matchData);
 

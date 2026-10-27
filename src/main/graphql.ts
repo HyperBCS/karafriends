@@ -3,16 +3,34 @@ import { createServer } from "http";
 import path from "path";
 import { WebSocketServer } from "ws";
 
+import { ApolloServer } from "@apollo/server"; // tslint:disable-line:no-submodule-imports
+import {
+  ApolloServerPluginCacheControlDisabled,
+  ApolloServerPluginInlineTraceDisabled,
+  ApolloServerPluginLandingPageDisabled,
+  ApolloServerPluginSchemaReportingDisabled,
+  ApolloServerPluginUsageReportingDisabled,
+} from "@apollo/server/plugin/disabled"; // tslint:disable-line:no-submodule-imports
+// tslint:disable-next-line:no-submodule-imports
+import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
+import { type FetcherRequestInit } from "@apollo/utils.fetcher";
+// tslint:disable-next-line:no-submodule-imports
+import { expressMiddleware } from "@as-integrations/express5";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { ApolloServer } from "apollo-server-express";
+// tslint:disable-next-line:no-implicit-dependencies
+import { app as electronApp, dialog } from "electron";
 import isDev from "electron-is-dev";
-import { Application } from "express";
+import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
-import { useServer } from "graphql-ws/lib/use/ws"; // tslint:disable-line:no-submodule-imports
+import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
 import { Nicovideo } from "niconico";
+import nodeFetch from "node-fetch";
+import tunnel from "tunnel";
+import { Innertube } from "youtubei.js";
 
-import karafriendsConfig from "../common/config";
-import rawSchema from "../common/schema.graphql";
+// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
+import rawSchema from "inline-string:../common/schema.graphql";
+import karafriendsConfig, { KarafriendsConfig } from "../common/config";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -22,10 +40,9 @@ import {
   TEMP_FOLDER,
 } from "./../common/videoDownloader";
 import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
-import { YoutubeAPI } from "./youtubeApi";
-
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 
+import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 
 export interface IDataSources {
@@ -33,7 +50,7 @@ export interface IDataSources {
     minsei: MinseiAPI;
     joysound: JoysoundAPI;
     dkwebsys: DkwebsysAPI;
-    youtube: YoutubeAPI;
+    youtube: Innertube;
   };
 }
 
@@ -166,10 +183,7 @@ interface NicoQueueItem extends QueueItemInterface {
 }
 
 type QueueItem =
-  | DamQueueItem
-  | JoysoundQueueItem
-  | YoutubeQueueItem
-  | NicoQueueItem;
+  DamQueueItem | JoysoundQueueItem | YoutubeQueueItem | NicoQueueItem;
 
 type QueueSongInfo = {
   readonly __typename: "QueueSongInfo";
@@ -302,25 +316,32 @@ const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
 // TODO: write a db interface and call these from within mutating methods instead of at their call sites
 function saveDb() {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
-  fs.writeFileSync(
-    DB_PATH,
-    JSON.stringify({
+  try {
+    if (!fs.existsSync(TEMP_FOLDER)) {
+      fs.mkdirSync(TEMP_FOLDER, { recursive: true });
+    }
+    const serialized = JSON.stringify({
       ...db,
       pitchShiftSemis: 0,
       currentSong: null,
       currentSongAdhocLyrics: [],
       songQueue: [db.currentSong, ...db.songQueue],
       downloadQueue: [],
-    }),
-    "utf-8"
-  );
+    });
+    // Write to a temp file and rename into place so an interrupted write can
+    // never leave a half-written queue.json that fails to parse on next launch.
+    const tmpPath = `${DB_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, serialized, "utf-8");
+    fs.renameSync(tmpPath, DB_PATH);
+  } catch (err) {
+    // A failed persist shouldn't take down the app; the in-memory queue is
+    // still intact and will be retried on the next mutation.
+    console.error(`Failed to persist queue to ${DB_PATH}:`, err);
+  }
 }
 
 function loadDb(): NotARealDb {
-  return {
+  const defaults: NotARealDb = {
     currentSong: null,
     currentSongAdhocLyrics: [],
     idToAdhocLyrics: {},
@@ -329,9 +350,27 @@ function loadDb(): NotARealDb {
     songQueue: [],
     downloadQueue: [],
     songHistory: [],
-    ...(fs.existsSync(DB_PATH) &&
-      JSON.parse(fs.readFileSync(DB_PATH, "utf-8"))),
   };
+  if (!fs.existsSync(DB_PATH)) {
+    return defaults;
+  }
+  try {
+    return { ...defaults, ...JSON.parse(fs.readFileSync(DB_PATH, "utf-8")) };
+  } catch (err) {
+    // A corrupt or partially-written queue.json (e.g. an interrupted save or a
+    // power loss mid-party) previously threw here at startup, bricking every
+    // launch. Preserve the bad file for debugging and start from a clean state.
+    console.error(
+      `Failed to load saved queue from ${DB_PATH}; ignoring it:`,
+      err,
+    );
+    try {
+      fs.renameSync(DB_PATH, `${DB_PATH}.corrupt`);
+    } catch (renameErr) {
+      console.error("Failed to back up corrupt queue file:", renameErr);
+    }
+    return defaults;
+  }
 }
 
 const pubsub = new PubSub();
@@ -359,18 +398,18 @@ interface WatchData {
 function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
   // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
   const songsQueuedByUser: number = db.songQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId
+    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
   ).length;
 
   const songsDownloadingByUser: number = db.downloadQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId
+    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
   ).length;
 
   console.log(
-    `hasMaxSongsInQueue: user ${userIdentity.nickname} has ${songsQueuedByUser}, ${songsDownloadingByUser} downloading`
+    `hasMaxSongsInQueue: user ${userIdentity.nickname} has ${songsQueuedByUser}, ${songsDownloadingByUser} downloading`,
   );
   console.log(
-    `adminNicks=${karafriendsConfig.adminNicks}, adminDeviceIds=${karafriendsConfig.adminDeviceIds}`
+    `adminNicks=${karafriendsConfig.adminNicks}, adminDeviceIds=${karafriendsConfig.adminDeviceIds}`,
   );
 
   return (
@@ -391,14 +430,16 @@ function canPushToHeadOfQueue(userIdentity: UserIdentity): boolean {
 
 function pushSongToQueue(
   queueItem: QueueItem,
-  pushToHead: boolean = false
+  pushToHead: boolean = false,
 ): QueueSongResult {
   const eta =
     (db.currentSong?.playtime || 0) +
     db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
 
   console.log(
-    `pushSongToQueue: pushing ${queueItem} with an eta of ${eta}; pushToHead=${pushToHead}`
+    `pushSongToQueue: pushing ${JSON.stringify(
+      queueItem,
+    )} with an eta of ${eta}; pushToHead=${pushToHead}`,
   );
 
   if (pushToHead === true) {
@@ -479,7 +520,7 @@ const resolvers = {
           url: karafriendsConfig.useLowBitrateUrl
             ? info.lowBitrateUrl
             : info.highBitrateUrl,
-        }))
+        })),
       );
     },
     scoringData(parent: SongParent, _: any, { dataSources }: IDataSources) {
@@ -504,7 +545,7 @@ const resolvers = {
     songs(
       parent: ArtistParent,
       args: { first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ) {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
@@ -540,7 +581,7 @@ const resolvers = {
             url: karafriendsConfig.useLowBitrateUrl
               ? info.lowBitrateUrl
               : info.highBitrateUrl,
-          }))
+          })),
         );
     },
     scoringData(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
@@ -556,7 +597,7 @@ const resolvers = {
     joysoundSongDetail: (
       _: any,
       args: { id: string },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<JoysoundSongParent> => {
       return dataSources.joysound.getSongDetail(args.id).then((data) => ({
         id: args.id,
@@ -566,7 +607,7 @@ const resolvers = {
     joysoundSongsByArtist: (
       _: any,
       args: { artistId: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<Connection<JoysoundSongParent, string>> => {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
@@ -593,7 +634,7 @@ const resolvers = {
     joysoundSongsByKeyword: (
       _: any,
       args: { keyword: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<Connection<JoysoundSongParent, string>> => {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
@@ -620,7 +661,7 @@ const resolvers = {
     joysoundArtistsByKeyword: (
       _: any,
       args: { keyword: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<Connection<JoysoundArtistParent, string>> => {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
@@ -646,7 +687,7 @@ const resolvers = {
     songsByName: (
       _: any,
       args: { name: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<Connection<SongParent, string>> => {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
@@ -675,7 +716,7 @@ const resolvers = {
     songById: (
       _: any,
       args: { id: string },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<SongParent> =>
       dataSources.dkwebsys.getMusicDetailsInfo(args.id).then((data) => ({
         id: args.id,
@@ -705,7 +746,7 @@ const resolvers = {
     artistsByName: (
       _: any,
       args: { name: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<Connection<ArtistParent, string>> => {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
@@ -733,7 +774,7 @@ const resolvers = {
     artistById: (
       _: any,
       args: { id: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<ArtistParent> => {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
@@ -762,7 +803,7 @@ const resolvers = {
     },
     songHistory: (
       _: any,
-      args: { first: number | null; after: string | null }
+      args: { first: number | null; after: string | null },
     ): Connection<SongHistoryItem, string> => {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
@@ -785,50 +826,52 @@ const resolvers = {
     youtubeVideoInfo: (
       _: any,
       args: { videoId: string },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): Promise<YoutubeVideoInfoResult> => {
-      return dataSources.youtube.getVideoInfo(args.videoId).then((data) => {
-        if (data.playabilityStatus.status !== "OK") {
-          return {
-            __typename: "YoutubeVideoInfoError",
-            reason: data.playabilityStatus.reason,
-          };
-        }
-        const captionLanguages: CaptionLanguage[] = [];
-        if (data?.captions) {
-          data.captions.playerCaptionsTracklistRenderer.captionTracks.forEach(
-            (captionTrack) => {
-              // auto-generated captions have a vssId that start with "a". Skip them
-              if (captionTrack.vssId.startsWith("a")) {
-                return;
-              }
-              captionLanguages.push({
-                code: captionTrack.languageCode,
-                name: captionTrack.name.simpleText,
-              });
+      return (
+        dataSources.youtube
+          .getBasicInfo(args.videoId)
+          // youtubei.js's response is loosely/partially typed and its shape
+          // shifts between versions, so treat it as untyped here.
+          .then((data: any) => {
+            if (data.playability_status?.status !== "OK") {
+              return {
+                __typename: "YoutubeVideoInfoError",
+                reason: data.playability_status?.reason ?? "Unknown",
+              };
             }
-          );
-        }
 
-        return {
-          __typename: "YoutubeVideoInfo",
-          author: data.videoDetails.author,
-          captionLanguages,
-          channelId: data.videoDetails.channelId,
-          keywords: data.videoDetails.keywords,
-          lengthSeconds: parseInt(data.videoDetails.lengthSeconds, 10),
-          description: data.videoDetails.shortDescription,
-          title: data.videoDetails.title,
-          viewCount: parseInt(data.videoDetails.viewCount, 10),
-          gainValue:
-            10 **
-            ((-1 * (data.playerConfig.audioConfig.loudnessDb || 0.0)) / 20),
-        };
-      });
+            const captionTracks = data.captions?.caption_tracks || [];
+            const captionLanguages: CaptionLanguage[] = captionTracks
+              .filter(
+                (captionTrack: any) => !captionTrack.vss_id.startsWith("a"),
+              )
+              .map((captionTrack: any) => ({
+                code: captionTrack.language_code,
+                name: captionTrack.name.text ?? "",
+              }));
+
+            const loudnessDb =
+              data.player_config?.audio_config?.loudness_db || 0.0;
+
+            return {
+              __typename: "YoutubeVideoInfo",
+              author: data.basic_info.author,
+              captionLanguages,
+              channelId: data.basic_info.channel_id,
+              keywords: data.basic_info.keywords,
+              lengthSeconds: data.basic_info.duration,
+              description: data.basic_info.short_description,
+              title: data.basic_info.title,
+              viewCount: data.basic_info.view_count,
+              gainValue: 10 ** ((-1 * loudnessDb) / 20),
+            };
+          })
+      );
     },
     nicoVideoInfo: async (
       _: any,
-      args: { videoId: string }
+      args: { videoId: string },
     ): Promise<NicoVideoInfoResult> => {
       try {
         // @ts-ignore
@@ -858,13 +901,13 @@ const resolvers = {
         videoDownloadType: number;
         songId: string;
         suffix: string | null;
-      }
+      },
     ): VideoDownloadProgress => {
       const progress = getVideoDownloadProgress(
         db.downloadQueue,
         args.videoDownloadType,
         args.songId,
-        args.suffix
+        args.suffix,
       );
 
       return { progress };
@@ -878,7 +921,7 @@ const resolvers = {
     queueJoysoundSong: (
       _: any,
       args: { input: QueueJoysoundSongInput; tryHeadOfQueue: boolean },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): QueueSongResult => {
       const queueItem: JoysoundQueueItem = {
         __typename: "JoysoundQueueItem",
@@ -895,7 +938,7 @@ const resolvers = {
 
       const pushToHead =
         args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
-      console.log(`queueDamSong: pushToHead=${pushToHead}`);
+      console.log(`queueJoysoundSong: pushToHead=${pushToHead}`);
 
       downloadJoysoundData(
         db.downloadQueue,
@@ -903,7 +946,7 @@ const resolvers = {
         dataSources.joysound,
         queueItem,
         pushToHead,
-        pushSongToQueue
+        pushSongToQueue,
       );
 
       return {
@@ -914,7 +957,7 @@ const resolvers = {
     queueDamSong: (
       _: any,
       args: { input: QueueDamSongInput; tryHeadOfQueue: boolean },
-      { dataSources }: IDataSources
+      { dataSources }: IDataSources,
     ): QueueSongResult => {
       const queueItem: DamQueueItem = {
         timestamp: Date.now().toString(),
@@ -949,7 +992,7 @@ const resolvers = {
     },
     queueYoutubeSong: (
       _: any,
-      args: { input: QueueYoutubeSongInput; tryHeadOfQueue: boolean }
+      args: { input: QueueYoutubeSongInput; tryHeadOfQueue: boolean },
     ): QueueSongResult => {
       const queueItem: YoutubeQueueItem = {
         timestamp: Date.now().toString(),
@@ -973,7 +1016,7 @@ const resolvers = {
 
       if (args.input.adhocSongLyrics) {
         db.idToAdhocLyrics[args.input.songId] = cleanupAdhocSongLyrics(
-          args.input.adhocSongLyrics
+          args.input.adhocSongLyrics,
         );
       }
 
@@ -982,7 +1025,7 @@ const resolvers = {
         queueItem.userIdentity,
         args.input.songId,
         args.input.captionCode,
-        pushSongToQueue.bind(null, queueItem, pushToHead)
+        pushSongToQueue.bind(null, queueItem, pushToHead),
       );
 
       // The song likely hasn't actually been added to the queue yet since it needs to download,
@@ -996,7 +1039,7 @@ const resolvers = {
     },
     queueNicoSong: (
       _: any,
-      args: { input: QueueNicoSongInput; tryHeadOfQueue: boolean }
+      args: { input: QueueNicoSongInput; tryHeadOfQueue: boolean },
     ): QueueSongResult => {
       const queueItem: NicoQueueItem = {
         timestamp: Date.now().toString(),
@@ -1019,7 +1062,7 @@ const resolvers = {
         db.downloadQueue,
         queueItem.userIdentity,
         args.input.songId,
-        pushSongToQueue.bind(null, queueItem, pushToHead)
+        pushSongToQueue.bind(null, queueItem, pushToHead),
       );
       // The song likely hasn't actually been added to the queue yet since it needs to download,
       // but let's optimistically return the eta assuming it will successfully queue
@@ -1032,7 +1075,7 @@ const resolvers = {
     },
     pushAdhocLyrics: (
       _: any,
-      args: { input: PushAdhocLyricsInput }
+      args: { input: PushAdhocLyricsInput },
     ): boolean => {
       db.currentSongAdhocLyrics.push({
         lyric: args.input.lyric,
@@ -1091,11 +1134,11 @@ const resolvers = {
     },
     removeSong: (
       _: any,
-      args: { songId: string; timestamp: string }
+      args: { songId: string; timestamp: string },
     ): boolean => {
       const songIdx = db.songQueue.findIndex(
         (item) =>
-          item.songId === args.songId && item.timestamp === args.timestamp
+          item.songId === args.songId && item.timestamp === args.timestamp,
       );
       db.songQueue.splice(songIdx, 1);
       pubsub.publish(SubscriptionEvent.QueueChanged, {
@@ -1116,7 +1159,7 @@ const resolvers = {
     },
     setPlaybackState: (
       _: any,
-      args: { playbackState: PlaybackState }
+      args: { playbackState: PlaybackState },
     ): boolean => {
       db.playbackState = args.playbackState;
       pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
@@ -1129,28 +1172,34 @@ const resolvers = {
   Subscription: {
     currentSongAdhocLyricsChanged: {
       subscribe: () =>
-        pubsub.asyncIterator([SubscriptionEvent.CurrentSongAdhocLyricsChanged]),
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.CurrentSongAdhocLyricsChanged,
+        ]),
     },
     currentSongChanged: {
       subscribe: () =>
-        pubsub.asyncIterator([SubscriptionEvent.CurrentSongChanged]),
+        pubsub.asyncIterableIterator([SubscriptionEvent.CurrentSongChanged]),
     },
     emote: {
-      subscribe: () => pubsub.asyncIterator([SubscriptionEvent.Emote]),
+      subscribe: () => pubsub.asyncIterableIterator([SubscriptionEvent.Emote]),
     },
     pitchShiftSemisChanged: {
       subscribe: () =>
-        pubsub.asyncIterator([SubscriptionEvent.PitchShiftSemisChanged]),
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.PitchShiftSemisChanged,
+        ]),
     },
     playbackStateChanged: {
       subscribe: () =>
-        pubsub.asyncIterator([SubscriptionEvent.PlaybackStateChanged]),
+        pubsub.asyncIterableIterator([SubscriptionEvent.PlaybackStateChanged]),
     },
     queueAdded: {
-      subscribe: () => pubsub.asyncIterator([SubscriptionEvent.QueueAdded]),
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.QueueAdded]),
     },
     queueChanged: {
-      subscribe: () => pubsub.asyncIterator([SubscriptionEvent.QueueChanged]),
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.QueueChanged]),
     },
   },
 };
@@ -1160,11 +1209,61 @@ const schema = makeExecutableSchema({
   resolvers,
 });
 
-export function applyGraphQLMiddleware(
-  app: Application,
-  minseiCredsProvider: MinseiCredentialsProvider,
-  joysoundCredsProvider: JoysoundCredentialsProvider
-) {
+export const minseiCredentialsProvider = memoize(async () => {
+  const { damUsername, damPassword } = karafriendsConfig;
+  const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
+  return {
+    userCode: damUsername,
+    authToken: minseiLoginResult.data.authToken,
+  };
+});
+
+export const joysoundCredentialsProvider = memoize(async () => {
+  const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
+  const joysoundPassword = encodeURIComponent(
+    karafriendsConfig.joysoundPassword,
+  );
+  return JoysoundAPI.login(joysoundEmail, joysoundPassword);
+});
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() =>
+    clearTimeout(timer),
+  ) as Promise<T>;
+}
+
+// Every GraphQL request awaits this to build its context, so if
+// Innertube.create() hangs (YouTube unreachable) it would stall the entire
+// API. memoize would also cache a rejected promise forever, permanently
+// killing the backend until restart. Use a manual singleton that times out and
+// clears itself on failure so the next request retries.
+let innertubePromise: Promise<Innertube> | null = null;
+function innertubeApiProvider(): Promise<Innertube> {
+  if (!innertubePromise) {
+    innertubePromise = withTimeout(
+      Innertube.create(),
+      30000,
+      "Innertube.create",
+    ).catch((err) => {
+      innertubePromise = null;
+      throw err;
+    });
+  }
+  return innertubePromise;
+}
+
+export function applyGraphQLMiddleware(app: Application) {
   const httpServer = createServer(app);
 
   const wsServer = new WebSocketServer({
@@ -1172,28 +1271,39 @@ export function applyGraphQLMiddleware(
     path: "/graphql",
   });
 
+  // These servers are EventEmitters: an unhandled "error" event (most commonly
+  // the remocon port already being in use) would otherwise crash the whole app
+  // with a bare stack trace. Fail loudly with a clear message and quit cleanly.
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      dialog.showErrorBox(
+        "karafriends: port already in use",
+        `Port ${karafriendsConfig.remoconPort} is already in use. ` +
+          "Is karafriends already running? Close the other instance " +
+          "(or free the port) and relaunch.",
+      );
+    } else {
+      console.error("HTTP server error:", err);
+    }
+    electronApp.quit();
+  });
+  wsServer.on("error", (err) => {
+    console.error("WebSocket server error:", err);
+  });
+
   const serverCleanup = useServer({ schema }, wsServer);
 
   db = loadDb();
 
-  const server = new ApolloServer({
-    dataSources: () => ({
-      minsei: new MinseiAPI(minseiCredsProvider),
-      joysound: new JoysoundAPI(joysoundCredsProvider),
-      dkwebsys: new DkwebsysAPI(),
-      youtube: new YoutubeAPI(),
-    }),
+  const server = new ApolloServer<IDataSources>({
     schema,
     plugins: [
-      {
-        async serverWillStart() {
-          return {
-            async drainServer() {
-              await serverCleanup.dispose();
-            },
-          };
-        },
-      },
+      ApolloServerPluginDrainHttpServer({ httpServer }),
+      ApolloServerPluginCacheControlDisabled(),
+      ApolloServerPluginInlineTraceDisabled(),
+      ApolloServerPluginLandingPageDisabled(),
+      ApolloServerPluginSchemaReportingDisabled(),
+      ApolloServerPluginUsageReportingDisabled(),
     ],
   });
 
@@ -1209,12 +1319,74 @@ export function applyGraphQLMiddleware(
     });
   }
 
-  server.start().then(() => {
-    server.applyMiddleware({ app });
-    httpServer.listen(karafriendsConfig.remoconPort, () => {
-      console.log(
-        `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`
+  const tunnelAgent = karafriendsConfig.proxyEnable
+    ? tunnel.httpsOverHttp({
+        proxy: {
+          host: karafriendsConfig.proxyHost,
+          port: karafriendsConfig.proxyPort,
+          proxyAuth: `${karafriendsConfig.proxyUser}:${karafriendsConfig.proxyPass}`,
+        },
+      })
+    : undefined;
+
+  const fetcher = async (url: string, init?: FetcherRequestInit) => {
+    // Without a timeout, a hung upstream (DAM/Joysound) stalls the resolver —
+    // and the client request — indefinitely. Abort after 30s so it surfaces as
+    // an error (and the promise-retry wrappers can retry) instead of hanging.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      return await nodeFetch(url, {
+        ...init,
+        agent: tunnelAgent,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  server
+    .start()
+    .then(() => {
+      app.use(
+        "/graphql",
+        express.json(),
+        expressMiddleware(server, {
+          context: async () => {
+            const innertubeApiInstance = await innertubeApiProvider();
+
+            return {
+              dataSources: {
+                minsei: new MinseiAPI(minseiCredentialsProvider, {
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                joysound: new JoysoundAPI(joysoundCredentialsProvider, {
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                dkwebsys: new DkwebsysAPI({
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                youtube: innertubeApiInstance,
+              },
+            };
+          },
+        }),
       );
+      httpServer.listen(karafriendsConfig.remoconPort, () => {
+        console.log(
+          `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
+        );
+      });
+    })
+    .catch((err) => {
+      // server.start() rejecting leaves the app with no GraphQL backend, so there
+      // is nothing useful to keep running — surface it and quit cleanly.
+      console.error("Failed to start the GraphQL server:", err);
+      dialog.showErrorBox("karafriends: failed to start", String(err));
+      electronApp.quit();
     });
-  });
 }

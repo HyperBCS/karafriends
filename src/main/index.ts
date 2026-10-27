@@ -1,3 +1,9 @@
+import { fileURLToPath } from "url";
+
+// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
+import { default as nativeAudioUrl } from "url:../../native/index.node";
+const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-line:no-var-requires
+
 import * as Sentry from "@sentry/node";
 
 Sentry.init({
@@ -5,9 +11,20 @@ Sentry.init({
   debug: true,
 });
 
+async function handleError(err: unknown) {
+  console.error("Fatal error:", err);
+  Sentry.captureException(err);
+  await Sentry.close(10 * 1000);
+  process.exit(1);
+}
+
+process.on("uncaughtException", handleError);
+process.on("unhandledRejection", handleError);
+
 import inspector from "inspector";
 
-inspector.open();
+// Start a debug server if we don't have one already. If we already have one, this would throw.
+if (inspector.url() === undefined) inspector.open();
 
 import path from "path";
 
@@ -23,9 +40,9 @@ import {
 } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import isDev from "electron-is-dev";
 import express from "express";
-import { memoize } from "lodash";
 
 import karafriendsConfig from "../common/config";
+import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { MinseiAPI } from "./damApi";
 import { applyGraphQLMiddleware } from "./graphql";
@@ -34,7 +51,8 @@ import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
 
-const nativeAudio = require("../../native"); // tslint:disable-line:no-var-requires
+// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
+import { default as preloadUrl } from "url:../preload";
 
 try {
   nativeAudio.allocConsole();
@@ -48,28 +66,20 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: "karafriends",
     privileges: {
+      // standard + corsEnabled make this scheme requestable cross-origin from
+      // the file:// renderer; without them Chromium blocks e.g. a <video src>
+      // pointing at karafriends:// with a CORS error. secure keeps it a
+      // trustworthy origin. NB: a standard scheme lowercases the URL host, so
+      // the (case-sensitive) file name must live in the path -- see the handler
+      // and the karafriends://local/<file> URLs in the renderer.
+      standard: true,
+      secure: true,
       supportFetchAPI: true,
+      corsEnabled: true,
       stream: true,
     },
   },
 ]);
-
-async function minseiCredentialsProvider() {
-  const { damUsername, damPassword } = karafriendsConfig;
-  const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
-  return {
-    userCode: damUsername,
-    authToken: minseiLoginResult.data.authToken,
-  };
-}
-
-async function joysoundCredentialsProvider() {
-  const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
-  const joysoundPassword = encodeURIComponent(
-    karafriendsConfig.joysoundPassword
-  );
-  return JoysoundAPI.login(joysoundEmail, joysoundPassword);
-}
 
 let rendererWindow: BrowserWindow | null;
 
@@ -83,10 +93,19 @@ function createWindow() {
       nodeIntegration: false,
       nodeIntegrationInSubFrames: false,
       nodeIntegrationInWorker: false,
-      preload: path.join(__dirname, "..", "preload", "main.js"),
+      preload: fileURLToPath(preloadUrl),
       sandbox: false,
       webSecurity: true,
     },
+  });
+
+  // A renderer crash (GPU reset, OOM, native fault) would otherwise leave the
+  // karaoke display permanently blank. Reload the window so the show goes on.
+  rendererWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`Renderer process gone (${details.reason})`);
+    if (details.reason !== "clean-exit") {
+      rendererWindow?.reload();
+    }
   });
 
   // Ignore CORS when fetching ipcasting HLS and when sending requests to remocon
@@ -103,7 +122,7 @@ function createWindow() {
     (details, callback) => {
       delete details.requestHeaders.Origin;
       callback({ requestHeaders: details.requestHeaders });
-    }
+    },
   );
 
   session.webRequest.onHeadersReceived(
@@ -111,39 +130,76 @@ function createWindow() {
     (details, callback) => {
       // Chrome is not happy if ACAO is set twice, which is what happens
       // when the Express static middleware is setting this one
-      delete details.responseHeaders!["access-control-allow-origin"];
-      details.responseHeaders!["Access-Control-Allow-Origin"] = ["*"];
+      if (details.responseHeaders) {
+        delete details.responseHeaders["access-control-allow-origin"];
+        details.responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+      }
       callback({ responseHeaders: details.responseHeaders });
-    }
+    },
   );
+
+  if (karafriendsConfig.proxyEnable) {
+    session
+      .setProxy({
+        proxyRules: `${karafriendsConfig.proxyHost}:${karafriendsConfig.proxyPort}`,
+        proxyBypassRules: "<local>,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8",
+      })
+      .catch((err) => console.error("Failed to set proxy:", err));
+  }
 
   protocol.registerFileProtocol("karafriends", (request, callback) => {
     console.log(`Got protocol request: ${request.method} ${request.url}`);
-    const url = request.url.substr(14 /* 'karafriends://'.length */);
-    callback({ path: path.normalize(`${TEMP_FOLDER}/${url}`) });
+    // URLs are karafriends://local/<file>; the case-sensitive file name is in
+    // the path (the standard-scheme host is lowercased, so it can't go there).
+    const file = decodeURIComponent(new URL(request.url).pathname).replace(
+      /^\/+/,
+      "",
+    );
+    callback({ path: path.join(TEMP_FOLDER, file) });
   });
 
   const expressApp = express();
 
   expressApp.use(compression());
 
-  applyGraphQLMiddleware(
-    expressApp,
-    memoize(minseiCredentialsProvider),
-    memoize(joysoundCredentialsProvider)
-  );
+  applyGraphQLMiddleware(expressApp);
 
   expressApp.use(remoconServiceWorkerAllowed());
 
   // This middleware terminates the request/response cycle and should be applied last
-  expressApp.use(remoconReverseProxy());
+  expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
 
-  if (rendererWindow)
-    rendererWindow.loadURL(
-      isDev
-        ? "http://localhost:3000/renderer/"
-        : `file://${path.join(__dirname, "..", "renderer", "index.html")}`
+  if (rendererWindow) {
+    const rendererUrl = isDev
+      ? `http://localhost:${karafriendsConfig.devPort}/renderer/`
+      : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}`;
+    // A failed load (dev server not ready, a transient file/protocol error)
+    // would leave the karaoke display blank, and the unhandled loadURL
+    // rejection would reach the process-level handler. Catch it and retry a few
+    // times so the show still comes up.
+    let rendererLoadAttempts = 0;
+    const loadRenderer = () => {
+      rendererWindow
+        ?.loadURL(rendererUrl)
+        .catch((err) =>
+          console.error(`Failed to load renderer ${rendererUrl}:`, err),
+        );
+    };
+    rendererWindow.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, _url, isMainFrame) => {
+        // -3 (ERR_ABORTED) is a benign navigation cancel, not a real failure.
+        if (!isMainFrame || errorCode === -3) return;
+        console.error(
+          `Renderer failed to load (${errorCode} ${errorDescription})`,
+        );
+        if (rendererLoadAttempts++ < 10) {
+          setTimeout(loadRenderer, 1000);
+        }
+      },
     );
+    loadRenderer();
+  }
 
   ipcMain.on("config", (event: IpcMainEvent) => {
     console.log("Sending config over ipc");
@@ -151,12 +207,19 @@ function createWindow() {
   });
 }
 
-app.on("ready", createWindow);
+app.on("ready", () => {
+  // Start warming the external resource cache as soon as the app is ready so
+  // the binaries are usually in place before the first song is queued. This is
+  // best-effort: failures are logged and retried on demand by the downloader,
+  // and must be caught here so the unhandledRejection handler doesn't exit.
+  ensureExternalResources().catch((err) =>
+    console.error(`Error preparing external resources: ${err}`),
+  );
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on("activate", () => {
@@ -185,4 +248,25 @@ app.on("browser-window-focus", () => {
 app.on("browser-window-blur", () => {
   globalShortcut.unregister("CommandOrControl+R");
   globalShortcut.unregister("F5");
+});
+
+app.on("login", (event, webContents, request, authInfo, callback) => {
+  console.log(
+    `login event received: authinfo=${authInfo} callback=${callback}`,
+  );
+  if (karafriendsConfig.proxyEnable) {
+    const { proxyHost, proxyPort, proxyUser, proxyPass } = karafriendsConfig;
+    console.log(`Time to login to ${proxyHost}:${proxyPort}`);
+    callback(proxyUser, proxyPass);
+    event.preventDefault();
+  } else {
+    // Well that's strange...
+    console.log("Received login event even though proxy is not enabled?");
+    if (rendererWindow) {
+      dialog.showMessageBoxSync(rendererWindow, {
+        message:
+          "Received login event even though proxy is not enabled. Proceed with caution",
+      });
+    }
+  }
 });

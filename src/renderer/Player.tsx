@@ -1,6 +1,7 @@
 import invariant from "ts-invariant";
 
 import Hls from "hls.js";
+import M from "materialize-css";
 
 import React, { useEffect, useRef, useState } from "react";
 import { commitMutation, fetchQuery, graphql } from "react-relay";
@@ -100,14 +101,18 @@ function Player(props: {
         variables: {},
         onCompleted: ({ popSong }) => {
           if (!videoRef.current) return;
-          if (trackRef?.current) {
-            trackRef.current.default = false;
-            trackRef.current.src = "";
-          }
 
-          setPitchShiftSemis(0);
+          if (popSong) {
+            // Only reset caption/pitch state when we actually have a song to
+            // play; doing it on every empty poll would spam the pitch-shift
+            // mutation while idle.
+            if (trackRef?.current) {
+              trackRef.current.default = false;
+              trackRef.current.src = "";
+            }
 
-          if (popSong !== null) {
+            setPitchShiftSemis(0);
+
             if (hls) hls.destroy();
 
             switch (popSong.__typename) {
@@ -119,12 +124,12 @@ function Player(props: {
 
                 // If caching is on this means we'll be serving almost everything through /static
                 // which seems kind of stupid, but whatever
-                const fileUrl = `karafriends://${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
+                const fileUrl = `karafriends://local/${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
 
                 const loadRemote = () => {
                   if (!videoRef.current) return;
 
-                  hls = new Hls();
+                  hls = new Hls({ maxBufferLength: 90 /* seconds */ });
                   hls.on(
                     Hls.Events.ERROR,
                     (event: typeof Hls.Events.ERROR, data: any) => {
@@ -145,7 +150,7 @@ function Player(props: {
 
                   hls.attachMedia(videoRef.current);
                   hls.loadSource(
-                    popSong.streamingUrls[popSong.streamingUrlIdx].url
+                    popSong.streamingUrls[popSong.streamingUrlIdx].url,
                   );
                 };
 
@@ -161,7 +166,7 @@ function Player(props: {
                     } else {
                       // Maybe it's not done downloading yet, or predownload is disabled
                       console.log(
-                        `Local file for ${popSong.songId} doesn't seem available, using remote`
+                        `Local file for ${popSong.songId} doesn't seem available, using remote`,
                       );
                       loadRemote();
                     }
@@ -177,7 +182,7 @@ function Player(props: {
                   .catch((error) => {
                     // This throws if the file doesn't exist (as karafriends:// is a file:// passthrough protocol)
                     console.log(
-                      `Local file for ${popSong.songId} doesn't seem available, using remote`
+                      `Local file for ${popSong.songId} doesn't seem available, using remote`,
                     );
                     console.error(error);
 
@@ -206,14 +211,14 @@ function Player(props: {
                   ? popSong.youtubeVideoId
                   : "default";
 
-                videoRef.current.src = `karafriends://joysound-${popSong.songId}-${filenameSuffix}.mp4`;
+                videoRef.current.src = `karafriends://local/joysound-${popSong.songId}-${filenameSuffix}.mp4`;
 
                 navigator.mediaSession.metadata = new MediaMetadata({
                   title: popSong.name,
                   artist: popSong.artistName,
                 });
 
-                fetch(`karafriends://joysound-${popSong.songId}.joy_02`)
+                fetch(`karafriends://local/joysound-${popSong.songId}.joy_02`)
                   .then((resp) => resp.arrayBuffer())
                   .then((data) => {
                     setJoysoundTelop(data);
@@ -229,15 +234,15 @@ function Player(props: {
                 setShouldShowJoysound(false);
                 setShouldShowAdhocLyrics(popSong.hasAdhocLyrics);
 
-                videoRef.current.src = `karafriends://yt-${popSong.songId}.mp4`;
+                videoRef.current.src = `karafriends://local/yt-${popSong.songId}.mp4`;
 
                 if (trackRef?.current && popSong?.hasCaptions) {
                   trackRef.current.default = true;
-                  trackRef.current.src = `karafriends://yt-${popSong.songId}.vtt`;
+                  trackRef.current.src = `karafriends://local/yt-${popSong.songId}.vtt`;
                 }
 
                 console.log(
-                  `Using ${popSong.gainValue} for gain on Youtube queue item`
+                  `Using ${popSong.gainValue} for gain on Youtube queue item`,
                 );
                 props.audio.gain(popSong.gainValue);
 
@@ -252,7 +257,7 @@ function Player(props: {
                 setShouldShowJoysound(false);
                 setShouldShowAdhocLyrics(false);
 
-                videoRef.current.src = `karafriends://nico-${popSong.songId}.mp4`;
+                videoRef.current.src = `karafriends://local/nico-${popSong.songId}.mp4`;
 
                 props.audio.gain(NON_DAM_GAIN);
 
@@ -301,7 +306,8 @@ function Player(props: {
         setPlaybackState("PLAYING");
         break;
       case "SKIPPING":
-        videoRef.current.currentTime = videoRef.current.duration || 0;
+        if (isFinite(videoRef.current.duration))
+          videoRef.current.currentTime = videoRef.current.duration;
         videoRef.current.play();
         break;
     }
@@ -321,7 +327,7 @@ function Player(props: {
 
       audioCtx.current = props.audio.audioContext;
       videoAudioSrc.current = audioCtx.current.createMediaElementSource(
-        videoRef.current
+        videoRef.current,
       );
       videoAudioSrc.current.connect(props.audio.sink());
     }

@@ -5,9 +5,26 @@ import { HOSTNAME } from "../common/constants";
 import "./global";
 
 export default function HostnameSetting(props: {
+  hostname: string;
   onChange: (name: string) => void;
 }) {
-  const [currentValue, setCurrentValue] = useState("offkai.karafriends.party");
+  const hostnameToValue = new Map([
+    ["offkai.karafriends.party", "offkai.karafriends.party"],
+    [
+      HOSTNAME,
+      `${HOSTNAME}:${window.karafriends.karafriendsConfig().remoconPort}`,
+    ],
+    ...window.karafriends
+      .ipAddresses()
+      .map((address): [string, string] => [
+        address,
+        `${address}:${window.karafriends.karafriendsConfig().remoconPort}`,
+      ]),
+  ]);
+
+  const [currentValue, setCurrentValue] = useState(
+    hostnameToValue.get(props.hostname),
+  );
 
   useEffect(() => {
     M.AutoInit();
@@ -16,30 +33,15 @@ export default function HostnameSetting(props: {
   return (
     <div className="input-field">
       <select
-        defaultValue={currentValue}
+        value={currentValue}
         onChange={(e) => {
           setCurrentValue(e.target.value);
           props.onChange(e.target.value);
         }}
       >
-        <option value="offkai.karafriends.party">
-          offkai.karafriends.party
-        </option>
-        <option
-          value={`${HOSTNAME}:${
-            window.karafriends.karafriendsConfig().remoconPort
-          }`}
-        >
-          {HOSTNAME}
-        </option>
-        {window.karafriends.ipAddresses().map((address) => (
-          <option
-            value={`${address}:${
-              window.karafriends.karafriendsConfig().remoconPort
-            }`}
-            key={address}
-          >
-            {address}
+        {Array.from(hostnameToValue).map(([key, value]) => (
+          <option key={value} value={value}>
+            {key}
           </option>
         ))}
       </select>
