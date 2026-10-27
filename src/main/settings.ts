@@ -1,0 +1,280 @@
+// The settings methods: the display's settings screen reads and changes
+// config.yaml, tests the DAM and Joysound logins, and exports and imports
+// the whole file. Display only: server.ts refuses them to phones
+// (DISPLAY_ONLY_METHODS), and each handler checks again.
+//
+// No Electron imports, so unit tests can load this file under plain Node.
+import { parse, stringify } from "yaml";
+
+import {
+  MASKED_PASSWORD,
+  type LoginService,
+  type Settings,
+  type TestLoginResult,
+} from "../common/api";
+import {
+  CONFIG_KEYS,
+  configProblems,
+  DEFAULT_CONFIG,
+  hasLogin,
+  isConfigKey,
+  OBSOLETE_KEYS,
+  RESTART_KEYS,
+  type KarafriendsConfig,
+} from "../common/configSchema";
+import type { ConfigStore } from "../common/configStore";
+import { ApiError, type ApiHandlers, type Caller } from "./api";
+import { HttpStatusError } from "./http";
+
+export const SETTINGS_METHODS = [
+  "getSettings",
+  "setSettings",
+  "setAdminPassword",
+  "testLogin",
+  "exportConfig",
+  "importConfig",
+  "restartApp",
+] as const;
+
+export type SettingsMethod = (typeof SETTINGS_METHODS)[number];
+
+const PASSWORD_KEYS = ["damPassword", "joysoundPassword", "proxyPass"] as const;
+
+// What setSettings may change: everything but the admin password's hash and
+// salt (setAdminPassword).
+export const SETTABLE_KEYS = CONFIG_KEYS.filter(
+  (key) => key !== "adminPasswordHash" && key !== "adminPasswordSalt",
+);
+
+const LOGIN_TIMEOUT_MS = 15_000;
+
+const SERVICE_NAMES: Record<LoginService, string> = {
+  dam: "DAM",
+  joysound: "Joysound",
+};
+
+export interface SettingsDeps {
+  store: Pick<ConfigStore, "saved" | "atLaunch" | "update">;
+  // services.ts's: sets the hash and salt, and signs every phone out.
+  setAdminPassword(password: string): void;
+  // A fresh login, not the clients' shared one. Resolves on success.
+  logins: Record<
+    LoginService,
+    (username: string, password: string) => Promise<unknown>
+  >;
+  // app.relaunch() and app.exit(0).
+  restart(): void;
+}
+
+const TIMED_OUT = new Error("timed out");
+
+// Why a login failed, in a sentence for the host.
+export function loginFailureReason(
+  service: LoginService,
+  err: unknown,
+): string {
+  const name = SERVICE_NAMES[service];
+  if (err === TIMED_OUT) {
+    return (
+      `${name} didn't answer within ${LOGIN_TIMEOUT_MS / 1000} seconds. ` +
+      "Check this computer's internet connection, VPN or proxy."
+    );
+  }
+  if (err instanceof HttpStatusError && err.status === 403) {
+    return (
+      `${name} answered 403: this usually means no Japanese IP address. ` +
+      "Connect through a VPN or proxy in Japan."
+    );
+  }
+  return `Couldn't sign in to ${name}: ${(err as Error)?.message ?? String(err)}`;
+}
+
+export function createSettingsHandlers(
+  deps: SettingsDeps,
+): Pick<ApiHandlers, SettingsMethod> {
+  const { store } = deps;
+
+  const requireDisplay = (caller: Caller) => {
+    if (!caller.isDisplay) {
+      throw new ApiError(403, "Only the display can see or change settings");
+    }
+  };
+
+  const needsRestart = () => {
+    const saved = store.saved();
+    return RESTART_KEYS.some((key) => saved[key] !== store.atLaunch[key]);
+  };
+
+  // Checks values, then saves them; or says what's wrong.
+  const save = (values: Record<string, unknown>): string[] => {
+    const problems = configProblems(values);
+    if (problems.length > 0) return problems;
+    try {
+      store.update(values as Partial<KarafriendsConfig>);
+      return [];
+    } catch (err) {
+      console.error("Couldn't save the settings:", err);
+      return [`Couldn't save config.yaml: ${(err as Error).message}`];
+    }
+  };
+
+  const testLogin = async (
+    service: LoginService,
+    credentials?: { username: string; password: string },
+  ): Promise<TestLoginResult> => {
+    const saved = store.saved();
+    const { username, password } =
+      credentials ??
+      (service === "dam"
+        ? { username: saved.damUsername, password: saved.damPassword }
+        : { username: saved.joysoundEmail, password: saved.joysoundPassword });
+    const login =
+      service === "dam"
+        ? { damUsername: username, damPassword: password }
+        : { joysoundEmail: username, joysoundPassword: password };
+    if (!hasLogin({ ...DEFAULT_CONFIG, ...login }, service)) {
+      const what = service === "dam" ? "username" : "email";
+      return {
+        ok: false,
+        reason: `No ${SERVICE_NAMES[service]} login is set: enter the ${what} and password first.`,
+      };
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        deps.logins[service](username, password),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(TIMED_OUT), LOGIN_TIMEOUT_MS);
+        }),
+      ]);
+      return { ok: true };
+    } catch (err) {
+      console.warn(
+        `testLogin: ${SERVICE_NAMES[service]} failed:`,
+        (err as Error)?.message ?? err,
+      );
+      return { ok: false, reason: loginFailureReason(service, err) };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  return {
+    async getSettings(_input, caller) {
+      requireDisplay(caller);
+      const saved = store.saved();
+      const settings = Object.fromEntries(
+        SETTABLE_KEYS.map((key) => [key, saved[key]]),
+      ) as Omit<Settings, "adminPasswordSet">;
+      for (const key of PASSWORD_KEYS) {
+        if (saved[key] !== "") settings[key] = MASKED_PASSWORD;
+      }
+      return {
+        settings: {
+          ...settings,
+          adminPasswordSet: saved.adminPasswordHash !== "",
+        },
+        isFirstRun: !hasLogin(saved, "dam") && !hasLogin(saved, "joysound"),
+        needsRestart: needsRestart(),
+      };
+    },
+
+    async setSettings({ settings }, caller) {
+      requireDisplay(caller);
+      const values: Record<string, unknown> = { ...settings };
+      for (const key of PASSWORD_KEYS) {
+        if (values[key] === MASKED_PASSWORD) delete values[key];
+      }
+      const problems = save(values);
+      if (problems.length > 0) return { ok: false, problems };
+      return { ok: true, needsRestart: needsRestart() };
+    },
+
+    async setAdminPassword({ password }, caller) {
+      requireDisplay(caller);
+      deps.setAdminPassword(password);
+      return {};
+    },
+
+    async testLogin({ service, credentials }, caller) {
+      requireDisplay(caller);
+      return testLogin(service, credentials);
+    },
+
+    async exportConfig(_input, caller) {
+      requireDisplay(caller);
+      return {
+        yaml: `karafriendsConfigVersion: 1\n${stringify(store.saved())}`,
+      };
+    },
+
+    async importConfig({ yaml }, caller) {
+      requireDisplay(caller);
+      let parsed: unknown;
+      try {
+        parsed = parse(yaml);
+      } catch (err) {
+        // Not the parser's message: it quotes the line, which may hold a
+        // password.
+        const line = (err as { linePos?: { line: number }[] }).linePos?.[0]
+          ?.line;
+        return {
+          ok: false,
+          problems: [
+            `The file isn't valid YAML${line ? ` (line ${line})` : ""}. ` +
+              "Pick a file from Export config, or a config.yaml.",
+          ],
+        };
+      }
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        return {
+          ok: false,
+          problems: [
+            "The file has no settings in it. Pick a file from Export config, or a config.yaml.",
+          ],
+        };
+      }
+
+      const values: Record<string, unknown> = { ...parsed };
+      delete values.karafriendsConfigVersion;
+      const notes: string[] = [];
+      for (const key of Object.keys(values)) {
+        if ((OBSOLETE_KEYS as readonly string[]).includes(key)) {
+          notes.push(
+            `Dropped ${key}: it no longer does anything. Phones become ` +
+              "admins with the admin password.",
+          );
+          delete values[key];
+        } else if (!isConfigKey(key)) {
+          notes.push(`Dropped ${key}: karafriends has no such setting.`);
+          delete values[key];
+        }
+      }
+
+      const problems = save(values);
+      if (problems.length > 0) return { ok: false, problems };
+
+      const results = await Promise.all(
+        (["dam", "joysound"] as const).map(async (service) => {
+          const result = await testLogin(service);
+          // Each reason names the service.
+          return result.ok
+            ? `${SERVICE_NAMES[service]} login works.`
+            : result.reason;
+        }),
+      );
+      return { ok: true, problems: [...notes, ...results] };
+    },
+
+    async restartApp(_input, caller) {
+      requireDisplay(caller);
+      // After the answer has gone out.
+      setTimeout(deps.restart, 200);
+      return {};
+    },
+  };
+}

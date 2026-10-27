@@ -29,6 +29,7 @@ import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
+import type { SettingsMethod } from "./settings";
 import { adhocLyricsKey, type StateStore } from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
@@ -154,7 +155,8 @@ const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
-export function createApi(deps: ApiDeps): ApiHandlers {
+// Every method but the settings ones (settings.ts).
+export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 

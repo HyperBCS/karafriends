@@ -3,7 +3,8 @@
 //   POST /api/<method>  JSON in, JSON out (src/common/api.ts has the types).
 //                       415 unless Content-Type is application/json, 404 for
 //                       an unknown method, 400 for bad input, 403 when the
-//                       caller may not do it. adminLogin answers 429 after
+//                       caller may not do it (always, for the settings:
+//                       DISPLAY_ONLY_METHODS). adminLogin answers 429 after
 //                       ADMIN_LOGIN_LIMIT tries from one address.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
 //                       every change, plus emote and queueAdded events. A
@@ -32,8 +33,16 @@ import {
 } from "./caller";
 import { errorAnswer, isMethod, runMethod } from "./dispatch";
 import type { LiveHub } from "./live";
+import { SETTINGS_METHODS } from "./settings";
 
 export const EVENTS_PATH = "/api/events";
+
+// Methods only the display may call, over IPC: the settings. A phone gets
+// 403 before its body is read, whoever it is signed in as. (popSong is the
+// display's too, but admin phones may call it; api.ts checks.)
+export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>(
+  SETTINGS_METHODS,
+);
 
 const HEARTBEAT_MS = 20_000;
 
@@ -256,6 +265,12 @@ export function apiRouter(
       }
       if (!isMethod(req.params.method)) {
         res.status(404).json({ error: `No API method ${req.params.method}` });
+        return;
+      }
+      if (DISPLAY_ONLY_METHODS.has(req.params.method)) {
+        res.status(403).json({
+          error: `${req.params.method} is for the display only, not phones`,
+        });
         return;
       }
       if (

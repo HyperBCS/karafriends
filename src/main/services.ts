@@ -18,12 +18,13 @@ import {
   TEMP_FOLDER,
 } from "../common/videoDownloader";
 import { createAdminSessions, createSetAdminPassword } from "./adminAuth";
-import { createApi } from "./api";
+import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { setProxy } from "./http";
 import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
+import { createSettingsHandlers } from "./settings";
 import { createStateStore } from "./state";
 
 // The running config, kept up to date by configStore.update().
@@ -120,7 +121,7 @@ function innertubeApiProvider(): Promise<Innertube> {
   return innertubePromise;
 }
 
-export const api = createApi({
+const queueApi = createApi({
   config: karafriendsConfig,
   store,
   adminSessions,
@@ -159,3 +160,20 @@ export const api = createApi({
   },
   publish: hub.publish,
 });
+
+export const api: ApiHandlers = {
+  ...queueApi,
+  ...createSettingsHandlers({
+    store: configStore,
+    setAdminPassword,
+    // Fresh logins, so a test never touches the clients' shared ones.
+    logins: {
+      dam: (username, password) => MinseiAPI.login(username, password),
+      joysound: (email, password) => JoysoundAPI.login(email, password),
+    },
+    restart: () => {
+      app.relaunch();
+      app.exit(0);
+    },
+  }),
+};

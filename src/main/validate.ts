@@ -11,10 +11,12 @@ import type {
   PlaybackState,
   QueueItemKind,
   QueueSongInput,
+  SettingsChanges,
 } from "../common/api";
 import { PLAYBACK_STATES } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
 import { ApiError } from "./api";
+import { SETTABLE_KEYS } from "./settings";
 
 type Fields = Record<string, unknown>;
 
@@ -271,4 +273,33 @@ export const validators: {
     return { password };
   },
   adminLogout: nothing,
+
+  getSettings: nothing,
+  // The values' types and ranges are the handler's to check: it answers
+  // with every problem at once, for the settings screen.
+  setSettings: (raw) => {
+    const settings = fields(fields(raw, ["settings"]).settings, SETTABLE_KEYS);
+    return { settings: settings as SettingsChanges };
+  },
+  setAdminPassword: (raw) => ({
+    password: string(fields(raw, ["password"]), "password", 200),
+  }),
+  testLogin: (raw) => {
+    const input = fields(raw, ["service", "credentials"]);
+    const service = oneOf(input, "service", ["dam", "joysound"] as const);
+    if (input.credentials === undefined) return { service };
+    const credentials = fields(input.credentials, ["username", "password"]);
+    return {
+      service,
+      credentials: {
+        username: string(credentials, "username"),
+        password: string(credentials, "password"),
+      },
+    };
+  },
+  exportConfig: nothing,
+  importConfig: (raw) => ({
+    yaml: string(fields(raw, ["yaml"]), "yaml", 1_000_000),
+  }),
+  restartApp: nothing,
 };
