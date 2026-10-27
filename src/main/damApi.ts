@@ -93,7 +93,7 @@ export class MinseiAPI extends RESTDataSource {
   static checkError<T extends MinseiResponse>(data: T) {
     // statusCode 1005 seems to mean pagination continues
     if (data.statusCode !== "0000" && data.statusCode !== "1005") {
-      throw new Error(`${data.status}: ${data.message}`);
+      throw new Error(`${data.status} ${data.statusCode}: ${data.message}`);
     }
     return data;
   }

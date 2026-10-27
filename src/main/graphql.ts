@@ -42,7 +42,6 @@ import {
 import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 
-import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 
 export interface IDataSources {
@@ -1209,7 +1208,23 @@ const schema = makeExecutableSchema({
   resolvers,
 });
 
-export const minseiCredentialsProvider = memoize(async () => {
+// Like memoize, but forgets a rejected promise so a failed login (wrong
+// credentials, no Japanese IP, service down) is retried on the next request
+// instead of failing until restart.
+function memoizeSuccess<T>(fn: () => Promise<T>): () => Promise<T> {
+  let promise: Promise<T> | null = null;
+  return () => {
+    if (!promise) {
+      promise = fn().catch((err) => {
+        promise = null;
+        throw err;
+      });
+    }
+    return promise;
+  };
+}
+
+export const minseiCredentialsProvider = memoizeSuccess(async () => {
   const { damUsername, damPassword } = karafriendsConfig;
   const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
   return {
@@ -1218,7 +1233,7 @@ export const minseiCredentialsProvider = memoize(async () => {
   };
 });
 
-export const joysoundCredentialsProvider = memoize(async () => {
+export const joysoundCredentialsProvider = memoizeSuccess(async () => {
   const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
   const joysoundPassword = encodeURIComponent(
     karafriendsConfig.joysoundPassword,
