@@ -2,17 +2,17 @@
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                                | State           | Branch / commit                 | Notes                                                      |
-| --------------------------------------------------- | --------------- | ------------------------------- | ---------------------------------------------------------- |
-| Quick wins (Sentry, niconico, lazy YouTube)         | merging         | `claude/inspiring-tharp-487dd1` | done in its own session                                    |
-| Phase 1: Yarn node_modules, untrack cache           | next            |                                 |                                                            |
-| Phase 3: build tidy-ups                             | queued          |                                 |                                                            |
-| Phase 4: Playwright smoke tests                     | queued          |                                 |                                                            |
-| Phase 5b–5f: RPC + SSE, client, delete GraphQL, IPC | queued          |                                 | 5a waits for the user (needs the Japan VPN)                |
-| Phase 6: electron-vite                              | queued          |                                 |                                                            |
-| Phase 7: lighter UI libraries                       | queued          |                                 |                                                            |
-| Phase 5a: plain HTTP client for DAM/Joysound        | waiting on user |                                 | needs the VPN to test                                      |
-| Phase 2: purge history, new standalone repo         | waiting on user |                                 | needs GitHub web steps; run when nothing else is in flight |
+| Step                                                | State           | Branch / commit     | Notes                                                      |
+| --------------------------------------------------- | --------------- | ------------------- | ---------------------------------------------------------- |
+| Quick wins (Sentry, niconico, lazy YouTube)         | done            | merged in `2e0dcbc` | YouTube + Niconico lookups checked in the running app      |
+| Phase 1: Yarn node_modules, untrack cache           | in progress     |                     |                                                            |
+| Phase 3: build tidy-ups                             | queued          |                     |                                                            |
+| Phase 4: Playwright smoke tests                     | queued          |                     |                                                            |
+| Phase 5b–5f: RPC + SSE, client, delete GraphQL, IPC | queued          |                     | 5a waits for the user (needs the Japan VPN)                |
+| Phase 6: electron-vite                              | queued          |                     |                                                            |
+| Phase 7: lighter UI libraries                       | queued          |                     |                                                            |
+| Phase 5a: plain HTTP client for DAM/Joysound        | waiting on user |                     | needs the VPN to test                                      |
+| Phase 2: purge history, new standalone repo         | waiting on user |                     | needs GitHub web steps; run when nothing else is in flight |
 
 ## How this plan is run
 
