@@ -35,5 +35,6 @@ yarn test:e2e
 
 - Each test launches the app muted, with a throwaway profile and temp folder and a free port, so it never touches your queue or config and can run next to the real app.
 - `@net` tests queue a YouTube video. They copy ffmpeg and yt-dlp from the installed app's data folder (`%APPDATA%\karafriends\externalResources` on Windows), so start the app once beforehand.
-- `@jp` tests search DAM and Joysound with the logins from the installed app's `config.yaml`, and need a Japanese IP. They only run on request: `KARAFRIENDS_E2E_JP=1 yarn test:e2e --grep @jp`.
+- `@jp` tests search DAM and Joysound with the logins from the installed app's `config.yaml`, queue a song from each (the Joysound one downloads, with the installed app's ffmpeg) and take it straight off the queue. They need a Japanese IP and only run on request: `KARAFRIENDS_E2E_JP=1 yarn test:e2e --grep @jp`.
+- A test fails if the display or the remote sends anything to `/graphql`; both use `/api` only.
 - `yarn test:e2e:ci` leaves out `@net` and `@jp`; CI runs it on Windows and Linux.
