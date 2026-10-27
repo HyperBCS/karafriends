@@ -10,6 +10,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - The app can now change its settings while it runs, test the DAM and Joysound logins, and export and import the whole config (logins included) for the coming settings screen. Changing a login takes effect at the next search; the port and proxy still need a restart.
 - Admins can reorder the queue (`moveSong`: to the top, or to any place in it); the phone buttons for it come with the remote's refresh.
 - A song queued while nothing plays starts at once instead of up to 5 seconds later. The app knows its ffmpeg and yt-dlp versions, can download them again on request, and notices when YouTube downloads fail because of yt-dlp rather than the video, for the coming settings screen; `KARAFRIENDS_YTDLP_PATH` and `KARAFRIENDS_FFMPEG_PATH` point it at your own copies.
+- The display has a full-screen idle screen with a large QR code and what's up next, says in a corner which song starts, is queued or fails, shows the queue as a strip under the video (`Q`), and has a settings screen (`S`, or the gear) for the logins with Test login, the admin password, the queue rules, port and proxy, the QR code's address, microphones, Update tools, and Export and Import config. It opens by itself on a first launch.
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 
 ## 0.1.0
