@@ -7,7 +7,7 @@ import useDownloadButtonText, {
 } from "../../hooks/useDownloadButtonText";
 import Button from "../Button";
 
-import { YouTubeInfoVideoInfoQuery$data } from "./__generated__/YouTubeInfoVideoInfoQuery.graphql";
+import type { YoutubeVideoInfo } from "../../../common/api";
 import {
   YouTubeQueueButtonMutation,
   YouTubeQueueButtonMutation$variables,
@@ -33,7 +33,7 @@ const youTubeQueueButtonMutation = graphql`
 
 interface Props {
   videoId: string;
-  videoInfo: YouTubeInfoVideoInfoQuery$data["youtubeVideoInfo"];
+  videoInfo: YoutubeVideoInfo;
   adhocSongLyrics: string | null;
   selectedCaption: string | null;
   userIdentity: YouTubeQueueButtonMutation$variables["input"]["userIdentity"];
@@ -46,8 +46,6 @@ const YouTubeQueueButton = ({
   selectedCaption,
   userIdentity,
 }: Props) => {
-  if (videoInfo.__typename !== "YoutubeVideoInfo") return null;
-
   const defaultText = "Queue video";
   const [text, setText] = useDownloadButtonText(defaultText, {
     kind: "youtube",

@@ -1,36 +1,10 @@
 import React, { useEffect, useRef } from "react";
-import { graphql, useLazyLoadQuery } from "react-relay";
 import YouTubePlayer from "youtube-player";
 
+import { useApiQuery } from "../../../common/apiQueries";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./JoysoundYouTubeInfo.module.scss";
-import { JoysoundYouTubeInfoVideoInfoQuery } from "./__generated__/JoysoundYouTubeInfoVideoInfoQuery.graphql";
-
-const joysoundYouTubeInfoVideoInfoQuery = graphql`
-  query JoysoundYouTubeInfoVideoInfoQuery($videoId: String!) {
-    youtubeVideoInfo(videoId: $videoId) {
-      ... on YoutubeVideoInfo {
-        __typename
-        author
-        captionLanguages {
-          name
-          code
-        }
-        channelId
-        keywords
-        lengthSeconds
-        title
-        viewCount
-        gainValue
-      }
-      ... on YoutubeVideoInfoError {
-        __typename
-        reason
-      }
-    }
-  }
-`;
 
 interface Props {
   videoId: string;
@@ -41,10 +15,7 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
   const playerRef: React.MutableRefObject<ReturnType<
     typeof YouTubePlayer
   > | null> = useRef(null);
-  const videoData = useLazyLoadQuery<JoysoundYouTubeInfoVideoInfoQuery>(
-    joysoundYouTubeInfoVideoInfoQuery,
-    { videoId },
-  );
+  const videoInfo = useApiQuery("youtubeInfo", { videoId });
 
   useEffect(() => {
     if (playerRef.current == null) {
@@ -56,10 +27,7 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
       playerRef.current.stopVideo();
     }
 
-    if (
-      videoId &&
-      videoData.youtubeVideoInfo.__typename === "YoutubeVideoInfo"
-    ) {
+    if (videoId && videoInfo.ok) {
       setYoutubeVideoId(videoId);
     }
   }, [videoId]);
@@ -69,24 +37,15 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
       <h3>Selected background video: {videoId}</h3>
       <div
         id="youtube-player"
-        style={{
-          display:
-            videoData.youtubeVideoInfo.__typename === "YoutubeVideoInfoError"
-              ? "none"
-              : "block",
-        }}
+        style={{ display: videoInfo.ok ? "block" : "none" }}
       />
-      {videoData.youtubeVideoInfo.__typename === "YoutubeVideoInfoError" && (
+      {!videoInfo.ok && (
         <p>
-          Unable to get video info for the following reason:{" "}
-          {videoData.youtubeVideoInfo.reason}
+          Unable to get video info for the following reason: {videoInfo.reason}
         </p>
       )}
-      {videoData.youtubeVideoInfo.__typename === "YoutubeVideoInfo" && (
-        <VideoMetadata
-          videoSource="youtube"
-          videoInfo={videoData.youtubeVideoInfo}
-        />
+      {videoInfo.ok && (
+        <VideoMetadata videoSource="youtube" videoInfo={videoInfo.info} />
       )}
     </div>
   );

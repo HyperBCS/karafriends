@@ -7,7 +7,7 @@ import useDownloadButtonText, {
 } from "../../hooks/useDownloadButtonText";
 import Button from "../Button";
 
-import { NiconicoInfoVideoInfoQuery$data } from "./__generated__/NiconicoInfoVideoInfoQuery.graphql";
+import type { NicoVideoInfo } from "../../../common/api";
 import {
   NiconicoQueueButtonMutation,
   NiconicoQueueButtonMutation$variables,
@@ -33,13 +33,11 @@ const niconicoQueueButtonMutation = graphql`
 
 interface Props {
   videoId: string;
-  videoInfo: NiconicoInfoVideoInfoQuery$data["nicoVideoInfo"];
+  videoInfo: NicoVideoInfo;
   userIdentity: NiconicoQueueButtonMutation$variables["input"]["userIdentity"];
 }
 
 const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
-  if (videoInfo.__typename !== "NicoVideoInfo") return null;
-
   const defaultText = "Queue video";
   const [text, setText] = useDownloadButtonText(defaultText, {
     kind: "nico",
