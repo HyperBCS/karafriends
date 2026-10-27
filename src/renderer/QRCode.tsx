@@ -31,7 +31,14 @@ function QRCode(props: { hostname: string }) {
     return () => window.removeEventListener("resize", update);
   });
 
-  return <canvas ref={canvasRef} className="qrcode" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="qrcode"
+      role="img"
+      aria-label="QR code for the remote"
+    />
+  );
 }
 
 export default QRCode;

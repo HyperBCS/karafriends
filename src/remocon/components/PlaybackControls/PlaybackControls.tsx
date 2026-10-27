@@ -39,18 +39,31 @@ const PlaybackControls = () => {
       <div
         className={classnames(styles.controls, { [styles.disabled]: disabled })}
       >
-        <div onClick={() => setPlaybackState("RESTARTING")}>
+        <div
+          role="button"
+          aria-label="Restart"
+          aria-disabled={disabled}
+          onClick={() => setPlaybackState("RESTARTING")}
+        >
           <MdReplay />
         </div>
         <div
           className={styles.playPause}
+          role="button"
+          aria-label={playbackState === "PLAYING" ? "Pause" : "Play"}
+          aria-disabled={disabled}
           onClick={() =>
             setPlaybackState(playbackState === "PAUSED" ? "PLAYING" : "PAUSED")
           }
         >
           {playbackState === "PLAYING" ? <MdPause /> : <MdPlayArrow />}
         </div>
-        <div onClick={() => setPlaybackState("SKIPPING")}>
+        <div
+          role="button"
+          aria-label="Skip"
+          aria-disabled={disabled}
+          onClick={() => setPlaybackState("SKIPPING")}
+        >
           <MdSkipNext />
         </div>
       </div>

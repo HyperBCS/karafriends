@@ -83,6 +83,9 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
           <div
             className={styles.nickname}
             style={{ backgroundColor: nicknameBgColor }}
+            role="button"
+            aria-label={`Queued by ${nickname}`}
+            aria-expanded={true}
             onClick={() => setExpanded(false)}
           >
             {nickname}
@@ -90,6 +93,8 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
           {item.songId && item.timestamp && !isCurrent && canRemove && (
             <div
               className={styles.remove}
+              role="button"
+              aria-label="Remove from queue"
               onClick={() => onRemove(item.songId, item.timestamp)}
             >
               <MdClose />
@@ -100,6 +105,9 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
         <div
           className={styles.initial}
           style={{ backgroundColor: nicknameBgColor }}
+          role="button"
+          aria-label={`Queued by ${nickname}`}
+          aria-expanded={false}
           onClick={() => setExpanded(true)}
         >
           {nickname.slice(0, 1)}

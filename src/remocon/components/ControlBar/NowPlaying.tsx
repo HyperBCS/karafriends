@@ -10,7 +10,7 @@ const NowPlaying = () => {
   const currentSong = useNowPlaying();
 
   return (
-    <div className={styles.nowPlaying}>
+    <div className={styles.nowPlaying} role="region" aria-label="Now playing">
       {currentSong && (
         <SongQueueItem
           item={currentSong}
