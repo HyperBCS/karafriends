@@ -490,6 +490,7 @@ async function padJoysoundVideoPromise(
   safeUnlink(videoPadFilename);
   safeUnlink(videoTempFilename);
   safeUnlink(videoConcatFilename);
+  safeUnlink(videoListFilename);
 }
 
 // A Joysound song's files: joysound-<songId>.joy_02 (the lyrics),

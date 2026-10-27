@@ -176,6 +176,35 @@ test("a Joysound download without a background leaves its video and lyrics", asy
   ]);
 });
 
+test("a Joysound download with a YouTube background pads it and leaves only the song's files", async () => {
+  // ffmpeg-ok says every video is 2 s long. A 5 s song is within 10 s of
+  // that, so the background gets 3 s of its first frame in front.
+  const shortSong = async () => ({
+    telop: scrambled(telop(5)),
+    ogg: scrambled(ogg(5_000)),
+  });
+  const queue: DownloadQueueItem[] = [];
+  const outcome = await download(queue, "joysound", (item) =>
+    joysoundJob(
+      paths,
+      item,
+      joysoundApi(shortSong),
+      joysoundItem("bgVideo0001"),
+    ),
+  );
+
+  assert.ok(outcome.ok);
+  assert.equal(outcome.result.playtime, 5);
+  assert.equal(outcome.item.progress, 1);
+  assert.deepEqual(queue, []);
+  assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.mp4",
+    "joysound-123456.joy_02",
+    "joysound-123456.log",
+    "yt-bgVideo0001.log",
+  ]);
+});
+
 test("a Joysound download that fails putting the video together leaves only its logs", async () => {
   paths.ffmpeg = fake("ffmpeg-fails");
   const queue: DownloadQueueItem[] = [];

@@ -60,3 +60,40 @@ test("the display opens on its idle screen without console errors", async ({
   await display.waitForTimeout(11_000);
   expect(karafriends.displayErrors).toEqual([]);
 });
+
+test.describe("while a song plays", () => {
+  // Niconico songs the display never downloaded: song 1 starts (playing
+  // nothing) at the display's first check, and song 2 is up next.
+  const song = (n: number) => ({
+    kind: "nico",
+    songId: `sm7000${n}`,
+    name: `E2E strip song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-someone", nickname: "someone" },
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [song(1), song(2)],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("Q hides and shows the up-next strip", async ({ display }) => {
+    // A first launch opens Settings; close it, so Q reaches the display.
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+
+    const upNext = display.getByRole("region", { name: "Up next" });
+    await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
+    await display.keyboard.press("q");
+    await expect(upNext).toHaveCount(0);
+    await display.keyboard.press("q");
+    await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
+  });
+});
