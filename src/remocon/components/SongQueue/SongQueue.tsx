@@ -1,12 +1,10 @@
 import React from "react";
 
 import useQueue from "../../../common/hooks/useQueue";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import SongQueueItem from "./SongQueueItem";
 
 const SongQueue = () => {
   const queue = useQueue();
-  const { nickname } = useUserIdentity();
 
   return (
     <div>
@@ -15,7 +13,6 @@ const SongQueue = () => {
           key={`${item.songId}_${item.timestamp}`}
           item={item}
           eta={eta}
-          myNickname={nickname}
         />
       ))}
       {queue.length === 0 && <span>The queue is empty</span>}

@@ -1,21 +1,10 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { commitMutation, graphql } from "react-relay";
 
+import type { PlaybackState } from "../api";
+import { useLiveState } from "../apiClient";
 import environment from "../graphqlEnvironment";
+import useOptimisticValue from "./useOptimisticValue";
 import { usePlaybackStateMutation } from "./__generated__/usePlaybackStateMutation.graphql";
-import { usePlaybackStateQuery } from "./__generated__/usePlaybackStateQuery.graphql";
-import { usePlaybackStateSubscription } from "./__generated__/usePlaybackStateSubscription.graphql";
-
-const playbackStateQuery = graphql`
-  query usePlaybackStateQuery {
-    playbackState
-  }
-`;
 
 const playbackStateMutation = graphql`
   mutation usePlaybackStateMutation($playbackState: PlaybackState!) {
@@ -23,67 +12,21 @@ const playbackStateMutation = graphql`
   }
 `;
 
-const playbackStateSubscription = graphql`
-  subscription usePlaybackStateSubscription {
-    playbackStateChanged
-  }
-`;
-
-type StateType = usePlaybackStateQuery["response"]["playbackState"];
-
+// The display's playback state, live, and a setter for it.
 export default function usePlaybackState() {
-  const [playbackState, setLocalPlaybackState] = useState<StateType>("WAITING");
-  const [commit] = useMutation<usePlaybackStateMutation>(playbackStateMutation);
+  const live = useLiveState()?.playbackState ?? "WAITING";
+  const [playbackState, setPending, clearPending] = useOptimisticValue(live);
 
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<usePlaybackStateQuery>(
-        environment,
-        playbackStateQuery,
-        {},
-      ).subscribe({
-        next: (response: usePlaybackStateQuery["response"]) =>
-          setLocalPlaybackState(response.playbackState),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const initialQuery = fetchQuery<usePlaybackStateQuery>(
-      environment,
-      playbackStateQuery,
-      {},
-    ).subscribe({
-      next: (response: usePlaybackStateQuery["response"]) =>
-        setLocalPlaybackState(response.playbackState),
-    });
-
-    const subscription = requestSubscription<usePlaybackStateSubscription>(
-      environment,
-      {
-        subscription: playbackStateSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response) setLocalPlaybackState(response.playbackStateChanged);
-        },
+  const setPlaybackState = (next: PlaybackState) => {
+    setPending(next);
+    commitMutation<usePlaybackStateMutation>(environment, {
+      mutation: playbackStateMutation,
+      variables: { playbackState: next },
+      onError: (err) => {
+        console.error("Couldn't set the playback state:", err);
+        clearPending();
       },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setPlaybackState = (nextPlaybackState: StateType) => {
-    setLocalPlaybackState(nextPlaybackState);
-    commit({ variables: { playbackState: nextPlaybackState } });
+    });
   };
 
   return { playbackState, setPlaybackState };

@@ -1,33 +1,17 @@
-import React, { useEffect, useState } from "react";
-import { fetchQuery, graphql, useMutation } from "react-relay";
-import { Subscription } from "relay-runtime";
-import { invariant } from "ts-invariant";
+import React from "react";
+import { graphql, useMutation } from "react-relay";
 
-import environment from "../../../common/graphqlEnvironment";
+import useDownloadButtonText, {
+  DOWNLOADING,
+  WAITING_FOR_SERVER,
+} from "../../hooks/useDownloadButtonText";
 import Button from "../Button";
 
 import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
-import { JoysoundQueueButtonGetVideoDownloadProgressQuery } from "./__generated__/JoysoundQueueButtonGetVideoDownloadProgressQuery.graphql";
 import {
   JoysoundQueueButtonMutation,
   JoysoundQueueButtonMutation$variables,
 } from "./__generated__/JoysoundQueueButtonMutation.graphql";
-
-const joysoundQueueButtonGetVideoDownloadProgressQuery = graphql`
-  query JoysoundQueueButtonGetVideoDownloadProgressQuery(
-    $videoDownloadType: Int!
-    $songId: String!
-    $suffix: String
-  ) {
-    videoDownloadProgress(
-      videoDownloadType: $videoDownloadType
-      songId: $songId
-      suffix: $suffix
-    ) {
-      progress
-    }
-  }
-`;
 
 const joysoundQueueButtonMutation = graphql`
   mutation JoysoundQueueButtonMutation(
@@ -67,74 +51,18 @@ const JoysoundQueueButton = ({
 }: Props) => {
   const defaultText = `Queue song${isRomaji ? " (Romaji)" : ""}`;
 
-  const [text, setText] = useState(defaultText);
+  const [text, setText] = useDownloadButtonText(
+    defaultText,
+    { kind: "joysound", songId: song.id, suffix: youtubeVideoId },
+    () => setDisabled(false),
+  );
   const [commit] = useMutation<JoysoundQueueButtonMutation>(
     joysoundQueueButtonMutation,
   );
 
-  useEffect(() => {
-    invariant(window);
-
-    let intervalId: number | null = null;
-    let timeoutId: number | null = null;
-    let subscription: Subscription | null = null;
-
-    if (text === "Finished Downloading" || text.includes("Error")) {
-      timeoutId = window.setTimeout(() => {
-        setText(defaultText);
-        setDisabled(false);
-      }, 2500);
-    } else if (text !== defaultText && text !== "Waiting for server...") {
-      intervalId = window.setInterval(() => {
-        subscription =
-          fetchQuery<JoysoundQueueButtonGetVideoDownloadProgressQuery>(
-            environment,
-            joysoundQueueButtonGetVideoDownloadProgressQuery,
-            {
-              videoDownloadType: 0,
-              songId: song.id,
-              suffix: youtubeVideoId,
-            },
-          ).subscribe({
-            next: (
-              data: JoysoundQueueButtonGetVideoDownloadProgressQuery["response"],
-            ) => {
-              if (
-                data.videoDownloadProgress.progress === 1.0 ||
-                (text !== "Downloading" &&
-                  data.videoDownloadProgress.progress === -1.0)
-              ) {
-                setText("Finished Downloading");
-              } else {
-                setText(
-                  `Downloading -- ${(
-                    data.videoDownloadProgress.progress * 100
-                  ).toFixed(1)}%`,
-                );
-              }
-            },
-          });
-      }, 1000);
-    }
-
-    return () => {
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-      }
-
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-      }
-
-      if (subscription !== null) {
-        subscription.unsubscribe();
-      }
-    };
-  }, [text]);
-
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     setDisabled(true);
-    setText("Waiting for server...");
+    setText(WAITING_FOR_SERVER);
 
     console.log(`tryHeadOfQueue=${e.shiftKey}`);
     commit({
@@ -153,7 +81,7 @@ const JoysoundQueueButton = ({
       onCompleted: ({ queueJoysoundSong }) => {
         switch (queueJoysoundSong.__typename) {
           case "QueueSongInfo":
-            setText("Downloading");
+            setText(DOWNLOADING);
             break;
           case "QueueSongError":
             setText(`Error: ${queueJoysoundSong.reason}`);

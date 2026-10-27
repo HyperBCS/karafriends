@@ -86,6 +86,24 @@ export interface NicoQueueItem extends QueueItemBase {
 export type QueueItem =
   DamQueueItem | JoysoundQueueItem | YoutubeQueueItem | NicoQueueItem;
 
+// Who queued a song, as everyone may see it: the nickname only. A device ID
+// is as good as a password (admins are listed by device ID), so it never
+// leaves the server.
+export interface PublicUser {
+  nickname: string;
+}
+
+type Shared<Item> = Item extends QueueItem
+  ? Omit<Item, "user"> & {
+      user: PublicUser;
+      // Whether the phone asking queued it (from the same device).
+      isMine: boolean;
+    }
+  : never;
+
+// A queue item as the live state and history show it.
+export type SharedQueueItem = Shared<QueueItem>;
+
 // What popSong hands the display. A DAM song comes with what the display needs
 // to play and score it.
 export interface PoppedDamSong extends DamQueueItem {
@@ -142,13 +160,17 @@ export interface DownloadProgress {
   suffix: string | null;
   // 0 to 1.
   progress: number;
-  deviceId: string;
+  // Whether the phone watching started it.
+  isMine: boolean;
 }
 
+// A phone sees which songs and downloads are its own, but no device IDs: it
+// passes its own as GET /api/events?deviceId=..., and isMine is worked out on
+// the server.
 export interface LiveState {
-  currentSong: QueueItem | null;
+  currentSong: SharedQueueItem | null;
   // The songs after currentSong. Clients work out ETAs from playtime.
-  queue: QueueItem[];
+  queue: SharedQueueItem[];
   playbackState: PlaybackState;
   pitchShiftSemis: number;
   // The current song's adhoc lyrics pushed so far.
@@ -164,8 +186,14 @@ export interface LiveState {
 // changes (at most about 4 a second).
 export type LiveEvent =
   | { type: "state"; state: LiveState }
-  | { type: "emote"; emote: string; user: UserIdentity }
-  | { type: "queueAdded"; item: QueueItem };
+  | { type: "emote"; emote: string; user: PublicUser }
+  | { type: "queueAdded"; item: SharedQueueItem };
+
+export type LiveEventType = LiveEvent["type"];
+
+// The query parameter GET /api/events takes the phone's device ID in.
+// (EventSource can't send headers.)
+export const EVENTS_DEVICE_ID_PARAM = "deviceId";
 
 // Lookups
 
@@ -274,7 +302,7 @@ export interface Api {
   // A YouTube song's adhoc lyrics, null if it has none.
   adhocLyrics: { input: { songId: string }; output: string[] | null };
   // Newest first.
-  history: { input: PageInput; output: Page<QueueItem> };
+  history: { input: PageInput; output: Page<SharedQueueItem> };
 
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and

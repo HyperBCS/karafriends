@@ -1,21 +1,9 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { commitMutation, graphql } from "react-relay";
 
+import { useLiveState } from "../apiClient";
 import environment from "../graphqlEnvironment";
+import useOptimisticValue from "./useOptimisticValue";
 import { usePitchShiftSemisMutation } from "./__generated__/usePitchShiftSemisMutation.graphql";
-import { usePitchShiftSemisQuery } from "./__generated__/usePitchShiftSemisQuery.graphql";
-import { usePitchShiftSemisSubscription } from "./__generated__/usePitchShiftSemisSubscription.graphql";
-
-const pitchShiftSemisQuery = graphql`
-  query usePitchShiftSemisQuery {
-    pitchShiftSemis
-  }
-`;
 
 const pitchShiftSemisMutation = graphql`
   mutation usePitchShiftSemisMutation($semis: Int!) {
@@ -23,70 +11,21 @@ const pitchShiftSemisMutation = graphql`
   }
 `;
 
-const pitchShiftSemisSubscription = graphql`
-  subscription usePitchShiftSemisSubscription {
-    pitchShiftSemisChanged
-  }
-`;
-
-type StateType = usePitchShiftSemisQuery["response"]["pitchShiftSemis"];
-
+// The key change in semitones, live, and a setter for it.
 export default function usePitchShiftSemis() {
-  const [pitchShiftSemis, setLocalPitchShiftSemis] = useState<StateType>(0);
-  const [commit] = useMutation<usePitchShiftSemisMutation>(
-    pitchShiftSemisMutation,
-  );
+  const live = useLiveState()?.pitchShiftSemis ?? 0;
+  const [pitchShiftSemis, setPending, clearPending] = useOptimisticValue(live);
 
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<usePitchShiftSemisQuery>(
-        environment,
-        pitchShiftSemisQuery,
-        {},
-      ).subscribe({
-        next: (response: usePitchShiftSemisQuery["response"]) =>
-          setLocalPitchShiftSemis(response.pitchShiftSemis),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const initialQuery = fetchQuery<usePitchShiftSemisQuery>(
-      environment,
-      pitchShiftSemisQuery,
-      {},
-    ).subscribe({
-      next: (response: usePitchShiftSemisQuery["response"]) =>
-        setLocalPitchShiftSemis(response.pitchShiftSemis),
-    });
-
-    const subscription = requestSubscription<usePitchShiftSemisSubscription>(
-      environment,
-      {
-        subscription: pitchShiftSemisSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response)
-            setLocalPitchShiftSemis(response.pitchShiftSemisChanged);
-        },
+  const setPitchShiftSemis = (semis: number) => {
+    setPending(semis);
+    commitMutation<usePitchShiftSemisMutation>(environment, {
+      mutation: pitchShiftSemisMutation,
+      variables: { semis },
+      onError: (err) => {
+        console.error("Couldn't change the key:", err);
+        clearPending();
       },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setPitchShiftSemis = (semis: StateType) => {
-    setLocalPitchShiftSemis(semis);
-    commit({ variables: { semis: semis } });
+    });
   };
 
   return { pitchShiftSemis, setPitchShiftSemis };

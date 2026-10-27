@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import type { QueueItem } from "../common/api";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
-import type { LiveMessage } from "./live";
+import type { HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
 import { createStateStore, type StateStore } from "./state";
 import { validators } from "./validate";
@@ -37,7 +37,7 @@ const song = (n: number, owner: Caller): QueueItem => ({
 
 let dir: string;
 let store: StateStore;
-let published: LiveMessage[];
+let published: HubMessage[];
 let downloads: string[];
 let dkwebsysCalls: unknown[][];
 let joysoundCalls: unknown[][];
@@ -142,7 +142,7 @@ function makeApi(config: Partial<ApiDeps["config"]> = {}) {
         onReady(),
       nico: (_item: QueueItem, onReady: () => void) => onReady(),
     },
-    publish: (message: LiveMessage) => published.push(message),
+    publish: (message: HubMessage) => published.push(message),
     now: () => 42,
   };
   return createApi(deps as unknown as ApiDeps);
@@ -400,6 +400,28 @@ describe("paging", () => {
       ["sm5", "sm4", "sm3", "sm2", "sm1"],
     );
     assert.equal(rest.nextOffset, null);
+  });
+
+  test("history names singers by nickname only, and marks the caller's", async () => {
+    const api = makeApi();
+    store.update((state) => {
+      state.songHistory.unshift({ song: song(1, alice) });
+      state.songHistory.unshift({ song: song(2, bob) });
+    });
+    const { items } = await api.history({}, alice);
+    assert.deepEqual(
+      items.map((item) => [item.songId, item.user, item.isMine]),
+      [
+        ["sm2", { nickname: "bob" }, false],
+        ["sm1", { nickname: "alice" }, true],
+      ],
+    );
+    assert.doesNotMatch(JSON.stringify(items), /-device/);
+    const anonymous = await api.history({}, display);
+    assert.deepEqual(
+      anonymous.items.map((item) => item.isMine),
+      [false, false],
+    );
   });
 });
 

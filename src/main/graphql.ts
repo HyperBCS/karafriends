@@ -32,6 +32,7 @@ import type {
   QueueItem,
   QueueSongInput,
   QueueSongResult,
+  SharedQueueItem,
   UserIdentity,
 } from "../common/api";
 import karafriendsConfig from "../common/config";
@@ -89,9 +90,20 @@ const TYPENAME_BY_KIND = {
   nico: "NicoQueueItem",
 } as const;
 
-function toGqlItem(item: QueueItem) {
+// Anyone can read these, and a device ID is as good as a password (admins
+// are listed by device ID), so the schema's deviceId is always empty now. No
+// client reads it any more.
+function toGqlUser(user: { nickname: string }) {
+  return { nickname: user.nickname, deviceId: "" };
+}
+
+function toGqlItem(item: QueueItem | SharedQueueItem) {
   const { kind, user, ...fields } = item;
-  return { __typename: TYPENAME_BY_KIND[kind], ...fields, userIdentity: user };
+  return {
+    __typename: TYPENAME_BY_KIND[kind],
+    ...fields,
+    userIdentity: toGqlUser(user),
+  };
 }
 
 function toGqlItemOrNull(item: QueueItem | null) {
@@ -223,7 +235,7 @@ hub.onMessage((message) => {
   switch (message.type) {
     case "emote":
       pubsub.publish(SubscriptionEvent.Emote, {
-        emote: { emote: message.emote, userIdentity: message.user },
+        emote: { emote: message.emote, userIdentity: toGqlUser(message.user) },
       });
       break;
     case "queueAdded":
@@ -384,10 +396,11 @@ const resolvers = {
     queue: () => store.getState().songQueue.map(toGqlItem),
     config: () => {
       // Every phone can read this, so return only what the schema exposes,
-      // never the whole config with its DAM/Joysound/proxy credentials.
+      // never the whole config with its DAM/Joysound/proxy credentials. The
+      // admin lists stay on the server too: phones ask whoami.
       return {
-        adminNicks: karafriendsConfig.adminNicks,
-        adminDeviceIds: karafriendsConfig.adminDeviceIds,
+        adminNicks: [],
+        adminDeviceIds: [],
         supervisedMode: karafriendsConfig.supervisedMode,
         __typename: "KarafriendsConfig",
       };

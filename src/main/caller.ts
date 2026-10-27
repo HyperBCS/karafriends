@@ -27,6 +27,14 @@ export function callerFromHeaders(
   };
 }
 
+// GET /api/events?deviceId=...: the phone watching, so it can tell its own
+// songs. Express has already percent-decoded it.
+export function deviceIdFromQuery(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const deviceId = value.trim();
+  return deviceId !== "" && deviceId.length <= 200 ? deviceId : null;
+}
+
 function headerValue(
   headers: IncomingHttpHeaders,
   name: string,

@@ -10,8 +10,7 @@ export default function Queue() {
   return (
     <div className="collection queueQueue" role="list" aria-label="Queue">
       {queue.map(([item, eta], i) => {
-        const nickname =
-          (item.userIdentity && item.userIdentity.nickname) || "";
+        const nickname = item.user.nickname;
         const nicknameHash = cyrb53(nickname);
         const nicknameColor = `hsl(${nicknameHash % 180}, 100%, 50%)`;
         const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 100%, 50%)`;

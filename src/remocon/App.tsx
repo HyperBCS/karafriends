@@ -22,8 +22,9 @@ import * as styles from "./App.module.scss";
 import useQueueNotifications from "./hooks/useQueueNotifications";
 
 const App = () => {
-  const { deviceId } = useUserIdentity(true);
-  useQueueNotifications(deviceId);
+  // Asks a new phone for its nickname.
+  useUserIdentity(true);
+  useQueueNotifications();
 
   return (
     <HashRouter>

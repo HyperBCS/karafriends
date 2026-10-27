@@ -1,22 +1,14 @@
 import React, { JSX, useEffect, useRef, useState } from "react";
-import { graphql, requestSubscription } from "react-relay";
 import invariant from "ts-invariant";
 
 import FadeIn from "react-fade-in";
+import type { AdhocLyricsEntry } from "../common/api";
+import { useLiveState } from "../common/apiClient";
 import { withLoader } from "../common/components/Loader";
-import environment from "../common/graphqlEnvironment";
-import { AdhocLyricsCurrentLyricsSubscription$data } from "./__generated__/AdhocLyricsCurrentLyricsSubscription.graphql";
 
 import "./AdhocLyrics.css";
 
-const adhocLyricsCurrentLyricsSubscription = graphql`
-  subscription AdhocLyricsCurrentLyricsSubscription {
-    currentSongAdhocLyricsChanged {
-      lyric
-      lyricIndex
-    }
-  }
-`;
+const NO_LYRICS: AdhocLyricsEntry[] = [];
 
 type LyricEntry = {
   lyric: string;
@@ -29,29 +21,28 @@ type LyricEntry = {
 function AdhocLyrics() {
   const [lyricLines, setLyricLines] = useState<LyricEntry[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The lines the singer has pushed so far, live.
+  const adhocLyrics = useLiveState()?.adhocLyrics ?? NO_LYRICS;
 
-  function handleNewLyrics(
-    response: AdhocLyricsCurrentLyricsSubscription$data,
-  ) {
+  function handleNewLyrics(lyrics: AdhocLyricsEntry[]) {
     setLyricLines(() => {
-      const newLyricsLineCount = response.currentSongAdhocLyricsChanged.length;
-      const newLyricEntry: LyricEntry[] =
-        response.currentSongAdhocLyricsChanged.map((lyricEntry, index) => {
-          const height = getTextHeight(
-            lyricEntry.lyric,
-            // This must match the width specified in AdhocLyrics.css
-            "4vw sans-serif",
-          );
+      const newLyricsLineCount = lyrics.length;
+      const newLyricEntry: LyricEntry[] = lyrics.map((lyricEntry, index) => {
+        const height = getTextHeight(
+          lyricEntry.lyric,
+          // This must match the width specified in AdhocLyrics.css
+          "4vw sans-serif",
+        );
 
-          return {
-            lyric: lyricEntry.lyric,
-            lyricIndex: lyricEntry.lyricIndex,
-            displayIndex: index,
-            // marginTop for positioning each line
-            marginTop: -1 * (newLyricsLineCount - index) * height * 3.4,
-            isNewLyricLine: index === newLyricsLineCount - 1,
-          };
-        });
+        return {
+          lyric: lyricEntry.lyric,
+          lyricIndex: lyricEntry.lyricIndex,
+          displayIndex: index,
+          // marginTop for positioning each line
+          marginTop: -1 * (newLyricsLineCount - index) * height * 3.4,
+          isNewLyricLine: index === newLyricsLineCount - 1,
+        };
+      });
       return newLyricEntry;
     });
   }
@@ -70,18 +61,8 @@ function AdhocLyrics() {
     return metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent;
   }
 
-  useEffect(() => {
-    const adhocLyricsSubscription = requestSubscription(environment, {
-      subscription: adhocLyricsCurrentLyricsSubscription,
-      variables: {},
-      // @ts-ignore: @types/react-relay has unknown return type for onNext response
-      onNext: handleNewLyrics,
-    });
-
-    return () => {
-      adhocLyricsSubscription.dispose();
-    };
-  }, []);
+  // After render, so the canvas that measures the text is there.
+  useEffect(() => handleNewLyrics(adhocLyrics), [adhocLyrics]);
 
   return (
     <>

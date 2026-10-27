@@ -22,6 +22,8 @@ const item: QueueItem = {
   user: { deviceId: "d", nickname: "n" },
 };
 
+const config = { supervisedMode: false };
+
 let dir: string;
 let store: StateStore;
 
@@ -33,6 +35,21 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+const { user: _user, ...itemFields } = item;
+// item as a phone sees it.
+const shared = (isMine: boolean) => ({
+  ...itemFields,
+  user: { nickname: "n" },
+  isMine,
+});
+
+const otherItem: QueueItem = {
+  ...item,
+  songId: "sm10",
+  timestamp: "2",
+  user: { deviceId: "other", nickname: "o" },
+};
 
 describe("toLiveState", () => {
   test("shares no secrets and names download kinds", () => {
@@ -52,16 +69,125 @@ describe("toLiveState", () => {
       adminDeviceIds: ["secret"],
     } as { supervisedMode: boolean });
     assert.deepEqual(live.config, { supervisedMode: true });
-    assert.deepEqual(live.queue, [item]);
+    assert.deepEqual(live.queue, [shared(false)]);
     assert.deepEqual(live.downloads, [
       {
         kind: "youtube",
         songId: "jNQXAC9IVRw",
         suffix: null,
         progress: 0.25,
-        deviceId: "d",
+        isMine: false,
       },
     ]);
+  });
+
+  test("marks the watching device's songs and downloads, and no one else's", () => {
+    store.update((state) => {
+      state.currentSong = otherItem;
+      state.songQueue.push(item, { ...otherItem, timestamp: "3" });
+      state.downloadQueue.push(
+        {
+          downloadType: 2,
+          userIdentity: { deviceId: "d", nickname: "n" },
+          songId: "sm1",
+          suffix: null,
+          progress: 0,
+        },
+        {
+          downloadType: 2,
+          userIdentity: { deviceId: "other", nickname: "o" },
+          songId: "sm2",
+          suffix: null,
+          progress: 0,
+        },
+      );
+    });
+    const mine = (deviceId: string | null) => {
+      const live = toLiveState(store.getState(), config, deviceId);
+      return {
+        currentSong: live.currentSong?.isMine,
+        queue: live.queue.map((entry) => entry.isMine),
+        downloads: live.downloads.map((download) => download.isMine),
+      };
+    };
+    assert.deepEqual(mine("d"), {
+      currentSong: false,
+      queue: [true, false],
+      downloads: [true, false],
+    });
+    assert.deepEqual(mine("other"), {
+      currentSong: true,
+      queue: [false, true],
+      downloads: [false, true],
+    });
+    for (const nobody of [null, "someone-else"]) {
+      assert.deepEqual(mine(nobody), {
+        currentSong: false,
+        queue: [false, false],
+        downloads: [false, false],
+      });
+    }
+    // Nothing anywhere says a device ID.
+    const all = JSON.stringify(toLiveState(store.getState(), config, "d"));
+    assert.doesNotMatch(all, /deviceId|"other"|"d"/);
+  });
+});
+
+describe("createLiveHub: who sees what", () => {
+  test("each phone sees its own songs; phones with none share one event", async () => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const events = new Map<string, LiveEvent[]>();
+    const watch = (name: string, deviceId: string | null) => {
+      events.set(name, []);
+      return hub.subscribe((event) => events.get(name)!.push(event), {
+        deviceId,
+      });
+    };
+    const stops = [
+      watch("d", "d"),
+      watch("d again", "d"),
+      watch("other", "other"),
+      watch("display", null),
+      watch("idle phone", "idle"),
+    ];
+    store.update((state) => state.songQueue.push(item, otherItem));
+    hub.publish({ type: "queueAdded", item });
+    hub.publish({ type: "emote", emote: "🎉", user: item.user });
+    await sleep(INTERVAL_MS * 3);
+    stops.forEach((stop) => stop());
+
+    const second = (name: string) => events.get(name)!.slice(1);
+    const [dState, dAdded, dEmote] = second("d");
+    assert.deepEqual(
+      dState.type === "state" && dState.state.queue.map((e) => e.isMine),
+      [true, false],
+    );
+    assert.deepEqual(dAdded, { type: "queueAdded", item: shared(true) });
+    assert.deepEqual(dEmote, {
+      type: "emote",
+      emote: "🎉",
+      user: { nickname: "n" },
+    });
+    const [oState, oAdded] = second("other");
+    assert.deepEqual(
+      oState.type === "state" && oState.state.queue.map((e) => e.isMine),
+      [false, true],
+    );
+    assert.deepEqual(oAdded, { type: "queueAdded", item: shared(false) });
+
+    // The same objects, so they are serialized once (see server.ts).
+    second("d again").forEach((event, i) =>
+      assert.equal(event, second("d")[i]),
+    );
+    second("idle phone").forEach((event, i) =>
+      assert.equal(event, second("display")[i]),
+    );
+    assert.equal(second("display")[2], second("d")[2]);
+    assert.notEqual(second("display")[0], second("d")[0]);
+
+    for (const list of events.values()) {
+      assert.doesNotMatch(JSON.stringify(list), /deviceId|"other"|"d"/);
+    }
   });
 });
 
@@ -84,7 +210,7 @@ describe("createLiveHub", () => {
       ["state", "state", "queueAdded"],
     );
     const last = events[1] as Extract<LiveEvent, { type: "state" }>;
-    assert.deepEqual(last.state.queue, [item]);
+    assert.deepEqual(last.state.queue, [shared(false)]);
 
     stop();
     store.update((state) => state.songQueue.push({ ...item, timestamp: "2" }));

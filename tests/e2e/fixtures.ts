@@ -10,8 +10,8 @@
 //
 // The tests drive the UI the way a person would (the display window and the
 // remote's pages), not the server API, so they keep working when the API and
-// the bundler are replaced. The exception is api.spec.ts, which tests the
-// JSON RPC API itself.
+// the bundler are replaced. The exceptions are api.spec.ts, which tests the
+// JSON RPC API itself, and the device-ID checks in live.spec.ts.
 
 import fs from "fs";
 import net from "net";

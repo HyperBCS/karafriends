@@ -6,10 +6,11 @@ import { SiNiconico } from "react-icons/si";
 import { graphql, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 
+import type { SharedQueueItem } from "../../../common/api";
+import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { cyrb53 } from "../../../common/hash";
-import { useQueueQueueQuery$data } from "../../../common/hooks/__generated__/useQueueQueueQuery.graphql";
-import useConfig from "../../hooks/useConfig";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import isOwnSong from "../../isOwnSong";
 import Marquee from "../Marquee";
 import * as styles from "./SongQueue.module.scss";
 
@@ -22,10 +23,23 @@ const removeSongMutation = graphql`
   }
 `;
 
+const SONG_PAGES = {
+  dam: "/song/",
+  joysound: "/joysoundSong/",
+  youtube: "/search/youtube/",
+  nico: "/search/niconico/",
+};
+
+const ICONS = {
+  dam: <MdMusicVideo />,
+  joysound: <MdMusicVideo />,
+  youtube: <FaYoutube />,
+  nico: <SiNiconico />,
+};
+
 interface Props {
-  item: useQueueQueueQuery$data["queue"][0];
+  item: SharedQueueItem;
   eta: number;
-  myNickname: string;
   isCurrent?: boolean;
 }
 
@@ -34,47 +48,23 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const [commit] = useMutation(removeSongMutation);
 
-  const config = useConfig();
+  const supervisedMode = useLiveState()?.config.supervisedMode ?? false;
+  const isAdmin = useIsAdmin();
   const identity = useUserIdentity();
 
-  let canRemove = true;
+  // What the server allows (removeSong in src/main/api.ts).
+  const canRemove =
+    !supervisedMode || isAdmin === true || isOwnSong(item, identity.nickname);
 
-  // Config finally loaded, let's evaluate things
-  if (config !== undefined) {
-    const itemOwnedByUser =
-      item.userIdentity!.nickname === identity.nickname ||
-      item.userIdentity!.deviceId === identity.nickname;
-    canRemove =
-      config.adminNicks.includes(identity.nickname) ||
-      config.adminDeviceIds.includes(identity.deviceId) ||
-      !(config.supervisedMode === true && !itemOwnedByUser);
-  }
-
-  const itemType = item.__typename;
-  const nickname =
-    (item.userIdentity && item.userIdentity.nickname) || "Unknown";
+  const nickname = item.user.nickname || "Unknown";
   const nicknameHash = cyrb53(nickname);
   const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 50%, 50%)`;
 
-  const onClick = () => {
-    if (itemType === "DamQueueItem") navigate(`/song/${item.songId}`);
-    if (itemType === "JoysoundQueueItem")
-      navigate(`/joysoundSong/${item.songId}`);
-    if (itemType === "YoutubeQueueItem")
-      navigate(`/search/youtube/${item.songId}`);
-    if (itemType === "NicoQueueItem")
-      navigate(`/search/niconico/${item.songId}`);
-  };
+  const onClick = () => navigate(`${SONG_PAGES[item.kind]}${item.songId}`);
 
-  const onRemove = (songId?: string, timestamp?: string) => {
-    commit({ variables: { songId, timestamp } });
+  const onRemove = () => {
+    commit({ variables: { songId: item.songId, timestamp: item.timestamp } });
   };
-
-  let icon = null;
-  if (itemType === "DamQueueItem") icon = <MdMusicVideo />;
-  if (itemType === "JoysoundQueueItem") icon = <MdMusicVideo />;
-  if (itemType === "YoutubeQueueItem") icon = <FaYoutube />;
-  if (itemType === "NicoQueueItem") icon = <SiNiconico />;
 
   return (
     <div className={styles.queueItem}>
@@ -90,12 +80,12 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
           >
             {nickname}
           </div>
-          {item.songId && item.timestamp && !isCurrent && canRemove && (
+          {!isCurrent && canRemove && (
             <div
               className={styles.remove}
               role="button"
               aria-label="Remove from queue"
-              onClick={() => onRemove(item.songId, item.timestamp)}
+              onClick={onRemove}
             >
               <MdClose />
             </div>
@@ -116,7 +106,7 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
       <div className={styles.songMeta} onClick={onClick}>
         <Marquee>
           <div className={styles.songMetaContent}>
-            {icon} {item.artistName} - {item.name}
+            {ICONS[item.kind]} {item.artistName} - {item.name}
           </div>
         </Marquee>
       </div>

@@ -5,7 +5,9 @@
 //                       an unknown method, 400 for bad input, 403 when the
 //                       caller may not do it.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
-//                       every change, plus emote and queueAdded events.
+//                       every change, plus emote and queueAdded events. A
+//                       phone adds ?deviceId=<its ID> to see which songs are
+//                       its own; no device IDs are sent.
 //
 // No CORS headers: requiring a JSON content type then keeps other web pages
 // from driving the queue (a cross-site form can't send it, and fetch() would
@@ -13,9 +15,13 @@
 import compression from "compression";
 import express, { NextFunction, Request, Response, Router } from "express";
 
-import type { ApiMethod, LiveEvent } from "../common/api";
+import {
+  EVENTS_DEVICE_ID_PARAM,
+  type ApiMethod,
+  type LiveEvent,
+} from "../common/api";
 import { ApiError, ApiHandlers } from "./api";
-import { callerFromHeaders } from "./caller";
+import { callerFromHeaders, deviceIdFromQuery } from "./caller";
 import type { LiveHub } from "./live";
 import { validators } from "./validate";
 
@@ -26,6 +32,19 @@ const HEARTBEAT_MS = 20_000;
 // compression() would hold back the event stream to fill its buffer.
 export function shouldCompress(req: Request, res: Response): boolean {
   return req.path !== EVENTS_PATH && compression.filter(req, res);
+}
+
+// Most events are one object shared by every phone (see live.ts), so each is
+// serialized once, not once per phone.
+const serialized = new WeakMap<LiveEvent, string>();
+
+export function serializeEvent(event: LiveEvent): string {
+  let json = serialized.get(event);
+  if (json === undefined) {
+    json = JSON.stringify(event);
+    serialized.set(event, json);
+  }
+  return json;
 }
 
 function isMethod(name: string): name is ApiMethod {
@@ -40,7 +59,10 @@ function isJson(req: Request): boolean {
 export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
   const router = express.Router();
 
-  router.get("/events", (_req, res) => {
+  router.get("/events", (req, res) => {
+    const viewer = {
+      deviceId: deviceIdFromQuery(req.query[EVENTS_DEVICE_ID_PARAM]),
+    };
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
@@ -52,9 +74,9 @@ export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
     res.write("retry: 2000\n\n");
 
     const send = (event: LiveEvent) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      res.write(`data: ${serializeEvent(event)}\n\n`);
     };
-    const unsubscribe = hub.subscribe(send);
+    const unsubscribe = hub.subscribe(send, viewer);
     // Keeps idle connections open through proxies, and notices dead ones.
     const heartbeat = setInterval(
       () => res.write(": heartbeat\n\n"),

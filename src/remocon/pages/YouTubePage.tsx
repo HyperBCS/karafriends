@@ -1,17 +1,15 @@
-import { invariant } from "ts-invariant";
-
 import React, { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
-import useNowPlaying from "../hooks/useNowPlaying";
+import type { SharedQueueItem } from "../../common/api";
+import { useLiveState } from "../../common/apiClient";
 import useUserIdentity from "../hooks/useUserIdentity";
+import isOwnSong from "../isOwnSong";
 
 import Button from "../components/Button";
 import { withLoader } from "../components/Loader";
 import SearchFormWrapper from "../components/SearchFormWrapper";
 import YouTubeInfo from "../components/YouTubeInfo";
-
-import { useNowPlayingQuery$data } from "../hooks/__generated__/useNowPlayingQuery.graphql";
 
 export function getVideoId(videoQuery: string): string | null {
   try {
@@ -27,20 +25,17 @@ export function getVideoId(videoQuery: string): string | null {
   return videoQuery;
 }
 
+// Whether this phone's YouTube video with adhoc lyrics is playing, so its
+// singer gets the lyrics controls.
 export function isYouTubeVideoWithLyricsPlaying(
-  currentSong: useNowPlayingQuery$data["currentSong"] | null | undefined,
+  currentSong: SharedQueueItem | null | undefined,
   videoId: string,
   nickname: string,
 ): boolean {
-  if (!currentSong || currentSong.__typename !== "YoutubeQueueItem") {
-    return false;
-  }
-
-  invariant(currentSong.hasAdhocLyrics !== undefined);
-
   return (
+    currentSong?.kind === "youtube" &&
     currentSong.songId === videoId &&
-    currentSong.userIdentity?.nickname === nickname &&
+    isOwnSong(currentSong, nickname) &&
     currentSong.hasAdhocLyrics
   );
 }
@@ -52,7 +47,7 @@ type YouTubeParams = {
 const YouTubePage = () => {
   const navigate = useNavigate();
   const { nickname } = useUserIdentity();
-  const currentSong = useNowPlaying();
+  const currentSong = useLiveState()?.currentSong;
 
   const params = useParams<YouTubeParams>();
   const inputRef = useRef<HTMLInputElement>(null);
