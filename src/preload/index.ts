@@ -4,7 +4,6 @@ import { default as nativeAudioUrl } from "url:../../native/index.node";
 const nativeAudio = require(fileURLToPath(nativeAudioUrl));
 
 import { contextBridge, ipcRenderer } from "electron";
-import { memoize } from "lodash";
 
 import type { LiveEvent } from "../common/api";
 import { IPC_CHANNELS, REMOCON_PORT_ARG, type DisplayApi } from "../common/ipc";
@@ -12,6 +11,12 @@ import ipAddresses from "../common/ipAddresses";
 
 let inputDeviceCount = 0;
 const inputDevices: { [deviceId: number]: any } = {};
+
+// Calls fn the first time it's needed, and gives that answer from then on.
+function once<T>(fn: () => T): () => T {
+  let result: { value: T } | undefined;
+  return () => (result ??= { value: fn() }).value;
+}
 
 // The phones' server port, from the main process (see index.ts).
 const remoconPort = Number(
@@ -87,7 +92,7 @@ contextBridge.exposeInMainWorld("karafriends", {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid
     // that.
-    inputDevices: memoize(nativeAudio.inputDevices),
+    inputDevices: once(nativeAudio.inputDevices),
     outputDevices: nativeAudio.outputDevices,
     inputDevice_new(name: string, channelSelection: number) {
       console.debug(
