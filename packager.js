@@ -4,8 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const sevenBin = require("7zip-bin");
-const packager = require("electron-packager");
-const { glob } = require("glob");
+const { packager } = require("@electron/packager");
 
 // Copy the archive extractor for the target architecture into extraResources/
 // so it ships with the app and can unpack the runtime downloads. 7zip-bin lays
@@ -33,10 +32,16 @@ function bundleExtractor() {
     "",
     "/package.json",
     "/build",
-    ...(await glob("build/prod/**", { posix: true })).map((path) => `/${path}`),
+    // fs.globSync returns native separators; packager matches POSIX paths.
+    ...fs
+      .globSync("build/prod/**")
+      .map((file) => `/${file.split(path.sep).join("/")}`),
   ]);
-  const output = await packager({
+  const [output] = await packager({
     arch: process.env.PACKAGER_ARCH,
+    // @electron/packager now defaults to an asar archive; keep the plain
+    // resources/app folder the app has always shipped with.
+    asar: false,
     dir: ".",
     extraResource: ["extraResources"],
     ignore: (path) => !buildFiles.has(path),
@@ -46,7 +51,6 @@ function bundleExtractor() {
       appBundleId: "party.karafriends",
       icon: "appIcons/icon.icns",
       osxNotarize: {
-        tool: "notarytool",
         appleApiKey: process.env.NOTARIZATION_KEY_PATH,
         appleApiKeyId: "Z744X6G756",
         appleApiIssuer: "69a6de7c-6a99-47e3-e053-5b8c7c11a4d1",
