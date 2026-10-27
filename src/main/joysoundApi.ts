@@ -1,7 +1,8 @@
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
-import { getSetCookies, http, httpFetch, HttpResponse } from "./http";
+import { ApiError } from "./api";
+import { formBody, getSetCookies, http, httpFetch, HttpResponse } from "./http";
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -54,6 +55,15 @@ export interface JoysoundSongRawData {
 
 interface ServiceTypeData {
   serviceType: string;
+}
+
+// Joysound's song numbers and artist IDs are digits. Anything else (from a
+// phone) is refused before it goes into a URL or form sent with the host's
+// session: "../mypage" as a song would otherwise fetch another page.
+function checkId(id: string, what: "song number" | "artist ID") {
+  if (!/^\d+$/.test(id)) {
+    throw new ApiError(400, `Not a Joysound ${what}: ${JSON.stringify(id)}`);
+  }
 }
 
 function generateCookieString(cookies: JoysoundCookies) {
@@ -116,10 +126,8 @@ export class JoysoundAPI {
     this.credsProvider = credsProvider;
   }
 
-  async post<T>(url: string, data: object): Promise<T> {
-    const body = Object.entries(data)
-      .map(([k, v]) => `${k}=${v}`)
-      .join("&");
+  async post<T>(url: string, data: Record<string, string>): Promise<T> {
+    const body = formBody(data);
 
     const creds = await this.credsProvider();
 
@@ -160,6 +168,7 @@ export class JoysoundAPI {
   }
 
   async getMovieUrls(id: string) {
+    checkId(id, "song number");
     return promiseRetry((retryFn, retryCount: number) => {
       console.log(`contentsInfo for songId: ${id}, retry no. ${retryCount}`);
 
@@ -171,6 +180,7 @@ export class JoysoundAPI {
   }
 
   async getSongDetail(id: string) {
+    checkId(id, "song number");
     const creds = await this.credsProvider().catch(() => {
       console.log("Login Failed");
       return null;
@@ -184,7 +194,8 @@ export class JoysoundAPI {
       };
     }
 
-    const data = await http<string>(`${this.baseURL}/songdetail/${id}`, {
+    const url = `${this.baseURL}/songdetail/${encodeURIComponent(id)}`;
+    const data = await http<string>(url, {
       headers: { Cookie: generateCookieString(creds.cookies) },
     });
 
@@ -223,7 +234,8 @@ export class JoysoundAPI {
     return payload;
   }
 
-  getSongListByArtist(artistId: string, start: number, count: number) {
+  async getSongListByArtist(artistId: string, start: number, count: number) {
+    checkId(artistId, "artist ID");
     return this.post<JoysoundSongListItem[]>("/search/artist/song/list", {
       artistId,
       sort: "popular",
@@ -251,6 +263,7 @@ export class JoysoundAPI {
   }
 
   async getSongRawData(id: string) {
+    checkId(id, "song number");
     return promiseRetry((retryFn, retryCount: number) => {
       console.log(`getFME for songId: ${id}, retry no. ${retryCount}`);
 
@@ -286,7 +299,7 @@ export class JoysoundAPI {
 
     return httpFetch("https://www.sound-cafe.jp/login/check", {
       method: "POST",
-      body: `mailAddress=${email}&password=${password}`,
+      body: formBody({ mailAddress: email, password }),
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         Cookie: generateCookieString(loginCookies),
@@ -313,7 +326,7 @@ export class JoysoundAPI {
 
         return httpFetch("https://www.sound-cafe.jp/login", {
           method: "POST",
-          body: `_csrf=${csrfToken}&mailAddress=${email}&password=${password}`,
+          body: formBody({ _csrf: csrfToken, mailAddress: email, password }),
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
             Cookie: generateCookieString(loginCookies),

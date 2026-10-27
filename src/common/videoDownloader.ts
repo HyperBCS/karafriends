@@ -11,10 +11,13 @@ import type { JoysoundAPI } from "../main/joysoundApi";
 import type { DownloadQueueItem } from "../main/state";
 import type { JoysoundQueueItem, UserIdentity } from "./api";
 
+import { isCaptionCode } from "./captionCode";
+import { envWithoutHttpProxy } from "./childEnv";
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 import {
   isNicoVideoId,
+  limitLookups,
   NicoVideoMetadata,
   nicoWatchUrl,
   parseNicoVideoInfo,
@@ -23,7 +26,6 @@ import {
 const execFileAsync = promisify(execFile);
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
-const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
 
 interface JoysoundVideoData {
   songId: string;
@@ -409,10 +411,6 @@ function downloadJoysoundYoutubeVideoPromise(
     const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
     attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
 
-    const env = { ...process.env };
-    // Don't need a proxy to download from YouTube
-    delete process.env.http_proxy;
-
     const ytdlp = spawn(
       resourcePaths.ytdlp,
       [
@@ -432,7 +430,7 @@ function downloadJoysoundYoutubeVideoPromise(
         youtubeVideoId!,
       ],
       {
-        env,
+        env: envWithoutHttpProxy(),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -1002,7 +1000,9 @@ function downloadYoutubeVideoImpl(
   captionCode: string | null,
   onComplete: () => any,
 ): void {
-  if (captionCode !== null && !captionCodeRe.test(captionCode)) {
+  // validate.ts already refuses these; this keeps a bad code off yt-dlp's
+  // command line whoever calls.
+  if (captionCode !== null && !isCaptionCode(captionCode)) {
     console.error(
       `Error downloading Youtube Video. ${captionCode} is not a valid caption code`,
     );
@@ -1071,7 +1071,7 @@ function downloadYoutubeVideoImpl(
       "--",
       videoId,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    { env: envWithoutHttpProxy(), stdio: ["ignore", "pipe", "pipe"] },
   );
 
   invariant(ytdlp.stdout);
@@ -1119,19 +1119,42 @@ function downloadYoutubeVideoImpl(
 
 // Look up a Niconico video's metadata with yt-dlp, which already downloads
 // these videos and keeps up with changes to Niconico's site.
+async function lookUpNicoVideoInfo(
+  videoId: string,
+): Promise<NicoVideoMetadata> {
+  await ensureExternalResources();
+  const { stdout } = await execFileAsync(
+    resourcePaths.ytdlp,
+    ["--dump-single-json", "--skip-download", "--", nicoWatchUrl(videoId)],
+    {
+      env: envWithoutHttpProxy(),
+      timeout: 30000,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+  return parseNicoVideoInfo(stdout);
+}
+
+// Any phone can ask, and each lookup starts a yt-dlp (on Windows, an exe
+// that unpacks itself and starts Python), so a script asking for sm1, sm2,
+// ... at once would swamp the karaoke PC. Results are shared and kept for an
+// hour, two lookups run at a time, and a few more may wait; past that a
+// lookup fails at once.
+const limitedNicoVideoInfo = limitLookups(lookUpNicoVideoInfo, {
+  concurrency: 2,
+  maxWaiting: 8,
+  cacheSize: 200,
+  cacheMs: 60 * 60 * 1000,
+});
+
 export async function getNicoVideoInfo(
   videoId: string,
 ): Promise<NicoVideoMetadata> {
   if (!isNicoVideoId(videoId)) {
     throw new Error(`Not a Niconico video ID: ${JSON.stringify(videoId)}`);
   }
-  await ensureExternalResources();
-  const { stdout } = await execFileAsync(
-    resourcePaths.ytdlp,
-    ["--dump-single-json", "--skip-download", "--", nicoWatchUrl(videoId)],
-    { timeout: 30000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
-  );
-  return parseNicoVideoInfo(stdout);
+  return limitedNicoVideoInfo(videoId);
 }
 
 export function downloadNicoVideo(
@@ -1195,10 +1218,6 @@ function downloadNicoVideoImpl(
 
   attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
 
-  const env = { ...process.env };
-  // Don't need a proxy to download from Niconico
-  delete process.env.http_proxy;
-
   const ytdlp = spawn(
     resourcePaths.ytdlp,
     [
@@ -1210,7 +1229,7 @@ function downloadNicoVideoImpl(
       `https://www.nicovideo.jp/watch/${videoId}`,
     ],
     {
-      env,
+      env: envWithoutHttpProxy(),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

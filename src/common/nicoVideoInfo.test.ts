@@ -5,6 +5,7 @@ import { describe, test } from "node:test";
 
 import {
   isNicoVideoId,
+  limitLookups,
   nicoWatchUrl,
   parseNicoVideoInfo,
 } from "./nicoVideoInfo.ts";
@@ -100,5 +101,115 @@ describe("isNicoVideoId", () => {
 describe("nicoWatchUrl", () => {
   test("builds the watch page URL", () => {
     assert.equal(nicoWatchUrl("sm9"), "https://www.nicovideo.jp/watch/sm9");
+  });
+});
+
+describe("limitLookups", () => {
+  // A lookup the test finishes by hand, recording each call.
+  function fakeLookup() {
+    const calls: string[] = [];
+    const pending = new Map<
+      string,
+      { resolve: (v: string) => void; reject: (e: Error) => void }
+    >();
+    const lookup = (id: string) => {
+      calls.push(id);
+      return new Promise<string>((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+      });
+    };
+    return { calls, pending, lookup };
+  }
+
+  const LIMITS = { concurrency: 2, maxWaiting: 2, cacheSize: 3, cacheMs: 1000 };
+  // Lets settled promises run their callbacks.
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  test("shares one lookup among callers, then keeps the result", async () => {
+    let time = 0;
+    const { calls, pending, lookup } = fakeLookup();
+    const get = limitLookups(lookup, LIMITS, () => time);
+
+    const first = get("sm9");
+    const second = get("sm9");
+    await tick();
+    pending.get("sm9")!.resolve("info");
+    assert.deepEqual(await Promise.all([first, second]), ["info", "info"]);
+
+    time = 999;
+    assert.equal(await get("sm9"), "info");
+    assert.deepEqual(calls, ["sm9"]);
+
+    // Stale after cacheMs.
+    time = 1000;
+    const third = get("sm9");
+    await tick();
+    assert.deepEqual(calls, ["sm9", "sm9"]);
+    pending.get("sm9")!.resolve("newer");
+    assert.equal(await third, "newer");
+  });
+
+  test("doesn't keep a failure", async () => {
+    const { calls, pending, lookup } = fakeLookup();
+    const get = limitLookups(lookup, LIMITS);
+
+    const failed = get("sm1");
+    await tick();
+    pending.get("sm1")!.reject(new Error("no such video"));
+    await assert.rejects(failed, /no such video/);
+
+    const retried = get("sm1");
+    await tick();
+    pending.get("sm1")!.resolve("info");
+    assert.equal(await retried, "info");
+    assert.deepEqual(calls, ["sm1", "sm1"]);
+  });
+
+  test("runs two at a time, queues two, and refuses more", async () => {
+    const { calls, pending, lookup } = fakeLookup();
+    const get = limitLookups(lookup, LIMITS);
+
+    const results = ["sm1", "sm2", "sm3", "sm4"].map(get);
+    await assert.rejects(get("sm5"), /Too many lookups/);
+    await tick();
+    assert.deepEqual(calls, ["sm1", "sm2"]);
+
+    // Each one that finishes lets the next waiting one start.
+    pending.get("sm1")!.resolve("1");
+    await tick();
+    assert.deepEqual(calls, ["sm1", "sm2", "sm3"]);
+    pending.get("sm2")!.reject(new Error("gone"));
+    await tick();
+    assert.deepEqual(calls, ["sm1", "sm2", "sm3", "sm4"]);
+
+    // With two running and none waiting, two more may wait.
+    const waiting = [get("sm6"), get("sm7")];
+    await assert.rejects(get("sm8"), /Too many lookups/);
+    pending.get("sm3")!.resolve("3");
+    pending.get("sm4")!.resolve("4");
+    await tick();
+    pending.get("sm6")!.resolve("6");
+    pending.get("sm7")!.resolve("7");
+
+    assert.deepEqual(
+      await Promise.allSettled([...results, ...waiting]).then((all) =>
+        all.map((r) => (r.status === "fulfilled" ? r.value : "failed")),
+      ),
+      ["1", "failed", "3", "4", "6", "7"],
+    );
+    assert.deepEqual(calls, ["sm1", "sm2", "sm3", "sm4", "sm6", "sm7"]);
+  });
+
+  test("keeps only the newest cacheSize results", async () => {
+    const calls: string[] = [];
+    const get = limitLookups(async (id) => {
+      calls.push(id);
+      return id;
+    }, LIMITS);
+
+    for (const id of ["sm1", "sm2", "sm3", "sm4"]) await get(id);
+    // sm1 was dropped for sm4; sm2-sm4 are still kept.
+    for (const id of ["sm2", "sm3", "sm4", "sm1"]) await get(id);
+    assert.deepEqual(calls, ["sm1", "sm2", "sm3", "sm4", "sm1"]);
   });
 });
