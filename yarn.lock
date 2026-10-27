@@ -4483,16 +4483,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react-relay@npm:18.2.1":
-  version: 18.2.1
-  resolution: "@types/react-relay@npm:18.2.1"
-  dependencies:
-    "@types/react": "npm:*"
-    "@types/relay-runtime": "npm:*"
-  checksum: 10/9f9f5311ebedd3e9910eee8447c6bab1262344a56407f9d003a3448a3d0ba8bc814a3afa95338346a4fa0fc0aefa3daed5406835b98036fbbb7ef644794decde
-  languageName: node
-  linkType: hard
-
 "@types/react-swipeable@npm:5.2.0":
   version: 5.2.0
   resolution: "@types/react-swipeable@npm:5.2.0"
@@ -4502,35 +4492,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react@npm:*":
-  version: 19.2.2
-  resolution: "@types/react@npm:19.2.2"
-  dependencies:
-    csstype: "npm:^3.0.2"
-  checksum: 10/d6adf8fd4bb23a7e04da5700d96b15dc0f59653727a9c6e940c151d7232fa1dbbab98417d5ac830dcfb6cba3f206efbd4cd83647e6f9a688d7363a90e607f6bf
-  languageName: node
-  linkType: hard
-
 "@types/react@npm:19.2.17":
   version: 19.2.17
   resolution: "@types/react@npm:19.2.17"
   dependencies:
     csstype: "npm:^3.2.2"
   checksum: 10/8debb092bd0bb9c99176a31824c7587c27c775a6526b60060e7b9e8dc2af53aee2ffadc7a1e3845953792437db5699d34a9054e198c9d4e54a74728ff47c6725
-  languageName: node
-  linkType: hard
-
-"@types/relay-runtime@npm:*":
-  version: 19.0.3
-  resolution: "@types/relay-runtime@npm:19.0.3"
-  checksum: 10/4e16f33196e1c6435956717793424e4b4f9994bf6dd5be2d562ddc9602e86a3fb23fea8cf29f0fd9a37cbfb58d7a9651e7d7d6bf2c2ffa34133aba57c29403c1
-  languageName: node
-  linkType: hard
-
-"@types/relay-runtime@npm:20.1.1":
-  version: 20.1.1
-  resolution: "@types/relay-runtime@npm:20.1.1"
-  checksum: 10/d4f80f2e974af7aab0a1545c29a220ad2b41851c944783d7d16459c2297dd82e893db37f0d4bb975b34e088c120c4e7f0742f2fb7a3b409b814d19392e45fb22
   languageName: node
   linkType: hard
 
@@ -7046,13 +7013,6 @@ __metadata:
   dependencies:
     cssom: "npm:~0.3.6"
   checksum: 10/46f7f05a153446c4018b0454ee1464b50f606cb1803c90d203524834b7438eb52f3b173ba0891c618f380ced34ee12020675dc0052a7f1be755fe4ebc27ee977
-  languageName: node
-  linkType: hard
-
-"csstype@npm:^3.0.2":
-  version: 3.1.3
-  resolution: "csstype@npm:3.1.3"
-  checksum: 10/f593cce41ff5ade23f44e77521e3a1bcc2c64107041e1bf6c3c32adc5187d0d60983292fda326154d20b01079e24931aa5b08e4467cc488b60bb1e7f6d478ade
   languageName: node
   linkType: hard
 
@@ -11221,9 +11181,7 @@ __metadata:
     "@types/react": "npm:19.2.17"
     "@types/react-dom": "npm:19.2.3"
     "@types/react-fade-in": "npm:2.0.2"
-    "@types/react-relay": "npm:18.2.1"
     "@types/react-swipeable": "npm:5.2.0"
-    "@types/relay-runtime": "npm:20.1.1"
     "@types/tunnel": "npm:^0"
     "@types/user-agents": "npm:1.0.4"
     "@types/uuid": "npm:^11"
@@ -11290,8 +11248,6 @@ __metadata:
     react-swipeable: "npm:7.0.2"
     regenerator-runtime: "npm:0.14.1"
     relay-compiler: "npm:21.0.1"
-    relay-compiler-language-typescript: "npm:15.0.1"
-    relay-config: "npm:12.0.1"
     relay-runtime: "npm:21.0.1"
     supports-color: "npm:11.0.0"
     ts-invariant: "npm:0.10.3"
@@ -14104,36 +14060,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"relay-compiler-language-typescript@npm:15.0.1":
-  version: 15.0.1
-  resolution: "relay-compiler-language-typescript@npm:15.0.1"
-  dependencies:
-    invariant: "npm:^2.2.4"
-  peerDependencies:
-    "@types/react-relay": ">=11.0.2"
-    "@types/relay-runtime": ">=12.0.0"
-    relay-compiler: ">=12.0.0"
-    relay-runtime: ">=12.0.0"
-    typescript: ">=4.5.0"
-  checksum: 10/4041ca8f1463b1d0cedceacc91a5659e6a3a06b439133f18c218b3a56006f2c88ae8a4a1d4040927bb90cd9b2bb2a1446ef346d7f91dfb01d20c21efd80270eb
-  languageName: node
-  linkType: hard
-
 "relay-compiler@npm:21.0.1":
   version: 21.0.1
   resolution: "relay-compiler@npm:21.0.1"
   bin:
     relay-compiler: cli.js
   checksum: 10/bb5bf9335b1d160314b793b2bc267c6ec10c7b179a9cb1a27528a0b0a2923a3595d2a94998fb52cc0d6e0357f637311cc1c473b325d5c1067f3db83c1f7b1e77
-  languageName: node
-  linkType: hard
-
-"relay-config@npm:12.0.1":
-  version: 12.0.1
-  resolution: "relay-config@npm:12.0.1"
-  dependencies:
-    cosmiconfig: "npm:^5.0.5"
-  checksum: 10/47a5ac5d52930668d644c168ceb988674c33ff353d3a418cdf3f37f5598c185a46a5fdd0685bd6c63729430cc498da06968a4874a5b5964cef19b1933a9ad66f
   languageName: node
   linkType: hard
 
