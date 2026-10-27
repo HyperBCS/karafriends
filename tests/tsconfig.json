@@ -4,6 +4,6 @@
     "target": "es2022",
     "lib": ["es2022", "dom"]
   },
-  "include": ["e2e", "../playwright.config.ts"],
+  "include": ["e2e", "../playwright.config.ts", "../electron.vite.config.ts"],
   "exclude": []
 }
