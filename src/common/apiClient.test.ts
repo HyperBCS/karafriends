@@ -129,10 +129,7 @@ describe("call on the display", () => {
       // As JSON.stringify would send it.
       ["history", { limit: 5 }],
     ]);
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(calls[1][1], "offset"),
-      false,
-    );
+    assert.equal(Object.hasOwn(calls[1][1], "offset"), false);
   });
 
   test("throws what it would over HTTP", async () => {

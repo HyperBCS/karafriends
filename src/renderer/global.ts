@@ -25,9 +25,4 @@ declare global {
       };
     };
   }
-
-  class FinalizationRegistry<T> {
-    constructor(callback: (heldValue: T) => void);
-    register(target: object, heldValue: T): void;
-  }
 }

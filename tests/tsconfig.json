@@ -1,9 +1,5 @@
 {
   "extends": "../tsconfig.json",
-  "compilerOptions": {
-    "target": "es2022",
-    "lib": ["es2022", "dom"]
-  },
   "include": ["e2e", "../playwright.config.ts", "../electron.vite.config.ts"],
   "exclude": []
 }
