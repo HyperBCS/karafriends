@@ -6,9 +6,12 @@
 // build/prod (see packager.js):
 //   build/<prod|dev>/main      the main process, plus the native module in chunks/
 //   build/<prod|dev>/preload   the display's preload
-//   build/<prod|dev>/web       renderer/ and remocon/ pages, their shared
-//                              assets/, and static/ (the kuromoji dict/ and
-//                              the remote's service worker)
+//   build/<prod|dev>/web       renderer/ and remocon/ pages, their assets/,
+//                              and static/ (the kuromoji dict/ and the
+//                              remote's service worker)
+//
+// The remote runs in phone browsers, so it's built on its own, for them (see
+// remoconBuild). Everything else targets Electron's Chromium.
 //
 // `yarn dev` (electron-vite dev -w) builds main and preload into build/dev,
 // rebuilding and restarting on change, and serves the pages from the Vite dev
@@ -22,7 +25,7 @@ import path from "node:path";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
-import type { Plugin } from "vite";
+import { build, type Plugin } from "vite";
 
 import { HOSTNAME } from "./src/common/constants";
 
@@ -38,6 +41,52 @@ const localOnly = process.env.KARAFRIENDS_LOCAL_ONLY === "1";
 
 // The static/ folder: the kuromoji dict/ and the remote's service worker.
 const STATIC_DIR = path.resolve("static");
+
+const PAGES = {
+  renderer: path.resolve("src/renderer/index.html"),
+  remocon: path.resolve("src/remocon/index.html"),
+};
+
+// The remote's browsers: Vite's defaults, with iPhones back to iOS 15.
+const REMOCON_TARGET = [
+  "chrome111",
+  "edge111",
+  "firefox114",
+  "safari15",
+  "ios15",
+];
+
+// Builds only; the dev server serves the remote as it is. The display's build
+// targets Electron's Chromium, and its minifier drops CSS prefixes Chromium
+// doesn't need, such as the -webkit-user-select that iOS Safari does. So once
+// the display is written, the remote is built by itself for phones, which
+// also lowers its JS for older iPhones.
+function remoconBuild(mode: string, outDir: string): Plugin {
+  return {
+    name: "karafriends:remocon-build",
+    apply: "build",
+    async writeBundle() {
+      await build({
+        configFile: false,
+        mode,
+        root: "src",
+        base: "./",
+        // The display's build has copied static/ already.
+        publicDir: false,
+        plugins: [react()],
+        build: {
+          outDir,
+          emptyOutDir: false,
+          target: REMOCON_TARGET,
+          minify: mode === "production",
+          sourcemap: mode !== "production",
+          reportCompressedSize: false,
+          rolldownOptions: { input: { remocon: PAGES.remocon } },
+        },
+      });
+    },
+  };
+}
 
 // Two fixes to what the dev server serves.
 function devServerRoutes(): Plugin {
@@ -154,7 +203,11 @@ export default defineConfig(({ command, mode }) => {
       root: "src",
       // Copied to the root of build/<mode>/web once, and served at / in dev.
       publicDir: STATIC_DIR,
-      plugins: [react(), devServerRoutes()],
+      plugins: [
+        react(),
+        devServerRoutes(),
+        remoconBuild(mode, path.join(outDir, "web")),
+      ],
       resolve: {
         // kuromoji (the display's furigana): its own browser bundle. Its
         // sources need Node's path, and the gunzip they use only works with
@@ -170,10 +223,9 @@ export default defineConfig(({ command, mode }) => {
         // The display's bundle is about 1 MB; it loads from disk.
         chunkSizeWarningLimit: 1500,
         rolldownOptions: {
-          input: {
-            renderer: path.resolve("src/renderer/index.html"),
-            remocon: path.resolve("src/remocon/index.html"),
-          },
+          // Both pages for the dev server (which also scans them for
+          // dependencies); a build leaves the remote to remoconBuild.
+          input: command === "serve" ? PAGES : { renderer: PAGES.renderer },
         },
       },
       server: {
