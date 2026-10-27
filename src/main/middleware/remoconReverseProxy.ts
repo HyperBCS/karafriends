@@ -9,12 +9,9 @@ const TARGET_PATH = /^\/(remocon|renderer)(\/|$)/;
 
 function remoconReverseProxy(devPort: number) {
   if (isDev) {
-    // On dev, we should proxy non-graphql requests to the remocon dev server
-    return (req: Request, res: Response, next: () => void) => {
-      if (req.path === "/graphql") {
-        next();
-        return;
-      }
+    // On dev, we should proxy everything that gets here (all but /api) to the
+    // remocon dev server
+    return (req: Request, res: Response) => {
       proxyToDevServer(devPort, req, res).catch((error) => {
         console.error(`remocon dev proxy failed for ${req.originalUrl}`, error);
         if (!res.headersSent) {

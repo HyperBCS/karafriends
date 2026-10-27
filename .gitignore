@@ -38,9 +38,6 @@ yarn-error.log*
 # Added by cargo
 /native/target
 
-# react-relay
-__generated__
-
 # Archive extractor copied into the app on build (runtime downloads are cached
 # in the user data directory, not here)
 /extraResources/7za

@@ -13,8 +13,9 @@
 // the bundler are replaced. The exceptions are api.spec.ts, which tests the
 // JSON RPC API itself, and the device-ID checks in live.spec.ts.
 //
-// Neither client may talk GraphQL any more: every test fails if the display
-// or a phone sends a request to /graphql (see forbidGraphql).
+// The server has no GraphQL any more, and neither client may ask for it:
+// every test fails if the display or a phone sends a request to /graphql
+// (see forbidGraphql).
 
 import fs from "fs";
 import net from "net";
@@ -78,8 +79,8 @@ type Fixtures = {
 const GRAPHQL_URL = /\/graphql(?:[?#]|$)/;
 
 // Refuses the browser context's GraphQL requests (HTTP and WebSocket), noting
-// each in `seen`. The display and the remote only use /api now; the server's
-// /graphql stays until Phase 5e, and tests may still call it from Node.
+// each in `seen`. The display and the remote only use /api, and the server
+// has no /graphql (api.spec.ts checks it answers 404).
 export async function forbidGraphql(context: BrowserContext, seen: string[]) {
   context.on("request", (request) => {
     if (GRAPHQL_URL.test(request.url())) {

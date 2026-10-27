@@ -1,4 +1,4 @@
-// The JSON RPC API over HTTP, mounted at /api next to /graphql:
+// The JSON RPC API over HTTP, mounted at /api:
 //
 //   POST /api/<method>  JSON in, JSON out (src/common/api.ts has the types).
 //                       415 unless Content-Type is application/json, 404 for

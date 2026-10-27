@@ -71,6 +71,19 @@ test("/api refuses a form-encoded POST", async ({ karafriends }) => {
   expect(res.headers.get("access-control-allow-origin")).toBeNull();
 });
 
+// GraphQL is gone: the server answers /graphql like any unknown path. (And
+// every test checks that neither client asks for it: see forbidGraphql.)
+test("/graphql answers 404", async ({ karafriends }) => {
+  const url = new URL("graphql", karafriends.remoconUrl);
+  const post = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "{ queue { __typename } }" }),
+  });
+  expect(post.status).toBe(404);
+  expect((await fetch(url)).status).toBe(404);
+});
+
 test("whoami answers, and the display is an admin", async ({
   karafriends,
   display,
@@ -160,7 +173,7 @@ test.describe("supervised mode", () => {
   test.describe("someone else's song", () => {
     test.use({ seedQueue: seed(someoneElse) });
 
-    test("a phone can't remove it or pause it, by /api or GraphQL", async ({
+    test("a phone can't remove it or pause it", async ({
       karafriends,
       display,
       page,
@@ -214,21 +227,6 @@ test.describe("supervised mode", () => {
       expect((await (await pauseResponse).json()).error).toContain(
         "Supervised mode",
       );
-
-      // GraphQL refuses too, while it lasts (until Phase 5e).
-      const removal = await fetch(new URL("graphql", remoconUrl), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...REMOTE_HEADERS },
-        body: JSON.stringify({
-          query:
-            "mutation ($songId: String!, $timestamp: String!) { removeSong(songId: $songId, timestamp: $timestamp) }",
-          variables: {
-            songId: "sm90002",
-            timestamp: song(2, someoneElse).timestamp,
-          },
-        }),
-      }).then((res) => res.json());
-      expect(removal.errors?.[0]?.message).toContain("Supervised mode");
 
       const { state } = await liveState(remoconUrl);
       expect(state.playbackState).toBe("PLAYING");

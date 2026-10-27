@@ -1,6 +1,5 @@
 dist
 node_modules
 static
-__generated__
 .yarn/releases
 .claude

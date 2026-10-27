@@ -1,5 +1,5 @@
-// Input checks for POST /api/<method>: phones are untrusted, and GraphQL's
-// schema used to do this. Each check throws an ApiError (400) naming the
+// Input checks for POST /api/<method>, since phones are untrusted. Each
+// check throws an ApiError (400) naming the
 // field, and returns the input typed for its handler. Unknown fields are
 // refused too, so a client typo shows up at once.
 //

@@ -49,7 +49,7 @@ import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { displayToken } from "./caller";
-import { applyGraphQLMiddleware } from "./graphql";
+import { startHttpServer } from "./httpServer";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
@@ -146,6 +146,26 @@ function createWindow() {
         delete details.responseHeaders["access-control-allow-origin"];
         details.responseHeaders["Access-Control-Allow-Origin"] = ["*"];
       }
+      // In dev the display comes from the Parcel dev server, another origin,
+      // so its JSON POSTs to /api send a preflight first. The server answers
+      // it 404 (no CORS, on purpose: see server.ts), so pass it here, for the
+      // display only.
+      if (
+        details.method === "OPTIONS" &&
+        details.url.startsWith(
+          `http://localhost:${karafriendsConfig.remoconPort}/api/`,
+        )
+      ) {
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Access-Control-Allow-Headers": ["*"],
+            "Access-Control-Allow-Methods": ["POST"],
+          },
+          statusLine: "HTTP/1.1 204 No Content",
+        });
+        return;
+      }
       callback({ responseHeaders: details.responseHeaders });
     },
   );
@@ -174,14 +194,14 @@ function createWindow() {
 
   expressApp.use(compression({ filter: shouldCompress }));
 
-  applyGraphQLMiddleware(expressApp);
-
   expressApp.use("/api", apiRouter(api, hub));
 
   expressApp.use(remoconServiceWorkerAllowed());
 
   // This middleware terminates the request/response cycle and should be applied last
   expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
+
+  startHttpServer(expressApp);
 
   if (rendererWindow) {
     const rendererUrl = isDev

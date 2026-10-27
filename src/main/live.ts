@@ -38,8 +38,6 @@ export interface LiveHub {
   // The listener gets the current state at once, then every state change
   // (throttled) and every message. Returns a function that stops it.
   subscribe(listener: (event: LiveEvent) => void, viewer?: Viewer): () => void;
-  // Messages only, for the GraphQL subscriptions.
-  onMessage(listener: (message: HubMessage) => void): () => void;
 }
 
 // DownloadQueueItem.downloadType, as videoDownloader numbers them.
@@ -169,7 +167,6 @@ export function createLiveHub(
   intervalMs = 250,
 ): LiveHub {
   const listeners = new Map<(event: LiveEvent) => void, Viewer>();
-  const messageListeners = new Set<(message: HubMessage) => void>();
   // The last state sent to everyone, serialized, so unchanged state isn't
   // sent again.
   let lastSent: string | null = null;
@@ -230,7 +227,6 @@ export function createLiveHub(
       // queued song before it can see it in the queue.
       if (flushTimer) flush();
       deliver(messageEvents(message));
-      for (const listener of messageListeners) tell(listener, message);
     },
     subscribe(listener, viewer = NOBODY) {
       listeners.set(listener, viewer);
@@ -252,10 +248,6 @@ export function createLiveHub(
           flushTimer = null;
         }
       };
-    },
-    onMessage(listener) {
-      messageListeners.add(listener);
-      return () => messageListeners.delete(listener);
     },
   };
 }

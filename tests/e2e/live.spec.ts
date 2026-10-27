@@ -112,24 +112,13 @@ test.describe("live state", () => {
     expect(alice.mine).toEqual([title(1), title(2)]);
     expect((await eventsFor(BOB.deviceId)).mine).toEqual([title(3)]);
     expect((await eventsFor()).mine).toEqual([]);
+    // No device IDs go out, the admins' included.
     for (const { text } of [alice, await eventsFor()]) {
       expect(text).not.toContain(ALICE.deviceId);
       expect(text).not.toContain(BOB.deviceId);
+      expect(text).not.toContain(ADMIN_DEVICE);
       expect(text).not.toContain("deviceId");
     }
-
-    // Nor does GraphQL, while it lasts (until Phase 5e).
-    const graphql = await fetch(new URL("graphql", remoconUrl), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query:
-          "{ queue { ... on QueueItemInterface { userIdentity { deviceId nickname } } } config { adminDeviceIds adminNicks } }",
-      }),
-    }).then((res) => res.text());
-    expect(graphql).not.toContain(ALICE.deviceId);
-    expect(graphql).not.toContain(ADMIN_DEVICE);
-    expect(JSON.parse(graphql).data.config.adminDeviceIds).toEqual([]);
   });
 
   test("a change on one phone shows at once on the other and the display", async ({

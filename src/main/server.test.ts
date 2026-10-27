@@ -42,7 +42,6 @@ const hub = {
     };
   },
   publish() {},
-  onMessage: () => () => {},
 };
 
 let server: Server;

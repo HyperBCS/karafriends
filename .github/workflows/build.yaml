@@ -128,16 +128,15 @@ jobs:
           cache: yarn
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
       - run: yarn install --immutable
-      # Formatting and lint are platform-independent, so only this job runs them.
+      # Formatting, lint and types are platform-independent, so only this job
+      # checks them.
       - run: yarn prettier --check .
       - run: yarn lint
+      - run: yarn typecheck
       - run: yarn test:unit
       - run: yarn build-dev
         env:
           CARGO_INCREMENTAL: false
-      # Type-check the whole codebase. Runs after build-dev so the generated
-      # relay artifacts exist. Platform-independent, so only this job needs it.
-      - run: yarn typecheck
       # Smoke tests run against the production build, on a virtual display.
       - run: yarn build-prod
         env:

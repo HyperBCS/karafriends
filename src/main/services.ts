@@ -1,7 +1,7 @@
 // The main process's single instances: the shared state (saved in queue.json
 // next to the downloads), the DAM/Joysound/YouTube clients, the live-state
-// hub, and the API handlers built on them. GraphQL and the JSON RPC router
-// both use these.
+// hub, and the API handlers built on them, which the JSON RPC router
+// serves.
 import path from "path";
 
 import { Innertube } from "youtubei.js";
@@ -59,7 +59,7 @@ const joysoundCredentialsProvider = memoizeSuccess(async () => {
 });
 
 // The clients keep no per-request state, so every request shares one of each.
-export const upstreamClients = {
+const upstreamClients = {
   minsei: new MinseiAPI(minseiCredentialsProvider),
   joysound: new JoysoundAPI(joysoundCredentialsProvider),
   dkwebsys: new DkwebsysAPI(),
