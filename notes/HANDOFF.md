@@ -19,24 +19,23 @@ Verified on the old PC: `yarn typecheck`, `yarn test:unit` (32 pass), `yarn buil
 
 ## Setting up the new machine
 
-1. **Git**, then a partial clone (the full history is 2.5 GB, mostly old Yarn cache zips):
+1. **Git**, then clone:
    ```bash
-   git clone --filter=blob:none git@github.com:HyperBCS/karafriends.git
+   git clone git@github.com:HyperBCS/karafriends.git
    cd karafriends
    git remote add upstream https://github.com/emmaworley/karafriends.git
    git config user.name "Brandon S"
    git config user.email "atomicbcs@gmail.com"
    ```
-2. **Node**: `winget install OpenJS.NodeJS` (26.x was used). Node 25+ doesn't ship corepack, so in **your own terminal** (not through Claude, see gotchas) run `npm install -g corepack` and then `corepack enable`. `node .yarn/releases/yarn-4.6.0.cjs <args>` also works without it.
+2. **Node**: `winget install OpenJS.NodeJS` (26.x was used), then `npm install -g yarn` in **your own terminal** (not through Claude, see gotchas). Any `yarn` works: the repo pins Yarn 4.18.1 in `.yarn/releases` (`yarnPath`) and every `yarn` hands off to it, so corepack isn't needed. `node .yarn/releases/yarn-4.18.1.cjs <args>` also works without a global `yarn`.
 3. **Rust**: install rustup and make sure stable is at least 1.88 (`rustup update stable`); `ringbuf` 0.5 needs `let` chains. Also install the **Visual Studio Build Tools** with the "Desktop development with C++" workload for the native module.
 4. **Config with credentials**: copy `%APPDATA%\karafriends\config.yaml` from the old PC to the same path on the new one. It holds the DAM/Joysound credentials and is never committed. (The old PC's original placeholder version is `config.yaml.bak` next to it; ignore that.)
-5. `yarn install`, then `git checkout -- .yarn/cache` (see gotchas), then `yarn run-dev`. Turn on the Japan VPN before using DAM/Joysound.
+5. `yarn install`, then `yarn run-dev`. Turn on the Japan VPN before using DAM/Joysound. Dependencies go in `node_modules` and Yarn's download cache in `.yarn/cache`; neither is committed.
 
 ## Gotchas
 
-- **`yarn install` on Windows deletes Linux-only zips** (`*-linux-*`) from the committed `.yarn/cache` because `.yarnrc.yml` doesn't list `libc`. Restore them with `git checkout -- .yarn/cache` before committing. (One-line fix: add `libc: [glibc]` under `supportedArchitectures`; or it disappears if the cache stops being committed.)
 - **The husky pre-commit hook** runs `cargo clippy` and `yarn lint-staged`, so `yarn` must be on PATH.
-- **If the Claude desktop app is the Microsoft Store/MSIX build**, anything Claude's shells write under `%APPDATA%`/`%LOCALAPPDATA%` is redirected into the app's private folder. Global installs Claude runs (npm -g, corepack) won't exist for your own terminals; run those yourself. Terminal tabs inside the Claude app also keep the PATH from when the app launched, so restart the app after installing Node.
+- **If the Claude desktop app is the Microsoft Store/MSIX build**, anything Claude's shells write under `%APPDATA%`/`%LOCALAPPDATA%` is redirected into the app's private folder. Global installs Claude runs (`npm install -g`) won't exist for your own terminals; run those yourself. Terminal tabs inside the Claude app also keep the PATH from when the app launched, so restart the app after installing Node.
 - **DAM and Joysound only work from a Japanese IP.** Without the VPN, sound-cafe returns 403 and DAM login returns `NG`. Check with `curl -s https://ipinfo.io/country`.
 - **Joysound account has no subscription**, so songs come back as 45-second previews. That's the account, not the code.
 
