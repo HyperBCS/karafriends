@@ -2,17 +2,18 @@
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                                | State           | Branch / commit     | Notes                                                      |
-| --------------------------------------------------- | --------------- | ------------------- | ---------------------------------------------------------- |
-| Quick wins (Sentry, niconico, lazy YouTube)         | done            | merged in `2e0dcbc` | YouTube + Niconico lookups checked in the running app      |
-| Phase 1: Yarn node_modules, untrack cache           | in progress     |                     |                                                            |
-| Phase 3: build tidy-ups                             | queued          |                     |                                                            |
-| Phase 4: Playwright smoke tests                     | queued          |                     |                                                            |
-| Phase 5b–5f: RPC + SSE, client, delete GraphQL, IPC | queued          |                     | 5a waits for the user (needs the Japan VPN)                |
-| Phase 6: electron-vite                              | queued          |                     |                                                            |
-| Phase 7: lighter UI libraries                       | queued          |                     |                                                            |
-| Phase 5a: plain HTTP client for DAM/Joysound        | waiting on user |                     | needs the VPN to test                                      |
-| Phase 2: purge history, new standalone repo         | waiting on user |                     | needs GitHub web steps; run when nothing else is in flight |
+| Step                                                | State           | Branch / commit     | Notes                                                    |
+| --------------------------------------------------- | --------------- | ------------------- | -------------------------------------------------------- |
+| Quick wins (Sentry, niconico, lazy YouTube)         | done            | merged in `2e0dcbc` | YouTube + Niconico lookups checked in the running app    |
+| Phase 1: Yarn node_modules, untrack cache           | in progress     |                     |                                                          |
+| Phase 2: purge history, new standalone repo         | next            |                     | coordinator does it with gh right after Phase 1 merges   |
+| Phase 5a: plain HTTP client for DAM/Joysound        | queued          |                     | Japan VPN left on overnight; check the IP before testing |
+| Phase 3: build tidy-ups                             | queued          |                     |                                                          |
+| Phase 4: Playwright smoke tests                     | queued          |                     |                                                          |
+| Phase 5b–5f: RPC + SSE, client, delete GraphQL, IPC | queued          |                     |                                                          |
+| Phase 6: electron-vite                              | queued          |                     |                                                          |
+| Phase 7: lighter UI libraries                       | queued          |                     |                                                          |
+| User follow-up: re-add `MACOS_*` secrets            | waiting on user |                     | only needed for mac releases, after Phase 2              |
 
 ## How this plan is run
 
@@ -23,9 +24,15 @@
   - Reports what changed, what it verified, and what it couldn't.
   - Doesn't push or merge.
 - **The coordinator** reviews the diff, re-runs the checks on the merged result, merges into `master` with `--no-ff`, pushes, updates the Status table above, and starts the next phase. The user approved merge-and-push after checks on 2026-10-27.
-- **Order while the user is away:** quick wins → 1 → 3 → 4 → 5b → 5c → 5d → 5e → 5f → 6 → 7.
-  - 5a waits until the user can test DAM/Joysound with the Japan VPN.
-  - Phase 2 waits until the user can do the GitHub web steps. `git filter-repo` rewrites every branch consistently, so running it after the other phases is fine as long as nothing is in flight.
+- **Order (updated 2026-10-27, user approved):** quick wins → 1 → 2 → 5a → 3 → 4 → 5b → 5c → 5d → 5e → 5f → 6 → 7.
+  - **Phase 2 runs right after Phase 1 merges, with no other session in flight.** The user logged `gh` in and approved the coordinator doing the repo rename and creation with `gh`:
+    1. `gh repo rename karafriends-fork-archive`.
+    2. Make a full bare clone from the archive URL and run `git filter-repo`.
+    3. `gh repo create HyperBCS/karafriends --public`.
+    4. Push `master` and tags only.
+    5. Reset the local clone onto the new history, and delete local branches and worktrees that still carry old hashes; they must never be merged again.
+  - The user re-adds the four `MACOS_*` Actions secrets later.
+  - The Japan VPN stays on overnight, so 5a runs right after Phase 2 and tests real DAM/Joysound logins and searches. If `ipinfo.io/country` isn't `JP`, skip those checks and say so.
 - **Windows/MSIX notes for every session:**
   - The Claude app here is the Microsoft Store build: writes under `%APPDATA%`/`%LOCALAPPDATA%` from Claude's shells land in a private copy. Keep tool caches inside the repo; leave global installs to the user.
   - DAM/Joysound need a Japanese IP (`curl -s https://ipinfo.io/country`).
