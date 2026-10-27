@@ -11,11 +11,11 @@ function remoconReverseProxy(devPort: number) {
         next();
         return;
       }
+      // Match whole path segments: Parcel names the remocon bundle
+      // remocon.<hash>.js, which must still get the /remocon prefix.
       fetch(
         `http://127.0.0.1:${devPort}/${
-          !req.path.startsWith("/remocon") && !req.path.startsWith("/renderer")
-            ? "remocon"
-            : ""
+          !/^\/(remocon|renderer)(\/|$)/.test(req.path) ? "remocon" : ""
         }${req.originalUrl}`,
         {
           method: req.method,
