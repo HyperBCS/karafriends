@@ -485,6 +485,9 @@ test.describe("supervised mode", () => {
       await page.reload();
       await expect(page.getByText("You're an admin")).toBeVisible();
       await expect(pause).toHaveAttribute("aria-disabled", "false");
+      const token = await page.evaluate(() =>
+        localStorage.getItem("adminToken"),
+      );
 
       await page.getByRole("button", { name: "Sign out" }).click();
       await expect(page.getByLabel("Admin password")).toBeVisible();
@@ -492,6 +495,15 @@ test.describe("supervised mode", () => {
       expect(
         await page.evaluate(() => localStorage.getItem("adminToken")),
       ).toBeNull();
+      // The server ended the session too: the old token is nobody's.
+      expect(
+        await call(
+          remoconUrl,
+          "whoami",
+          {},
+          { ...REMOTE_HEADERS, "X-Karafriends-Admin-Token": token! },
+        ),
+      ).toEqual({ status: 200, body: { isAdmin: false } });
     });
   });
 
