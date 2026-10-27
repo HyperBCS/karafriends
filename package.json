@@ -112,11 +112,6 @@
     "typescript": "6.0.3",
     "wait-on": "9.1.0"
   },
-  "lint-staged": {
-    "**/*": "prettier --write --ignore-unknown",
-    "**/*.{ts,tsx}": "oxlint --deny-warnings",
-    "**/*.rs": "rustfmt"
-  },
   "packageManager": "yarn@4.18.1",
   "targets": {
     "main_": {
