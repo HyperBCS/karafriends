@@ -45,7 +45,7 @@ import express from "express";
 
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
-import { TEMP_FOLDER } from "./../common/videoDownloader";
+import { TEMP_FOLDER } from "./downloads";
 import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";

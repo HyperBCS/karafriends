@@ -17,7 +17,7 @@ import {
   downloadYoutubeVideo,
   getNicoVideoInfo,
   TEMP_FOLDER,
-} from "../common/videoDownloader";
+} from "./downloads";
 import { createAdminSessions, createSetAdminPassword } from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders } from "./credentials";
