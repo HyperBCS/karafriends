@@ -1,7 +1,7 @@
 import React from "react";
 import { FaHistory, FaHome } from "react-icons/fa";
 import { Link } from "react-router";
-import icon from "url:../../images/icon.png";
+import icon from "../../../../icon.png";
 
 import * as styles from "./NavBar.module.scss";
 

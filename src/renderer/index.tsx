@@ -14,7 +14,10 @@ import "./index.css";
 import KarafriendsAudio from "./webAudio";
 
 const kuroshiro = new Kuroshiro();
-const kuromojiAnalyzer = new KuromojiAnalyzer({ dictPath: "./dict" });
+const kuromojiAnalyzer = new KuromojiAnalyzer({
+  // static/dict, next to the renderer/ page.
+  dictPath: "../dict",
+});
 const kuromojiPromise = kuroshiro.init(kuromojiAnalyzer);
 
 const kuroshiroSingleton: KuroshiroSingleton = {

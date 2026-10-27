@@ -1,3 +1,6 @@
+// The pitch shifter, bundled as its own script for addModule().
+import phazeAudioWorkletUrl from "./audio/phazeAudioWorklet.ts?worker&url";
+
 export default class KarafriendsAudio {
   private gainNode: GainNode;
   private vocoderNode: AudioWorkletNode | null;
@@ -12,9 +15,7 @@ export default class KarafriendsAudio {
     this.vocoderNode = null;
     try {
       this.audioContext.audioWorklet
-        .addModule(
-          new URL("worklet:./audio/phazeAudioWorklet.ts", import.meta.url),
-        )
+        .addModule(phazeAudioWorkletUrl)
         .then(() => {
           try {
             // Operations that might throw synchronous errors

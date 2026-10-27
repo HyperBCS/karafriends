@@ -35,7 +35,7 @@ import {
 import { parse, stringify } from "yaml";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const MAIN_ENTRY = path.join(REPO_ROOT, "build", "prod", "main_", "index.js");
+const MAIN_ENTRY = path.join(REPO_ROOT, "build", "prod", "main", "index.js");
 
 // The nickname the remote uses. Setting it up front skips the prompt() that
 // asks for one on first visit.

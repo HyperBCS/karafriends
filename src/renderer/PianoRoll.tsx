@@ -6,10 +6,10 @@ import React, { useEffect, useRef } from "react";
 
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
-import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
-import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl";
-import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl";
-import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl";
+import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
+import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl?raw";
+import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl?raw";
+import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl?raw";
 
 const TIME_WIDTH_SECS = 5.0;
 const PITCH_RESOLUTION = 8;
