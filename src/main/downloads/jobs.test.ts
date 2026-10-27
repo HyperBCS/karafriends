@@ -129,14 +129,18 @@ function ogg(playtimeMs: number): Buffer {
   return Buffer.concat([Buffer.from("OggS fake header "), length, field]);
 }
 
+const movieUrls = async () => ({
+  movie: { mov1: "https://example.invalid/mov1.mp4" },
+});
+
 const joysoundApi = (
   songData: () => Promise<{ telop: string; ogg: string }>,
-) => ({
-  getSongRawData: songData,
-  getMovieUrls: async () => ({
-    movie: { mov1: "https://example.invalid/mov1.mp4" },
-  }),
-});
+  getMovieUrls = movieUrls,
+) => ({ getSongRawData: songData, getMovieUrls });
+
+const getFmeFails = async (): Promise<never> => {
+  throw new Error("getFME failed");
+};
 
 const songData = async () => ({
   telop: scrambled(telop(183)),
@@ -208,9 +212,7 @@ test("a Joysound download whose song data fails stops its background download", 
       joysoundJob(
         paths,
         item,
-        joysoundApi(async () => {
-          throw new Error("getFME failed");
-        }),
+        joysoundApi(getFmeFails),
         joysoundItem("bgVideo0001"),
       ),
     () => deleteJoysoundTempFiles(folder, "123456"),
@@ -225,4 +227,35 @@ test("a Joysound download whose song data fails stops its background download", 
     fs.readFileSync(path.join(folder, "yt-bgVideo0001.log"), "utf8"),
     /was stopped/,
   );
+});
+
+test("a Joysound download whose song data fails doesn't wait for the video's URL", async () => {
+  let urlAsked = false;
+  let urlSent = false;
+  const slowUrls = async () => {
+    urlAsked = true;
+    // Long enough that the download would still be waiting.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    urlSent = true;
+    return movieUrls();
+  };
+  const outcome = await download(
+    [],
+    "joysound",
+    (item) =>
+      joysoundJob(
+        paths,
+        item,
+        joysoundApi(getFmeFails, slowUrls),
+        joysoundItem(null),
+      ),
+    () => deleteJoysoundTempFiles(folder, "123456"),
+  );
+
+  assert.equal(!outcome.ok && outcome.reason, REASONS.joysound);
+  assert.ok(urlAsked && !urlSent);
+  assert.deepEqual(files(), []);
+  // When the URL comes, ffmpeg doesn't start.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.deepEqual(files(), []);
 });

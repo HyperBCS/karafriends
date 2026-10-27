@@ -565,25 +565,27 @@ export async function joysoundJob(
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
-  // Stops the video step when the song data fails.
+  // Stops the video step's tool when the song data fails.
   const stopVideo = new AbortController();
+  // That tool, once it has started.
+  let videoTool: Promise<void> = Promise.resolve();
   const songDataPromise = joysoundApi
     .getSongRawData(songId)
     .catch(joysoundFailure);
   const videoDataPromise = queueItem.youtubeVideoId
-    ? downloadJoysoundYoutubeVideoPromise(
+    ? (videoTool = downloadJoysoundYoutubeVideoPromise(
         paths,
         songId,
         queueItem.youtubeVideoId,
         downloadQueueItem,
         tempFilename,
         stopVideo.signal,
-      )
+      ))
     : joysoundApi
         .getMovieUrls(songId)
         .catch(joysoundFailure)
-        .then((data) =>
-          downloadJoysoundVideoPromise(
+        .then((data) => {
+          videoTool = downloadJoysoundVideoPromise(
             paths,
             songId,
             data.movie.mov1,
@@ -591,8 +593,9 @@ export async function joysoundJob(
             tempFilename,
             ffmpegLogFilename,
             stopVideo.signal,
-          ),
-        );
+          );
+          return videoTool;
+        });
 
   let joysoundSongRawData;
   try {
@@ -601,11 +604,12 @@ export async function joysoundJob(
       songDataPromise,
     ]);
   } catch (err) {
-    // One step failed. The video step stops and, once its tool has exited,
-    // the download fails: runDownload then deletes what both left. (The
-    // song data is only a request, which writes nothing.)
+    // One step failed. The video step's tool stops (or never starts, if
+    // Joysound's video URL comes later) and, once it has exited, the
+    // download fails: runDownload then deletes what both steps left. The
+    // requests to Joysound write nothing, so they aren't waited for.
     stopVideo.abort();
-    await videoDataPromise.catch(() => {});
+    await videoTool.catch(() => {});
     throw err;
   }
 
