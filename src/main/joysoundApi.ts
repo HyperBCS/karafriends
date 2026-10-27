@@ -2,7 +2,14 @@ import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
 import { ApiError } from "./api";
-import { formBody, getSetCookies, http, httpFetch, HttpResponse } from "./http";
+import {
+  formBody,
+  getSetCookies,
+  http,
+  httpFetch,
+  HttpResponse,
+  HttpStatusError,
+} from "./http";
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -284,6 +291,13 @@ export class JoysoundAPI {
       },
     })
       .then((resp) => {
+        // An error status, 403 usually, means no Japanese IP address.
+        if (!resp.ok) {
+          throw new HttpStatusError(
+            resp.status,
+            "https://www.sound-cafe.jp/login",
+          );
+        }
         parseCookies(resp, loginCookies);
 
         return resp.text();

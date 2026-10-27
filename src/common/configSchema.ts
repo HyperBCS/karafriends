@@ -105,3 +105,110 @@ export function configFromFile(parsed: unknown): {
     problems,
   };
 }
+
+// What each setting may hold, for the settings screen and config import:
+// a value outside these is refused with a problem naming the setting.
+type FieldRule =
+  | { type: "boolean" }
+  | { type: "integer"; min: number; max: number }
+  | { type: "string" };
+
+const TEXT = { type: "string" } as const;
+const PORT = { type: "integer", min: 1, max: 65535 } as const;
+
+export const CONFIG_RULES: {
+  readonly [K in keyof KarafriendsConfig]: FieldRule;
+} = {
+  useLowBitrateUrl: { type: "boolean" },
+  paxSongQueueLimit: { type: "integer", min: 0, max: 1000 },
+  remoconPort: PORT,
+  damUsername: TEXT,
+  damPassword: TEXT,
+  joysoundEmail: TEXT,
+  joysoundPassword: TEXT,
+  adminPasswordHash: TEXT,
+  adminPasswordSalt: TEXT,
+  supervisedMode: { type: "boolean" },
+  proxyEnable: { type: "boolean" },
+  proxyHost: TEXT,
+  proxyPort: PORT,
+  proxyUser: TEXT,
+  proxyPass: TEXT,
+};
+
+export type ConfigKey = keyof KarafriendsConfig;
+
+export const CONFIG_KEYS = Object.keys(CONFIG_RULES) as ConfigKey[];
+
+export function isConfigKey(key: string): key is ConfigKey {
+  return Object.hasOwn(CONFIG_RULES, key);
+}
+
+// What's wrong with values, one sentence per setting: a value of the wrong
+// type or out of range, or a key that isn't a setting. Empty if nothing.
+export function configProblems(values: Record<string, unknown>): string[] {
+  const problems: string[] = [];
+  for (const [key, value] of Object.entries(values)) {
+    if (!isConfigKey(key)) {
+      problems.push(`${key} is not a setting`);
+      continue;
+    }
+    const rule = CONFIG_RULES[key];
+    switch (rule.type) {
+      case "boolean":
+        if (typeof value !== "boolean") {
+          problems.push(`${key} must be true or false`);
+        }
+        break;
+      case "integer":
+        if (
+          !Number.isInteger(value) ||
+          (value as number) < rule.min ||
+          (value as number) > rule.max
+        ) {
+          problems.push(
+            `${key} must be a whole number from ${rule.min} to ${rule.max}`,
+          );
+        }
+        break;
+      case "string":
+        if (typeof value !== "string" || value.length > 1000) {
+          problems.push(`${key} must be text of at most 1000 characters`);
+        }
+        break;
+    }
+  }
+  return problems;
+}
+
+// The settings that only take effect after a restart: the phones' server
+// listens once, and the display window's proxy is set as it opens.
+export const RESTART_KEYS: readonly ConfigKey[] = [
+  "remoconPort",
+  "proxyEnable",
+  "proxyHost",
+  "proxyPort",
+  "proxyUser",
+  "proxyPass",
+];
+
+export const DAM_LOGIN_KEYS = ["damUsername", "damPassword"] as const;
+export const JOYSOUND_LOGIN_KEYS = [
+  "joysoundEmail",
+  "joysoundPassword",
+] as const;
+export const PROXY_KEYS: readonly ConfigKey[] = RESTART_KEYS.filter(
+  (key) => key !== "remoconPort",
+);
+
+// Whether a login is filled in: both fields set, and neither the
+// placeholder config.yaml starts with.
+export function hasLogin(
+  config: Pick<KarafriendsConfig, ConfigKey>,
+  service: "dam" | "joysound",
+): boolean {
+  const keys = service === "dam" ? DAM_LOGIN_KEYS : JOYSOUND_LOGIN_KEYS;
+  return keys.every(
+    (key) => config[key] !== "" && config[key] !== DEFAULT_CONFIG[key],
+  );
+}

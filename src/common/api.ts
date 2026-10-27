@@ -8,6 +8,8 @@
 // src/main/api.ts, the Express wiring in src/main/server.ts and the IPC
 // wiring in src/main/ipc.ts.
 
+import type { KarafriendsConfig } from "./configSchema";
+
 // Who is calling. The remote sends these as the X-Karafriends-Device-Id and
 // X-Karafriends-Nickname headers, each percent-encoded (encodeURIComponent),
 // since a nickname may not be ASCII.
@@ -280,6 +282,31 @@ export interface NicoVideoInfo extends VideoInfo {
 export type LookupResult<T> =
   { ok: true; info: T } | { ok: false; reason: string };
 
+// Settings (the display only)
+
+// What getSettings shows for a password that is set. setSettings takes it
+// back as "unchanged".
+export const MASKED_PASSWORD = "••••••";
+
+// config.yaml as the settings screen sees it. damPassword, joysoundPassword
+// and proxyPass are MASKED_PASSWORD when not empty. The admin password's
+// hash and salt never leave the main process: adminPasswordSet says whether
+// there is one.
+export type Settings = Omit<
+  KarafriendsConfig,
+  "adminPasswordHash" | "adminPasswordSalt"
+> & { adminPasswordSet: boolean };
+
+// What setSettings may change: any of Settings but adminPasswordSet (see
+// setAdminPassword).
+export type SettingsChanges = Partial<Omit<Settings, "adminPasswordSet">>;
+
+export type LoginService = "dam" | "joysound";
+
+// ok: false comes with a sentence for the host ("Joysound answered 403:
+// this usually means no Japanese IP address").
+export type TestLoginResult = { ok: true } | { ok: false; reason: string };
+
 // Every method: its input and output. Methods that take nothing take {}.
 export interface Api {
   // Lookups
@@ -358,6 +385,62 @@ export interface Api {
   adminLogin: { input: { password: string }; output: { token: string } };
   // Ends the session in ADMIN_TOKEN_HEADER, if there is one.
   adminLogout: {
+    input: Record<string, never>;
+    output: Record<string, never>;
+  };
+
+  // Settings: the display only (over IPC). A phone gets 403 for each.
+
+  // isFirstRun: neither a DAM nor a Joysound login is filled in.
+  // needsRestart: a setting that only takes effect after a restart
+  // (remoconPort, the proxy) is saved with a value other than the one the
+  // app started with.
+  getSettings: {
+    input: Record<string, never>;
+    output: { settings: Settings; isFirstRun: boolean; needsRestart: boolean };
+  };
+  // Changes the given settings, all or none: ok: false lists what's wrong
+  // ("remoconPort must be a whole number from 1 to 65535") and changes
+  // nothing. A password given as MASKED_PASSWORD stays as it is. Changing a
+  // login signs that service out, so the next search signs in again.
+  setSettings: {
+    input: { settings: SettingsChanges };
+    output:
+      { ok: true; needsRestart: boolean } | { ok: false; problems: string[] };
+  };
+  // Sets the admin password ("" for none) and signs every phone out.
+  setAdminPassword: {
+    input: { password: string };
+    output: Record<string, never>;
+  };
+  // Signs in to DAM or Joysound with the given login, or the saved one,
+  // without keeping the session. Gives up after 15 seconds.
+  testLogin: {
+    input: {
+      service: LoginService;
+      // Joysound: username is the email.
+      credentials?: { username: string; password: string };
+    };
+    output: TestLoginResult;
+  };
+  // config.yaml, logins and admin password hash included, with a
+  // "karafriendsConfigVersion: 1" line first.
+  exportConfig: {
+    input: Record<string, never>;
+    output: { yaml: string };
+  };
+  // Applies a file from exportConfig, or any config.yaml. Settings the file
+  // leaves out stay as they are; unknown and obsolete keys are dropped. ok:
+  // false (nothing changed) if the file isn't YAML or any value is wrong,
+  // with what's wrong. ok: true lists what was dropped, then how each login
+  // test went ("DAM login works."): a failed login doesn't undo the import.
+  importConfig: {
+    input: { yaml: string };
+    output:
+      { ok: true; problems: string[] } | { ok: false; problems: string[] };
+  };
+  // Restarts the app, for remoconPort and the proxy. Answers first.
+  restartApp: {
     input: Record<string, never>;
     output: Record<string, never>;
   };

@@ -4,7 +4,12 @@ import nativeAudio from "../../native/index.node";
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { LiveEvent } from "../common/api";
-import { IPC_CHANNELS, REMOCON_PORT_ARG, type DisplayApi } from "../common/ipc";
+import {
+  IPC_CHANNELS,
+  REMOCON_PORT_ARG,
+  type DisplayApi,
+  type DisplayFiles,
+} from "../common/ipc";
 import ipAddresses from "../common/ipAddresses";
 
 let inputDeviceCount = 0;
@@ -54,6 +59,13 @@ const api: DisplayApi = {
   },
 };
 
+// Export and import config (src/main/fileDialogs.ts).
+const files: DisplayFiles = {
+  saveTextFile: (suggestedName, text) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveTextFile, suggestedName, text),
+  openTextFile: () => ipcRenderer.invoke(IPC_CHANNELS.openTextFile),
+};
+
 // Why phones can't connect, if they can't: asked for as the page loads (it
 // usually happens first), and sent when it happens.
 type ProblemListener = (message: string) => void;
@@ -86,6 +98,7 @@ contextBridge.exposeInMainWorld("karafriends", {
     };
   },
   api,
+  ...files,
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid

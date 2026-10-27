@@ -310,6 +310,24 @@ describe("createLiveHub", () => {
     assert.equal(events.length, 3);
   });
 
+  test("refresh() sends the state when the config changed", async () => {
+    const config = { supervisedMode: false };
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const modes: boolean[] = [];
+    const stop = hub.subscribe((event) => {
+      if (event.type === "state") modes.push(event.state.config.supervisedMode);
+    });
+    await sleep(INTERVAL_MS * 2);
+    // Nothing changed: nothing sent.
+    hub.refresh();
+    await sleep(INTERVAL_MS * 2);
+    config.supervisedMode = true;
+    hub.refresh();
+    await sleep(INTERVAL_MS * 2);
+    stop();
+    assert.deepEqual(modes, [false, true]);
+  });
+
   test("sends at most one state per interval, ending with the latest", async () => {
     const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
     const queueLengths: number[] = [];

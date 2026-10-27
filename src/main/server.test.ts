@@ -13,8 +13,10 @@ import express from "express";
 import type { LiveEvent, LiveState } from "../common/api";
 import { ApiError, type Caller } from "./api";
 import type { Viewer } from "./live";
+import { SETTINGS_METHODS } from "./settings";
 import {
   apiRouter,
+  DISPLAY_ONLY_METHODS,
   eventWriter,
   rateLimiter,
   serializeEvent,
@@ -23,6 +25,7 @@ import {
 } from "./server";
 
 const callers: Caller[] = [];
+const settingsCalls: string[] = [];
 const handlers = {
   whoami: async (_input: unknown, caller: Caller) => {
     callers.push(caller);
@@ -39,6 +42,16 @@ const handlers = {
   popSong: async () => {
     throw new Error("DAM is down");
   },
+  // Answers anyone, to show the router refuses phones before it gets here.
+  ...Object.fromEntries(
+    SETTINGS_METHODS.map((method) => [
+      method,
+      async () => {
+        settingsCalls.push(method);
+        return {};
+      },
+    ]),
+  ),
 };
 
 let subscribers = 0;
@@ -87,6 +100,29 @@ describe("POST /api/<method>", () => {
       (await post("removeSong", '{"songId":"a","timestamp":"1"}')).status,
       200,
     );
+  });
+
+  test("refuses every display-only method with 403, even to an admin", async () => {
+    assert.deepEqual([...DISPLAY_ONLY_METHODS].sort(), [
+      "exportConfig",
+      "getSettings",
+      "importConfig",
+      "restartApp",
+      "setAdminPassword",
+      "setSettings",
+      "testLogin",
+    ]);
+    for (const method of DISPLAY_ONLY_METHODS) {
+      const res = await post(method, "{}", {
+        "Content-Type": "application/json",
+        "X-Karafriends-Admin-Token": "ab".repeat(32),
+      });
+      assert.equal(res.status, 403, method);
+      assert.deepEqual(await res.json(), {
+        error: `${method} is for the display only, not phones`,
+      });
+    }
+    assert.deepEqual(settingsCalls, []);
   });
 
   test("takes an empty body as no input", async () => {

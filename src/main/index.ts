@@ -129,6 +129,35 @@ ipcMain.handle(IPC_CHANNELS.remoconProblem, (event) =>
   displayIpc.remoconProblem(event),
 );
 
+// Export and import config: dialogs over the display window, for the
+// display only.
+const YAML_FILES = [{ name: "Config files", extensions: ["yaml", "yml"] }];
+ipcMain.handle(
+  IPC_CHANNELS.saveTextFile,
+  async (event, suggestedName: unknown, text: unknown) => {
+    if (!displayIpc.isFromDisplay(event) || !rendererWindow) return false;
+    const { canceled, filePath } = await dialog.showSaveDialog(rendererWindow, {
+      defaultPath: path.join(
+        app.getPath("documents"),
+        path.basename(String(suggestedName)),
+      ),
+      filters: YAML_FILES,
+    });
+    if (canceled || !filePath) return false;
+    await fs.promises.writeFile(filePath, String(text), "utf8");
+    return true;
+  },
+);
+ipcMain.handle(IPC_CHANNELS.openTextFile, async (event) => {
+  if (!displayIpc.isFromDisplay(event) || !rendererWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(rendererWindow, {
+    properties: ["openFile"],
+    filters: YAML_FILES,
+  });
+  if (canceled || !filePaths[0]) return null;
+  return fs.promises.readFile(filePaths[0], "utf8");
+});
+
 function createWindow() {
   rendererWindow = new BrowserWindow({
     frame: isDev,

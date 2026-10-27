@@ -7,7 +7,8 @@ import path from "path";
 import { app } from "electron";
 import { Innertube } from "youtubei.js";
 
-import karafriendsConfig, { updateConfig } from "../common/config";
+import { configStore } from "../common/config";
+import { PROXY_KEYS } from "../common/configSchema";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -17,12 +18,17 @@ import {
   TEMP_FOLDER,
 } from "../common/videoDownloader";
 import { createAdminSessions, createSetAdminPassword } from "./adminAuth";
-import { createApi } from "./api";
+import { createApi, type ApiHandlers } from "./api";
+import { createCredentialProviders } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { setProxy } from "./http";
 import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
+import { createSettingsHandlers } from "./settings";
 import { createStateStore } from "./state";
+
+// The running config, kept up to date by configStore.update().
+const karafriendsConfig = configStore.get();
 
 export const store = createStateStore(path.resolve(TEMP_FOLDER, "queue.json"));
 
@@ -33,52 +39,49 @@ export const adminSessions = createAdminSessions(
 );
 
 // Sets the admin password ("" for none) and signs every phone out. For the
-// display's settings (phase A3); no phone can call it.
+// display's settings; no phone can call it.
 export const setAdminPassword = createSetAdminPassword({
   config: karafriendsConfig,
-  saveConfig: updateConfig,
+  saveConfig: (values) => configStore.update(values),
   sessions: adminSessions,
 });
 
-// Like memoize, but forgets a rejected promise so a failed login (wrong
-// credentials, no Japanese IP, service down) is retried on the next request
-// instead of failing until restart.
-function memoizeSuccess<T>(fn: () => Promise<T>): () => Promise<T> {
-  let promise: Promise<T> | null = null;
-  return () => {
-    if (!promise) {
-      promise = fn().catch((err) => {
-        promise = null;
-        throw err;
-      });
-    }
-    return promise;
-  };
-}
-
-const minseiCredentialsProvider = memoizeSuccess(async () => {
-  const { damUsername, damPassword } = karafriendsConfig;
-  const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
-  return {
-    userCode: damUsername,
-    authToken: minseiLoginResult.data.authToken,
-  };
+// The clients' shared logins, forgotten when the settings change them.
+const credentials = createCredentialProviders({
+  store: configStore,
+  damLogin: async (damUsername, damPassword) => {
+    const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
+    return {
+      userCode: damUsername,
+      authToken: minseiLoginResult.data.authToken,
+    };
+  },
+  joysoundLogin: (email, password) => JoysoundAPI.login(email, password),
 });
-
-const joysoundCredentialsProvider = memoizeSuccess(() =>
-  JoysoundAPI.login(
-    karafriendsConfig.joysoundEmail,
-    karafriendsConfig.joysoundPassword,
-  ),
-);
 
 // The clients' requests go through config.yaml's proxy, if it enables one.
 setProxy(karafriendsConfig);
 
+configStore.onChange(({ keys }) => {
+  // The phones' live state shows supervisedMode.
+  if (keys.includes("supervisedMode")) hub.refresh();
+  // For DAM and Joysound requests from now on. (The display's own proxy,
+  // for DAM streams, changes on restart.)
+  if (keys.some((key) => PROXY_KEYS.includes(key))) setProxy(karafriendsConfig);
+  // A new password (from importConfig, say) signs every phone out, as
+  // setAdminPassword does.
+  if (
+    keys.includes("adminPasswordHash") ||
+    keys.includes("adminPasswordSalt")
+  ) {
+    adminSessions.clear();
+  }
+});
+
 // The clients keep no per-request state, so every request shares one of each.
 const upstreamClients = {
-  minsei: new MinseiAPI(minseiCredentialsProvider),
-  joysound: new JoysoundAPI(joysoundCredentialsProvider),
+  minsei: new MinseiAPI(credentials.dam),
+  joysound: new JoysoundAPI(credentials.joysound),
   dkwebsys: new DkwebsysAPI(),
 };
 
@@ -118,7 +121,7 @@ function innertubeApiProvider(): Promise<Innertube> {
   return innertubePromise;
 }
 
-export const api = createApi({
+const queueApi = createApi({
   config: karafriendsConfig,
   store,
   adminSessions,
@@ -157,3 +160,20 @@ export const api = createApi({
   },
   publish: hub.publish,
 });
+
+export const api: ApiHandlers = {
+  ...queueApi,
+  ...createSettingsHandlers({
+    store: configStore,
+    setAdminPassword,
+    // Fresh logins, so a test never touches the clients' shared ones.
+    logins: {
+      dam: (username, password) => MinseiAPI.login(username, password),
+      joysound: (email, password) => JoysoundAPI.login(email, password),
+    },
+    restart: () => {
+      app.relaunch();
+      app.exit(0);
+    },
+  }),
+};
