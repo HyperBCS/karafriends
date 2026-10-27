@@ -5,7 +5,7 @@ Written 2026-10-27 when moving work off the first PC. Start a new Claude Code se
 > **Update (2026-10-27, later):** karafriends is now a hard fork. It no longer syncs with emmaworley/karafriends.
 >
 > - `HyperBCS/karafriends` is a new standalone repo, with the old Yarn cache purged from history: 57 MB instead of 2.4 GB. The previous fork lives on as `HyperBCS/karafriends-fork-archive`. Clones made before the purge have different commit hashes, so re-clone rather than pull.
-> - The ongoing simplification and its status table are in [`PLAN-hard-fork.md`](PLAN-hard-fork.md). Upstream-sync notes below are history.
+> - The simplification in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. The current work is the product round in [`PLAN-product.md`](PLAN-product.md). Upstream-sync notes below are history.
 
 ## Where things stood
 

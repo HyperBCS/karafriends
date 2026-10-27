@@ -1,5 +1,7 @@
 # Plan: hard-fork karafriends and simplify the stack
 
+> **Done (2026-10-27).** Every phase below is merged. The next round is the product work in [`PLAN-product.md`](PLAN-product.md); start there.
+
 ## Status (keep this table current; it is how any session picks up where things stand)
 
 | Step                                                | State                                                                                                    | Branch / commit                                                                               | Notes                                                                                                                                                                                                                                                          |
