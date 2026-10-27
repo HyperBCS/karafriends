@@ -13,7 +13,7 @@ declare interface KuroshiroUtil {
   kanaToKatakana: (str: string) => string;
   kanaToRomaji: (
     str: string,
-    system: "nippon" | "passport" | "hepburn"
+    system: "nippon" | "passport" | "hepburn",
   ) => string;
 }
 
@@ -29,7 +29,7 @@ declare class KuroshiroClass {
       romajiSystem?: string;
       delimiter_start?: string;
       delimiter_end?: string;
-    }
+    },
   ): Promise<string>;
   static Util: KuroshiroUtil;
 }

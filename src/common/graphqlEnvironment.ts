@@ -27,7 +27,7 @@ function fetchQuery(request: RequestParameters, variables: Variables) {
         query: request.text,
         variables,
       }),
-    }
+    },
   ).then((response) => {
     return response.json();
   });
@@ -60,7 +60,7 @@ const subscribe = (operation: RequestParameters, variables: Variables) => {
         query: operation.text,
         variables,
       },
-      sink
+      sink,
     );
   });
 };

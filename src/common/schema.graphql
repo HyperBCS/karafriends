@@ -320,7 +320,7 @@ type NicoQueueItem implements QueueItemInterface {
 }
 
 union QueueItem =
-    DamQueueItem
+  | DamQueueItem
   | JoysoundQueueItem
   | YoutubeQueueItem
   | NicoQueueItem

@@ -45,7 +45,7 @@ const JoysoundArtist = ({ id }: Props) => {
     joysoundArtistViewQuery,
     {
       artistId: id,
-    }
+    },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

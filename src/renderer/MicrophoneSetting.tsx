@@ -36,7 +36,7 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
           const newMic = new InputDevice(
             dataset.name!,
-            parseInt(dataset.channel!, 10)
+            parseInt(dataset.channel!, 10),
           );
           onChange(newMic);
         }}
@@ -53,7 +53,7 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
                 name={name}
                 channel={i}
               />
-            ))
+            )),
           )}
       </select>
       <label>Microphone</label>

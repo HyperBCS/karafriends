@@ -67,7 +67,7 @@ const YouTubeQueueButton = ({
   const defaultText = "Queue video";
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<YouTubeQueueButtonMutation>(
-    youTubeQueueButtonMutation
+    youTubeQueueButtonMutation,
   );
 
   useEffect(() => {
@@ -89,10 +89,10 @@ const YouTubeQueueButton = ({
               videoDownloadType: 1,
               songId: videoId,
               suffix: null,
-            }
+            },
           ).subscribe({
             next: (
-              data: YouTubeQueueButtonGetVideoDownloadProgressQuery["response"]
+              data: YouTubeQueueButtonGetVideoDownloadProgressQuery["response"],
             ) => {
               if (
                 data.videoDownloadProgress.progress === 1.0 ||
@@ -104,7 +104,7 @@ const YouTubeQueueButton = ({
                 setText(
                   `Downloading -- ${(
                     data.videoDownloadProgress.progress * 100
-                  ).toFixed(1)}%`
+                  ).toFixed(1)}%`,
                 );
               }
             },

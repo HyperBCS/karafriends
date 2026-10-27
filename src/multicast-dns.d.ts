@@ -7,7 +7,7 @@ declare module "multicast-dns" {
           name: string;
           type: string;
         }[];
-      }) => void
+      }) => void,
     ): void;
     respond(packet: {
       answers: {

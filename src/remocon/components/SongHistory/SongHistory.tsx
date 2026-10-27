@@ -82,7 +82,7 @@ const History = () => {
   const queryData = useLazyLoadQuery<SongHistoryViewQuery>(
     historyViewQuery,
     {},
-    { fetchPolicy: "store-and-network" }
+    { fetchPolicy: "store-and-network" },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

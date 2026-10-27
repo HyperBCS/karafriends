@@ -59,7 +59,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
   const defaultText = "Queue video";
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<NiconicoQueueButtonMutation>(
-    niconicoQueueButtonMutation
+    niconicoQueueButtonMutation,
   );
 
   useEffect(() => {
@@ -81,10 +81,10 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
               videoDownloadType: 2,
               songId: videoId,
               suffix: null,
-            }
+            },
           ).subscribe({
             next: (
-              data: NiconicoQueueButtonGetVideoDownloadProgressQuery["response"]
+              data: NiconicoQueueButtonGetVideoDownloadProgressQuery["response"],
             ) => {
               if (
                 data.videoDownloadProgress.progress === 1.0 ||
@@ -96,7 +96,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
                 setText(
                   `Downloading -- ${(
                     data.videoDownloadProgress.progress * 100
-                  ).toFixed(1)}%`
+                  ).toFixed(1)}%`,
                 );
               }
             },
