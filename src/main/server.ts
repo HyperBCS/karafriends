@@ -40,7 +40,7 @@ function isJson(req: Request): boolean {
 export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
   const router = express.Router();
 
-  router.get("/events", (req, res) => {
+  router.get("/events", (_req, res) => {
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
@@ -60,10 +60,13 @@ export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
       () => res.write(": heartbeat\n\n"),
       HEARTBEAT_MS,
     );
-    req.on("close", () => {
+    const stop = () => {
       clearInterval(heartbeat);
       unsubscribe();
-    });
+    };
+    // The phone went away (or the connection broke).
+    res.on("close", stop);
+    res.on("error", stop);
   });
 
   router.post(
