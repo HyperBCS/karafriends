@@ -1,16 +1,19 @@
 // Runs on Node's test runner through tsx (yarn test:unit). Here there is no
-// window, so these run as a phone would.
+// window, so these run as a phone would, unless a test gives one with the
+// display's preload API.
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
-import type { LiveState, SharedQueueItem } from "./api";
+import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
   ApiCallError,
   call,
   eventsUrl,
   mergeLiveState,
+  openLiveStream,
   parseLiveEvent,
 } from "./apiClient";
+import type { ApiResponse, DisplayApi } from "./ipc";
 
 const song = (n: number, playtime: number | null = 60): SharedQueueItem => ({
   kind: "nico",
@@ -35,12 +38,25 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
 });
 
 const realFetch = globalThis.fetch;
-const g = globalThis as { localStorage?: unknown };
+const g = globalThis as { localStorage?: unknown; window?: unknown };
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   delete g.localStorage;
+  delete g.window;
 });
+
+// Makes this the display window, with call() answering through answer().
+function asDisplay(
+  answer: (method: string, input: unknown) => Promise<ApiResponse>,
+  onLive: DisplayApi["onLive"] = () => () => {},
+) {
+  const api = { call: answer, onLive } as DisplayApi;
+  g.window = { karafriends: { api } };
+  globalThis.fetch = async () => {
+    throw new Error("The display must not use HTTP");
+  };
+}
 
 describe("call", () => {
   test("POSTs JSON with the phone's identity, and returns the answer", async () => {
@@ -95,6 +111,81 @@ describe("call", () => {
         err.status === 502 &&
         err.message === "whoami failed with HTTP 502",
     );
+  });
+});
+
+describe("call on the display", () => {
+  test("goes over IPC, with the input as JSON", async () => {
+    const calls: [string, unknown][] = [];
+    asDisplay(async (method, input) => {
+      calls.push([method, input]);
+      return { ok: true, output: { isAdmin: true } };
+    });
+    assert.deepEqual(await call("whoami", {}), { isAdmin: true });
+    await call("history", { offset: undefined, limit: 5 });
+    assert.deepEqual(calls, [
+      ["whoami", {}],
+      // As JSON.stringify would send it.
+      ["history", { limit: 5 }],
+    ]);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(calls[1][1], "offset"),
+      false,
+    );
+  });
+
+  test("throws what it would over HTTP", async () => {
+    asDisplay(async () => ({
+      ok: false,
+      status: 403,
+      error: "Supervised mode: no",
+    }));
+    await assert.rejects(
+      call("setPlaybackState", { playbackState: "PAUSED" }),
+      (err) =>
+        err instanceof ApiCallError &&
+        err.status === 403 &&
+        err.message === "Supervised mode: no",
+    );
+
+    // The main process didn't answer.
+    asDisplay(async () => {
+      throw new Error("No handler registered for 'api'");
+    });
+    await assert.rejects(
+      call("popSong", {}),
+      (err) =>
+        err instanceof ApiCallError &&
+        err.status === 500 &&
+        err.message === "popSong failed: No handler registered for 'api'",
+    );
+  });
+});
+
+describe("openLiveStream on the display", () => {
+  test("listens over IPC, and stops when closed", () => {
+    let listener: ((event: LiveEvent) => void) | null = null;
+    asDisplay(
+      async () => ({ ok: true, output: null }),
+      (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+    );
+    let opened = 0;
+    const events: LiveEvent[] = [];
+    const close = openLiveStream(
+      () => opened++,
+      (event) => events.push(event),
+    );
+    assert.equal(opened, 1);
+    const event: LiveEvent = { type: "state", state: state() };
+    listener!(event);
+    assert.deepEqual(events, [event]);
+    close();
+    assert.equal(listener, null);
   });
 });
 

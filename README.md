@@ -23,10 +23,12 @@ yarn install && yarn run-dev
 yarn typecheck && yarn lint && yarn test:unit
 ```
 
-The main process serves the phone remote and a JSON API on the remote port (8080 by default), and both the remote and the display use that API:
+The main process serves the phone remote and a JSON API on the remote port (8080 by default), for the phones:
 
 - `POST /api/<method>`: JSON in and out. `src/common/api.ts` has the methods and their types, `src/main/api.ts` the handlers, and `src/common/apiQueries.ts` the clients' TanStack Query hooks.
 - `GET /api/events`: the live state (queue, now playing, playback, key, downloads) as Server-Sent Events.
+
+The display window uses the same methods and live events over Electron IPC, through its preload (`src/common/ipc.ts`, `src/main/ipc.ts`); `src/common/apiClient.ts` picks the transport. So the display works even when the remote port is taken: then only phones can't connect, and the display shows a banner saying so.
 
 There's no code generation: `yarn typecheck` works on a fresh checkout. A checkout from before GraphQL was removed may still have gitignored `src/**/__generated__` folders, which now fail the type check; delete them.
 
@@ -44,4 +46,5 @@ yarn test:e2e
 - `@net` tests queue a YouTube video. They copy ffmpeg and yt-dlp from the installed app's data folder (`%APPDATA%\karafriends\externalResources` on Windows), so start the app once beforehand.
 - `@jp` tests search DAM and Joysound with the logins from the installed app's `config.yaml`, queue a song from each (the Joysound one downloads, with the installed app's ffmpeg) and take it straight off the queue. They need a Japanese IP and only run on request: `KARAFRIENDS_E2E_JP=1 yarn test:e2e --grep @jp`.
 - There's no GraphQL any more: a test checks that `/graphql` answers 404, and every test fails if the display or the remote requests it.
+- The display uses IPC: every test fails if the display requests `/api`, and one launches with the remote port already taken.
 - `yarn test:e2e:ci` leaves out `@net` and `@jp`; CI runs it on Windows and Linux.

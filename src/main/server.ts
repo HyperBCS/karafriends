@@ -20,10 +20,10 @@ import {
   type ApiMethod,
   type LiveEvent,
 } from "../common/api";
-import { ApiError, ApiHandlers } from "./api";
+import type { ApiHandlers } from "./api";
 import { callerFromHeaders, deviceIdFromQuery } from "./caller";
+import { errorAnswer, isMethod, runMethod } from "./dispatch";
 import type { LiveHub } from "./live";
-import { validators } from "./validate";
 
 export const EVENTS_PATH = "/api/events";
 
@@ -45,10 +45,6 @@ export function serializeEvent(event: LiveEvent): string {
     serialized.set(event, json);
   }
   return json;
-}
-
-function isMethod(name: string): name is ApiMethod {
-  return Object.prototype.hasOwnProperty.call(validators, name);
 }
 
 function isJson(req: Request): boolean {
@@ -110,15 +106,14 @@ export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
     async (req, res, next) => {
       const method = req.params.method as ApiMethod;
       try {
-        // An empty body means no input.
-        const input = validators[method](req.body ?? {});
-        const caller = callerFromHeaders(req.headers);
-        const handler = handlers[method] as (
-          input: unknown,
-          caller: unknown,
-        ) => Promise<unknown>;
-        const output = await handler(input, caller);
-        res.json(output ?? null);
+        // An empty body (undefined) means no input.
+        const output = await runMethod(
+          handlers,
+          method,
+          req.body,
+          callerFromHeaders(req.headers),
+        );
+        res.json(output);
       } catch (err) {
         next(err);
       }
@@ -131,18 +126,10 @@ export function apiRouter(handlers: ApiHandlers, hub: LiveHub): Router {
 
   router.use(
     (err: unknown, req: Request, res: Response, _next: NextFunction) => {
-      if (err instanceof ApiError) {
-        res.status(err.status).json({ error: err.message });
-        return;
-      }
-      // express.json's own errors: malformed JSON, too large and so on.
-      const status = (err as { status?: unknown }).status;
-      if (typeof status === "number" && status >= 400 && status < 500) {
-        res.status(status).json({ error: (err as Error).message });
-        return;
-      }
-      console.error(`/api${req.path} failed:`, err);
-      res.status(500).json({ error: String((err as Error)?.message ?? err) });
+      // An ApiError, one of express.json's own (malformed JSON, too large and
+      // so on), or a 500.
+      const { status, error } = errorAnswer(err, `/api${req.path}`);
+      res.status(status).json({ error });
     },
   );
 

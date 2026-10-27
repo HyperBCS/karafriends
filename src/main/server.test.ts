@@ -11,7 +11,6 @@ import express from "express";
 
 import type { LiveEvent } from "../common/api";
 import { ApiError, type Caller } from "./api";
-import { displayToken } from "./caller";
 import type { Viewer } from "./live";
 import { apiRouter, serializeEvent, shouldCompress } from "./server";
 
@@ -83,21 +82,18 @@ describe("POST /api/<method>", () => {
     assert.equal(res.status, 200);
   });
 
-  test("passes the caller from the headers", async () => {
+  test("passes the caller from the headers, never the display", async () => {
     callers.length = 0;
-    await post("whoami", "{}", {
+    const res = await post("whoami", "{}", {
       "Content-Type": "application/json; charset=utf-8",
       "X-Karafriends-Device-Id": "phone-1",
       "X-Karafriends-Nickname": encodeURIComponent("歌手"),
     });
-    const res = await post("whoami", "{}", {
-      "Content-Type": "application/json",
-      "X-Karafriends-Display-Token": displayToken,
-    });
-    assert.deepEqual(await res.json(), { isAdmin: true });
+    assert.deepEqual(await res.json(), { isAdmin: false });
+    await post("whoami", "{}");
     assert.deepEqual(callers, [
       { deviceId: "phone-1", nickname: "歌手", isDisplay: false },
-      { deviceId: null, nickname: null, isDisplay: true },
+      { deviceId: null, nickname: null, isDisplay: false },
     ]);
   });
 

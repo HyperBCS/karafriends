@@ -1,0 +1,46 @@
+// The display window's API transport: Electron IPC through its preload
+// (src/preload/index.ts), instead of HTTP. Same methods, handlers and live
+// events as POST /api/<method> and GET /api/events (see api.ts); only phones
+// use HTTP.
+//
+// Types and constants only, so the main process, the preload and the renderer
+// can all import it.
+import type { ApiInput, ApiMethod, ApiOutput, LiveEvent } from "./api";
+
+export const IPC_CHANNELS = {
+  // invoke(method, input) -> ApiResponse
+  call: "api",
+  // send(): the display's preload asks for the live events once per page
+  // load. The main process then sends the live state at once, as a new
+  // /api/events stream does, and every event after it.
+  liveSubscribe: "live:subscribe",
+  // main -> display: one LiveEvent
+  live: "live",
+  // Why phones can't connect (the remote's server couldn't listen), as a
+  // sentence to show: invoke() -> string | null as the page loads, and
+  // main -> display when it happens.
+  remoconProblem: "remocon:problem",
+} as const;
+
+// The display window's command-line switch (webPreferences
+// .additionalArguments) with the phones' server port, which the preload
+// reads: --karafriends-remocon-port=8080.
+export const REMOCON_PORT_ARG = "--karafriends-remocon-port=";
+
+// What the preload's call() resolves with. The status and error are what the
+// HTTP API answers with (403 and its message, say). Failures come back as
+// data because an Error's own properties don't survive the context bridge.
+export type ApiResponse<M extends ApiMethod = ApiMethod> =
+  | { ok: true; output: ApiOutput<M> }
+  | { ok: false; status: number; error: string };
+
+// window.karafriends.api in the display window.
+export interface DisplayApi {
+  call<M extends ApiMethod>(
+    method: M,
+    input: ApiInput<M>,
+  ): Promise<ApiResponse<M>>;
+  // Calls listener with the live state at once, then with every event.
+  // Returns a function that stops it.
+  onLive(listener: (event: LiveEvent) => void): () => void;
+}

@@ -6,33 +6,83 @@ const nativeAudio = require(fileURLToPath(nativeAudioUrl));
 import { contextBridge, ipcRenderer } from "electron";
 import { memoize } from "lodash";
 
-import { KarafriendsConfig } from "../common/config";
+import type { LiveEvent } from "../common/api";
+import { IPC_CHANNELS, REMOCON_PORT_ARG, type DisplayApi } from "../common/ipc";
 import ipAddresses from "../common/ipAddresses";
 
 let inputDeviceCount = 0;
 const inputDevices: { [deviceId: number]: any } = {};
 
-let karafriendsConfig: KarafriendsConfig | null = null;
-let displayToken: string | null = null;
+// The phones' server port, from the main process (see index.ts).
+const remoconPort = Number(
+  process.argv
+    .find((arg) => arg.startsWith(REMOCON_PORT_ARG))
+    ?.slice(REMOCON_PORT_ARG.length),
+);
+
+// The live events, from the main process. This page asks for them once, as
+// it loads, and the live state comes first; the latest one is kept for
+// listeners that start later.
+type LiveListener = (event: LiveEvent) => void;
+const liveListeners = new Set<LiveListener>();
+let liveState: LiveEvent | null = null;
+
+ipcRenderer.on(IPC_CHANNELS.live, (_event, liveEvent: LiveEvent) => {
+  if (liveEvent.type === "state") liveState = liveEvent;
+  for (const listener of liveListeners) {
+    try {
+      listener(liveEvent);
+    } catch (err) {
+      console.error(`A ${liveEvent.type} listener failed:`, err);
+    }
+  }
+});
+ipcRenderer.send(IPC_CHANNELS.liveSubscribe);
+
+// The display's API transport (src/common/ipc.ts).
+const api: DisplayApi = {
+  call: (method, input) => ipcRenderer.invoke(IPC_CHANNELS.call, method, input),
+  onLive(listener) {
+    liveListeners.add(listener);
+    if (liveState) listener(liveState);
+    return () => {
+      liveListeners.delete(listener);
+    };
+  },
+};
+
+// Why phones can't connect, if they can't: asked for as the page loads (it
+// usually happens first), and sent when it happens.
+type ProblemListener = (message: string) => void;
+const problemListeners = new Set<ProblemListener>();
+let remoconProblem: string | null = null;
+
+const setRemoconProblem = (message: unknown) => {
+  if (typeof message !== "string" || message === remoconProblem) return;
+  remoconProblem = message;
+  for (const listener of problemListeners) listener(message);
+};
+ipcRenderer.on(IPC_CHANNELS.remoconProblem, (_event, message: unknown) =>
+  setRemoconProblem(message),
+);
+ipcRenderer
+  .invoke(IPC_CHANNELS.remoconProblem)
+  .then(setRemoconProblem)
+  .catch((err) => console.error("Couldn't ask about the remote:", err));
 
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
-  karafriendsConfig: () => {
-    if (karafriendsConfig === null) {
-      console.log("Making sync request for configs");
-      karafriendsConfig = ipcRenderer.sendSync("config");
-    }
-
-    return karafriendsConfig;
+  remoconPort: (): number => remoconPort,
+  // Calls listener with why phones can't connect, at once if it is known.
+  // Returns a function that stops it.
+  onRemoconProblem: (listener: ProblemListener): (() => void) => {
+    problemListeners.add(listener);
+    if (remoconProblem !== null) listener(remoconProblem);
+    return () => {
+      problemListeners.delete(listener);
+    };
   },
-  // The secret the display sends with its API requests, which makes it an
-  // admin.
-  displayToken: (): string | null => {
-    if (displayToken === null) {
-      displayToken = ipcRenderer.sendSync("displayToken");
-    }
-    return displayToken;
-  },
+  api,
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid

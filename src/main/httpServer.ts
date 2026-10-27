@@ -1,30 +1,31 @@
 // The HTTP server on the remocon port: the phone remote's pages and the API
-// (server.ts), for the phones and, until Phase 5f, the display.
+// (server.ts), for the phones. The display uses IPC instead (ipc.ts).
 import { createServer, type Server } from "http";
 
-import { app as electronApp, dialog } from "electron";
 import type { Application } from "express";
 
 import karafriendsConfig, { LOCAL_ONLY } from "../common/config";
 
-export function startHttpServer(app: Application): Server {
+// onProblem gets a sentence for the display when phones can't connect.
+export function startHttpServer(
+  app: Application,
+  onProblem: (message: string) => void,
+): Server {
   const httpServer = createServer(app);
+  const port = karafriendsConfig.remoconPort;
 
   // The server is an EventEmitter: an unhandled "error" event (most commonly
-  // the remocon port already being in use) would otherwise crash the whole app
-  // with a bare stack trace. Fail loudly with a clear message and quit cleanly.
+  // the port already being in use, by another karafriends, say) would crash
+  // the whole app. Only phones need the server, so keep the display going,
+  // and say why phones can't connect.
   httpServer.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      dialog.showErrorBox(
-        "karafriends: port already in use",
-        `Port ${karafriendsConfig.remoconPort} is already in use. ` +
-          "Is karafriends already running? Close the other instance " +
-          "(or free the port) and relaunch.",
-      );
-    } else {
-      console.error("HTTP server error:", err);
-    }
-    electronApp.quit();
+    const message =
+      err.code === "EADDRINUSE"
+        ? `Phones can't connect: port ${port} is in use. ` +
+          "Close whatever is using it (another karafriends?) and restart karafriends."
+        : `Phones can't connect: the server on port ${port} failed (${err.code ?? err.message}).`;
+    console.warn(message, err);
+    onProblem(message);
   });
 
   // Nothing here speaks WebSocket, so refuse upgrades, as graphql-ws did for
@@ -36,10 +37,8 @@ export function startHttpServer(app: Application): Server {
 
   // LOCAL_ONLY (tests and checks): this machine only, so no firewall prompt.
   const host = LOCAL_ONLY ? "127.0.0.1" : undefined;
-  httpServer.listen(karafriendsConfig.remoconPort, host, () => {
-    console.log(
-      `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
-    );
+  httpServer.listen(port, host, () => {
+    console.log(`Server is now running on http://localhost:${port}`);
   });
 
   return httpServer;

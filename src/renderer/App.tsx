@@ -14,6 +14,7 @@ import { InputDevice } from "./nativeAudio";
 import Player from "./Player";
 import QRCode from "./QRCode";
 import Queue from "./Queue";
+import RemoconNotice from "./RemoconNotice";
 import KarafriendsAudio from "./webAudio";
 
 interface SavedMic {
@@ -91,6 +92,7 @@ function App(props: {
 
   return (
     <div className="appMainContainer black row">
+      <RemoconNotice />
       <div
         className={`appPlayer col ${
           sidebarVisible ? "s11" : "s12"

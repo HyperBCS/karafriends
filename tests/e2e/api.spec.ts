@@ -50,11 +50,19 @@ async function liveState(remoconUrl: string) {
   }
 }
 
-async function displayToken(display: Page): Promise<string> {
-  return display.evaluate(() =>
-    (
-      window as unknown as { karafriends: { displayToken(): string } }
-    ).karafriends.displayToken(),
+// A call from the display, over IPC through its preload: { ok, output } or
+// { ok: false, status, error }.
+async function displayCall(display: Page, method: string, input: object) {
+  return display.evaluate(
+    ([method, input]) =>
+      (
+        window as unknown as {
+          karafriends: {
+            api: { call(method: string, input: object): Promise<unknown> };
+          };
+        }
+      ).karafriends.api.call(method, input),
+    [method, input] as const,
   );
 }
 
@@ -91,17 +99,14 @@ test("whoami answers, and the display is an admin", async ({
   expect(
     await call(karafriends.remoconUrl, "whoami", {}, REMOTE_HEADERS),
   ).toEqual({ status: 200, body: { isAdmin: false } });
-  const token = await displayToken(display);
+  expect(await displayCall(display, "whoami", {})).toEqual({
+    ok: true,
+    output: { isAdmin: true },
+  });
+  // Over IPC, a failure comes back as /api would answer it.
   expect(
-    await call(
-      karafriends.remoconUrl,
-      "whoami",
-      {},
-      {
-        "X-Karafriends-Display-Token": token,
-      },
-    ),
-  ).toEqual({ status: 200, body: { isAdmin: true } });
+    await displayCall(display, "setPlaybackState", { playbackState: "LOUD" }),
+  ).toEqual({ ok: false, status: 400, error: expect.any(String) });
 });
 
 test("/api/events sends the live state", async ({ karafriends }) => {
@@ -235,17 +240,12 @@ test.describe("supervised mode", () => {
       ).toEqual(["sm90002"]);
 
       // The display can.
-      const admin = {
-        "X-Karafriends-Display-Token": await displayToken(display),
-      };
       expect(
-        await call(
-          remoconUrl,
-          "removeSong",
-          { songId: "sm90002", timestamp: song(2, someoneElse).timestamp },
-          admin,
-        ),
-      ).toEqual({ status: 200, body: true });
+        await displayCall(display, "removeSong", {
+          songId: "sm90002",
+          timestamp: song(2, someoneElse).timestamp,
+        }),
+      ).toEqual({ ok: true, output: true });
     });
   });
 

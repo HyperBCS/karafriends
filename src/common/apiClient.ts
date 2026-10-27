@@ -1,12 +1,13 @@
 // The client side of the JSON RPC API in src/common/api.ts, for the phone
 // remote and the display: call() runs a method, and LiveStateProvider keeps
-// one live-state stream (GET /api/events) per page for useLiveState() and
-// useLiveEvent().
+// one live-event stream per page for useLiveState() and useLiveEvent().
 //
-// A phone talks to the server that served its page. The display window is
-// loaded from the Parcel dev server (dev) or a file URL (prod), so it talks
-// to the same server on localhost; the webRequest rewrites in
-// src/main/index.ts let it past CORS until Phase 5f moves it to IPC.
+// Same methods and events, two transports:
+// - A phone talks HTTP to the server that served its page: POST
+//   /api/<method>, and GET /api/events through EventSource.
+// - The display window talks to its own main process over Electron IPC,
+//   through its preload's window.karafriends.api (src/common/ipc.ts), so it
+//   needs no HTTP server at all.
 import React, {
   createContext,
   useContext,
@@ -25,16 +26,11 @@ import {
   type LiveEventType,
   type LiveState,
 } from "./api";
+import type { ApiResponse, DisplayApi } from "./ipc";
 
-// The display window (it has the preload's API); phones don't.
-function isDisplay(): boolean {
-  return typeof window !== "undefined" && window.karafriends !== undefined;
-}
-
-export function serverUrl(path: string): string {
-  return isDisplay()
-    ? `http://localhost:${window.karafriends.karafriendsConfig().remoconPort}${path}`
-    : path;
+// The display window's IPC transport, from its preload. Phones have none.
+function displayApi(): DisplayApi | null {
+  return (typeof window !== "undefined" && window.karafriends?.api) || null;
 }
 
 function storedIdentity(): {
@@ -52,16 +48,10 @@ function storedIdentity(): {
   }
 }
 
-// Who is asking, for the server's admin checks: the display sends its secret,
-// a phone its device ID and nickname (percent-encoded, since a nickname may
-// not be ASCII).
+// Who is asking, for the server's admin checks: a phone's device ID and
+// nickname (percent-encoded, since a nickname may not be ASCII).
 export function identityHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (isDisplay()) {
-    const token = window.karafriends.displayToken();
-    if (token) headers[IDENTITY_HEADERS.displayToken] = token;
-    return headers;
-  }
   const { deviceId, nickname } = storedIdentity();
   if (deviceId) {
     headers[IDENTITY_HEADERS.deviceId] = encodeURIComponent(deviceId);
@@ -73,6 +63,7 @@ export function identityHeaders(): Record<string, string> {
 }
 
 // A method the server refused or failed: the HTTP status and its message.
+// Over IPC, the status and message /api would have answered with.
 export class ApiCallError extends Error {
   constructor(
     readonly status: number,
@@ -87,7 +78,36 @@ export async function call<M extends ApiMethod>(
   method: M,
   input: ApiInput<M>,
 ): Promise<ApiOutput<M>> {
-  const res = await fetch(serverUrl(`/api/${method}`), {
+  const ipc = displayApi();
+  return ipc ? callOverIpc(ipc, method, input) : callOverHttp(method, input);
+}
+
+async function callOverIpc<M extends ApiMethod>(
+  ipc: DisplayApi,
+  method: M,
+  input: ApiInput<M>,
+): Promise<ApiOutput<M>> {
+  let res: ApiResponse<M>;
+  try {
+    // Through JSON, so the main process gets just what /api would (no
+    // undefined fields, say).
+    res = await ipc.call(method, JSON.parse(JSON.stringify(input ?? {})));
+  } catch (err) {
+    // The main process didn't answer at all.
+    throw new ApiCallError(
+      500,
+      `${method} failed: ${(err as Error)?.message ?? err}`,
+    );
+  }
+  if (!res.ok) throw new ApiCallError(res.status, res.error);
+  return res.output;
+}
+
+async function callOverHttp<M extends ApiMethod>(
+  method: M,
+  input: ApiInput<M>,
+): Promise<ApiOutput<M>> {
+  const res = await fetch(`/api/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...identityHeaders() },
     body: JSON.stringify(input),
@@ -105,13 +125,13 @@ export async function call<M extends ApiMethod>(
   return res.json();
 }
 
-// The stream's address. A phone gives its device ID, so its copy of the state
-// marks its own songs (isMine); the display gives none.
+// A phone's stream address. It gives its device ID, so its copy of the state
+// marks its own songs (isMine).
 export function eventsUrl(deviceId: string | null): string {
   const query = deviceId
     ? `?${EVENTS_DEVICE_ID_PARAM}=${encodeURIComponent(deviceId)}`
     : "";
-  return serverUrl(`/api/events${query}`);
+  return `/api/events${query}`;
 }
 
 // One `data:` line of the stream, or null if it isn't a LiveEvent.
@@ -163,6 +183,57 @@ const AdminContext = createContext<boolean | undefined>(undefined);
 // How long to wait before opening a new stream when EventSource gives up.
 const RESTART_MS = 5_000;
 
+// Opens the page's live-event stream: over IPC on the display, through
+// EventSource on a phone. Calls onOpen each time it (re)connects, and
+// onEvent with every event, the live state first. Returns a function that
+// closes it.
+export function openLiveStream(
+  onOpen: () => void,
+  onEvent: (event: LiveEvent) => void,
+): () => void {
+  const ipc = displayApi();
+  if (ipc) {
+    onOpen();
+    return ipc.onLive(onEvent);
+  }
+
+  let source: EventSource | null = null;
+  let restart: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const connect = () => {
+    // Read now, not when the page rendered: the remote stores a new phone's
+    // device ID in an effect, which runs before the one that opens this.
+    const current = new EventSource(eventsUrl(storedIdentity().deviceId));
+    source = current;
+    current.onopen = onOpen;
+    current.onmessage = (message) => {
+      const event = parseLiveEvent(message.data);
+      if (event === null) {
+        console.warn("Ignoring a live event I can't read:", message.data);
+        return;
+      }
+      onEvent(event);
+    };
+    // EventSource reconnects by itself when a connection drops (the server
+    // then sends the whole state again), but gives up when the server
+    // answers with an error, like a proxy's 502 while the app restarts.
+    // Then start over.
+    current.onerror = () => {
+      if (current.readyState !== EventSource.CLOSED || stopped) return;
+      current.close();
+      restart = setTimeout(connect, RESTART_MS);
+    };
+  };
+
+  connect();
+  return () => {
+    stopped = true;
+    source?.close();
+    if (restart) clearTimeout(restart);
+  };
+}
+
 // One stream for the page. Mount it once, at the root. With checkAdmin, it
 // also asks whoami each time it connects, for useIsAdmin().
 export function LiveStateProvider({
@@ -183,29 +254,15 @@ export function LiveStateProvider({
   }));
 
   useEffect(() => {
-    let source: EventSource | null = null;
-    let restart: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
-
-    const connect = () => {
-      // Read now, not at render: the remote stores a new phone's device ID in
-      // an effect, which runs before this one.
-      const current = new EventSource(
-        eventsUrl(isDisplay() ? null : storedIdentity().deviceId),
-      );
-      source = current;
-      current.onopen = () => {
+    const close = openLiveStream(
+      () => {
         if (!checkAdmin) return;
         call("whoami", {})
           .then((who) => !stopped && setIsAdmin(who.isAdmin))
           .catch((err) => console.warn("Couldn't ask whoami:", err));
-      };
-      current.onmessage = (message) => {
-        const event = parseLiveEvent(message.data);
-        if (event === null) {
-          console.warn("Ignoring a live event I can't read:", message.data);
-          return;
-        }
+      },
+      (event) => {
         if (event.type === "state") {
           setState((prev) => mergeLiveState(prev, event.state));
         }
@@ -216,23 +273,11 @@ export function LiveStateProvider({
             console.error(`A ${event.type} listener failed:`, err);
           }
         }
-      };
-      // EventSource reconnects by itself when a connection drops (the server
-      // then sends the whole state again), but gives up when the server
-      // answers with an error, like a proxy's 502 while the app restarts.
-      // Then start over.
-      current.onerror = () => {
-        if (current.readyState !== EventSource.CLOSED || stopped) return;
-        current.close();
-        restart = setTimeout(connect, RESTART_MS);
-      };
-    };
-
-    connect();
+      },
+    );
     return () => {
       stopped = true;
-      source?.close();
-      if (restart) clearTimeout(restart);
+      close();
     };
   }, [checkAdmin, listeners]);
 

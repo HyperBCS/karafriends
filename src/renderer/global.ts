@@ -1,11 +1,17 @@
-import type { KarafriendsConfig } from "../common/config";
+import type { DisplayApi } from "../common/ipc";
 
+// What the preload (src/preload/index.ts) gives the display window. Phones
+// don't have it.
 declare global {
   interface Window {
     karafriends: {
       ipAddresses(): string[];
-      karafriendsConfig(): KarafriendsConfig;
-      displayToken(): string | null;
+      // The phones' server port, for the remote's address.
+      remoconPort(): number;
+      // Calls listener with why phones can't connect (the server couldn't
+      // listen), at once if it is known. Returns a function that stops it.
+      onRemoconProblem(listener: (message: string) => void): () => void;
+      api: DisplayApi;
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

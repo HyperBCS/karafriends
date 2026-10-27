@@ -11,6 +11,12 @@ test("the display opens on its idle screen without console errors", async ({
     display.getByRole("img", { name: "QR code for the remote" }),
   ).toBeVisible();
   await expect(display.getByText("Settings", { exact: true })).toBeVisible();
+  // The remote's addresses carry its port, which the preload got from the
+  // main process.
+  const { port } = new URL(karafriends.remoconUrl);
+  await expect(
+    display.locator(`option[value="karafriends.local:${port}"]`),
+  ).toHaveCount(1);
   await expect(
     display.getByRole("button", { name: "Clear mics" }),
   ).toBeVisible();
