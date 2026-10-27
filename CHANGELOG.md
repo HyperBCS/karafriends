@@ -9,6 +9,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Admins sign in on the phone with an admin password (`adminPasswordSalt` and `adminPasswordHash` in `config.yaml`) from a new profile page, and stay signed in across restarts. `adminDeviceIds` and `adminNicks` are gone; device IDs still decide whose song is whose.
 - The app can now change its settings while it runs, test the DAM and Joysound logins, and export and import the whole config (logins included) for the coming settings screen. Changing a login takes effect at the next search; the port and proxy still need a restart.
 - Admins can reorder the queue (`moveSong`: to the top, or to any place in it); the phone buttons for it come with the remote's refresh.
+- The phone remote is rebuilt: one search box for DAM and Joysound (by title or artist, either catalog or both; a pasted YouTube or Niconico link opens the video), one song page, the queue in the now-playing sheet with Move to top, up and down for admins, and a profile screen for the nickname, language, notifications and admin sign-in. A new phone picks its nickname there first.
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 
 ## 0.1.0
