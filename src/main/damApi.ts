@@ -1,8 +1,8 @@
 /* tslint:disable:max-classes-per-file */
 
-import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
-import DataLoader from "dataloader";
 import promiseRetry from "promise-retry";
+
+import { http } from "./http";
 
 const BASE_MINSEI_REQUEST = {
   charset: "UTF-8",
@@ -12,6 +12,12 @@ const BASE_MINSEI_REQUEST = {
   format: "json",
   serviceId: "1",
   contractId: "1",
+};
+
+const MINSEI_HEADERS = {
+  "Content-Type": "application/x-www-form-urlencoded",
+  "User-Agent": "WindowsApplication",
+  "win10-access-key": "mbAmgk3GuCOKAgL8dCQR",
 };
 
 export type MinseiCredentialsProvider = () => Promise<{
@@ -44,15 +50,11 @@ interface MinseiStreamingUrls extends MinseiResponse {
   }[];
 }
 
-export class MinseiAPI extends RESTDataSource {
-  override baseURL = "https://win10.clubdam.com";
+export class MinseiAPI {
+  baseURL = "https://win10.clubdam.com";
   credsProvider: MinseiCredentialsProvider;
 
-  constructor(
-    credsProvider: MinseiCredentialsProvider,
-    options: DataSourceConfig,
-  ) {
-    super(options);
+  constructor(credsProvider: MinseiCredentialsProvider) {
     this.credsProvider = credsProvider;
   }
 
@@ -66,22 +68,11 @@ export class MinseiAPI extends RESTDataSource {
     console.debug(
       `[minsei] curl ${this.baseURL}${url} -d '${JSON.stringify(body)}'`,
     );
-    return super.post(url, {
+    return http<T>(`${this.baseURL}${url}`, {
+      method: "POST",
       body,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "WindowsApplication",
-        "win10-access-key": "mbAmgk3GuCOKAgL8dCQR",
-      },
+      headers: MINSEI_HEADERS,
     });
-  }
-
-  parseBody(response: Response): Promise<object | string | ArrayBuffer> {
-    if (response.headers.get("Content-Type") === "application/octet-stream") {
-      return response.arrayBuffer();
-    } else {
-      return super.parseBody(response);
-    }
   }
 
   static checkError<T extends MinseiResponse>(data: T) {
@@ -98,11 +89,7 @@ export class MinseiAPI extends RESTDataSource {
       {
         method: "POST",
         body: `loginId=${loginId}&password=${password}&format=json`,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "WindowsApplication",
-          "win10-access-key": "mbAmgk3GuCOKAgL8dCQR",
-        },
+        headers: MINSEI_HEADERS,
       },
     )
       .then((data) => data.json() as Promise<MinseiLogin>)
@@ -241,8 +228,8 @@ interface GetMusicListByArtistResponse extends DkwebsysReponse {
   }[];
 }
 
-export class DkwebsysAPI extends RESTDataSource {
-  override baseURL = "https://csgw.clubdam.com";
+export class DkwebsysAPI {
+  baseURL = "https://csgw.clubdam.com";
 
   post<T>(url: string, data: object): Promise<T> {
     const body = {
@@ -252,7 +239,8 @@ export class DkwebsysAPI extends RESTDataSource {
     console.debug(
       `[dkwebsys] curl ${this.baseURL}${url} --json '${JSON.stringify(body)}'`,
     );
-    return super.post(url, {
+    return http<T>(`${this.baseURL}${url}`, {
+      method: "POST",
       body,
       headers: {
         "User-Agent": "WindowsApplication",
@@ -267,141 +255,67 @@ export class DkwebsysAPI extends RESTDataSource {
     return data;
   }
 
-  private musicDetailsInfoLoader = new DataLoader((requestNos) =>
-    Promise.all(
-      requestNos.map((requestNo) =>
-        this.post<GetMusicDetailInfoResponse>(
-          "/dkwebsys/search-api/GetMusicDetailInfoApi",
-          { requestNo },
-        ).then(this.checkError),
-      ),
-    ),
-  );
-
   getMusicDetailsInfo(requestNo: string) {
-    return this.musicDetailsInfoLoader.load(requestNo);
+    return this.post<GetMusicDetailInfoResponse>(
+      "/dkwebsys/search-api/GetMusicDetailInfoApi",
+      { requestNo },
+    ).then(this.checkError);
   }
-
-  private musicByKeywordLoader = new DataLoader(
-    (keys: readonly { keyword: string; pageNo: number }[]) =>
-      Promise.all(
-        keys.map((key) =>
-          this.post<SearchMusicByKeywordResponse>(
-            "/dkwebsys/search-api/SearchMusicByKeywordApi",
-            {
-              keyword: key.keyword,
-              sort: "2",
-              pageNo: key.pageNo.toString(),
-              dispCount: "30",
-            },
-          ).then(this.checkError),
-        ),
-      ),
-  );
 
   getMusicByKeyword(keyword: string, first: number, after: number) {
-    const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
-
-    return Promise.all(
-      [...Array(pageCount).keys()].map((pageOffset) =>
-        this.musicByKeywordLoader.load({
-          keyword,
-          pageNo: firstPage + pageOffset,
-        }),
-      ),
-    )
-      .then((results) =>
-        results.reduce((acc, cur) => {
-          acc.list = acc.list.concat(cur.list);
-          return acc;
-        }),
-      )
-      .then((result) => ({
-        data: result.data,
-        list: result.list.slice(after % 30, first),
-      }));
+    return this.getPages<SearchMusicByKeywordResponse>(
+      "/dkwebsys/search-api/SearchMusicByKeywordApi",
+      { keyword },
+      first,
+      after,
+    );
   }
-
-  private artistByKeywordLoader = new DataLoader(
-    (keys: readonly { keyword: string; pageNo: number }[]) =>
-      Promise.all(
-        keys.map((key) =>
-          this.post<SearchArtistByKeywordResponse>(
-            "/dkwebsys/search-api/SearchArtistByKeywordApi",
-            {
-              keyword: key.keyword,
-              sort: "2",
-              pageNo: key.pageNo.toString(),
-              dispCount: "30",
-            },
-          ).then(this.checkError),
-        ),
-      ),
-  );
 
   getArtistByKeyword(keyword: string, first: number, after: number) {
-    const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
-
-    return Promise.all(
-      [...Array(pageCount).keys()].map((pageOffset) =>
-        this.artistByKeywordLoader.load({
-          keyword,
-          pageNo: firstPage + pageOffset,
-        }),
-      ),
-    )
-      .then((results) =>
-        results.reduce((acc, cur) => {
-          acc.list = acc.list.concat(cur.list);
-          return acc;
-        }),
-      )
-      .then((result) => ({
-        data: result.data,
-        list: result.list.slice(after % 30, first),
-      }));
+    return this.getPages<SearchArtistByKeywordResponse>(
+      "/dkwebsys/search-api/SearchArtistByKeywordApi",
+      { keyword },
+      first,
+      after,
+    );
   }
 
-  private musicListByArtistLoader = new DataLoader(
-    (keys: readonly { artistCode: string; pageNo: number }[]) =>
-      Promise.all(
-        keys.map((key) =>
-          this.post<GetMusicListByArtistResponse>(
-            "/dkwebsys/search-api/GetMusicListByArtistApi",
-            {
-              artistCode: key.artistCode,
-              sort: "2",
-              pageNo: key.pageNo.toString(),
-              dispCount: "30",
-            },
-          ).then(this.checkError),
-        ),
-      ),
-  );
-
   getMusicListByArtist(artistCode: string, first: number, after: number) {
+    return this.getPages<GetMusicListByArtistResponse>(
+      "/dkwebsys/search-api/GetMusicListByArtistApi",
+      { artistCode },
+      first,
+      after,
+    );
+  }
+
+  // The search APIs return 30 results a page: fetch the pages that cover
+  // results [after, after + first) and join their lists.
+  private getPages<
+    T extends DkwebsysReponse & { data: unknown; list: unknown[] },
+  >(
+    url: string,
+    params: object,
+    first: number,
+    after: number,
+  ): Promise<Pick<T, "data" | "list">> {
     const firstPage = Math.floor(after / 30) + 1;
     const pageCount = Math.ceil(first / 30);
 
     return Promise.all(
       [...Array(pageCount).keys()].map((pageOffset) =>
-        this.musicListByArtistLoader.load({
-          artistCode,
-          pageNo: firstPage + pageOffset,
-        }),
+        this.post<T>(url, {
+          ...params,
+          sort: "2",
+          pageNo: (firstPage + pageOffset).toString(),
+          dispCount: "30",
+        }).then(this.checkError),
       ),
-    )
-      .then((results) =>
-        results.reduce((acc, cur) => {
-          acc.list = acc.list.concat(cur.list);
-          return acc;
-        }),
-      )
-      .then((result) => ({
-        data: result.data,
-        list: result.list.slice(after % 30, first),
-      }));
+    ).then((results) => ({
+      data: results[0].data,
+      list: results
+        .reduce<unknown[]>((acc, cur) => acc.concat(cur.list), [])
+        .slice(after % 30, first) as T["list"],
+    }));
   }
 }

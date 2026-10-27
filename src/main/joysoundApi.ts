@@ -1,6 +1,7 @@
-import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
+
+import { http } from "./http";
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -107,15 +108,11 @@ function unescapeJoysoundString(str: string) {
   });
 }
 
-export class JoysoundAPI extends RESTDataSource {
-  override baseURL = "https://www.sound-cafe.jp";
+export class JoysoundAPI {
+  baseURL = "https://www.sound-cafe.jp";
   credsProvider: JoysoundCredentialsProvider;
 
-  constructor(
-    credsProvider: JoysoundCredentialsProvider,
-    options: DataSourceConfig,
-  ) {
-    super(options);
+  constructor(credsProvider: JoysoundCredentialsProvider) {
     this.credsProvider = credsProvider;
   }
 
@@ -134,7 +131,8 @@ export class JoysoundAPI extends RESTDataSource {
       )}" -H "X-XSRF-TOKEN: ${creds.csrfToken}"`,
     );
 
-    return super.post(url, {
+    return http<T>(`${this.baseURL}${url}`, {
+      method: "POST",
       body,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -186,7 +184,7 @@ export class JoysoundAPI extends RESTDataSource {
       };
     }
 
-    const data = await this.get(`songdetail/${id}`, {
+    const data = await http<string>(`${this.baseURL}/songdetail/${id}`, {
       headers: { Cookie: generateCookieString(creds.cookies) },
     });
 
@@ -212,7 +210,7 @@ export class JoysoundAPI extends RESTDataSource {
 
     const lyricsPreview = data.match(
       /<div class="flex items-center w-full border-b select-none border-gray">([^<>]*)/,
-    )[1];
+    )?.[1];
     invariant(lyricsPreview !== undefined);
 
     const payload: JoysoundSongDetail = {
