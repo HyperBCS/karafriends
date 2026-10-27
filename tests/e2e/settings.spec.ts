@@ -88,8 +88,8 @@ test.describe("on a profile with logins", () => {
       damPassword: MASK,
       joysoundEmail: "e2e@example.com",
       joysoundPassword: "",
-      // config.yaml's placeholder: not empty, so masked too.
-      proxyPass: MASK,
+      // A fresh config.yaml has no proxy password, so nothing to mask.
+      proxyPass: "",
       adminPasswordSet: false,
     });
     expect(settings).not.toHaveProperty("adminPasswordHash");
@@ -173,11 +173,10 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(
     settings.getByText("Add your DAM or Joysound login", { exact: false }),
   ).toBeVisible();
-  // A fresh config.yaml's placeholder username shows as an empty field;
-  // its placeholder password comes masked, like a real one.
+  // A fresh config.yaml has no logins: both fields are empty.
   const dam = settings.getByRole("region", { name: "DAM login" });
   await expect(dam.getByLabel("Username")).toHaveValue("");
-  await expect(dam.getByLabel("Password")).toHaveValue(MASK);
+  await expect(dam.getByLabel("Password")).toHaveValue("");
 
   const queue = settings.getByRole("region", { name: "Queue" });
   await queue.getByLabel("Supervised mode", { exact: false }).check();
