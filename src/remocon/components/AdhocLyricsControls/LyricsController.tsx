@@ -1,6 +1,6 @@
 import React from "react";
-import { CgTapSingle } from "react-icons/cg";
 
+import { CgTapSingle } from "../../icons";
 import * as styles from "./AdhocLyricsControls.module.scss";
 
 interface Props {

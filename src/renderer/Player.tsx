@@ -1,7 +1,6 @@
 import invariant from "ts-invariant";
 
 import Hls from "hls.js";
-import M from "materialize-css";
 
 import React, { useEffect, useRef, useState } from "react";
 
@@ -11,11 +10,11 @@ import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import AdhocLyrics from "./AdhocLyrics";
-import escapeHtml from "./escapeHtml";
 import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
+import toast from "./toast";
 import KarafriendsAudio from "./webAudio";
 
 const POLL_INTERVAL_MS = 5 * 1000;
@@ -99,9 +98,9 @@ function Player(props: {
                       console.log(
                         "network error on playlist load, skipping to next song.",
                       );
-                      M.toast({
-                        html: `Error loading song ${escapeHtml(popSong.artistName)} - ${escapeHtml(popSong.name)}! Skipping...`,
-                      });
+                      toast(
+                        `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
+                      );
                       pollQueue();
                       break;
                     // You can handle other error types here if needed

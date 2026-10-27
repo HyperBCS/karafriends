@@ -1,5 +1,4 @@
-import M from "materialize-css";
-import React, { useEffect, useState } from "react";
+import React, { useId, useState } from "react";
 
 import { HOSTNAME } from "../common/constants";
 import "./global";
@@ -20,14 +19,12 @@ export default function HostnameSetting(props: {
   const [currentValue, setCurrentValue] = useState(
     hostnameToValue.get(props.hostname),
   );
-
-  useEffect(() => {
-    M.AutoInit();
-  }, []);
+  const id = useId();
 
   return (
     <div className="input-field">
       <select
+        id={id}
         value={currentValue}
         onChange={(e) => {
           setCurrentValue(e.target.value);
@@ -40,7 +37,7 @@ export default function HostnameSetting(props: {
           </option>
         ))}
       </select>
-      <label>Hostname</label>
+      <label htmlFor={id}>Hostname</label>
     </div>
   );
 }

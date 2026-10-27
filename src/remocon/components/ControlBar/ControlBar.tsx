@@ -1,7 +1,11 @@
 import React, { useState } from "react";
-import { BsMusicPlayerFill } from "react-icons/bs";
-import { FaAngleDown, FaAngleUp, FaSmile } from "react-icons/fa";
 
+import {
+  BsMusicPlayerFill,
+  FaAngleDown,
+  FaAngleUp,
+  FaSmile,
+} from "../../icons";
 import EmoteButtons from "../EmoteButtons";
 import PlaybackControls from "../PlaybackControls";
 import SongQueue from "../SongQueue";

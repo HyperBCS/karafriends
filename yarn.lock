@@ -1131,32 +1131,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/jquery@npm:*":
-  version: 3.5.32
-  resolution: "@types/jquery@npm:3.5.32"
-  dependencies:
-    "@types/sizzle": "npm:*"
-  checksum: 10/2c67cac338828870ead5c5e608f5fa5ab8101598ed4572cf49b58c342adffe8918d2e2fc94d7954e6b98a889cef8c3f4e6f44b8fecb75e80854b0f9cf9dd18a1
-  languageName: node
-  linkType: hard
-
-"@types/lodash@npm:4.17.25":
-  version: 4.17.25
-  resolution: "@types/lodash@npm:4.17.25"
-  checksum: 10/f786e05664439cc8d327fd97c62c060d81b3c4ed52127d01fbc926139e1a669c1554bf3cd0dbb43f8fcc7d9b5c6c23c543cc36de8dc815c9f289ea852b26ebd6
-  languageName: node
-  linkType: hard
-
-"@types/materialize-css@npm:1.0.15":
-  version: 1.0.15
-  resolution: "@types/materialize-css@npm:1.0.15"
-  dependencies:
-    "@types/jquery": "npm:*"
-    cash-dom: "npm:*"
-  checksum: 10/9d2f6c8c279e73ce33cd8f309a3ac2c003446ca31b12beb799a744523daec3ca7b84aea75d6716723596f600b8b692b32c39808819e96c3c51011207eaa2acd3
-  languageName: node
-  linkType: hard
-
 "@types/mime@npm:^1":
   version: 1.3.5
   resolution: "@types/mime@npm:1.3.5"
@@ -1276,13 +1250,6 @@ __metadata:
     "@types/http-errors": "npm:*"
     "@types/node": "npm:*"
   checksum: 10/f2bad1304c7d0d3b7221faff3e490c40129d3803f4fb1b2fb84f31f561071c5e6a4b876c41bbbe82d5645034eea936e946bcaaf993dac1093ce68b56effad6e0
-  languageName: node
-  linkType: hard
-
-"@types/sizzle@npm:*":
-  version: 2.3.9
-  resolution: "@types/sizzle@npm:2.3.9"
-  checksum: 10/413811a79e7e9f1d8f47e6047ae0aea1530449d612304cdda1c30018e3d053b8544861ec2c70bdeca75a0a010192e6bb78efc6fb4caaafdd65c4eee90066686a
   languageName: node
   linkType: hard
 
@@ -1556,13 +1523,6 @@ __metadata:
   bin:
     cargo-cp-artifact: bin/cargo-cp-artifact.js
   checksum: 10/51fcb9641cc025b39384163dce97b82be6af494bc215a70e197af0a01e30dc30173a56a383dd5dbf5b4b76785ab4e91649455128b2ed7d2c3ed3c27c79c7b632
-  languageName: node
-  linkType: hard
-
-"cash-dom@npm:*":
-  version: 8.1.5
-  resolution: "cash-dom@npm:8.1.5"
-  checksum: 10/e818a0a3f1fc3a3268168ab5799452a0d1526b0ecdffc839b4500f358cb3989e9df1cf3f0dff6ad343f1d37c12b68a5cfb0bbc7a091b8373acef09383cccd09b
   languageName: node
   linkType: hard
 
@@ -2612,7 +2572,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"js-tokens@npm:^3.0.0 || ^4.0.0, js-tokens@npm:^4.0.0":
+"js-tokens@npm:^4.0.0":
   version: 4.0.0
   resolution: "js-tokens@npm:4.0.0"
   checksum: 10/af37d0d913fb56aec6dc0074c163cc71cd23c0b8aad5c2350747b6721d37ba118af35abdd8b33c47ec2800de07dedb16a527ca9c530ee004093e04958bd0cbf2
@@ -2662,8 +2622,6 @@ __metadata:
     "@types/compression": "npm:1.8.1"
     "@types/express": "npm:5.0.6"
     "@types/gl-vec2": "npm:1.3.5"
-    "@types/lodash": "npm:4.17.25"
-    "@types/materialize-css": "npm:1.0.15"
     "@types/node": "npm:26.4.0"
     "@types/promise-retry": "npm:1.1.6"
     "@types/qrcode": "npm:1.5.6"
@@ -2689,8 +2647,6 @@ __metadata:
     kuroshiro: "npm:1.2.0"
     kuroshiro-analyzer-kuromoji: "npm:1.1.0"
     lint-staged: "npm:17.4.1"
-    lodash: "npm:4.18.1"
-    materialize-css: "npm:1.0.0"
     multicast-dns: "npm:7.2.5"
     node-fetch: "npm:3.3.2"
     oxlint: "npm:1.90.0"
@@ -2700,9 +2656,6 @@ __metadata:
     qrcode: "npm:1.5.4"
     react: "npm:19.2.7"
     react-dom: "npm:19.2.7"
-    react-fade-in: "npm:2.0.1"
-    react-icons: "npm:5.7.0"
-    react-mobile-picker-scroll: "npm:0.2.14"
     react-router: "npm:8.3.0"
     sass: "npm:1.106.1"
     ts-invariant: "npm:0.10.3"
@@ -2900,28 +2853,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash@npm:4.18.1":
-  version: 4.18.1
-  resolution: "lodash@npm:4.18.1"
-  checksum: 10/306fea53dfd39dad1f03d45ba654a2405aebd35797b673077f401edb7df2543623dc44b9effbb98f69b32152295fff725a4cec99c684098947430600c6af0c3f
-  languageName: node
-  linkType: hard
-
 "lodash@npm:^4.17.14":
   version: 4.17.21
   resolution: "lodash@npm:4.17.21"
   checksum: 10/c08619c038846ea6ac754abd6dd29d2568aa705feb69339e836dfa8d8b09abbb2f859371e86863eda41848221f9af43714491467b5b0299122431e202bb0c532
-  languageName: node
-  linkType: hard
-
-"loose-envify@npm:^1.4.0":
-  version: 1.4.0
-  resolution: "loose-envify@npm:1.4.0"
-  dependencies:
-    js-tokens: "npm:^3.0.0 || ^4.0.0"
-  bin:
-    loose-envify: cli.js
-  checksum: 10/6517e24e0cad87ec9888f500c5b5947032cdfe6ef65e1c1936a0c48a524b81e65542c9c3edc91c97d5bddc806ee2a985dbc79be89215d613b1de5db6d1cfe6f4
   languageName: node
   linkType: hard
 
@@ -2973,13 +2908,6 @@ __metadata:
     promise-retry: "npm:^2.0.1"
     ssri: "npm:^12.0.0"
   checksum: 10/fce0385840b6d86b735053dfe941edc2dd6468fda80fe74da1eeff10cbd82a75760f406194f2bc2fa85b99545b2bc1f84c08ddf994b21830775ba2d1a87e8bdf
-  languageName: node
-  linkType: hard
-
-"materialize-css@npm:1.0.0":
-  version: 1.0.0
-  resolution: "materialize-css@npm:1.0.0"
-  checksum: 10/35549f404e5f14e9b848fb2678c984647f7fb2d896c9ccab07b7018dfcc5e76e45ecb5a8603dbddcc5ad52cfaeeb181f20d1164c5a18fc702bb9e0d37d169630
   languageName: node
   linkType: hard
 
@@ -3259,13 +3187,6 @@ __metadata:
   bin:
     nopt: bin/nopt.js
   checksum: 10/26ab456c51a96f02a9e5aa8d1b80ef3219f2070f3f3528a040e32fb735b1e651e17bdf0f1476988d3a46d498f35c65ed662d122f340d38ce4a7e71dd7b20c4bc
-  languageName: node
-  linkType: hard
-
-"object-assign@npm:^4.1.1":
-  version: 4.1.1
-  resolution: "object-assign@npm:4.1.1"
-  checksum: 10/fcc6e4ea8c7fe48abfbb552578b1c53e0d194086e2e6bbbf59e0a536381a292f39943c6e9628af05b5528aa5e3318bb30d6b2e53cadaf5b8fe9e12c4b69af23f
   languageName: node
   linkType: hard
 
@@ -3610,17 +3531,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"prop-types@npm:^15.6.0":
-  version: 15.8.1
-  resolution: "prop-types@npm:15.8.1"
-  dependencies:
-    loose-envify: "npm:^1.4.0"
-    object-assign: "npm:^4.1.1"
-    react-is: "npm:^16.13.1"
-  checksum: 10/7d959caec002bc964c86cdc461ec93108b27337dabe6192fb97d69e16a0c799a03462713868b40749bfc1caf5f57ef80ac3e4ffad3effa636ee667582a75e2c0
-  languageName: node
-  linkType: hard
-
 "proxy-addr@npm:^2.0.7":
   version: 2.0.7
   resolution: "proxy-addr@npm:2.0.7"
@@ -3681,43 +3591,6 @@ __metadata:
   peerDependencies:
     react: ^19.2.7
   checksum: 10/9564f4b83843ca5518ed5f807c93cb1663706559cde52f3ef814b41e60b63b16e684d849926458f0ba436745d7eabf822cba1c528be370e7b2f35a4c91e35941
-  languageName: node
-  linkType: hard
-
-"react-fade-in@npm:2.0.1":
-  version: 2.0.1
-  resolution: "react-fade-in@npm:2.0.1"
-  peerDependencies:
-    react: ^16.8 || 17
-  checksum: 10/34e6ddf1641417e170a268b07b514d3207603b14a56bc9836372828b72782df16e51d3bd066a271e6f6c7e2bf2916b100b72b06dd20a5447d965b16f78160cd5
-  languageName: node
-  linkType: hard
-
-"react-icons@npm:5.7.0":
-  version: 5.7.0
-  resolution: "react-icons@npm:5.7.0"
-  peerDependencies:
-    react: "*"
-  checksum: 10/db064cfe8e6456ba315d960debc50d3535ec794376c059bcdd79e20985d3c77d58a24c8cc567608695b10accd62b6c3c422821569b9c3c94d0811fe952c31e8c
-  languageName: node
-  linkType: hard
-
-"react-is@npm:^16.13.1":
-  version: 16.13.1
-  resolution: "react-is@npm:16.13.1"
-  checksum: 10/5aa564a1cde7d391ac980bedee21202fc90bdea3b399952117f54fb71a932af1e5902020144fb354b4690b2414a0c7aafe798eb617b76a3d441d956db7726fdf
-  languageName: node
-  linkType: hard
-
-"react-mobile-picker-scroll@npm:0.2.14":
-  version: 0.2.14
-  resolution: "react-mobile-picker-scroll@npm:0.2.14"
-  dependencies:
-    prop-types: "npm:^15.6.0"
-  peerDependencies:
-    react: ">=0.14.0 <17.0.0"
-    react-dom: ">=0.14.0 <17.0.0"
-  checksum: 10/21f1f03945afb6eb87b2f39549e3d733488d4837c4f7074d36e939bb400d35a1dbd37329b41e133fd733de8d2c589c4cd1d7bbbb14c7809f223086f5da8e4651
   languageName: node
   linkType: hard
 

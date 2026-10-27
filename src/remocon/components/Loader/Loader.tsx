@@ -1,7 +1,7 @@
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import React, { Suspense } from "react";
-import { BiLoaderAlt } from "react-icons/bi";
 
+import { BiLoaderAlt } from "../../icons";
 import Button from "../Button";
 import * as styles from "./Loader.module.scss";
 

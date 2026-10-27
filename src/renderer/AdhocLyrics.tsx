@@ -1,10 +1,8 @@
 import React, { JSX, useEffect, useRef, useState } from "react";
 import invariant from "ts-invariant";
 
-import FadeIn from "react-fade-in";
 import type { AdhocLyricsEntry } from "../common/api";
 import { useLiveState } from "../common/apiClient";
-import { withLoader } from "../common/components/Loader";
 
 import "./AdhocLyrics.css";
 
@@ -86,7 +84,9 @@ function AdhocLyrics() {
           );
           let lyricElement: JSX.Element;
           if (lyricEntry.isNewLyricLine) {
-            lyricElement = <FadeIn>{lyricEntry.lyric}</FadeIn>;
+            lyricElement = (
+              <div className="lyric-fade-in">{lyricEntry.lyric}</div>
+            );
             return wrapLyricElement(lyricElement);
           } else {
             lyricElement = <>{lyricEntry.lyric}</>;
@@ -98,4 +98,4 @@ function AdhocLyrics() {
   );
 }
 
-export default withLoader(AdhocLyrics);
+export default AdhocLyrics;

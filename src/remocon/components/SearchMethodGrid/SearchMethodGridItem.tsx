@@ -1,11 +1,13 @@
 import classnames from "classnames";
 import React from "react";
-import { BsPersonSquare } from "react-icons/bs";
-import { FaYoutube } from "react-icons/fa";
-import { MdMusicVideo } from "react-icons/md";
-import { SiNiconico } from "react-icons/si";
 import { Link } from "react-router";
 
+import {
+  BsPersonSquare,
+  FaYoutube,
+  MdMusicVideo,
+  SiNiconico,
+} from "../../icons";
 import * as styles from "./SearchMethodGrid.module.scss";
 
 const backgroundIcons = {
