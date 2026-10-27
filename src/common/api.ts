@@ -361,6 +361,14 @@ export interface Api {
     input: { songId: string; timestamp: string };
     output: boolean;
   };
+  // Moves a queued song to position toIndex in the queue (after the current
+  // song): 0 is "move to top", and past the end is the end. For admins only,
+  // in supervised mode or not. ok is false if the song isn't in the queue
+  // (any more).
+  moveSong: {
+    input: { songId: string; timestamp: string; toIndex: number };
+    output: { ok: boolean };
+  };
   setPlaybackState: {
     input: { playbackState: PlaybackState };
     output: boolean;

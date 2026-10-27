@@ -398,6 +398,71 @@ describe("admin checks", () => {
   });
 });
 
+describe("moveSong", () => {
+  beforeEach(() => {
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.songQueue.push(song(2, alice), song(3, bob), song(4, bob));
+    });
+  });
+
+  const move = (
+    api: ReturnType<typeof makeApi>,
+    n: number,
+    toIndex: number,
+    caller: Caller = admin("x"),
+  ) =>
+    api.moveSong({ songId: `sm${n}`, timestamp: String(n), toIndex }, caller);
+  const order = () => store.getState().songQueue.map((item) => item.songId);
+
+  test("moves a song to the top, down, or past the end to the end", async () => {
+    const api = makeApi();
+    let changes = 0;
+    store.onChange(() => changes++);
+
+    assert.deepEqual(await move(api, 4, 0), { ok: true });
+    assert.deepEqual(order(), ["sm4", "sm2", "sm3"]);
+    assert.equal(changes, 1);
+    // Saved to queue.json too. (A restart queues the current song first.)
+    assert.deepEqual(
+      createStateStore(path.join(dir, "queue.json"))
+        .getState()
+        .songQueue.map((item) => item.songId),
+      ["sm1", "sm4", "sm2", "sm3"],
+    );
+
+    assert.deepEqual(await move(api, 4, 1), { ok: true });
+    assert.deepEqual(order(), ["sm2", "sm4", "sm3"]);
+    assert.deepEqual(await move(api, 2, 99), { ok: true });
+    assert.deepEqual(order(), ["sm4", "sm3", "sm2"]);
+    // Onto its own place: nothing moves.
+    assert.deepEqual(await move(api, 3, 1), { ok: true });
+    assert.deepEqual(order(), ["sm4", "sm3", "sm2"]);
+  });
+
+  test("a song not in the queue is not an error", async () => {
+    const api = makeApi();
+    // The current song, and one that was never queued.
+    assert.deepEqual(await move(api, 1, 0), { ok: false });
+    assert.deepEqual(await move(api, 9, 0), { ok: false });
+    assert.deepEqual(order(), ["sm2", "sm3", "sm4"]);
+  });
+
+  test("only an admin may move a song, in supervised mode or not", async () => {
+    for (const supervisedMode of [false, true]) {
+      const api = makeApi({ supervisedMode });
+      // Not even its owner.
+      await rejectsWith(move(api, 4, 0, bob), 403);
+      await rejectsWith(move(api, 4, 0, phone(ADMIN_DEVICE, ADMIN_NICK)), 403);
+      await rejectsWith(move(api, 4, 0, anonymous), 403);
+      assert.deepEqual(order(), ["sm2", "sm3", "sm4"]);
+    }
+    const api = makeApi({ supervisedMode: true });
+    assert.deepEqual(await move(api, 4, 0, display), { ok: true });
+    assert.deepEqual(order(), ["sm4", "sm2", "sm3"]);
+  });
+});
+
 describe("admin sign-in", () => {
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
@@ -1105,6 +1170,15 @@ describe("validators", () => {
     invalid("damSearchSongs", { query: "a", offset: -1 });
     invalid("damSearchSongs", { name: "a" });
     invalid("removeSong", { songId: "sm9" });
+    assert.deepEqual(
+      validators.moveSong({ songId: "sm9", timestamp: "9", toIndex: 0 }),
+      { songId: "sm9", timestamp: "9", toIndex: 0 },
+    );
+    invalid("moveSong", { songId: "sm9", timestamp: "9" });
+    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: -1 });
+    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: 1.5 });
+    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: "0" });
+    invalid("moveSong", { songId: 9, timestamp: "9", toIndex: 0 });
     invalid("sendEmote", { emote: "" });
     assert.deepEqual(validators.pushAdhocLyrics({ lyricIndex: 3 }), {
       lyricIndex: 3,
