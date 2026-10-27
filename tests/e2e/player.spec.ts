@@ -41,8 +41,10 @@ test("a song queued while the display waits starts within 2 seconds", async ({
   karafriends,
   display,
 }) => {
-  // The display is up, and waiting.
-  await expect(display.getByRole("list", { name: "Queue" })).toBeAttached();
+  // The display is up, and waiting: its idle screen shows.
+  await expect(
+    display.getByRole("img", { name: "QR code for the remote" }),
+  ).toBeVisible();
   await display.waitForTimeout(1_000);
 
   const res = await fetch(new URL("api/queueSong", karafriends.remoconUrl), {
@@ -71,4 +73,12 @@ test("a song queued while the display waits starts within 2 seconds", async ({
     )
     .toBe("E2E player song");
   expect(Date.now() - queuedAt).toBeLessThan(2_000);
+
+  // The corner says so, and the idle screen made way for the video.
+  const corner = display.getByRole("status").filter({ hasText: "Now playing" });
+  await expect(corner).toContainText("E2E player song");
+  await expect(corner).toContainText("E2E artist · e2e");
+  await expect(
+    display.getByRole("img", { name: "QR code for the remote" }),
+  ).toHaveCount(0);
 });

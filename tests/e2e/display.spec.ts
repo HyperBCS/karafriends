@@ -6,28 +6,48 @@ test("the display opens on its idle screen without console errors", async ({
 }) => {
   await expect(display).toHaveTitle("karafriends");
 
-  // The sidebar: the remote's QR code, settings and an empty queue.
+  // A fresh profile has no DAM or Joysound login, so Settings opens first.
+  const settings = display.getByRole("dialog", { name: "Settings" });
   await expect(
-    display.getByRole("img", { name: "QR code for the remote" }),
+    settings.getByText(
+      "Add your DAM or Joysound login to search their catalogs. YouTube works without one.",
+    ),
   ).toBeVisible();
-  await expect(display.getByText("Settings", { exact: true })).toBeVisible();
-  // The remote's addresses carry its port, which the preload got from the
+  await display.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+
+  // The idle screen: the remote's QR code and address, and an empty queue.
+  // The address carries the remote's port, which the preload got from the
   // main process.
   const { port } = new URL(karafriends.remoconUrl);
   await expect(
-    display.locator(`option[value="karafriends.local:${port}"]`),
-  ).toHaveCount(1);
-  await expect(
-    display.getByRole("button", { name: "Clear mics" }),
+    display.getByRole("img", { name: "QR code for the remote" }),
   ).toBeVisible();
-  await expect(display.getByRole("list", { name: "Queue" })).toBeAttached();
+  await expect(display.getByText("Scan to join")).toBeVisible();
+  await expect(display.getByText(`karafriends.local:${port}`)).toBeVisible();
   await expect(
     display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
   ).toHaveCount(0);
 
+  // S, or the gear, opens Settings: the QR code's address and the
+  // microphones are there.
+  await display.keyboard.press("s");
+  await expect(settings).toBeVisible();
+  await expect(
+    settings.locator(`option[value="karafriends.local:${port}"]`),
+  ).toHaveCount(1);
+  await expect(
+    settings.getByRole("button", { name: "Clear mics" }),
+  ).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+  await expect(settings).toHaveCount(0);
+  await display.getByRole("button", { name: "Settings" }).click();
+  await expect(settings).toBeVisible();
+  await display.keyboard.press("Escape");
+
   // Nothing is playing.
   const video = display.locator("video");
-  await expect(video).toBeVisible();
+  await expect(video).toBeAttached();
   expect(
     await video.evaluate((v: HTMLVideoElement) => ({
       paused: v.paused,

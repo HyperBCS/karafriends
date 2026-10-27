@@ -165,6 +165,57 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
   });
 });
 
+test("the settings screen opens on first launch, and saves as the host goes", async ({
+  karafriends,
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  await expect(
+    settings.getByText("Add your DAM or Joysound login", { exact: false }),
+  ).toBeVisible();
+  // A fresh config.yaml's placeholder username shows as an empty field;
+  // its placeholder password comes masked, like a real one.
+  const dam = settings.getByRole("region", { name: "DAM login" });
+  await expect(dam.getByLabel("Username")).toHaveValue("");
+  await expect(dam.getByLabel("Password")).toHaveValue(MASK);
+
+  const queue = settings.getByRole("region", { name: "Queue" });
+  await queue.getByLabel("Supervised mode", { exact: false }).check();
+  await expect(queue.getByRole("status")).toHaveText("Saved.");
+  expect((await output(display, "getSettings")).settings.supervisedMode).toBe(
+    true,
+  );
+  expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
+    supervisedMode: true,
+  });
+
+  // A field saves when the host leaves it; a refused value says why.
+  const limit = queue.getByLabel("Songs each phone", { exact: false });
+  await limit.fill("1001");
+  await limit.press("Enter");
+  await expect(queue.getByRole("status")).toHaveText(
+    "paxSongQueueLimit must be a whole number from 0 to 1000",
+  );
+  await limit.fill("3");
+  await limit.blur();
+  await expect(queue.getByRole("status")).toHaveText("Saved.");
+  expect(
+    (await output(display, "getSettings")).settings.paxSongQueueLimit,
+  ).toBe(3);
+
+  // The port takes a restart, which the screen offers.
+  const network = settings.getByRole("region", {
+    name: "Remote port and proxy",
+  });
+  await expect(network.getByRole("button", { name: "Restart" })).toHaveCount(0);
+  await network.getByLabel("Proxy host").fill("proxy.e2e.example");
+  await network.getByLabel("Proxy host").press("Enter");
+  await expect(network.getByRole("button", { name: "Restart" })).toBeVisible();
+
+  await settings.getByRole("button", { name: "Close" }).click();
+  await expect(settings).toHaveCount(0);
+});
+
 test("a phone gets 403 for getSettings, even signed in as nobody special", async ({
   karafriends,
 }) => {
