@@ -16,3 +16,24 @@ yarn install && yarn run-dev
 ```
 
 `yarn install` puts dependencies in `node_modules` and keeps its download cache in `.yarn/cache`. Neither is committed.
+
+## Development
+
+```sh
+yarn typecheck && yarn lint && yarn test:unit
+```
+
+### Smoke tests
+
+The Playwright smoke tests drive the karaoke display and the phone remote (in an emulated Pixel 7). `yarn test:e2e` and `yarn test:e2e:ci` test the production build in `build/prod` and don't build it, so run `yarn build-prod` first, and again after changing the app. Install Chromium (into `node_modules`) once:
+
+```sh
+yarn build-prod
+yarn test:e2e:install
+yarn test:e2e
+```
+
+- Each test launches the app muted, with a throwaway profile and temp folder and a free port, so it never touches your queue or config and can run next to the real app.
+- `@net` tests queue a YouTube video. They copy ffmpeg and yt-dlp from the installed app's data folder (`%APPDATA%\karafriends\externalResources` on Windows), so start the app once beforehand.
+- `@jp` tests search DAM and Joysound with the logins from the installed app's `config.yaml`, and need a Japanese IP. They only run on request: `KARAFRIENDS_E2E_JP=1 yarn test:e2e --grep @jp`.
+- `yarn test:e2e:ci` leaves out `@net` and `@jp`; CI runs it on Windows and Linux.

@@ -30,17 +30,24 @@ const ControlBar = () => {
     <div className={styles.controlBar}>
       <div className={styles.expander}>
         <NowPlaying />
-        <div onClick={() => setExpanded(!expanded)}>
+        <div
+          role="button"
+          aria-label={expanded ? "Hide queue" : "Show queue"}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
           {expanded ? <FaAngleDown /> : <FaAngleUp />}
         </div>
       </div>
       {expanded && (
         <>
-          <div className={styles.queue}>
+          <div className={styles.queue} role="region" aria-label="Queue">
             <SongQueue />
           </div>
           <div
             className={styles.toggle}
+            role="button"
+            aria-label={showEmotes ? "Show playback controls" : "Show emotes"}
             onClick={() => setShowEmotes(!showEmotes)}
           >
             {showEmotes ? <BsMusicPlayerFill /> : <FaSmile />}

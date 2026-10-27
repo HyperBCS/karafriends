@@ -93,6 +93,18 @@ jobs:
         env:
           CARGO_ARGS: --features asio
           CARGO_INCREMENTAL: false
+      # Smoke tests run against the production build.
+      - run: yarn build-prod
+        env:
+          CARGO_ARGS: --features asio
+          CARGO_INCREMENTAL: false
+      - run: yarn test:e2e:install
+      - run: yarn test:e2e:ci
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-windows
+          path: playwright-report/
       - run: cargo install cargo-careful
         continue-on-error: true
       - run: yarn test:native
@@ -114,7 +126,7 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
       - run: yarn install --immutable
       # Formatting and lint are platform-independent, so only this job runs them.
       - run: yarn prettier --check .
@@ -126,6 +138,17 @@ jobs:
       # Type-check the whole codebase. Runs after build-dev so the generated
       # relay artifacts exist. Platform-independent, so only this job needs it.
       - run: yarn typecheck
+      # Smoke tests run against the production build, on a virtual display.
+      - run: yarn build-prod
+        env:
+          CARGO_INCREMENTAL: false
+      - run: yarn test:e2e:install --with-deps
+      - run: xvfb-run --auto-servernum yarn test:e2e:ci
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-linux
+          path: playwright-report/
       - run: cargo install cargo-careful
         continue-on-error: true
       - run: yarn test:native

@@ -8,11 +8,11 @@ import * as styles from "./NavBar.module.scss";
 const NavBar = () => {
   return (
     <div className={styles.navBar}>
-      <Link to="/">
+      <Link to="/" aria-label="Home">
         <FaHome />
       </Link>
       <img height={40} src={icon} alt="空" />
-      <Link to="/history">
+      <Link to="/history" aria-label="History">
         <FaHistory />
       </Link>
     </div>

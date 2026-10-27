@@ -8,7 +8,7 @@ import "./Queue.css";
 export default function Queue() {
   const queue = useQueue();
   return (
-    <div className="collection queueQueue">
+    <div className="collection queueQueue" role="list" aria-label="Queue">
       {queue.map(([item, eta], i) => {
         const nickname =
           (item.userIdentity && item.userIdentity.nickname) || "";
@@ -19,6 +19,7 @@ export default function Queue() {
           <div
             key={`${item.songId}_${i}`}
             className="collection-item"
+            role="listitem"
             style={{ display: "flex" }}
           >
             <span className="queueMarquee">
