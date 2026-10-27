@@ -1139,6 +1139,9 @@ const resolvers = {
         (item) =>
           item.songId === args.songId && item.timestamp === args.timestamp,
       );
+      // The song may already be playing or removed by another phone; without
+      // this check, splice(-1, 1) would remove the last song in the queue.
+      if (songIdx === -1) return false;
       db.songQueue.splice(songIdx, 1);
       pubsub.publish(SubscriptionEvent.QueueChanged, {
         queueChanged: {
