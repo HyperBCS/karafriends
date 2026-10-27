@@ -22,11 +22,16 @@
   cursor: pointer;
   touch-action: manipulation;
 
-  @include kf-pressed {
+  // Not the mixins: in /dev/ui, data-demo shows the state on the selected
+  // tab only.
+  &:active,
+  [data-demo="pressed"] &[aria-selected="true"] {
     background-color: $kf-surface-pressed;
   }
 
-  @include kf-focus-visible {
+  &:focus-visible,
+  [data-demo="focus"] &[aria-selected="true"] {
+    @include kf-focus-ring;
     outline-offset: -2px;
   }
 

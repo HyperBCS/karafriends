@@ -9,6 +9,9 @@ export const ja: Messages = {
   "common.clear": "クリア",
   "common.tryAgain": "再試行",
   "common.loadFailed": "読み込めませんでした：{reason}",
+  "common.offline": "karafriendsに接続できません。Wi-Fiを確認してください。",
+  "common.downloadFailed":
+    "ダウンロードできませんでした。別の動画を選んでください。",
   "common.loading": "読み込み中",
   "common.more": "もっと見る",
   "common.cancel": "キャンセル",
@@ -28,6 +31,12 @@ export const ja: Messages = {
   "nav.profile": "プロフィール",
 
   "search.heading": "曲を探す",
+  "search.label": "検索",
+  "search.byLabel": "検索方法",
+  "search.title": "曲名",
+  "search.artist": "歌手名",
+  "search.sourceLabel": "機種",
+  "search.sourceAll": "すべて",
   "search.titleJoysound": "曲名（JOYSOUND）",
   "search.artistJoysound": "歌手名（JOYSOUND）",
   "search.titleDam": "曲名（DAM）",

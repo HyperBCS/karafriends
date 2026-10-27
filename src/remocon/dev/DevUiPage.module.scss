@@ -1,0 +1,90 @@
+@use "../tokens" as *;
+
+.page {
+  min-height: 100vh;
+  padding-bottom: $kf-space-6;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-3;
+  padding: $kf-space-5 $kf-space-4 0;
+}
+
+// Full-width demos (lists, the top bar, the sheet) run edge to edge.
+.bleed {
+  margin: 0 (-$kf-space-4);
+
+  .caption {
+    padding: 0 $kf-space-4;
+  }
+}
+
+.sectionTitle {
+  padding-bottom: $kf-space-1;
+  border-bottom: 1px solid $kf-border;
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: $kf-space-3;
+}
+
+.demo {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+  margin: 0;
+}
+
+.caption {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+}
+
+.initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: $kf-surface-pressed;
+  font-weight: 600;
+}
+
+.nowPlaying {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nowTitle {
+  overflow: hidden;
+  font-size: $kf-text-title;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nowSinger {
+  overflow: hidden;
+  color: $kf-muted;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: $kf-space-2;
+  padding: $kf-space-2;
+  border-top: 1px solid $kf-border;
+}

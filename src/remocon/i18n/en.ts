@@ -10,6 +10,8 @@ export const en = {
   "common.clear": "Clear",
   "common.tryAgain": "Try again",
   "common.loadFailed": "Couldn't load this: {reason}",
+  "common.offline": "Can't reach karafriends. Check the Wi-Fi.",
+  "common.downloadFailed": "Couldn't download. Try another video.",
   "common.loading": "Loading",
   "common.more": "More",
   "common.cancel": "Cancel",
@@ -33,6 +35,12 @@ export const en = {
 
   // Search.
   "search.heading": "Find a song",
+  "search.label": "Search",
+  "search.byLabel": "Search by",
+  "search.title": "Title",
+  "search.artist": "Artist",
+  "search.sourceLabel": "Source",
+  "search.sourceAll": "All",
   "search.titleJoysound": "Title (Joysound)",
   "search.artistJoysound": "Artist (Joysound)",
   "search.titleDam": "Title (DAM)",
