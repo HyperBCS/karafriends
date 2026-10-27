@@ -13,6 +13,7 @@ import type {
   QueueSongInput,
 } from "../common/api";
 import { PLAYBACK_STATES } from "../common/api";
+import { isCaptionCode } from "../common/captionCode";
 import { ApiError } from "./api";
 
 type Fields = Record<string, unknown>;
@@ -183,11 +184,17 @@ function queueSong(raw: unknown): QueueSongInput {
       ) {
         fail(`"gainValue" must be a number from 0 to 100`);
       }
+      // Refused here, since the download that uses it starts after the
+      // phone has its answer.
+      const captionCode = stringOrNull(input, "captionCode", 16);
+      if (captionCode !== null && !isCaptionCode(captionCode)) {
+        fail(`"captionCode" must be a language code like "en" or "pt-BR"`);
+      }
       return {
         kind,
         ...song,
         adhocLyrics: stringOrNull(input, "adhocLyrics", 100_000),
-        captionCode: stringOrNull(input, "captionCode", 16),
+        captionCode,
         gainValue,
       };
     }

@@ -11,6 +11,7 @@ import type { JoysoundAPI } from "../main/joysoundApi";
 import type { DownloadQueueItem } from "../main/state";
 import type { JoysoundQueueItem, UserIdentity } from "./api";
 
+import { isCaptionCode } from "./captionCode";
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 import {
@@ -23,7 +24,6 @@ import {
 const execFileAsync = promisify(execFile);
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
-const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
 
 interface JoysoundVideoData {
   songId: string;
@@ -1002,7 +1002,9 @@ function downloadYoutubeVideoImpl(
   captionCode: string | null,
   onComplete: () => any,
 ): void {
-  if (captionCode !== null && !captionCodeRe.test(captionCode)) {
+  // validate.ts already refuses these; this keeps a bad code off yt-dlp's
+  // command line whoever calls.
+  if (captionCode !== null && !isCaptionCode(captionCode)) {
     console.error(
       `Error downloading Youtube Video. ${captionCode} is not a valid caption code`,
     );
