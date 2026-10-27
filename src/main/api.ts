@@ -23,6 +23,7 @@ import type {
   YoutubeVideoInfo,
 } from "../common/api";
 import { isAdminPassword } from "../common/adminPassword";
+import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
 import type { KarafriendsConfig } from "../common/config";
 import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
@@ -270,6 +271,24 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   const queueFailed = (item: QueueItem) => (reason: string) => {
     console.log(`queueFailed: ${item.kind} ${item.songId}: ${reason}`);
     deps.publish({ type: "queueFailed", item, reason });
+  };
+
+  // YouTube and Niconico downloads run yt-dlp: one that fails because of it
+  // sets the tools problem the display shows, and one that works clears it.
+  const ytdlpWorked = () => {
+    if (store.getState().toolsProblem) {
+      store.update((state) => {
+        state.toolsProblem = null;
+      });
+    }
+  };
+  const ytdlpFailed = (item: QueueItem) => (reason: string) => {
+    if (isToolProblem(reason)) {
+      store.update((state) => {
+        state.toolsProblem ??= { message: TOOLS_PROBLEM, since: now() };
+      });
+    }
+    queueFailed(item)(reason);
   };
 
   const streamingUrls = async (songId: string) =>
@@ -601,6 +620,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             item,
             input.captionCode,
             () => {
+              ytdlpWorked();
               if (!item.hasAdhocLyrics) {
                 pushSongToQueue(item, pushToHead);
               } else if (fits()) {
@@ -613,7 +633,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
                 pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
               }
             },
-            queueFailed(item),
+            ytdlpFailed(item),
           );
           break;
         }
@@ -621,8 +641,11 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           const item: NicoQueueItem = { kind: "nico", ...base };
           deps.downloads.nico(
             item,
-            () => pushSongToQueue(item, pushToHead),
-            queueFailed(item),
+            () => {
+              ytdlpWorked();
+              pushSongToQueue(item, pushToHead);
+            },
+            ytdlpFailed(item),
           );
           break;
         }

@@ -195,6 +195,8 @@ export interface LiveState {
   // Only what every phone may see: no credentials, no admin list (ask
   // whoami instead).
   config: { supervisedMode: boolean };
+  // ToolsStatus's problem, for the display's notice. Phones ignore it.
+  toolsProblem: string | null;
 }
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"

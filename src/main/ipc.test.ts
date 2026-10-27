@@ -22,6 +22,7 @@ const liveState: LiveState = {
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false },
+  toolsProblem: null,
 };
 
 function fakeContents() {

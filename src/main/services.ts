@@ -177,8 +177,20 @@ export const api: ApiHandlers = {
       app.exit(0);
     },
     tools: {
-      status: () => ({ ...toolsStatus(), problem: null, problemSince: null }),
-      update: updateTools,
+      status: () => {
+        const { toolsProblem } = store.getState();
+        return {
+          ...toolsStatus(),
+          problem: toolsProblem?.message ?? null,
+          problemSince: toolsProblem?.since ?? null,
+        };
+      },
+      update: async () => {
+        await updateTools();
+        store.update((state) => {
+          state.toolsProblem = null;
+        });
+      },
     },
   }),
 };

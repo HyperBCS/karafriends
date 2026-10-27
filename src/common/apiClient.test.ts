@@ -39,6 +39,7 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false },
+  toolsProblem: null,
   ...overrides,
 });
 

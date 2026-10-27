@@ -86,6 +86,7 @@ export function toLiveState(
       isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
     })),
     config: { supervisedMode: config.supervisedMode },
+    toolsProblem: state.toolsProblem?.message ?? null,
   };
 }
 

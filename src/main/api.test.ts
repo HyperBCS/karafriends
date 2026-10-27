@@ -891,6 +891,80 @@ describe("a failed download", () => {
     failDownload(downloadQueue, download, "Video unavailable");
     assert.equal((await queueVideo(api, alice)).ok, true);
   });
+
+  test("of YouTube or Niconico, because of yt-dlp, sets the tools problem until one works", async () => {
+    // Each download fails with the next reason, or works once they run out.
+    let reasons: string[] = [];
+    const finish = (
+      onReady: () => void,
+      onFailed: (reason: string) => void,
+    ) => {
+      const reason = reasons.shift();
+      if (reason) onFailed(reason);
+      else onReady();
+    };
+    let clock = 100;
+    const api = makeApi(
+      {},
+      {
+        downloads: {
+          youtube: (_item, _captions, onReady, onFailed) =>
+            finish(onReady, onFailed),
+          nico: (_item, onReady, onFailed) => finish(onReady, onFailed),
+          joysound: (_item, _pushToHead, _onReady, onFailed) =>
+            onFailed("YouTube blocked the download"),
+        } as ApiDeps["downloads"],
+        now: () => clock,
+      },
+    );
+    const queueNico = () =>
+      api.queueSong(
+        { kind: "nico", songId: "sm9", name: "n", artistName: "", playtime: 1 },
+        alice,
+      );
+    const problem = () => store.getState().toolsProblem;
+    const PROBLEM = {
+      message: "YouTube downloads are failing; try Update tools in Settings",
+      since: 100,
+    };
+
+    // The video's fault: no problem.
+    reasons = ["Video unavailable", "Private video"];
+    await queueVideo(api, alice);
+    await queueNico();
+    assert.equal(problem(), null);
+
+    // Joysound's YouTube background isn't counted.
+    await api.queueSong(
+      {
+        kind: "joysound",
+        songId: "123",
+        name: "j",
+        artistName: "",
+        isRomaji: false,
+        youtubeVideoId: "jNQXAC9IVRw",
+      },
+      alice,
+    );
+    assert.equal(problem(), null);
+
+    reasons = ["YouTube blocked the download", "Couldn't start the downloader"];
+    await queueVideo(api, alice);
+    assert.deepEqual(problem(), PROBLEM);
+    // Still the first failure's time.
+    clock = 200;
+    await queueNico();
+    assert.deepEqual(problem(), PROBLEM);
+
+    // A Niconico download that works clears it; so does a YouTube one.
+    await queueNico();
+    assert.equal(problem(), null);
+    reasons = ["Download failed"];
+    await queueNico();
+    assert.equal(problem()?.message, PROBLEM.message);
+    await queueVideo(api, alice);
+    assert.equal(problem(), null);
+  });
 });
 
 describe("pushAdhocLyrics", () => {
