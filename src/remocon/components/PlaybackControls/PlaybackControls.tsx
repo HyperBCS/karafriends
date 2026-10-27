@@ -1,10 +1,10 @@
 import classnames from "classnames";
 import React from "react";
-import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "react-icons/md";
 
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "../../icons";
 import isOwnSong from "../../isOwnSong";
 import PitchControls from "../PitchControls/PitchControls";
 import * as styles from "./PlaybackControls.module.scss";

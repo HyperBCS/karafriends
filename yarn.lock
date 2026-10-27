@@ -3869,7 +3869,6 @@ __metadata:
     react: "npm:19.2.7"
     react-dom: "npm:19.2.7"
     react-fade-in: "npm:2.0.1"
-    react-icons: "npm:5.7.0"
     react-mobile-picker-scroll: "npm:0.2.14"
     react-router: "npm:8.3.0"
     ts-invariant: "npm:0.10.3"
@@ -5053,15 +5052,6 @@ __metadata:
   peerDependencies:
     react: ^16.8 || 17
   checksum: 10/34e6ddf1641417e170a268b07b514d3207603b14a56bc9836372828b72782df16e51d3bd066a271e6f6c7e2bf2916b100b72b06dd20a5447d965b16f78160cd5
-  languageName: node
-  linkType: hard
-
-"react-icons@npm:5.7.0":
-  version: 5.7.0
-  resolution: "react-icons@npm:5.7.0"
-  peerDependencies:
-    react: "*"
-  checksum: 10/db064cfe8e6456ba315d960debc50d3535ec794376c059bcdd79e20985d3c77d58a24c8cc567608695b10accd62b6c3c422821569b9c3c94d0811fe952c31e8c
   languageName: node
   linkType: hard
 

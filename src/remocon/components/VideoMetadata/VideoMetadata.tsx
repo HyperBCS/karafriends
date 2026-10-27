@@ -1,6 +1,6 @@
 import React from "react";
-import { BsClockFill, BsEyeFill } from "react-icons/bs";
 
+import { BsClockFill, BsEyeFill } from "../../icons";
 import * as styles from "./VideoMetadata.module.scss";
 
 interface Props {
