@@ -7,7 +7,7 @@ import path from "path";
 import { app } from "electron";
 import { Innertube } from "youtubei.js";
 
-import karafriendsConfig, { updateConfig } from "../common/config";
+import { configStore } from "../common/config";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -24,6 +24,9 @@ import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
 import { createStateStore } from "./state";
 
+// The running config, kept up to date by configStore.update().
+const karafriendsConfig = configStore.get();
+
 export const store = createStateStore(path.resolve(TEMP_FOLDER, "queue.json"));
 
 export const hub = createLiveHub(store, karafriendsConfig);
@@ -36,7 +39,7 @@ export const adminSessions = createAdminSessions(
 // display's settings (phase A3); no phone can call it.
 export const setAdminPassword = createSetAdminPassword({
   config: karafriendsConfig,
-  saveConfig: updateConfig,
+  saveConfig: (values) => configStore.update(values),
   sessions: adminSessions,
 });
 
