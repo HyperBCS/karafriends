@@ -47,6 +47,12 @@ The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is
   - Lane 3, at the same time: E.
   - After lanes 1 and 2: C and D at the same time (C is `src/remocon`, D is `src/renderer`; neither changes `src/main`). A6 at the same time (only `src/common/videoDownloader.ts` and its callers' dependency shape).
   - After C, D and A6: F, then the final review, then the party checklist with the user.
+- **Keep it simple (the user asked for this on 2026-10-27; it binds every phase and the coordinator's review):**
+  - Build what the phase section names and nothing more. No abstraction, helper, registry, option or type for a single caller or a hypothetical future one. A pure function split out so a test can reach it is fine; a layer is not.
+  - No new dependencies unless the section names one, and no new config settings nobody asked for.
+  - Prefer deleting over adding: if a change makes an old path dead, remove it in the same phase.
+  - If the diff grows past about twice what the section implies, stop and say why in the report.
+  - The report lists everything added beyond the section, so the coordinator can cut it. The coordinator names, for each merge, anything that could go without losing a behavior the plan asks for, and has the session remove it before merging.
 - **Windows/MSIX notes for every session** (unchanged from the hard-fork plan):
   - The Claude app here is the Microsoft Store build: writes under `%APPDATA%`/`%LOCALAPPDATA%` from Claude's shells land in a private copy. Keep tool caches inside the repo; leave global installs to the user.
   - A fresh worktree needs `yarn install` before anything builds.
