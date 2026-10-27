@@ -205,11 +205,31 @@ async function launchKarafriends(
       ]);
       if (proc.exitCode === null && proc.signalCode === null) proc.kill();
     }
-    if (failed && mainLog.length > 0) {
-      await testInfo.attach("main-process.log", {
-        body: mainLog.join(""),
-        contentType: "text/plain",
-      });
+    // On failure, keep the main process's output and the app's download logs
+    // (yt-dlp, ffmpeg) with the report. Not with real logins: DAM stream URLs
+    // carry tokens.
+    if (failed && !options.realCredentials) {
+      const logs: [string, string][] = [];
+      if (mainLog.length > 0) {
+        const logPath = testInfo.outputPath("main-process.log");
+        fs.writeFileSync(logPath, mainLog.join(""));
+        logs.push(["main-process.log", logPath]);
+      }
+      const downloadsDir = path.join(tempDir, "karafriends_tmp");
+      if (fs.existsSync(downloadsDir)) {
+        for (const file of fs.readdirSync(downloadsDir)) {
+          if (!file.endsWith(".log")) continue;
+          const logPath = testInfo.outputPath(file);
+          fs.copyFileSync(path.join(downloadsDir, file), logPath);
+          logs.push([file, logPath]);
+        }
+      }
+      for (const [name, logPath] of logs) {
+        await testInfo.attach(name, {
+          path: logPath,
+          contentType: "text/plain",
+        });
+      }
     }
     try {
       // Windows can hold a file for a moment after the process exits.
