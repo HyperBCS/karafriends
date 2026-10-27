@@ -41,16 +41,29 @@ export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
   useLowBitrateUrl: false,
   paxSongQueueLimit: 1,
   remoconPort: 8080,
-  damUsername: "YOUR_USERNAME_HERE",
-  damPassword: "YOUR_PASSWORD_HERE",
-  joysoundEmail: "YOUR_EMAIL_HERE",
-  joysoundPassword: "YOUR_PASSWORD_HERE",
+  damUsername: "",
+  damPassword: "",
+  joysoundEmail: "",
+  joysoundPassword: "",
   adminPasswordHash: "",
   adminPasswordSalt: "",
   supervisedMode: false,
   proxyEnable: false,
-  proxyHost: "PROXY_HOST_HERE",
+  proxyHost: "",
   proxyPort: 1234,
+  proxyUser: "",
+  proxyPass: "",
+};
+
+// What older versions wrote into a fresh config.yaml where nothing was set.
+// Read as empty, so the settings screen shows an empty field, not a fake
+// password.
+const PLACEHOLDERS: Partial<Record<keyof KarafriendsConfig, string>> = {
+  damUsername: "YOUR_USERNAME_HERE",
+  damPassword: "YOUR_PASSWORD_HERE",
+  joysoundEmail: "YOUR_EMAIL_HERE",
+  joysoundPassword: "YOUR_PASSWORD_HERE",
+  proxyHost: "PROXY_HOST_HERE",
   proxyUser: "PROXY_USER_HERE",
   proxyPass: "PROXY_PASS_HERE",
 };
@@ -76,6 +89,10 @@ export function configFromFile(parsed: unknown): {
     problems.push("config.yaml isn't a list of settings; using the defaults");
   }
   const local: Record<string, unknown> = isMapping ? { ...parsed } : {};
+
+  for (const [key, placeholder] of Object.entries(PLACEHOLDERS)) {
+    if (local[key] === placeholder) local[key] = "";
+  }
 
   const obsolete = OBSOLETE_KEYS.filter((key) => Object.hasOwn(local, key));
   for (const key of obsolete) delete local[key];
