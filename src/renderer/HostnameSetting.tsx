@@ -9,7 +9,6 @@ export default function HostnameSetting(props: {
 }) {
   const port = window.karafriends.remoconPort();
   const hostnameToValue = new Map([
-    ["offkai.karafriends.party", "offkai.karafriends.party"],
     [HOSTNAME, `${HOSTNAME}:${port}`],
     ...window.karafriends
       .ipAddresses()
