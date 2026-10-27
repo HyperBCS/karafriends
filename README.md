@@ -12,10 +12,14 @@ Dependencies
 ## Running
 
 ```sh
-yarn install && yarn run-dev
+yarn install && yarn dev
 ```
 
 `yarn install` puts dependencies in `node_modules` and keeps its download cache in `.yarn/cache`. Neither is committed.
+
+`yarn dev` builds the native module, then runs `electron-vite dev -w`: the main process and the preload are rebuilt when they change (and the app restarts or the display reloads), and the display and the phone remote come from the Vite dev server, with hot reload. In dev, phones use the dev server too: the display's QR code points at its port (5173, or `KARAFRIENDS_DEV_PORT`), and it passes `/api` on to the app's own server, which then listens on 8080 (or `KARAFRIENDS_REMOCON_PORT`), whatever `config.yaml` says.
+
+The build is in `electron.vite.config.ts`. `yarn build-prod` bundles everything, `node_modules` included, into `build/prod` (`main`, `preload`, and the two pages in `web`), and `yarn package-prod` packages that folder. `yarn build-dev` makes an unminified copy with source maps in `build/dev`.
 
 ## Development
 

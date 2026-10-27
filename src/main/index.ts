@@ -100,6 +100,12 @@ const rendererUrl = devServerUrl
   ? new URL("renderer/", devServerUrl).href
   : pathToFileURL(path.join(WEB_DIR, "renderer", "index.html")).href;
 
+// The port phones connect to, for the display's QR code: in dev, the dev
+// server's, which serves the remote and proxies /api to this app's server.
+const phonePort = devServerUrl
+  ? Number(new URL(devServerUrl).port)
+  : karafriendsConfig.remoconPort;
+
 // The display talks to this process over IPC, not HTTP (see ipc.ts).
 const displayIpc = createDisplayIpc({
   handlers: api,
@@ -137,9 +143,7 @@ function createWindow() {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       // The preload reads the port from its process.argv, for the remote's
       // address in the QR code.
-      additionalArguments: [
-        `${REMOCON_PORT_ARG}${karafriendsConfig.remoconPort}`,
-      ],
+      additionalArguments: [`${REMOCON_PORT_ARG}${phonePort}`],
       sandbox: false,
       webSecurity: true,
     },

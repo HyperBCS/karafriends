@@ -10,8 +10,6 @@ export interface KarafriendsConfig {
   useLowBitrateUrl: boolean;
   // Whether to download DAM songs locally instead of streaming them
   paxSongQueueLimit: number;
-  // Which port to connect to the development server on
-  devPort: number;
   // Which port to listen on for the remocon server
   remoconPort: number;
   // DAM username for DAM creds
@@ -43,7 +41,6 @@ export interface KarafriendsConfig {
 const DEFAULT_CONFIG: KarafriendsConfig = {
   useLowBitrateUrl: false,
   paxSongQueueLimit: 1,
-  devPort: 3000,
   remoconPort: 8080,
   damUsername: "YOUR_USERNAME_HERE",
   damPassword: "YOUR_PASSWORD_HERE",
@@ -60,8 +57,6 @@ const DEFAULT_CONFIG: KarafriendsConfig = {
 };
 
 function applyEnvironmentOverrides(config: KarafriendsConfig) {
-  if (process.env.KARAFRIENDS_DEV_PORT)
-    config.devPort = parseInt(process.env.KARAFRIENDS_DEV_PORT, 10);
   if (process.env.KARAFRIENDS_REMOCON_PORT)
     config.remoconPort = parseInt(process.env.KARAFRIENDS_REMOCON_PORT, 10);
   return config;
