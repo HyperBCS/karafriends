@@ -18,7 +18,7 @@ import type { ApiInput, ApiMethod, ApiOutput, Page } from "./api";
 import { call } from "./apiClient";
 
 // How long a lookup's answer is reused without asking the server again, so
-// going back to a page shows it at once, as Relay's store did.
+// going back to a page shows it at once.
 export const LOOKUP_STALE_MS = 10 * 60_000;
 
 export function createQueryClient(): QueryClient {
@@ -28,8 +28,8 @@ export function createQueryClient(): QueryClient {
         staleTime: LOOKUP_STALE_MS,
         // Kept as long as it's fresh, for going back to it.
         gcTime: LOOKUP_STALE_MS,
-        // Like Relay: no retries, so an error shows at once (with a "Try
-        // again" button), and no refetching behind the person's back.
+        // No retries, so an error shows at once (with a "Try again"
+        // button), and no refetching behind the person's back.
         retry: false,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
