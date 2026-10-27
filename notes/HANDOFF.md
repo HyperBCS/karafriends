@@ -2,7 +2,12 @@
 
 Written 2026-10-27 when moving work off the first PC. Start a new Claude Code session in the cloned repo and point it at this file (and, optionally, the exported transcript zip from the old PC's Downloads folder).
 
-## Where things stand
+> **Update (2026-10-27, later):** karafriends is now a hard fork. It no longer syncs with emmaworley/karafriends.
+>
+> - `HyperBCS/karafriends` is a new standalone repo, with the old Yarn cache purged from history: 57 MB instead of 2.4 GB. The previous fork lives on as `HyperBCS/karafriends-fork-archive`. Clones made before the purge have different commit hashes, so re-clone rather than pull.
+> - The ongoing simplification and its status table are in [`PLAN-hard-fork.md`](PLAN-hard-fork.md). Upstream-sync notes below are history.
+
+## Where things stood
 
 `master` (pushed to `HyperBCS/karafriends`) contains:
 
@@ -23,7 +28,6 @@ Verified on the old PC: `yarn typecheck`, `yarn test:unit` (32 pass), `yarn buil
    ```bash
    git clone git@github.com:HyperBCS/karafriends.git
    cd karafriends
-   git remote add upstream https://github.com/emmaworley/karafriends.git
    git config user.name "Brandon S"
    git config user.email "atomicbcs@gmail.com"
    ```
