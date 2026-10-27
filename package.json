@@ -134,7 +134,7 @@
     "**/*.(ts|tsx)": "tslint --fix",
     "**/*.rs": "rustfmt"
   },
-  "packageManager": "yarn@4.6.0",
+  "packageManager": "yarn@4.18.1",
   "targets": {
     "main_": {
       "source": "src/main/index.ts",
