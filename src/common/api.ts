@@ -105,8 +105,10 @@ type Shared<Item> = Item extends QueueItem
 export type SharedQueueItem = Shared<QueueItem>;
 
 // What popSong hands the display. A DAM song comes with what the display needs
-// to play and score it.
+// to play and score it, as far as DAM answered in time: either list may be
+// empty.
 export interface PoppedDamSong extends DamQueueItem {
+  // For a song that isn't downloaded.
   streamingUrls: string[];
   scoringData: number[];
 }

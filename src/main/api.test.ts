@@ -73,7 +73,10 @@ function fakeDamSearch(total: number) {
   };
 }
 
-function makeApi(config: Partial<ApiDeps["config"]> = {}) {
+function makeApi(
+  config: Partial<ApiDeps["config"]> = {},
+  overrides: Partial<ApiDeps> = {},
+) {
   const deps = {
     config: {
       adminNicks: [ADMIN_NICK],
@@ -144,6 +147,7 @@ function makeApi(config: Partial<ApiDeps["config"]> = {}) {
     },
     publish: (message: HubMessage) => published.push(message),
     now: () => 42,
+    ...overrides,
   };
   return createApi(deps as unknown as ApiDeps);
 }
@@ -267,6 +271,62 @@ describe("admin checks", () => {
     assert.equal(store.getState().currentSong?.songId, "sm1");
     assert.deepEqual(store.getState().songHistory, [{ song: song(1, alice) }]);
     assert.equal(await api.popSong({}, display), null);
+  });
+
+  describe("popSong with a DAM song", () => {
+    const damSong: QueueItem = {
+      kind: "dam",
+      songId: "1234-56",
+      name: "DAM song",
+      artistName: "Artist",
+      playtime: 200,
+      timestamp: "7",
+      user: { deviceId: "alice-device", nickname: "alice" },
+      streamingUrlIdx: 0,
+    };
+
+    test("comes with its streaming URLs and scoring data", async () => {
+      const api = makeApi();
+      store.update((state) => state.songQueue.push(damSong));
+      assert.deepEqual(await api.popSong({}, display), {
+        ...damSong,
+        streamingUrls: ["https://dam/high0", "https://dam/high1"],
+        scoringData: [1, 2, 3],
+      });
+    });
+
+    test(
+      "starts the song without them when DAM fails or hangs",
+      {
+        timeout: 5000,
+      },
+      async () => {
+        const api = makeApi(
+          {},
+          {
+            minsei: {
+              getMusicStreamingUrls: async () => {
+                throw new Error("DAM is down");
+              },
+              // Retrying for minutes.
+              getScoringData: () => new Promise(() => {}),
+            },
+            damPopTimeoutMs: 50,
+          },
+        );
+        store.update((state) => state.songQueue.push(damSong));
+        const started = Date.now();
+        assert.deepEqual(await api.popSong({}, display), {
+          ...damSong,
+          streamingUrls: [],
+          scoringData: [],
+        });
+        assert.ok(Date.now() - started < 2000);
+        // Still the current song: the display plays it from its download.
+        assert.equal(store.getState().currentSong?.songId, "1234-56");
+        assert.deepEqual(store.getState().songQueue, []);
+      },
+    );
   });
 
   test("only an admin's song may jump the queue", async () => {

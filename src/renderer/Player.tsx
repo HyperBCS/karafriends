@@ -86,8 +86,21 @@ function Player(props: {
             // which seems kind of stupid, but whatever
             const fileUrl = `karafriends://local/${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
 
-            const loadRemote = () => {
-              if (!videoRef.current) return;
+            // Streams the song from DAM. False if it can't, and has moved on
+            // to the next song.
+            const loadRemote = (): boolean => {
+              if (!videoRef.current) return false;
+
+              const streamingUrl =
+                popSong.streamingUrls[popSong.streamingUrlIdx];
+              if (streamingUrl === undefined) {
+                // Not downloaded, and DAM didn't give popSong a URL.
+                toast(
+                  `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
+                );
+                pollQueue();
+                return false;
+              }
 
               hls = new Hls({ maxBufferLength: 90 /* seconds */ });
               hls.on(
@@ -109,7 +122,8 @@ function Player(props: {
               );
 
               hls.attachMedia(videoRef.current);
-              hls.loadSource(popSong.streamingUrls[popSong.streamingUrlIdx]);
+              hls.loadSource(streamingUrl);
+              return true;
             };
 
             fetch(fileUrl, { method: "HEAD" })
@@ -126,7 +140,7 @@ function Player(props: {
                   console.log(
                     `Local file for ${popSong.songId} doesn't seem available, using remote`,
                   );
-                  loadRemote();
+                  if (!loadRemote()) return;
                 }
                 props.audio.gain(DAM_GAIN);
 
@@ -148,7 +162,7 @@ function Player(props: {
                 if (!videoRef.current) return;
 
                 // Pretend nothing happened.
-                loadRemote();
+                if (!loadRemote()) return;
 
                 props.audio.gain(DAM_GAIN);
 

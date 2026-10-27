@@ -102,6 +102,25 @@ export interface ApiDeps {
   };
   publish: (message: HubMessage) => void;
   now?: () => number;
+  // How long popSong waits for DAM (see DAM_POP_TIMEOUT_MS).
+  damPopTimeoutMs?: number;
+}
+
+// popSong has already started the song when it asks DAM for the song's
+// streaming URLs and scoring data, and the display waits for the answer. DAM
+// retries a failing request for up to about 17 minutes, so give up after this
+// long, and start the song without them: a downloaded song plays from its
+// file, and a song without scoring data still plays.
+const DAM_POP_TIMEOUT_MS = 10_000;
+
+// promise's outcome, or a rejection after ms. (promise carries on, but its
+// outcome is ignored.)
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 // Song and video IDs end up in file names and yt-dlp arguments.
@@ -599,14 +618,20 @@ export function createApi(deps: ApiDeps): ApiHandlers {
 
       if (song?.kind !== "dam") return song;
       // The display streams a DAM song if its download isn't there, and
-      // scores the singing against the scoring data. Without the scoring data
-      // it can still play the song.
+      // scores the singing against the scoring data. Neither is essential,
+      // and the song has already started, so neither may hold it up for long
+      // or fail it.
+      const timeoutMs = deps.damPopTimeoutMs ?? DAM_POP_TIMEOUT_MS;
       const [urls, scoringData] = await Promise.all([
-        streamingUrls(song.songId),
-        deps.minsei
-          .getScoringData(song.songId)
+        withTimeout(streamingUrls(song.songId), timeoutMs).catch(
+          (err): string[] => {
+            console.error(`No streaming URLs for ${song.songId}:`, err);
+            return [];
+          },
+        ),
+        withTimeout(deps.minsei.getScoringData(song.songId), timeoutMs)
           .then((data) => Array.from(new Uint8Array(data)))
-          .catch((err) => {
+          .catch((err): number[] => {
             console.error(`No scoring data for ${song.songId}:`, err);
             return [];
           }),
