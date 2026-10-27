@@ -116,6 +116,9 @@ jobs:
           cache: yarn
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: yarn install --immutable
+      # Formatting and lint are platform-independent, so only this job runs them.
+      - run: yarn prettier --check .
+      - run: yarn lint
       - run: yarn test:unit
       - run: yarn build-dev
         env:
