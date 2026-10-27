@@ -359,7 +359,7 @@ function Player(props: {
         controlsList="nodownload noplaybackrate"
         disablePictureInPicture
       >
-        <track ref={trackRef} kind="subtitles" src="" default />
+        <track ref={trackRef} kind="subtitles" default />
       </video>
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
     </div>

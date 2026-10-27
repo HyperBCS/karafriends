@@ -13,14 +13,16 @@ async function registerServiceWorker() {
 async function showNotification(
   ...args: ConstructorParameters<typeof Notification>
 ) {
+  // Until the phone allows them (EnableNotificationsButton), showing one
+  // only throws.
+  if (!("Notification" in window) || Notification.permission !== "granted") {
+    return;
+  }
   if ("serviceWorker" in navigator) {
     const registration = await registerServiceWorker();
     return registration.showNotification(...args);
-  } else if ("Notification" in window) {
-    new Notification(...args);
-  } else {
-    console.warn("this notif is fukt");
   }
+  new Notification(...args);
 }
 
 // Whenever the queue changes, tells this phone about its songs due within
@@ -38,7 +40,7 @@ export default function useQueueNotifications() {
           body: `Your song ${
             item.name
           } is coming up soon! Estimated wait: T-${formatDuration(eta * 1000)}`,
-        });
+        }).catch((err) => console.warn("Couldn't show a notification:", err));
       }
     }
   }, [queue]);
