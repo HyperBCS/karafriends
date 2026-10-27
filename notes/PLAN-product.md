@@ -40,7 +40,7 @@ The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is
   - Runs `yarn typecheck`, `yarn lint`, `yarn test:unit`, `yarn build-prod`, `yarn test:e2e:ci`, and a real app launch with `KARAFRIENDS_LOCAL_ONLY=1 KARAFRIENDS_HIDE_WINDOW=1`.
   - A UI phase also takes screenshots through the Playwright fixture (display at 1920×1080, remote as Pixel 7) into `notes/ui-refresh-screenshots/<phase>-<screen>.png`, and checks its own work against the design brief before reporting.
   - Reports what changed, what it verified, what it couldn't, and any question for the user. Doesn't push or merge.
-- **The coordinator** reviews the diff and the screenshots against the brief, re-runs the checks on the merged result, merges into `master` with `--no-ff`, pushes, updates the Status table, and starts the next phase. The user approved merge-and-push after checks on 2026-10-27.
+- **The coordinator** reviews the diff and the screenshots against the brief, re-runs the checks on the merged result, merges into `master` with `--no-ff`, pushes, updates the Status table, and starts the next phase. The user approved merge-and-push after checks on 2026-10-27, and later that day asked for the remaining phases to run each in their own session, the next one started as soon as the previous one merges (A4, A5, then C, D and A6 in parallel, then F, then the final review), with no further confirmation.
 - **Lanes and order:**
   - Lane 1 (server, sequential since all touch `src/main/api.ts` and `src/common/api.ts`): A1 → A2 → A3 → A4 → A5.
   - Lane 2, at the same time as lane 1: B.
