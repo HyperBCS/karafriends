@@ -1,33 +1,11 @@
 import formatDuration from "format-duration";
 import React, { useEffect, useState } from "react";
-import { graphql, useMutation } from "react-relay";
 
-import type { DamSongDetail } from "../../../common/api";
+import type { DamSongDetail, VocalType } from "../../../common/api";
+import useQueueSong from "../../hooks/useQueueSong";
 import Button from "../Button";
-import {
-  DamQueueButtonMutation,
-  DamQueueButtonMutation$variables,
-} from "./__generated__/DamQueueButtonMutation.graphql";
 
-const damQueueButtonMutation = graphql`
-  mutation DamQueueButtonMutation(
-    $input: QueueDamSongInput!
-    $tryHeadOfQueue: Boolean!
-  ) {
-    queueDamSong(input: $input, tryHeadOfQueue: $tryHeadOfQueue) {
-      ... on QueueSongInfo {
-        __typename
-        eta
-      }
-      ... on QueueSongError {
-        __typename
-        reason
-      }
-    }
-  }
-`;
-
-function getDefaultText(vocalType: string) {
+function getDefaultText(vocalType: VocalType | undefined) {
   let defaultText = "Queue song - guide vocal (unknown type)";
   switch (vocalType) {
     case "NORMAL":
@@ -46,50 +24,37 @@ function getDefaultText(vocalType: string) {
 interface Props {
   song: DamSongDetail;
   streamingUrlIndex: number;
-  userIdentity: DamQueueButtonMutation$variables["input"]["userIdentity"];
 }
 
-const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
+const DamQueueButton = ({ song, streamingUrlIndex }: Props) => {
   const defaultText = getDefaultText(song.vocalTypes[streamingUrlIndex]);
   const [text, setText] = useState(defaultText);
-  const [commit] = useMutation<DamQueueButtonMutation>(damQueueButtonMutation);
+  // A DAM song joins the queue at once (it downloads in the background).
+  const { queueSong, isPending } = useQueueSong(
+    setText,
+    (eta) => `Estimated wait: T-${formatDuration(eta * 1000)}`,
+  );
 
   useEffect(() => {
     const timeout = setTimeout(() => setText(defaultText), 2500);
     return () => clearTimeout(timeout);
   });
 
-  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    console.log(`tryHeadOfQueue=${e.shiftKey}`);
-    commit({
-      variables: {
-        input: {
-          songId: song.id,
-          name: song.name,
-          artistName: song.artistName,
-          playtime: song.playtime,
-          streamingUrlIdx: streamingUrlIndex,
-          userIdentity,
-        },
-        tryHeadOfQueue: e.shiftKey,
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) =>
+    queueSong(
+      {
+        kind: "dam",
+        songId: song.id,
+        name: song.name,
+        artistName: song.artistName,
+        playtime: song.playtime,
+        streamingUrlIdx: streamingUrlIndex,
       },
-      onCompleted: ({ queueDamSong }) => {
-        switch (queueDamSong.__typename) {
-          case "QueueSongInfo":
-            setText(
-              `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`,
-            );
-            break;
-          case "QueueSongError":
-            setText(`Error: ${queueDamSong.reason}`);
-            break;
-        }
-      },
-    });
-  };
+      e,
+    );
 
   return (
-    <Button disabled={text !== defaultText} onClick={onClick}>
+    <Button disabled={isPending || text !== defaultText} onClick={onClick}>
       {text}
     </Button>
   );

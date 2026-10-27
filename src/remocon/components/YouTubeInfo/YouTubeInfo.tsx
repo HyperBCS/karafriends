@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import YouTubePlayer from "youtube-player";
 
 import { useApiQuery } from "../../../common/apiQueries";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./YouTubeInfo.module.scss";
@@ -14,8 +13,6 @@ interface Props {
 }
 
 const YouTubeInfo = ({ videoId }: Props) => {
-  const userIdentity = useUserIdentity();
-
   const playerRef: React.MutableRefObject<ReturnType<
     typeof YouTubePlayer
   > | null> = useRef(null);
@@ -56,7 +53,6 @@ const YouTubeInfo = ({ videoId }: Props) => {
             videoInfo={videoInfo.info}
             adhocSongLyrics={adhocSongLyrics}
             selectedCaption={selectedCaption || null}
-            userIdentity={userIdentity}
           />
         </>
       )}

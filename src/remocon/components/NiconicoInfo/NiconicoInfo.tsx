@@ -1,7 +1,6 @@
 import React from "react";
 
 import { useApiQuery } from "../../../common/apiQueries";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./NiconicoInfo.module.scss";
@@ -12,8 +11,6 @@ interface Props {
 }
 
 const NiconicoInfo = ({ videoId }: Props) => {
-  const userIdentity = useUserIdentity();
-
   const videoInfo = useApiQuery("nicoInfo", { videoId });
 
   return (
@@ -33,11 +30,7 @@ const NiconicoInfo = ({ videoId }: Props) => {
             ※ Note that Niconico videos tend to take longer to download. Please
             wait warmly until they are ready.
           </div>
-          <NiconicoQueueButton
-            videoId={videoId}
-            videoInfo={videoInfo.info}
-            userIdentity={userIdentity}
-          />
+          <NiconicoQueueButton videoId={videoId} videoInfo={videoInfo.info} />
         </>
       )}
     </div>
