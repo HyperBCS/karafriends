@@ -123,6 +123,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// The most adhoc lyrics one song can show (pushAdhocLyrics). Every live-state
+// event carries them all, to every phone, so they must stay small. A singer
+// sends a few dozen lines; these leave room to go round a song again.
+const MAX_ADHOC_LINES_SHOWN = 400;
+const MAX_ADHOC_CHARS_SHOWN = 30_000;
+
 // Song and video IDs end up in file names and yt-dlp arguments.
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -589,7 +595,33 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       return true;
     },
 
-    async pushAdhocLyrics({ lyric, lyricIndex }) {
+    async pushAdhocLyrics({ lyricIndex }, caller) {
+      const { currentSong, currentSongAdhocLyrics, idToAdhocLyrics } =
+        store.getState();
+      // The song may just have ended.
+      if (currentSong?.kind !== "youtube" || !currentSong.hasAdhocLyrics) {
+        return false;
+      }
+      // Who may sing along is who may control the song.
+      requirePlaybackControl(caller);
+      const lyrics = idToAdhocLyrics[currentSong.songId];
+      if (lyrics === undefined) return false;
+      // The line comes from the lyrics queued with the song, never from the
+      // phone.
+      const lyric = lyrics[lyricIndex];
+      if (lyric === undefined) {
+        throw new ApiError(400, `The song has no line ${lyricIndex}`);
+      }
+      const shownChars = currentSongAdhocLyrics.reduce(
+        (sum, entry) => sum + entry.lyric.length,
+        0,
+      );
+      if (
+        currentSongAdhocLyrics.length >= MAX_ADHOC_LINES_SHOWN ||
+        shownChars + lyric.length > MAX_ADHOC_CHARS_SHOWN
+      ) {
+        throw new ApiError(400, "This song can't show any more lines");
+      }
       store.update((state) => {
         state.currentSongAdhocLyrics.push({ lyric, lyricIndex });
       });

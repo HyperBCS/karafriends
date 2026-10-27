@@ -646,6 +646,99 @@ describe("queueSong", () => {
   });
 });
 
+describe("pushAdhocLyrics", () => {
+  const VIDEO = "jNQXAC9IVRw";
+  const lyricsSong: QueueItem = {
+    kind: "youtube",
+    songId: VIDEO,
+    name: "Me at the zoo",
+    artistName: "",
+    playtime: 19,
+    timestamp: "5",
+    user: { deviceId: "alice-device", nickname: "alice" },
+    hasAdhocLyrics: true,
+    hasCaptions: false,
+    gainValue: 1,
+  };
+
+  // Alice's video, playing, with these lyrics.
+  const play = (lyrics: string[]) =>
+    store.update((state) => {
+      state.currentSong = lyricsSong;
+      state.idToAdhocLyrics[VIDEO] = lyrics;
+    });
+  const shown = () => store.getState().currentSongAdhocLyrics;
+
+  test("shows the line the singer picks, from the song's own lyrics", async () => {
+    const api = makeApi();
+    play(["line one", "line two"]);
+    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 1 }, alice), true);
+    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), true);
+    assert.deepEqual(shown(), [
+      { lyric: "line two", lyricIndex: 1 },
+      { lyric: "line one", lyricIndex: 0 },
+    ]);
+    // Only lines the song has.
+    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 2 }, alice), 400);
+    assert.equal(shown().length, 2);
+  });
+
+  test("in supervised mode, only the singer or an admin may", async () => {
+    const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
+    play(["line one"]);
+    for (const caller of [
+      bob,
+      phone("other-device", "alice"),
+      phone("other-device", ADMIN_NICK),
+      { deviceId: null, nickname: null, isDisplay: false },
+    ]) {
+      await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, caller), 403);
+    }
+    assert.deepEqual(shown(), []);
+    for (const caller of [alice, phone(ADMIN_DEVICE, "x"), display]) {
+      assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, caller), true);
+    }
+    assert.equal(shown().length, 3);
+  });
+
+  test("without supervised mode, anyone may", async () => {
+    const api = makeApi();
+    play(["line one"]);
+    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, bob), true);
+  });
+
+  test("does nothing unless a song with adhoc lyrics is playing", async () => {
+    const api = makeApi();
+    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), false);
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+    });
+    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), false);
+    assert.deepEqual(shown(), []);
+  });
+
+  test("stops at a few hundred lines, or 30,000 characters", async () => {
+    const api = makeApi();
+    play(["la", "x".repeat(10_000)]);
+    for (let i = 0; i < 400; i++) {
+      await api.pushAdhocLyrics({ lyricIndex: 0 }, alice);
+    }
+    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, alice), 400);
+    assert.equal(shown().length, 400);
+
+    store.update((state) => {
+      state.currentSongAdhocLyrics = [];
+    });
+    for (let i = 0; i < 3; i++) {
+      assert.equal(await api.pushAdhocLyrics({ lyricIndex: 1 }, alice), true);
+    }
+    // 30,000 characters: no more, however short.
+    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 1 }, alice), 400);
+    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, alice), 400);
+    assert.equal(shown().length, 3);
+  });
+});
+
 describe("validators", () => {
   const invalid = (method: keyof typeof validators, raw: unknown) =>
     assert.throws(
@@ -736,7 +829,12 @@ describe("validators", () => {
     invalid("damSearchSongs", { name: "a" });
     invalid("removeSong", { songId: "sm9" });
     invalid("sendEmote", { emote: "" });
-    invalid("pushAdhocLyrics", { lyric: "la", lyricIndex: -1 });
+    assert.deepEqual(validators.pushAdhocLyrics({ lyricIndex: 3 }), {
+      lyricIndex: 3,
+    });
+    invalid("pushAdhocLyrics", { lyricIndex: -1 });
+    // The server looks the line up: a phone can't send its own text.
+    invalid("pushAdhocLyrics", { lyric: "la", lyricIndex: 0 });
   });
 });
 

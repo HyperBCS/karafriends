@@ -345,4 +345,115 @@ test.describe("supervised mode", () => {
       ).toMatchObject({ status: 403 });
     });
   });
+
+  // A YouTube video queued with adhoc lyrics, never downloaded, so the
+  // display plays nothing.
+  test.describe("adhoc lyrics", () => {
+    const VIDEO = "jNQXAC9IVRw";
+    const LYRICS = ["E2E first line", "E2E second line"];
+    const lyricsSeed = (owner: typeof me) => ({
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "youtube",
+          songId: VIDEO,
+          name: "E2E lyrics song",
+          artistName: "",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: owner,
+          hasAdhocLyrics: true,
+          hasCaptions: false,
+          gainValue: 1,
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+      // As older versions saved them: by video ID.
+      idToAdhocLyrics: { [VIDEO]: LYRICS },
+    });
+
+    async function waitForLyricsSong(remoconUrl: string) {
+      await expect
+        .poll(async () => {
+          const { state } = await liveState(remoconUrl);
+          return [state.currentSong?.songId, state.playbackState];
+        })
+        .toEqual([VIDEO, "PLAYING"]);
+    }
+
+    test.describe("on someone else's song", () => {
+      test.use({ seedQueue: lyricsSeed(someoneElse) });
+
+      test("a phone can't push them, but the display can", async ({
+        karafriends,
+        display,
+      }) => {
+        const { remoconUrl } = karafriends;
+        await waitForLyricsSong(remoconUrl);
+
+        for (const nickname of [NICKNAME, "someone", "host"]) {
+          const headers = {
+            ...REMOTE_HEADERS,
+            "X-Karafriends-Nickname": nickname,
+          };
+          expect(
+            await call(
+              remoconUrl,
+              "pushAdhocLyrics",
+              { lyricIndex: 0 },
+              headers,
+            ),
+          ).toMatchObject({ status: 403 });
+        }
+        // Nor can any phone put its own text on the screen.
+        expect(
+          await call(
+            remoconUrl,
+            "pushAdhocLyrics",
+            { lyric: "E2E graffiti", lyricIndex: 0 },
+            REMOTE_HEADERS,
+          ),
+        ).toMatchObject({ status: 400 });
+        expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([]);
+
+        expect(
+          await displayCall(display, "pushAdhocLyrics", { lyricIndex: 1 }),
+        ).toEqual({ ok: true, output: true });
+        expect(
+          await displayCall(display, "pushAdhocLyrics", { lyricIndex: 2 }),
+        ).toMatchObject({ ok: false, status: 400 });
+        expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([
+          { lyric: LYRICS[1], lyricIndex: 1 },
+        ]);
+      });
+    });
+
+    test.describe("on my own song", () => {
+      test.use({ seedQueue: lyricsSeed(me) });
+
+      test("its singer pushes them from the remote, and the display shows them", async ({
+        karafriends,
+        display,
+        page,
+      }) => {
+        const { remoconUrl } = karafriends;
+        await openRemote(page, remoconUrl);
+        await waitForLyricsSong(remoconUrl);
+
+        await page.goto(new URL(`#/adhocLyrics/${VIDEO}`, remoconUrl).href);
+        await expect(
+          page
+            .getByRole("listbox", { name: "Lyrics" })
+            .getByRole("option", { selected: true }),
+        ).toHaveText(`0 | ${LYRICS[0]}`);
+        await page.getByText("TAP HERE").click();
+
+        await expect(display.getByText(LYRICS[0])).toBeVisible();
+        expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([
+          { lyric: LYRICS[0], lyricIndex: 0 },
+        ]);
+      });
+    });
+  });
 });

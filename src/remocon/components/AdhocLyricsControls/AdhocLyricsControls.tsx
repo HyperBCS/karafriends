@@ -54,7 +54,8 @@ function AdhocLyricsControls({ id }: Props) {
 
   const onSendLine = () => {
     const index = indexRef.current;
-    pushLyrics({ lyric: adhocLyrics[index], lyricIndex: index });
+    // The server has the lyrics, so the line's number is enough.
+    pushLyrics({ lyricIndex: index });
     setSelectedIndex(index + 1);
   };
 

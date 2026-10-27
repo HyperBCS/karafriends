@@ -322,7 +322,10 @@ export interface Api {
     output: boolean;
   };
   setPitchShiftSemis: { input: { semis: number }; output: boolean };
-  pushAdhocLyrics: { input: AdhocLyricsEntry; output: boolean };
+  // Shows line lyricIndex of the current song's adhoc lyrics. In supervised
+  // mode, for its owner or an admin. False if no song with adhoc lyrics is
+  // playing (any more).
+  pushAdhocLyrics: { input: { lyricIndex: number }; output: boolean };
   sendEmote: { input: { emote: string }; output: boolean };
 
   // The display only: start the next song, or null if the queue is empty.
