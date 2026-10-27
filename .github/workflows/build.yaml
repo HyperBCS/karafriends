@@ -7,6 +7,16 @@ on:
       - master
 permissions:
   contents: read
+# Rust in every job:
+# - Swatinem/rust-cache caches the Cargo registry and native/target (the
+#   Cargo workspace is in native/, hence `workspaces: native`). The toolchain
+#   action's own cache is off: it looks for Cargo.toml at the repo root, finds
+#   none, and saved only ~/.cargo/bin.
+# - Clippy runs on every platform. The native tests under cargo-careful
+#   (`yarn test:native`, which also runs Clippy) run in the Linux job only.
+#   They feed generated tones through the pitch detector and resampler, with
+#   no audio device, so one platform is enough, and they took 1.5 to 2.5
+#   minutes per macOS and Windows job.
 jobs:
   build-macos-aarch64:
     runs-on: macos-latest
@@ -17,11 +27,16 @@ jobs:
           toolchain: nightly
           target: aarch64-apple-darwin
           components: clippy, rustfmt
+          cache: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: aarch64-apple-darwin
           components: clippy, rustfmt
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -33,9 +48,7 @@ jobs:
         env:
           CARGO_ARGS: --target aarch64-apple-darwin
           CARGO_INCREMENTAL: false
-      - run: cargo install cargo-careful
-        continue-on-error: true
-      - run: yarn test:native
+      - run: cargo clippy --manifest-path native/Cargo.toml
   build-macos-x86_64:
     runs-on: macos-latest
     steps:
@@ -45,11 +58,16 @@ jobs:
           toolchain: nightly
           target: x86_64-apple-darwin
           components: clippy, rustfmt
+          cache: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-apple-darwin
           components: clippy, rustfmt
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -61,9 +79,7 @@ jobs:
         env:
           CARGO_ARGS: --target x86_64-apple-darwin
           CARGO_INCREMENTAL: false
-      - run: cargo install cargo-careful
-        continue-on-error: true
-      - run: yarn test:native
+      - run: cargo clippy --manifest-path native/Cargo.toml
   build-windows-x86_64:
     runs-on: windows-latest
     steps:
@@ -73,11 +89,16 @@ jobs:
           toolchain: nightly
           target: x86_64-pc-windows-msvc
           components: clippy, rustfmt
+          cache: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
           components: clippy, rustfmt
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -105,9 +126,7 @@ jobs:
         with:
           name: playwright-report-windows
           path: playwright-report/
-      - run: cargo install cargo-careful
-        continue-on-error: true
-      - run: yarn test:native
+      - run: cargo clippy --manifest-path native/Cargo.toml
   build-linux-x86_64:
     runs-on: ubuntu-latest
     steps:
@@ -117,11 +136,16 @@ jobs:
           toolchain: nightly
           target: x86_64-unknown-linux-gnu
           components: clippy, rustfmt
+          cache: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
           components: clippy, rustfmt
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -148,6 +172,7 @@ jobs:
         with:
           name: playwright-report-linux
           path: playwright-report/
+      # Clippy, then the native tests under cargo-careful (see the top).
       - run: cargo install cargo-careful
         continue-on-error: true
       - run: yarn test:native
