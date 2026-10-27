@@ -45,7 +45,7 @@ import {
 import isDev from "electron-is-dev";
 import express from "express";
 
-import karafriendsConfig from "../common/config";
+import karafriendsConfig, { LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { displayToken } from "./caller";
@@ -69,7 +69,7 @@ try {
   console.error(e);
 }
 
-setupMdns();
+if (!LOCAL_ONLY) setupMdns();
 
 protocol.registerSchemesAsPrivileged([
   {

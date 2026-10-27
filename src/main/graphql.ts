@@ -35,7 +35,7 @@ import type {
   SharedQueueItem,
   UserIdentity,
 } from "../common/api";
-import karafriendsConfig from "../common/config";
+import karafriendsConfig, { LOCAL_ONLY } from "../common/config";
 import { getVideoDownloadProgress } from "./../common/videoDownloader";
 import type { Caller } from "./api";
 import { callerFromHeaders } from "./caller";
@@ -657,7 +657,8 @@ export function applyGraphQLMiddleware(app: Application) {
           }),
         }),
       );
-      httpServer.listen(karafriendsConfig.remoconPort, () => {
+      const host = LOCAL_ONLY ? "127.0.0.1" : undefined;
+      httpServer.listen(karafriendsConfig.remoconPort, host, () => {
         console.log(
           `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
         );

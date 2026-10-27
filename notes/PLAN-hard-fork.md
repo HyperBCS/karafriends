@@ -37,6 +37,7 @@
   - The Claude app here is the Microsoft Store build: writes under `%APPDATA%`/`%LOCALAPPDATA%` from Claude's shells land in a private copy. Keep tool caches inside the repo; leave global installs to the user.
   - DAM/Joysound need a Japanese IP (`curl -s https://ipinfo.io/country`).
   - Don't stop processes you didn't start; another app instance may hold ports 3000/8080.
+  - Set `KARAFRIENDS_LOCAL_ONLY=1` for any app launch in checks (`run-dev`, packaged builds). The server then listens on 127.0.0.1 only and mDNS is skipped, so Windows Firewall doesn't prompt the user for each worktree's Electron copy. The e2e fixture sets it already.
 
 ## Context
 
