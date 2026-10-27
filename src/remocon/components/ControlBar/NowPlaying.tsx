@@ -1,23 +1,16 @@
 import React from "react";
 
-import useNowPlaying from "../../hooks/useNowPlaying";
-import useUserIdentity from "../../hooks/useUserIdentity";
+import { useLiveState } from "../../../common/apiClient";
 import SongQueueItem from "../SongQueue/SongQueueItem";
 import * as styles from "./ControlBar.module.scss";
 
 const NowPlaying = () => {
-  const { nickname } = useUserIdentity();
-  const currentSong = useNowPlaying();
+  const currentSong = useLiveState()?.currentSong;
 
   return (
     <div className={styles.nowPlaying} role="region" aria-label="Now playing">
       {currentSong && (
-        <SongQueueItem
-          item={currentSong}
-          eta={0}
-          myNickname={nickname}
-          isCurrent={true}
-        />
+        <SongQueueItem item={currentSong} eta={0} isCurrent={true} />
       )}
     </div>
   );

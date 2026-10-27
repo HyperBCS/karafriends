@@ -23,7 +23,9 @@ async function showNotification(
   }
 }
 
-export default function useQueueNotifications(myDeviceId: string) {
+// Whenever the queue changes, tells this phone about its songs due within
+// ten minutes.
+export default function useQueueNotifications() {
   const queue = useQueue();
 
   // Preemptively register the service worker
@@ -31,11 +33,7 @@ export default function useQueueNotifications(myDeviceId: string) {
 
   useEffect(() => {
     for (const [item, eta] of queue) {
-      if (
-        item.userIdentity &&
-        item.userIdentity.deviceId === myDeviceId &&
-        eta <= 10 * 60
-      ) {
+      if (item.isMine && eta <= 10 * 60) {
         showNotification("karafriends", {
           body: `Your song ${
             item.name

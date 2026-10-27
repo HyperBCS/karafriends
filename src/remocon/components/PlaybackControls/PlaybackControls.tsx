@@ -2,10 +2,10 @@ import classnames from "classnames";
 import React from "react";
 import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "react-icons/md";
 
+import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
-import useConfig from "../../hooks/useConfig";
-import useNowPlaying from "../../hooks/useNowPlaying";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import isOwnSong from "../../isOwnSong";
 import PitchControls from "../PitchControls/PitchControls";
 import * as styles from "./PlaybackControls.module.scss";
 
@@ -13,26 +13,19 @@ const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const isPlaybackControllable = ["PLAYING", "PAUSED"].includes(playbackState);
 
-  const config = useConfig();
-  const currentSong = useNowPlaying();
+  const live = useLiveState();
+  const isAdmin = useIsAdmin();
   const identity = useUserIdentity();
 
-  let isUserEntitled = true;
-  if (config !== undefined && config.supervisedMode === true) {
-    isUserEntitled =
-      config.adminNicks.includes(identity.nickname) ||
-      config.adminDeviceIds.includes(identity.deviceId) ||
-      (currentSong !== undefined &&
-        currentSong !== null &&
-        currentSong.userIdentity !== undefined &&
-        (currentSong.userIdentity.nickname === identity.nickname ||
-          currentSong.userIdentity.deviceId === identity.deviceId));
-  }
+  // What the server allows (setPlaybackState in src/main/api.ts): in
+  // supervised mode, an admin or the current singer.
+  const currentSong = live?.currentSong ?? null;
+  const isUserEntitled =
+    !live?.config.supervisedMode ||
+    isAdmin === true ||
+    (currentSong !== null && isOwnSong(currentSong, identity.nickname));
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
-  console.log(
-    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`,
-  );
 
   return (
     <>

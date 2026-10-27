@@ -1,8 +1,8 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css";
-import React, { useEffect, useMemo, useState } from "react";
-import { graphql, useSubscription } from "react-relay";
+import React, { useEffect, useState } from "react";
 
+import { useLiveEvent } from "../common/apiClient";
 import { HOSTNAME } from "../common/constants";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
@@ -14,23 +14,11 @@ import Player from "./Player";
 import QRCode from "./QRCode";
 import Queue from "./Queue";
 import KarafriendsAudio from "./webAudio";
-import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
 
 interface SavedMic {
   name: string;
   channel: number;
 }
-
-const songAddedSubscription = graphql`
-  subscription AppQueueAddedSubscription {
-    queueAdded {
-      ... on QueueItemInterface {
-        name
-        artistName
-      }
-    }
-  }
-`;
 
 function App(props: {
   kuroshiro: KuroshiroSingleton;
@@ -82,21 +70,11 @@ function App(props: {
     };
   }, [sidebarVisible]);
 
-  useSubscription<AppQueueAddedSubscription>(
-    useMemo(
-      () => ({
-        variables: {},
-        subscription: songAddedSubscription,
-        onNext: (response) => {
-          if (response)
-            M.toast({
-              html: `<h3>${response.queueAdded.name} - ${response.queueAdded.artistName}</h3>`,
-            });
-        },
-      }),
-      [songAddedSubscription],
-    ),
-  );
+  useLiveEvent("queueAdded", ({ item }) => {
+    M.toast({
+      html: `<h3>${item.name} - ${item.artistName}</h3>`,
+    });
+  });
 
   const onChangeMic = (index: number, newMic: InputDevice) => {
     const updatedMics = [...mics];

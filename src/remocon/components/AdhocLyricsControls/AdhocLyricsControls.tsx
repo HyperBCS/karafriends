@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { graphql, useLazyLoadQuery, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 
-import useNowPlaying from "../../hooks/useNowPlaying";
+import { useLiveState } from "../../../common/apiClient";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
 
@@ -35,7 +35,9 @@ type Props = {
 function AdhocLyricsControls({ id }: Props) {
   const navigate = useNavigate();
   const { nickname } = useUserIdentity();
-  const currentSong = useNowPlaying();
+  // Undefined until the live state arrives.
+  const live = useLiveState();
+  const currentSong = live === null ? undefined : live.currentSong;
 
   const [selectedIndex, _setSelectedIndex] = useState<number>(0);
   const indexRef = useRef(selectedIndex);

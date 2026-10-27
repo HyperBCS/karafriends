@@ -1,10 +1,8 @@
-import { invariant } from "ts-invariant";
-
-import { createClient } from "graphql-ws";
+// Relay, for the lookups and commands that haven't moved to the JSON RPC API
+// yet (Phase 5d). Live state comes from apiClient.ts.
 import {
   Environment,
   Network,
-  Observable,
   RecordSource,
   RequestParameters,
   Store,
@@ -29,41 +27,9 @@ function fetchQuery(request: RequestParameters, variables: Variables) {
   });
 }
 
-function getSubscriptionUrl(): string {
-  if (window.karafriends !== undefined) {
-    return `ws://localhost:${
-      window.karafriends.karafriendsConfig().remoconPort
-    }/graphql`;
-  }
-
-  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-
-  return `${wsProtocol}://${window.location.hostname}:${window.location.port}/graphql`;
-}
-
-const subscriptionClient = createClient({
-  url: getSubscriptionUrl(),
-  shouldRetry: () => true,
-});
-
-const subscribe = (operation: RequestParameters, variables: Variables) => {
-  return Observable.create((sink) => {
-    invariant(operation.text);
-
-    return subscriptionClient.subscribe(
-      {
-        operationName: operation.name,
-        query: operation.text,
-        variables,
-      },
-      sink,
-    );
-  });
-};
-
 const environment = new Environment({
   // @ts-ignore: the relay type stubs are pitifully broken
-  network: Network.create(fetchQuery, subscribe),
+  network: Network.create(fetchQuery),
   store: new Store(new RecordSource()),
 });
 
