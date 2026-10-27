@@ -90,8 +90,15 @@
     background-color: $kf-surface-pressed;
   }
 
-  &:disabled {
+  // aria-disabled: a control the server would refuse (supervised mode).
+  // It stays focusable, and a tap does nothing.
+  &:disabled,
+  &[aria-disabled="true"] {
     color: $kf-border-strong;
+  }
+
+  &[aria-disabled="true"] {
+    pointer-events: none;
   }
 }
 

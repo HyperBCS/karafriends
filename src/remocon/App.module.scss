@@ -1,25 +1,36 @@
 @use "./tokens" as *;
 
+// The top bar, the screen, and the now-playing sheet: only the screen
+// scrolls.
 .app {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
   display: flex;
   flex-direction: column;
 }
 
-main {
+.main {
   flex: 1;
-  padding: 8px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: $kf-space-4;
 }
 
-header {
-  border-bottom: 1px solid $kf-border;
-}
+// The profile button at the end of the top bar.
+.iconLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: $kf-tap;
+  min-height: $kf-tap;
+  border-radius: $kf-radius;
+  color: $kf-text;
+  font-size: $kf-text-icon;
+  touch-action: manipulation;
 
-footer {
-  box-shadow: $kf-shadow-sheet;
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible;
 }

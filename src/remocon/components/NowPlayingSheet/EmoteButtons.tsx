@@ -1,14 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import { useApiMutation } from "../../../common/apiQueries";
+import { t } from "../../i18n";
 import { MdEdit } from "../../icons";
-import * as styles from "./EmoteButtons.module.scss";
+import { IconButton } from "../ui";
+import * as styles from "./NowPlayingSheet.module.scss";
 
 const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
 
+// Emotes that float up the display, sent again and again while held. The
+// phone keeps its own list.
 const EmoteButtons = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [emotes, setEmotes] = useState<string[]>(
+  const [emotes, setEmotes] = useState<string[]>(() =>
     JSON.parse(
       localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES),
     ),
@@ -34,9 +38,9 @@ const EmoteButtons = () => {
   // Stop if the buttons go away while one is held.
   useEffect(() => endEmotes, []);
 
-  const showEmotesPrompt = () => {
+  const editEmotes = () => {
     const input =
-      prompt("Enter a list of emojis", emotes.join("")) || emotes.join("");
+      prompt(t("emotes.prompt"), emotes.join("")) || emotes.join("");
     const emojis =
       input.match(/\p{Emoji_Presentation}|\p{Emoji}️/gu) || DEFAULT_EMOTES;
     const uniqueEmojis = [...new Set(emojis)];
@@ -46,25 +50,25 @@ const EmoteButtons = () => {
 
   return (
     <div className={styles.emotes}>
-      <div className={styles.custom} onClick={() => showEmotesPrompt()}>
-        <MdEdit />
-      </div>
-      {emotes
-        .slice()
-        .reverse()
-        .map((emote) => (
-          <div
-            key={emote}
-            className={styles.emoteItem}
-            onMouseDown={() => startEmotes(emote)}
-            onMouseLeave={() => endEmotes()}
-            onMouseUp={() => endEmotes()}
-            onTouchStart={() => startEmotes(emote)}
-            onTouchEnd={() => endEmotes()}
-          >
-            {emote}
-          </div>
-        ))}
+      {emotes.map((emote) => (
+        <button
+          key={emote}
+          type="button"
+          className={styles.emote}
+          onPointerDown={() => startEmotes(emote)}
+          onPointerUp={endEmotes}
+          onPointerLeave={endEmotes}
+          onPointerCancel={endEmotes}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {emote}
+        </button>
+      ))}
+      <IconButton
+        label={t("emotes.edit")}
+        icon={<MdEdit />}
+        onClick={editEmotes}
+      />
     </div>
   );
 };

@@ -44,6 +44,8 @@ export type ListRowProps = RowContent &
     trailing?: React.ReactNode;
     // The current item (the song playing), in the accent.
     current?: boolean;
+    // For a row whose press shows more of it (onPress): whether it does now.
+    expanded?: boolean;
     // Replaces the title and subtitle as the pressable part's accessible
     // name.
     "aria-label"?: string;
@@ -76,6 +78,7 @@ export const ListRow = ({
   leading,
   trailing,
   current,
+  expanded,
   to,
   href,
   onPress,
@@ -123,6 +126,7 @@ export const ListRow = ({
         onClick={onPress}
         className={styles.main}
         aria-label={ariaLabel}
+        aria-expanded={expanded}
         {...currentProps}
       >
         {content}
