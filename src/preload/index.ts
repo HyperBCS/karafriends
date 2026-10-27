@@ -59,7 +59,7 @@ const api: DisplayApi = {
   },
 };
 
-// Export and import config (src/main/fileDialogs.ts).
+// Export and import config: the dialogs are handled in src/main/index.ts.
 const files: DisplayFiles = {
   saveTextFile: (suggestedName, text) =>
     ipcRenderer.invoke(IPC_CHANNELS.saveTextFile, suggestedName, text),
