@@ -1,8 +1,8 @@
 import React, { useRef, useState } from "react";
-import { graphql, useLazyLoadQuery, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
+import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
 
@@ -10,23 +10,6 @@ import { withLoader } from "../Loader";
 import * as styles from "./AdhocLyricsControls.module.scss";
 import LyricsController from "./LyricsController";
 import LyricsPicker from "./LyricsPicker";
-import { AdhocLyricsControlsLyricsQuery } from "./__generated__/AdhocLyricsControlsLyricsQuery.graphql";
-import { AdhocLyricsControlsPushLyricsMutation } from "./__generated__/AdhocLyricsControlsPushLyricsMutation.graphql";
-
-const adhocLyricsControlsLyricsQuery = graphql`
-  query AdhocLyricsControlsLyricsQuery($id: String!) {
-    adhocLyrics(id: $id)
-  }
-`;
-
-const adhocLyricsControlsPushLyricsMutation = graphql`
-  mutation AdhocLyricsControlsPushLyricsMutation(
-    $lyric: String!
-    $lyricIndex: Int!
-  ) {
-    pushAdhocLyrics(input: { lyric: $lyric, lyricIndex: $lyricIndex })
-  }
-`;
 
 type Props = {
   id: string;
@@ -46,13 +29,16 @@ function AdhocLyricsControls({ id }: Props) {
     _setSelectedIndex(index);
   };
 
-  const { adhocLyrics } = useLazyLoadQuery<AdhocLyricsControlsLyricsQuery>(
-    adhocLyricsControlsLyricsQuery,
-    { id },
+  // Asked for afresh on each visit: the same video queued again may come
+  // with other lyrics.
+  const adhocLyrics = useApiQuery(
+    "adhocLyrics",
+    { songId: id },
+    { staleTime: 0 },
   );
-  const [pushLyrics] = useMutation<AdhocLyricsControlsPushLyricsMutation>(
-    adhocLyricsControlsPushLyricsMutation,
-  );
+  const { mutate: pushLyrics } = useApiMutation("pushAdhocLyrics", {
+    onError: (err) => console.error("Couldn't show the line:", err),
+  });
 
   if (
     !adhocLyrics?.length ||
@@ -70,12 +56,7 @@ function AdhocLyricsControls({ id }: Props) {
 
   const onSendLine = () => {
     const index = indexRef.current;
-    pushLyrics({
-      variables: {
-        lyric: adhocLyrics[index],
-        lyricIndex: index,
-      },
-    });
+    pushLyrics({ lyric: adhocLyrics[index], lyricIndex: index });
     setSelectedIndex(index + 1);
   };
 

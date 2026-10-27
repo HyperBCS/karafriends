@@ -1,16 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MdEdit } from "react-icons/md";
-import { graphql, useMutation } from "react-relay";
 
-import useUserIdentity from "../../hooks/useUserIdentity";
+import { useApiMutation } from "../../../common/apiQueries";
 import * as styles from "./EmoteButtons.module.scss";
-import { EmoteButtonsMutation } from "./__generated__/EmoteButtonsMutation.graphql";
-
-const emoteButtonsMutation = graphql`
-  mutation EmoteButtonsMutation($emote: EmoteInput!) {
-    sendEmote(emote: $emote)
-  }
-`;
 
 const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
 
@@ -21,16 +13,11 @@ const EmoteButtons = () => {
       localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES),
     ),
   );
-  const userIdentity = useUserIdentity();
-  const [commit] = useMutation<EmoteButtonsMutation>(emoteButtonsMutation);
-
-  const sendEmote = (emote: string) => {
-    commit({
-      variables: {
-        emote: { userIdentity, emote },
-      },
-    });
-  };
+  // Sent again every 200 ms while held, so sent ones needn't be kept.
+  const { mutate: sendEmote } = useApiMutation("sendEmote", {
+    gcTime: 0,
+    onError: (err) => console.warn("Couldn't send the emote:", err),
+  });
 
   const endEmotes = () => {
     if (intervalRef.current) {
@@ -40,15 +27,18 @@ const EmoteButtons = () => {
 
   const startEmotes = (emote: string) => {
     endEmotes();
-    sendEmote(emote);
-    intervalRef.current = setInterval(() => sendEmote(emote), 200);
+    sendEmote({ emote });
+    intervalRef.current = setInterval(() => sendEmote({ emote }), 200);
   };
+
+  // Stop if the buttons go away while one is held.
+  useEffect(() => endEmotes, []);
 
   const showEmotesPrompt = () => {
     const input =
       prompt("Enter a list of emojis", emotes.join("")) || emotes.join("");
     const emojis =
-      input.match(/\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu) || DEFAULT_EMOTES;
+      input.match(/\p{Emoji_Presentation}|\p{Emoji}️/gu) || DEFAULT_EMOTES;
     const uniqueEmojis = [...new Set(emojis)];
     localStorage.setItem("emotes", JSON.stringify(uniqueEmojis));
     setEmotes(uniqueEmojis);

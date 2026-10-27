@@ -190,8 +190,8 @@ test.describe("supervised mode", () => {
         ),
       ).toMatchObject({ status: 403 });
 
-      // GraphQL, the way the remote sends it: its UI hides the remove
-      // button and disables the playback controls...
+      // The remote: its UI hides the remove button and disables the playback
+      // controls...
       const queue = page.getByRole("region", { name: "Queue" });
       // (The marquee repeats the title.)
       await expect(
@@ -204,37 +204,30 @@ test.describe("supervised mode", () => {
       const pause = page.getByRole("button", { name: "Pause", exact: true });
       await expect(pause).toHaveAttribute("aria-disabled", "true");
 
-      // ...and the server refuses the requests anyway: the Pause button's,
-      // clicked regardless,
-      const pauseResponse = page.waitForResponse(
-        (res) =>
-          res.url().endsWith("/graphql") &&
-          (res.request().postData() ?? "").includes("setPlaybackState"),
+      // ...and the server refuses the Pause button's request anyway, clicked
+      // regardless.
+      const pauseResponse = page.waitForResponse((res) =>
+        res.url().endsWith("/api/setPlaybackState"),
       );
       await pause.dispatchEvent("click");
-      expect(
-        (await (await pauseResponse).json()).errors?.[0]?.message,
-      ).toContain("Supervised mode");
-      // and a removal sent as the remote sends its requests.
-      const removal = await page.evaluate(
-        async ([deviceId, nickname, timestamp]) => {
-          const res = await fetch("/graphql", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Karafriends-Device-Id": deviceId,
-              "X-Karafriends-Nickname": nickname,
-            },
-            body: JSON.stringify({
-              query:
-                "mutation ($songId: String!, $timestamp: String!) { removeSong(songId: $songId, timestamp: $timestamp) }",
-              variables: { songId: "sm90002", timestamp },
-            }),
-          });
-          return res.json();
-        },
-        [DEVICE_ID, NICKNAME, song(2, someoneElse).timestamp],
+      expect((await pauseResponse).status()).toBe(403);
+      expect((await (await pauseResponse).json()).error).toContain(
+        "Supervised mode",
       );
+
+      // GraphQL refuses too, while it lasts (until Phase 5e).
+      const removal = await fetch(new URL("graphql", remoconUrl), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...REMOTE_HEADERS },
+        body: JSON.stringify({
+          query:
+            "mutation ($songId: String!, $timestamp: String!) { removeSong(songId: $songId, timestamp: $timestamp) }",
+          variables: {
+            songId: "sm90002",
+            timestamp: song(2, someoneElse).timestamp,
+          },
+        }),
+      }).then((res) => res.json());
       expect(removal.errors?.[0]?.message).toContain("Supervised mode");
 
       const { state } = await liveState(remoconUrl);

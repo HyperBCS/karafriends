@@ -3,26 +3,17 @@ import React, { useState } from "react";
 import { FaYoutube } from "react-icons/fa";
 import { MdClose, MdMusicVideo } from "react-icons/md";
 import { SiNiconico } from "react-icons/si";
-import { graphql, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 
 import type { SharedQueueItem } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
+import { useApiMutation } from "../../../common/apiQueries";
 import { cyrb53 } from "../../../common/hash";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import isOwnSong from "../../isOwnSong";
 import songLink from "../../songLink";
 import Marquee from "../Marquee";
 import * as styles from "./SongQueue.module.scss";
-
-const removeSongMutation = graphql`
-  mutation SongQueueItemRemoveSongMutation(
-    $songId: String!
-    $timestamp: String!
-  ) {
-    removeSong(songId: $songId, timestamp: $timestamp)
-  }
-`;
 
 const ICONS = {
   dam: <MdMusicVideo />,
@@ -40,7 +31,9 @@ interface Props {
 const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
-  const [commit] = useMutation(removeSongMutation);
+  const removeSong = useApiMutation("removeSong", {
+    onError: (err) => console.error("Couldn't remove the song:", err),
+  });
 
   const supervisedMode = useLiveState()?.config.supervisedMode ?? false;
   const isAdmin = useIsAdmin();
@@ -56,9 +49,8 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
 
   const onClick = () => navigate(songLink(item));
 
-  const onRemove = () => {
-    commit({ variables: { songId: item.songId, timestamp: item.timestamp } });
-  };
+  const onRemove = () =>
+    removeSong.mutate({ songId: item.songId, timestamp: item.timestamp });
 
   return (
     <div className={styles.queueItem}>
