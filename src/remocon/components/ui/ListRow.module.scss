@@ -1,0 +1,130 @@
+@use "../../tokens" as *;
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid $kf-border;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  border-bottom: 1px solid $kf-border;
+  background-color: $kf-surface;
+}
+
+// The current item (the song playing): an accent edge and title. The edge
+// is drawn over the row, so the row's text doesn't move.
+.current {
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4px;
+    background-color: $kf-accent;
+  }
+
+  .title {
+    color: $kf-accent;
+  }
+}
+
+// The pressable part: everything but the trailing slot.
+.main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: $kf-space-3;
+  min-width: 0;
+  min-height: inherit;
+  margin: 0;
+  padding: $kf-space-2 $kf-space-4;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+button.main,
+a.main {
+  cursor: pointer;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible {
+    outline-offset: -2px;
+  }
+}
+
+.leading {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+%one-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title {
+  @extend %one-line;
+  font-size: $kf-text-title;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.subtitleLine {
+  display: flex;
+  align-items: center;
+  gap: $kf-space-2;
+  min-width: 0;
+}
+
+.subtitle {
+  @extend %one-line;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+  line-height: 1.35;
+}
+
+// The same small label for every source: one row style for DAM, Joysound,
+// YouTube and Niconico.
+.source {
+  flex: none;
+  padding: 0 $kf-space-1;
+  border: 1px solid $kf-border-strong;
+  border-radius: $kf-radius;
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: $kf-space-1;
+  padding-right: $kf-space-2;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}

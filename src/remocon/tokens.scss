@@ -19,6 +19,9 @@ $kf-surface-pressed: #2a2a2a;
 // Hairlines between rows and around fields. Decorative (1.6:1), so never the
 // only thing that tells two controls apart.
 $kf-border: #3a3a3a;
+// The edge of a field or an outlined button: 3.5:1, above the 3:1 a
+// control's boundary needs.
+$kf-border-strong: #6b6b6b;
 // Text, 17.2:1 (15.3:1 on the surface).
 $kf-text: #f5f5f5;
 // Secondary text: artists, ETAs, labels. 7.4:1 (6.6:1 on the surface).
@@ -73,12 +76,31 @@ $kf-line-height: 1.35;
   outline-offset: 2px;
 }
 
+// Pressed and keyboard-focus states. Each also applies inside an element
+// with data-demo="pressed" or data-demo="focus", so /dev/ui can show the
+// state without a finger on the screen. Real screens never set data-demo.
+@mixin kf-pressed {
+  &:active:not(:disabled),
+  [data-demo="pressed"] &:not(:disabled) {
+    @content;
+  }
+}
+
+@mixin kf-focus-visible {
+  &:focus-visible,
+  [data-demo="focus"] & {
+    @include kf-focus-ring;
+    @content;
+  }
+}
+
 // The tokens as custom properties; index.scss includes this under :root.
 @mixin custom-properties {
   --kf-bg: #{$kf-bg};
   --kf-surface: #{$kf-surface};
   --kf-surface-pressed: #{$kf-surface-pressed};
   --kf-border: #{$kf-border};
+  --kf-border-strong: #{$kf-border-strong};
   --kf-text: #{$kf-text};
   --kf-muted: #{$kf-muted};
   --kf-accent: #{$kf-accent};

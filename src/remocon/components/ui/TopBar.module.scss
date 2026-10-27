@@ -1,0 +1,51 @@
+@use "../../tokens" as *;
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: $kf-space-1;
+  min-height: 56px;
+  padding: 0 $kf-space-1;
+  border-bottom: 1px solid $kf-border;
+  background-color: $kf-bg;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: $kf-tap;
+  min-height: $kf-tap;
+  border-radius: $kf-radius;
+  color: $kf-text;
+  font-size: $kf-text-icon;
+  touch-action: manipulation;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: $kf-text-control;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+// Without a back button, the title lines up with the content below.
+.title:first-child {
+  padding-left: $kf-space-3;
+}
+
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: $kf-space-1;
+}

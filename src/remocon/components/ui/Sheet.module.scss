@@ -1,0 +1,38 @@
+@use "../../tokens" as *;
+
+// The bottom panel. The only element with a shadow.
+.sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  border-top: 1px solid $kf-border;
+  border-radius: $kf-radius $kf-radius 0 0;
+  background-color: $kf-surface;
+  box-shadow: $kf-shadow-sheet;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: $kf-space-2;
+  min-height: 56px;
+  padding: $kf-space-1 $kf-space-2 $kf-space-1 $kf-space-4;
+}
+
+.headerContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid $kf-border;
+
+  &[hidden] {
+    display: none;
+  }
+}

@@ -16,6 +16,8 @@
   --kf-surface-pressed: #262626;
   /* Hairlines between rows and around fields (decorative). */
   --kf-border: #3a3a3a;
+  /* The edge of a field or an outlined button (3.9:1). */
+  --kf-border-strong: #6b6b6b;
   /* Text, 19.3:1. */
   --kf-text: #f5f5f5;
   /* Secondary text: artists, singers, ETAs. 8.3:1 (7.3:1 on the surface). */
@@ -27,7 +29,7 @@
   --kf-accent: #1cb3ff;
   --kf-accent-pressed: #1590cc;
   --kf-on-accent: #121212;
-  /* Errors and destructive actions. 6.7:1 as text. */
+  /* Errors and destructive actions. 6.9:1 as text. */
   --kf-danger: #ff5c5c;
 
   --kf-space-1: 4px;

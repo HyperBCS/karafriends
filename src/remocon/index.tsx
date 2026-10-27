@@ -10,6 +10,10 @@ import "./index.scss";
 
 const queryClient = createQueryClient();
 
+// iOS Safari only shows :active (the buttons' pressed state) on a page that
+// listens for touches.
+document.addEventListener("touchstart", () => {}, { passive: true });
+
 const container = document.getElementById("root");
 const root = createRoot(container!);
 
