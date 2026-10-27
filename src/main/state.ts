@@ -195,9 +195,7 @@ export function parseState(raw: Record<string, unknown>): State {
   // songs that never played. And they saved them by video ID.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
   const saved = (key: string) =>
-    Object.prototype.hasOwnProperty.call(savedLyrics, key)
-      ? savedLyrics[key]
-      : undefined;
+    Object.hasOwn(savedLyrics, key) ? savedLyrics[key] : undefined;
   for (const item of [state.currentSong, ...state.songQueue]) {
     if (item?.kind !== "youtube" || !item.hasAdhocLyrics) continue;
     const key = adhocLyricsKey(item);

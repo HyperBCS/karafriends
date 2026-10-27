@@ -8,10 +8,7 @@ import { ApiError, type ApiHandlers, type Caller } from "./api";
 import { validators } from "./validate";
 
 export function isMethod(name: unknown): name is ApiMethod {
-  return (
-    typeof name === "string" &&
-    Object.prototype.hasOwnProperty.call(validators, name)
-  );
+  return typeof name === "string" && Object.hasOwn(validators, name);
 }
 
 // Checks the input and runs the method. Throws an ApiError (400) for bad
