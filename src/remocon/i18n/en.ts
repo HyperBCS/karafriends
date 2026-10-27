@@ -88,4 +88,15 @@ export const en = {
   // History.
   "history.heading": "History",
   "history.empty": "No history",
+
+  // Profile, and signing in as an admin.
+  "profile.heading": "Profile",
+  "profile.nickname": "Nickname",
+  "profile.adminPassword": "Admin password",
+  "profile.signIn": "Sign in",
+  "profile.signOut": "Sign out",
+  "profile.signedIn": "You're an admin",
+  "profile.wrongPassword": "Wrong password. Ask the host for it.",
+  "profile.tooManyTries": "Too many tries. Wait a minute, then try again.",
+  "profile.signInFailed": "Couldn't sign in: {reason}",
 } as const;

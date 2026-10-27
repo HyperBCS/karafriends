@@ -80,4 +80,15 @@ export const ja: Messages = {
 
   "history.heading": "履歴",
   "history.empty": "履歴はありません",
+
+  "profile.heading": "プロフィール",
+  "profile.nickname": "ニックネーム",
+  "profile.adminPassword": "管理者パスワード",
+  "profile.signIn": "ログイン",
+  "profile.signOut": "ログアウト",
+  "profile.signedIn": "管理者としてログイン中",
+  "profile.wrongPassword": "パスワードが違います。ホストに確認してください。",
+  "profile.tooManyTries":
+    "試行回数が多すぎます。1分待ってから再試行してください。",
+  "profile.signInFailed": "ログインできませんでした：{reason}",
 };

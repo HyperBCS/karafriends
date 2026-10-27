@@ -22,7 +22,9 @@ import type {
   YoutubeQueueItem,
   YoutubeVideoInfo,
 } from "../common/api";
+import { isAdminPassword } from "../common/adminPassword";
 import type { KarafriendsConfig } from "../common/config";
+import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
@@ -34,6 +36,8 @@ import { adhocLyricsKey, type StateStore } from "./state";
 export interface Caller {
   deviceId: string | null;
   nickname: string | null;
+  // The admin session the phone signed in to (adminLogin), if any.
+  adminToken: string | null;
   // The display window, which is always an admin.
   isDisplay: boolean;
 }
@@ -59,13 +63,15 @@ export type ApiHandlers = {
 export interface ApiDeps {
   config: Pick<
     KarafriendsConfig,
-    | "adminNicks"
-    | "adminDeviceIds"
+    | "adminPasswordHash"
+    | "adminPasswordSalt"
     | "paxSongQueueLimit"
     | "supervisedMode"
     | "useLowBitrateUrl"
   >;
   store: StateStore;
+  // The phones signed in as admins.
+  adminSessions: AdminSessions;
   minsei: Pick<MinseiAPI, "getMusicStreamingUrls" | "getScoringData">;
   dkwebsys: Pick<
     DkwebsysAPI,
@@ -152,24 +158,12 @@ export function createApi(deps: ApiDeps): ApiHandlers {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
-  // Nicknames grant nothing, since anyone can pick any nickname and every
-  // phone sees everyone's. Device IDs never leave the server, so they decide
-  // who is an admin and whose a song is.
-  const adminNicks = Array.isArray(config.adminNicks) ? config.adminNicks : [];
-  if (adminNicks.length > 0) {
-    console.warn(
-      "adminNicks in config.yaml no longer makes anyone an admin, since " +
-        "anyone can take a nickname. List the admins' device IDs in " +
-        "adminDeviceIds instead: their phones' IDs are logged when they " +
-        "connect with one of those nicknames.",
-    );
-  }
-
-  // The display, or a phone on the admin list in config.yaml.
+  // The display, or a phone signed in with the admin password. Nicknames
+  // grant nothing, since anyone can pick any nickname and every phone sees
+  // everyone's. Device IDs never leave the server, so they decide whose a
+  // song is, but not who is an admin.
   const isAdmin = (caller: Caller) =>
-    caller.isDisplay ||
-    (caller.deviceId !== null &&
-      config.adminDeviceIds.includes(caller.deviceId));
+    caller.isDisplay || deps.adminSessions.has(caller.adminToken);
 
   // Whether the caller queued item, from the same device (isMine, to the
   // phones).
@@ -757,23 +751,30 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async whoami(_input, caller) {
-      const admin = isAdmin(caller);
-      // The remote asks each time it connects. Tell the host which device to
-      // list, should this be their phone.
-      if (
-        !admin &&
-        caller.deviceId !== null &&
-        caller.nickname !== null &&
-        adminNicks.includes(caller.nickname)
-      ) {
-        console.warn(
-          `A phone calling itself "${caller.nickname}", from adminNicks, ` +
-            "connected. adminNicks no longer counts; if the phone is an " +
-            "admin's, add its device ID to adminDeviceIds in config.yaml: " +
-            caller.deviceId,
+      return { isAdmin: isAdmin(caller) };
+    },
+
+    // server.ts limits how often one address may try.
+    async adminLogin({ password }, caller) {
+      if (caller.isDisplay) {
+        throw new ApiError(400, "The display is always an admin");
+      }
+      if (config.adminPasswordHash === "") {
+        throw new ApiError(
+          403,
+          "The host hasn't set an admin password, so no phone can be an admin",
         );
       }
-      return { isAdmin: admin };
+      if (!isAdminPassword(password, config)) {
+        throw new ApiError(403, "Wrong admin password");
+      }
+      console.log(`adminLogin: ${caller.nickname ?? "a phone"} signed in`);
+      return { token: deps.adminSessions.create() };
+    },
+
+    async adminLogout(_input, caller) {
+      deps.adminSessions.remove(caller.adminToken);
+      return {};
     },
   };
 }

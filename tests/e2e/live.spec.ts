@@ -9,11 +9,12 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { expect, forbidGraphql, test } from "./fixtures";
+import { adminPasswordConfig, expect, forbidGraphql, test } from "./fixtures";
 
 const ALICE = { deviceId: "e2e-alice-device", nickname: "alice" };
 const BOB = { deviceId: "e2e-bob-device", nickname: "bob" };
-const ADMIN_DEVICE = "e2e-admin-device";
+const ADMIN_PASSWORD = "e2e live admin";
+const ADMIN_CONFIG = adminPasswordConfig(ADMIN_PASSWORD);
 
 const title = (n: number) => `E2E live song ${n}`;
 
@@ -89,16 +90,25 @@ async function firstEvent(url: URL): Promise<string> {
 test.describe("live state", () => {
   test.use({
     seedQueue,
-    appConfig: { supervisedMode: true, adminDeviceIds: [ADMIN_DEVICE] },
+    appConfig: { supervisedMode: true, ...ADMIN_CONFIG },
   });
 
-  test("phones see which songs are theirs, but no device IDs", async ({
+  test("phones see which songs are theirs, but no device IDs or admin secrets", async ({
     karafriends,
   }) => {
     const { remoconUrl } = karafriends;
-    const eventsFor = async (deviceId?: string) => {
+    const login = await fetch(new URL("api/adminLogin", remoconUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD }),
+    });
+    const { token } = await login.json();
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+
+    const eventsFor = async (deviceId?: string, adminToken?: string) => {
       const url = new URL("api/events", remoconUrl);
       if (deviceId) url.searchParams.set("deviceId", deviceId);
+      if (adminToken) url.searchParams.set("adminToken", adminToken);
       const text = await firstEvent(url);
       const { state } = JSON.parse(text);
       const songs = [state.currentSong, ...state.queue].filter(Boolean);
@@ -115,12 +125,17 @@ test.describe("live state", () => {
     expect(alice.mine).toEqual([title(1), title(2)]);
     expect((await eventsFor(BOB.deviceId)).mine).toEqual([title(3)]);
     expect((await eventsFor()).mine).toEqual([]);
-    // No device IDs go out, the admins' included.
-    for (const { text } of [alice, await eventsFor()]) {
+    // An admin sees the same.
+    const admin = await eventsFor(BOB.deviceId, token);
+    expect(admin.mine).toEqual([title(3)]);
+    // No device IDs go out, nor anything of the admin password's.
+    for (const { text } of [alice, admin, await eventsFor()]) {
       expect(text).not.toContain(ALICE.deviceId);
       expect(text).not.toContain(BOB.deviceId);
-      expect(text).not.toContain(ADMIN_DEVICE);
       expect(text).not.toContain("deviceId");
+      expect(text).not.toContain(token);
+      expect(text).not.toContain(ADMIN_CONFIG.adminPasswordHash);
+      expect(text).not.toContain(ADMIN_CONFIG.adminPasswordSalt);
     }
   });
 

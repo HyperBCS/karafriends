@@ -6,13 +6,17 @@ import { afterEach, describe, test } from "node:test";
 
 import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
+  adminSignIn,
+  adminSignOut,
   ApiCallError,
   call,
   eventsUrl,
   liveStore,
   mergeLiveState,
+  onAdminTokenChange,
   openLiveStream,
   parseLiveEvent,
+  storedAdminToken,
 } from "./apiClient";
 import type { ApiResponse, DisplayApi } from "./ipc";
 
@@ -191,6 +195,91 @@ describe("eventsUrl", () => {
   test("passes a phone's device ID, encoded", () => {
     assert.equal(eventsUrl(null), "/api/events");
     assert.equal(eventsUrl("a b&c"), "/api/events?deviceId=a%20b%26c");
+  });
+
+  test("and its admin token, once signed in", () => {
+    assert.equal(
+      eventsUrl("d", "ab12"),
+      "/api/events?deviceId=d&adminToken=ab12",
+    );
+    assert.equal(eventsUrl(null, "ab12"), "/api/events?adminToken=ab12");
+  });
+});
+
+// A localStorage for one test.
+function fakeStorage(items: Record<string, string> = {}) {
+  const storage = {
+    items,
+    getItem: (key: string) => items[key] ?? null,
+    setItem: (key: string, value: string) => {
+      items[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete items[key];
+    },
+  };
+  g.localStorage = storage;
+  return storage;
+}
+
+describe("admin sign-in", () => {
+  test("sends the token in a header once signed in, and forgets it on sign-out", async () => {
+    const storage = fakeStorage({ deviceId: "phone-1" });
+    const requests: [string, RequestInit][] = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push([String(url), init!]);
+      return String(url).endsWith("adminLogin")
+        ? Response.json({ token: "ab".repeat(32) })
+        : Response.json({});
+    };
+    let changes = 0;
+    const stop = onAdminTokenChange(() => changes++);
+    try {
+      await adminSignIn("sing-it-loud");
+      assert.equal(storage.items.adminToken, "ab".repeat(32));
+      assert.equal(storedAdminToken(), "ab".repeat(32));
+      assert.equal(changes, 1);
+      await adminSignOut();
+      assert.equal(storage.items.adminToken, undefined);
+      assert.equal(changes, 2);
+    } finally {
+      stop();
+    }
+
+    const [login, logout] = requests;
+    assert.equal(login[0], "/api/adminLogin");
+    assert.equal(login[1].body, '{"password":"sing-it-loud"}');
+    assert.deepEqual(login[1].headers, {
+      "Content-Type": "application/json",
+      "X-Karafriends-Device-Id": "phone-1",
+    });
+    assert.equal(logout[0], "/api/adminLogout");
+    assert.deepEqual(logout[1].headers, {
+      "Content-Type": "application/json",
+      "X-Karafriends-Device-Id": "phone-1",
+      "X-Karafriends-Admin-Token": "ab".repeat(32),
+    });
+  });
+
+  test("a refused sign-in stores nothing", async () => {
+    const storage = fakeStorage();
+    globalThis.fetch = async () =>
+      Response.json({ error: "Wrong admin password" }, { status: 403 });
+    await assert.rejects(
+      adminSignIn("guess"),
+      (err) => err instanceof ApiCallError && err.status === 403,
+    );
+    assert.deepEqual(storage.items, {});
+  });
+
+  test("sign-out forgets the token even when the server can't be reached", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    const storage = fakeStorage({ adminToken: "ab".repeat(32) });
+    globalThis.fetch = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    await adminSignOut();
+    assert.deepEqual(storage.items, {});
   });
 });
 

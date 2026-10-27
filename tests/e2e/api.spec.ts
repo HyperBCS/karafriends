@@ -1,14 +1,16 @@
-// The JSON RPC API (POST /api/<method>, GET /api/events) and the server-side
-// admin checks. No network: the queued songs are Niconico videos that are
-// never downloaded, so the display can't play them.
+// The JSON RPC API (POST /api/<method>, GET /api/events), the server-side
+// admin checks and admin sign-in. No network: the queued songs are Niconico
+// videos that are never downloaded, so the display can't play them.
 import net from "net";
 
 import type { Page } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { adminPasswordConfig, expect, test } from "./fixtures";
 
 const DEVICE_ID = "e2e-remote-device";
 const NICKNAME = "e2e";
+const ADMIN_PASSWORD = "e2e admin パスワード";
+const ADMIN_CONFIG = adminPasswordConfig(ADMIN_PASSWORD);
 
 // Who the remote is, as its requests say.
 const REMOTE_HEADERS = {
@@ -146,6 +148,70 @@ test("whoami answers, and the display is an admin", async ({
   ).toEqual({ ok: false, status: 400, error: expect.any(String) });
 });
 
+test.describe("admin sign-in", () => {
+  test.use({ appConfig: ADMIN_CONFIG });
+
+  test("a wrong password is refused, and the sixth try in a minute gets 429", async ({
+    karafriends,
+  }) => {
+    const { remoconUrl } = karafriends;
+    for (const password of [
+      "guess",
+      "e2e admin",
+      "E2E ADMIN パスワード",
+      "x",
+    ]) {
+      expect(
+        await call(remoconUrl, "adminLogin", { password }, REMOTE_HEADERS),
+      ).toEqual({ status: 403, body: { error: "Wrong admin password" } });
+    }
+    // The right one, as the fifth try.
+    const fifth = await call(
+      remoconUrl,
+      "adminLogin",
+      { password: ADMIN_PASSWORD },
+      REMOTE_HEADERS,
+    );
+    expect(fifth.status).toBe(200);
+    // The sixth is refused, right or not.
+    const sixth = await call(
+      remoconUrl,
+      "adminLogin",
+      { password: ADMIN_PASSWORD },
+      REMOTE_HEADERS,
+    );
+    expect(sixth).toEqual({
+      status: 429,
+      body: { error: "Too many sign-in tries. Wait a minute, then try again." },
+    });
+    // The session from the fifth still works, and nothing else is limited.
+    expect(
+      await call(
+        remoconUrl,
+        "whoami",
+        {},
+        {
+          ...REMOTE_HEADERS,
+          "X-Karafriends-Admin-Token": fifth.body.token,
+        },
+      ),
+    ).toEqual({ status: 200, body: { isAdmin: true } });
+  });
+});
+
+test.describe("without an admin password", () => {
+  test("no phone can sign in", async ({ karafriends }) => {
+    expect(
+      await call(
+        karafriends.remoconUrl,
+        "adminLogin",
+        { password: "anything" },
+        REMOTE_HEADERS,
+      ),
+    ).toMatchObject({ status: 403 });
+  });
+});
+
 test("/api/events sends the live state", async ({ karafriends }) => {
   const event = await liveState(karafriends.remoconUrl);
   expect(event).toEqual({
@@ -184,8 +250,9 @@ test.describe("supervised mode", () => {
     playbackState: "WAITING",
   });
 
-  // adminNicks is deprecated: it makes nobody an admin.
-  test.use({ appConfig: { supervisedMode: true, adminNicks: ["host"] } });
+  // Phones that sign in with the password are admins. "host" is a nickname,
+  // which counts for nothing.
+  test.use({ appConfig: { supervisedMode: true, ...ADMIN_CONFIG } });
 
   // The remote, opened by the e2e phone (not an admin).
   async function openRemote(page: Page, remoconUrl: string) {
@@ -246,12 +313,13 @@ test.describe("supervised mode", () => {
         ),
       ).toMatchObject({ status: 403 });
 
-      // Nor can it pass for the singer, or for an admin, by nickname: every
-      // phone sees the nicknames.
+      // Nor can it pass for the singer, or for an admin, by nickname (every
+      // phone sees the nicknames) or with a made-up admin token.
       for (const nickname of ["someone", "host"]) {
         const headers = {
           ...REMOTE_HEADERS,
           "X-Karafriends-Nickname": nickname,
+          "X-Karafriends-Admin-Token": "0".repeat(64),
         };
         expect(await call(remoconUrl, "whoami", {}, headers)).toEqual({
           status: 200,
@@ -313,6 +381,119 @@ test.describe("supervised mode", () => {
           timestamp: song(2, someoneElse).timestamp,
         }),
       ).toEqual({ ok: true, output: true });
+    });
+  });
+
+  test.describe("an admin", () => {
+    test.use({ seedQueue: seed(someoneElse) });
+
+    test("signs in over the API, and may remove and pause anyone's song", async ({
+      karafriends,
+    }) => {
+      const { remoconUrl } = karafriends;
+      await waitForSong1(remoconUrl);
+
+      const login = await call(
+        remoconUrl,
+        "adminLogin",
+        { password: ADMIN_PASSWORD },
+        REMOTE_HEADERS,
+      );
+      expect(login.status).toBe(200);
+      expect(login.body.token).toMatch(/^[0-9a-f]{64}$/);
+      const admin = {
+        ...REMOTE_HEADERS,
+        "X-Karafriends-Admin-Token": login.body.token,
+      };
+      expect(await call(remoconUrl, "whoami", {}, admin)).toEqual({
+        status: 200,
+        body: { isAdmin: true },
+      });
+      expect(
+        await call(
+          remoconUrl,
+          "removeSong",
+          { songId: "sm90002", timestamp: song(2, someoneElse).timestamp },
+          admin,
+        ),
+      ).toEqual({ status: 200, body: true });
+      expect(
+        await call(
+          remoconUrl,
+          "setPlaybackState",
+          { playbackState: "PAUSED" },
+          admin,
+        ),
+      ).toEqual({ status: 200, body: true });
+      expect((await liveState(remoconUrl)).state).toMatchObject({
+        playbackState: "PAUSED",
+        queue: [],
+      });
+
+      // Signed out, it's a guest again.
+      expect(await call(remoconUrl, "adminLogout", {}, admin)).toEqual({
+        status: 200,
+        body: {},
+      });
+      expect(await call(remoconUrl, "whoami", {}, admin)).toEqual({
+        status: 200,
+        body: { isAdmin: false },
+      });
+      expect(
+        await call(
+          remoconUrl,
+          "setPlaybackState",
+          { playbackState: "PLAYING" },
+          admin,
+        ),
+      ).toMatchObject({ status: 403 });
+    });
+
+    test("signs in from the profile page, and gets the controls at once", async ({
+      karafriends,
+      page,
+    }) => {
+      const { remoconUrl } = karafriends;
+      await openRemote(page, remoconUrl);
+      await waitForSong1(remoconUrl);
+      const pause = page.getByRole("button", { name: "Pause", exact: true });
+      await expect(pause).toHaveAttribute("aria-disabled", "true");
+
+      await page.getByRole("link", { name: "Profile" }).click();
+      await expect(
+        page.getByRole("heading", { name: "Profile" }),
+      ).toBeVisible();
+      await expect(page.getByRole("definition")).toHaveText(NICKNAME);
+      const password = page.getByLabel("Admin password");
+      const signIn = page.getByRole("button", { name: "Sign in" });
+
+      // A wrong one first.
+      await password.fill("not it");
+      await signIn.click();
+      await expect(
+        page.getByText("Wrong password. Ask the host for it."),
+      ).toBeVisible();
+
+      await password.fill(ADMIN_PASSWORD);
+      await signIn.click();
+      await expect(page.getByText("You're an admin")).toBeVisible();
+      // No reload: the controls follow.
+      await expect(pause).toHaveAttribute("aria-disabled", "false");
+      expect(
+        await page.evaluate(() => localStorage.getItem("adminToken")),
+      ).toMatch(/^[0-9a-f]{64}$/);
+
+      // Still signed in after a reload.
+      await page.reload();
+      await expect(page.getByText("You're an admin")).toBeVisible();
+      await expect(pause).toHaveAttribute("aria-disabled", "false");
+
+      await page.getByRole("button", { name: "Sign out" }).click();
+      await expect(page.getByLabel("Admin password")).toBeVisible();
+      await expect(pause).toHaveAttribute("aria-disabled", "true");
+      expect(
+        await page.evaluate(() => localStorage.getItem("adminToken")),
+      ).toBeNull();
     });
   });
 

@@ -21,6 +21,10 @@ export const IDENTITY_HEADERS = {
   nickname: "X-Karafriends-Nickname",
 } as const;
 
+// A phone signed in as an admin (adminLogin) sends its session token in this
+// header, as it is (it's hex).
+export const ADMIN_TOKEN_HEADER = "X-Karafriends-Admin-Token";
+
 export type PlaybackState =
   "PAUSED" | "PLAYING" | "RESTARTING" | "SKIPPING" | "WAITING";
 
@@ -87,7 +91,7 @@ export type QueueItem =
   DamQueueItem | JoysoundQueueItem | YoutubeQueueItem | NicoQueueItem;
 
 // Who queued a song, as everyone may see it: the nickname only. A device ID
-// is as good as a password (admins are listed by device ID), so it never
+// decides whose a song is (who may remove it in supervised mode), so it never
 // leaves the server.
 export interface PublicUser {
   nickname: string;
@@ -204,9 +208,10 @@ export type LiveEvent =
 
 export type LiveEventType = LiveEvent["type"];
 
-// The query parameter GET /api/events takes the phone's device ID in.
-// (EventSource can't send headers.)
+// The query parameters GET /api/events takes the phone's device ID and
+// admin token in. (EventSource can't send headers.)
 export const EVENTS_DEVICE_ID_PARAM = "deviceId";
+export const EVENTS_ADMIN_TOKEN_PARAM = "adminToken";
 
 // Lookups
 
@@ -320,8 +325,9 @@ export interface Api {
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and
   // setPlaybackState and setPitchShiftSemis for the current song's owner or
-  // an admin. The owner is the device that queued it (isMine), and admins
-  // are listed by device ID: a nickname counts for nothing.
+  // an admin. The owner is the device that queued it (isMine), and an admin
+  // is the display or a phone signed in with the admin password (adminLogin):
+  // a nickname counts for nothing.
   queueSong: { input: QueueSongInput; output: QueueSongResult };
   // False if the song isn't in the queue (any more).
   removeSong: {
@@ -342,7 +348,19 @@ export interface Api {
   // The display only: start the next song, or null if the queue is empty.
   popSong: { input: Record<string, never>; output: PoppedSong | null };
 
+  // Whether the caller is an admin: the display, or a phone that sent a
+  // live session's token in ADMIN_TOKEN_HEADER.
   whoami: { input: Record<string, never>; output: { isAdmin: boolean } };
+  // Signs a phone in as an admin. 403 for a wrong password, or when the host
+  // has set none; 429 after 5 tries in a minute from one address. The phone
+  // sends the token in ADMIN_TOKEN_HEADER from then on. The display never
+  // signs in: it is always an admin.
+  adminLogin: { input: { password: string }; output: { token: string } };
+  // Ends the session in ADMIN_TOKEN_HEADER, if there is one.
+  adminLogout: {
+    input: Record<string, never>;
+    output: Record<string, never>;
+  };
 }
 
 export type ApiMethod = keyof Api;

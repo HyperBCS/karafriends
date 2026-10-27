@@ -32,7 +32,13 @@ The first start writes a `config.yaml` with every setting. Edit it with any text
 - `remoconPort`: the port phones connect to, 8080 unless you change it. If another program already uses it, the display still works and shows a banner saying phones can't connect; pick another port.
 - `supervisedMode: true`: only an admin or the person singing can pause, skip or change the key.
 - `paxSongQueueLimit`: how many songs each person may have queued at once (0 for no limit).
-- `adminDeviceIds`: the phones that are admins, by device ID. A phone's ID appears as `deviceId` in `queue.json` (in the system temp folder, under `karafriends_tmp`) once that phone has queued a song.
+- `adminPasswordSalt` and `adminPasswordHash`: the admin password. A guest who types it on the phone's profile page (the person icon, top right) becomes an admin until they sign out; the display is always one. Without it, no phone can be an admin. Once the display has its Settings screen, you'll set the password there. Until then, run this with your password in place of `your password` (it uses scrypt with a random 16-byte salt, a 64-byte key and N=16384, r=8, p=1, as the app does), and, with the app closed, replace the `adminPasswordSalt` and `adminPasswordHash` lines in `config.yaml` with the two it prints:
+
+  ```sh
+  node -e "const c=require('crypto'),s=c.randomBytes(16).toString('hex'),h=c.scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1}).toString('hex');console.log('adminPasswordSalt: '+JSON.stringify(s)+'\nadminPasswordHash: '+JSON.stringify(h))" "your password"
+  ```
+
+  Phones stay signed in when the app restarts. The older `adminDeviceIds` and `adminNicks` settings no longer do anything, and the app removes them from `config.yaml`.
 
 ### Phones
 

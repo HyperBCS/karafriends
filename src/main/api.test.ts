@@ -6,7 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
+import { hashAdminPassword } from "../common/adminPassword";
 import type { QueueItem } from "../common/api";
+import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import type { HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
@@ -20,17 +22,30 @@ import {
 import { validators } from "./validate";
 
 const ADMIN_DEVICE = "admin-device";
-// In the deprecated adminNicks, which grants nothing: tests that check a phone
-// can't pass for an admin by nickname list it.
+// The admin's phone's nickname: taking it makes nobody an admin.
 const ADMIN_NICK = "host";
-const WITH_ADMIN_NICK = { adminNicks: [ADMIN_NICK] };
+const ADMIN_PASSWORD = "sing-it-loud";
+const ADMIN_SALT = "0123456789abcdef0123456789abcdef";
+const ADMIN_HASH = hashAdminPassword(ADMIN_PASSWORD, ADMIN_SALT);
 
 const phone = (deviceId: string, nickname: string): Caller => ({
   deviceId,
   nickname,
+  adminToken: null,
   isDisplay: false,
 });
-const display: Caller = { deviceId: null, nickname: null, isDisplay: true };
+const anonymous: Caller = {
+  deviceId: null,
+  nickname: null,
+  adminToken: null,
+  isDisplay: false,
+};
+const display: Caller = { ...anonymous, isDisplay: true };
+// The admin's phone, signed in (adminToken is a live session's).
+const admin = (nickname: string): Caller => ({
+  ...phone(ADMIN_DEVICE, nickname),
+  adminToken,
+});
 const alice = phone("alice-device", "alice");
 const bob = phone("bob-device", "bob");
 
@@ -46,6 +61,8 @@ const song = (n: number, owner: Caller): QueueItem => ({
 
 let dir: string;
 let store: StateStore;
+let adminSessions: AdminSessions;
+let adminToken: string;
 let published: HubMessage[];
 let downloads: string[];
 let dkwebsysCalls: unknown[][];
@@ -54,6 +71,8 @@ let joysoundCalls: unknown[][];
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "karafriends-api-test-"));
   store = createStateStore(path.join(dir, "queue.json"));
+  adminSessions = createAdminSessions(path.join(dir, "adminSessions.json"));
+  adminToken = adminSessions.create();
   published = [];
   downloads = [];
   dkwebsysCalls = [];
@@ -88,13 +107,15 @@ function makeApi(
 ) {
   const deps = {
     config: {
-      adminDeviceIds: [ADMIN_DEVICE],
+      adminPasswordHash: ADMIN_HASH,
+      adminPasswordSalt: ADMIN_SALT,
       paxSongQueueLimit: 0,
       supervisedMode: false,
       useLowBitrateUrl: false,
       ...config,
     },
     store,
+    adminSessions,
     minsei: {
       getMusicStreamingUrls: async () => ({
         list: [
@@ -167,24 +188,25 @@ const rejectsWith = (promise: Promise<unknown>, status: number) =>
   );
 
 describe("admin checks", () => {
-  test("whoami: the display and the phones on the admin list", async () => {
-    const api = makeApi(WITH_ADMIN_NICK);
+  test("whoami: the display and the phones signed in as admins", async () => {
+    const api = makeApi();
     assert.deepEqual(await api.whoami({}, display), { isAdmin: true });
-    assert.deepEqual(await api.whoami({}, phone(ADMIN_DEVICE, "x")), {
+    assert.deepEqual(await api.whoami({}, admin("x")), {
       isAdmin: true,
     });
-    // adminNicks no longer counts: anyone can take a nickname.
+    // Not by nickname, nor by device: only the token counts.
     assert.deepEqual(await api.whoami({}, phone("x", ADMIN_NICK)), {
       isAdmin: false,
     });
-    assert.deepEqual(await api.whoami({}, alice), { isAdmin: false });
+    assert.deepEqual(await api.whoami({}, phone(ADMIN_DEVICE, ADMIN_NICK)), {
+      isAdmin: false,
+    });
     assert.deepEqual(
-      await api.whoami(
-        {},
-        { deviceId: null, nickname: null, isDisplay: false },
-      ),
+      await api.whoami({}, { ...alice, adminToken: "f".repeat(64) }),
       { isAdmin: false },
     );
+    assert.deepEqual(await api.whoami({}, alice), { isAdmin: false });
+    assert.deepEqual(await api.whoami({}, anonymous), { isAdmin: false });
   });
 
   test("without supervised mode anyone may remove a song or pause", async () => {
@@ -214,15 +236,12 @@ describe("admin checks", () => {
     });
 
     test("only the owner or an admin may remove a song", async () => {
-      const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
+      const api = makeApi({ supervisedMode: true });
       const remove = (n: number, caller: Caller) =>
         api.removeSong({ songId: `sm${n}`, timestamp: String(n) }, caller);
 
       await rejectsWith(remove(2, bob), 403);
-      await rejectsWith(
-        remove(2, { deviceId: null, nickname: null, isDisplay: false }),
-        403,
-      );
+      await rejectsWith(remove(2, anonymous), 403);
       assert.equal(store.getState().songQueue.length, 2);
 
       // By device ID, as isMine says, whatever the nickname. Every phone
@@ -233,7 +252,7 @@ describe("admin checks", () => {
       assert.equal(await remove(3, alice), true);
 
       store.update((state) => state.songQueue.push(song(4, alice)));
-      assert.equal(await remove(4, phone(ADMIN_DEVICE, "x")), true);
+      assert.equal(await remove(4, admin("x")), true);
       store.update((state) => state.songQueue.push(song(5, alice)));
       assert.equal(await remove(5, display), true);
 
@@ -242,7 +261,7 @@ describe("admin checks", () => {
     });
 
     test("only the current singer or an admin may control playback", async () => {
-      const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
+      const api = makeApi({ supervisedMode: true });
 
       await rejectsWith(
         api.setPlaybackState({ playbackState: "PAUSED" }, bob),
@@ -267,10 +286,7 @@ describe("admin checks", () => {
         true,
       );
       assert.equal(
-        await api.setPlaybackState(
-          { playbackState: "SKIPPING" },
-          phone(ADMIN_DEVICE, "x"),
-        ),
+        await api.setPlaybackState({ playbackState: "SKIPPING" }, admin("x")),
         true,
       );
       assert.equal(
@@ -352,7 +368,7 @@ describe("admin checks", () => {
   });
 
   test("only an admin's song may jump the queue", async () => {
-    const api = makeApi(WITH_ADMIN_NICK);
+    const api = makeApi();
     const queue = (caller: Caller, n: number) =>
       api.queueSong(
         {
@@ -372,7 +388,7 @@ describe("admin checks", () => {
       ["sm1", "sm2", "sm3"],
     );
     // An admin's goes second, leaving the first time to download.
-    await queue(phone(ADMIN_DEVICE, "host phone"), 4);
+    await queue(admin("host phone"), 4);
     // Not by nickname.
     await queue(phone("other-device", ADMIN_NICK), 5);
     assert.deepEqual(
@@ -380,27 +396,69 @@ describe("admin checks", () => {
       ["sm1", "sm4", "sm2", "sm3", "sm5"],
     );
   });
+});
 
-  test("adminNicks is only read, to warn that it no longer counts", async (t) => {
-    const warnings: string[] = [];
-    t.mock.method(console, "warn", (message: string) => warnings.push(message));
-    const api = makeApi({ adminNicks: [ADMIN_NICK], supervisedMode: true });
-    assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /adminNicks .* no longer makes anyone an admin/);
+describe("admin sign-in", () => {
+  test("the right password gives a token that makes the phone an admin", async () => {
+    const api = makeApi({ supervisedMode: true });
+    const { token } = await api.adminLogin({ password: ADMIN_PASSWORD }, bob);
+    assert.match(token, /^[0-9a-f]{64}$/);
+    assert.notEqual(token, adminToken);
+    const signedIn = { ...bob, adminToken: token };
+    assert.deepEqual(await api.whoami({}, signedIn), { isAdmin: true });
+    // On any device, under any nickname: the token is the admin.
+    assert.deepEqual(
+      await api.whoami(
+        {},
+        { ...phone("other-device", "x"), adminToken: token },
+      ),
+      { isAdmin: true },
+    );
+    assert.equal(
+      await api.setPlaybackState({ playbackState: "PAUSED" }, signedIn),
+      true,
+    );
+  });
 
-    // A phone that takes that nickname is told nothing, but the host learns
-    // its device ID, to list it if the phone is theirs.
-    const impostor = phone("impostor-device", ADMIN_NICK);
-    assert.deepEqual(await api.whoami({}, impostor), { isAdmin: false });
-    assert.equal(warnings.length, 2);
-    assert.match(warnings[1], /impostor-device/);
-    await rejectsWith(api.popSong({}, impostor), 403);
+  test("a wrong password, or none set, is refused", async () => {
+    const api = makeApi();
+    for (const password of ["Sing-it-loud", "sing-it-loud ", "x"]) {
+      await rejectsWith(api.adminLogin({ password }, bob), 403);
+    }
+    await rejectsWith(
+      makeApi({ adminPasswordHash: "" }).adminLogin(
+        { password: ADMIN_PASSWORD },
+        bob,
+      ),
+      403,
+    );
+    // A hash that isn't one.
+    await rejectsWith(
+      makeApi({ adminPasswordHash: "not hex" }).adminLogin(
+        { password: ADMIN_PASSWORD },
+        bob,
+      ),
+      403,
+    );
+  });
 
-    // Without adminNicks, no warning.
-    makeApi({ adminNicks: [] });
-    makeApi({ adminNicks: undefined });
-    await makeApi({ adminNicks: undefined }).whoami({}, impostor);
-    assert.equal(warnings.length, 2);
+  test("the display doesn't sign in", async () => {
+    await rejectsWith(
+      makeApi().adminLogin({ password: ADMIN_PASSWORD }, display),
+      400,
+    );
+  });
+
+  test("adminLogout ends that phone's session only", async () => {
+    const api = makeApi();
+    const { token } = await api.adminLogin({ password: ADMIN_PASSWORD }, bob);
+    const signedIn = { ...bob, adminToken: token };
+    assert.deepEqual(await api.adminLogout({}, signedIn), {});
+    assert.deepEqual(await api.whoami({}, signedIn), { isAdmin: false });
+    assert.deepEqual(await api.whoami({}, admin("x")), { isAdmin: true });
+    // Signed out already, or never signed in: nothing to do.
+    assert.deepEqual(await api.adminLogout({}, signedIn), {});
+    assert.deepEqual(await api.adminLogout({}, alice), {});
   });
 });
 
@@ -750,7 +808,7 @@ describe("queueSong", () => {
   });
 
   test("stops at the per-person limit, except for admins", async () => {
-    const api = makeApi({ ...WITH_ADMIN_NICK, paxSongQueueLimit: 1 });
+    const api = makeApi({ paxSongQueueLimit: 1 });
     const queue = (caller: Caller, n: number) =>
       api.queueSong(
         { kind: "nico", songId: `sm${n}`, name: "", artistName: "" },
@@ -762,7 +820,7 @@ describe("queueSong", () => {
       reason: "alice already has 1 song(s) in the queue or downloading",
     });
     assert.equal((await queue(bob, 3)).ok, true);
-    const host = phone(ADMIN_DEVICE, "host phone");
+    const host = admin("host phone");
     assert.equal((await queue(host, 4)).ok, true);
     assert.equal((await queue(host, 5)).ok, true);
     // Not by nickname.
@@ -873,18 +931,18 @@ describe("pushAdhocLyrics", () => {
   });
 
   test("in supervised mode, only the singer or an admin may", async () => {
-    const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
+    const api = makeApi({ supervisedMode: true });
     play(["line one"]);
     for (const caller of [
       bob,
       phone("other-device", "alice"),
       phone("other-device", ADMIN_NICK),
-      { deviceId: null, nickname: null, isDisplay: false },
+      anonymous,
     ]) {
       await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, caller), 403);
     }
     assert.deepEqual(shown(), []);
-    for (const caller of [alice, phone(ADMIN_DEVICE, "x"), display]) {
+    for (const caller of [alice, admin("x"), display]) {
       assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, caller), true);
     }
     assert.equal(shown().length, 3);
@@ -1018,6 +1076,19 @@ describe("validators", () => {
   test("other methods", () => {
     assert.deepEqual(validators.whoami({}), {});
     invalid("whoami", { isAdmin: true });
+    assert.deepEqual(validators.adminLogin({ password: "パスワード" }), {
+      password: "パスワード",
+    });
+    assert.deepEqual(validators.adminLogin({ password: "x".repeat(200) }), {
+      password: "x".repeat(200),
+    });
+    invalid("adminLogin", {});
+    invalid("adminLogin", { password: "" });
+    invalid("adminLogin", { password: "x".repeat(201) });
+    invalid("adminLogin", { password: 1234 });
+    invalid("adminLogin", { password: "x", token: "y" });
+    assert.deepEqual(validators.adminLogout({}), {});
+    invalid("adminLogout", { token: "y" });
     assert.deepEqual(validators.setPlaybackState({ playbackState: "PAUSED" }), {
       playbackState: "PAUSED",
     });

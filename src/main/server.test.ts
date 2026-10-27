@@ -16,6 +16,7 @@ import type { Viewer } from "./live";
 import {
   apiRouter,
   eventWriter,
+  rateLimiter,
   serializeEvent,
   shouldCompress,
   streamCounter,
@@ -31,6 +32,10 @@ const handlers = {
     throw new ApiError(403, "Supervised mode: no");
   },
   removeSong: async () => false,
+  adminLogin: async ({ password }: { password: string }) => {
+    if (password !== "right") throw new ApiError(403, "Wrong admin password");
+    return { token: "t".repeat(64) };
+  },
   popSong: async () => {
     throw new Error("DAM is down");
   },
@@ -95,12 +100,18 @@ describe("POST /api/<method>", () => {
       "Content-Type": "application/json; charset=utf-8",
       "X-Karafriends-Device-Id": "phone-1",
       "X-Karafriends-Nickname": encodeURIComponent("歌手"),
+      "X-Karafriends-Admin-Token": "ab".repeat(32),
     });
     assert.deepEqual(await res.json(), { isAdmin: false });
     await post("whoami", "{}");
     assert.deepEqual(callers, [
-      { deviceId: "phone-1", nickname: "歌手", isDisplay: false },
-      { deviceId: null, nickname: null, isDisplay: false },
+      {
+        deviceId: "phone-1",
+        nickname: "歌手",
+        adminToken: "ab".repeat(32),
+        isDisplay: false,
+      },
+      { deviceId: null, nickname: null, adminToken: null, isDisplay: false },
     ]);
   });
 
@@ -178,12 +189,14 @@ describe("GET /api/events", () => {
     assert.equal(subscribers, 0);
   });
 
-  test("tells the hub which device is watching", async () => {
+  test("tells the hub which device is watching, and its admin token", async () => {
     viewers.length = 0;
     for (const query of [
       "",
       `?deviceId=${encodeURIComponent("phone 1/ü")}`,
       "?deviceId=",
+      `?deviceId=p2&adminToken=${"cd".repeat(32)}`,
+      "?adminToken=&adminToken=x",
     ]) {
       const controller = new AbortController();
       const res = await fetch(`${base}/events${query}`, {
@@ -193,10 +206,53 @@ describe("GET /api/events", () => {
       controller.abort();
     }
     assert.deepEqual(viewers, [
-      { deviceId: null },
-      { deviceId: "phone 1/ü" },
-      { deviceId: null },
+      { deviceId: null, adminToken: null },
+      { deviceId: "phone 1/ü", adminToken: null },
+      { deviceId: null, adminToken: null },
+      { deviceId: "p2", adminToken: "cd".repeat(32) },
+      { deviceId: null, adminToken: null },
     ]);
+  });
+});
+
+describe("adminLogin rate limit", () => {
+  test("rateLimiter: so many tries per key in a sliding window", () => {
+    let time = 0;
+    const limiter = rateLimiter({ tries: 3, windowMs: 1000 }, () => time);
+    assert.equal(limiter.tryHit("a"), true);
+    time = 400;
+    assert.equal(limiter.tryHit("a"), true);
+    assert.equal(limiter.tryHit("a"), true);
+    assert.equal(limiter.tryHit("a"), false);
+    // Another address has its own.
+    assert.equal(limiter.tryHit("b"), true);
+    // A refused try doesn't count, and the first try leaves the window.
+    time = 1000;
+    assert.equal(limiter.tryHit("a"), true);
+    assert.equal(limiter.tryHit("a"), false);
+    time = 1400;
+    assert.equal(limiter.tryHit("a"), true);
+    assert.equal(limiter.tryHit("a"), true);
+    assert.equal(limiter.tryHit("a"), false);
+  });
+
+  test("POST /api/adminLogin: 5 tries a minute, right or wrong, then 429", async () => {
+    const login = (password: string) =>
+      post("adminLogin", JSON.stringify({ password }));
+    for (const password of ["wrong", "wrong", "right", "wrong"]) {
+      assert.equal(
+        (await login(password)).status,
+        password === "right" ? 200 : 403,
+      );
+    }
+    // Bad input counts too.
+    assert.equal((await post("adminLogin", '{"password":""}')).status, 400);
+    const refused = await login("right");
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get("retry-after"), "60");
+    assert.match((await refused.json()).error, /Too many sign-in tries/);
+    // Other methods aren't limited.
+    assert.equal((await post("whoami", "{}")).status, 200);
   });
 });
 

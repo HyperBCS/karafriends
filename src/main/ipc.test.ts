@@ -118,6 +118,7 @@ describe("call", () => {
     assert.deepEqual(callers[0], {
       deviceId: null,
       nickname: null,
+      adminToken: null,
       isDisplay: true,
     });
   });

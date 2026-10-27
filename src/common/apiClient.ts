@@ -18,6 +18,8 @@ import React, {
 } from "react";
 
 import {
+  ADMIN_TOKEN_HEADER,
+  EVENTS_ADMIN_TOKEN_PARAM,
   EVENTS_DEVICE_ID_PARAM,
   IDENTITY_HEADERS,
   type ApiInput,
@@ -34,33 +36,87 @@ function displayApi(): DisplayApi | null {
   return (typeof window !== "undefined" && window.karafriends?.api) || null;
 }
 
+// Where a phone keeps its admin session token, once signed in.
+export const ADMIN_TOKEN_KEY = "adminToken";
+
 function storedIdentity(): {
   deviceId: string | null;
   nickname: string | null;
+  adminToken: string | null;
 } {
   try {
     return {
       deviceId: localStorage.getItem("deviceId") || null,
       nickname: localStorage.getItem("nickname") || null,
+      adminToken: localStorage.getItem(ADMIN_TOKEN_KEY) || null,
     };
   } catch {
     // No localStorage (blocked, or not a browser): anonymous.
-    return { deviceId: null, nickname: null };
+    return { deviceId: null, nickname: null, adminToken: null };
   }
 }
 
-// Who is asking, for the server's admin checks: a phone's device ID and
-// nickname (percent-encoded, since a nickname may not be ASCII).
+// Who is asking, for the server's checks: a phone's device ID and nickname
+// (percent-encoded, since a nickname may not be ASCII), and its admin token
+// once it has signed in.
 export function identityHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  const { deviceId, nickname } = storedIdentity();
+  const { deviceId, nickname, adminToken } = storedIdentity();
   if (deviceId) {
     headers[IDENTITY_HEADERS.deviceId] = encodeURIComponent(deviceId);
   }
   if (nickname) {
     headers[IDENTITY_HEADERS.nickname] = encodeURIComponent(nickname);
   }
+  if (adminToken) {
+    headers[ADMIN_TOKEN_HEADER] = encodeURIComponent(adminToken);
+  }
   return headers;
+}
+
+// The phone's admin token, or null.
+export function storedAdminToken(): string | null {
+  return storedIdentity().adminToken;
+}
+
+const adminTokenListeners = new Set<() => void>();
+
+// Calls listener whenever the phone signs in or out. Returns a function that
+// stops it.
+export function onAdminTokenChange(listener: () => void): () => void {
+  adminTokenListeners.add(listener);
+  return () => adminTokenListeners.delete(listener);
+}
+
+function storeAdminToken(token: string | null) {
+  try {
+    if (token) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+    }
+  } catch {
+    // No localStorage: the phone can't stay signed in.
+  }
+  for (const listener of adminTokenListeners) listener();
+}
+
+// Signs the phone in as an admin. Throws an ApiCallError: 403 for a wrong
+// password, 429 after too many tries.
+export async function adminSignIn(password: string): Promise<void> {
+  const { token } = await call("adminLogin", { password });
+  storeAdminToken(token);
+}
+
+// Signs the phone out. It forgets its token even if the server can't be
+// reached.
+export async function adminSignOut(): Promise<void> {
+  try {
+    await call("adminLogout", {});
+  } catch (err) {
+    console.warn("Couldn't end the admin session on the server:", err);
+  }
+  storeAdminToken(null);
 }
 
 // A method the server refused or failed: the HTTP status and its message.
@@ -127,12 +183,21 @@ async function callOverHttp<M extends ApiMethod>(
 }
 
 // A phone's stream address. It gives its device ID, so its copy of the state
-// marks its own songs (isMine).
-export function eventsUrl(deviceId: string | null): string {
-  const query = deviceId
-    ? `?${EVENTS_DEVICE_ID_PARAM}=${encodeURIComponent(deviceId)}`
-    : "";
-  return `/api/events${query}`;
+// marks its own songs (isMine), and its admin token if it has one.
+export function eventsUrl(
+  deviceId: string | null,
+  adminToken: string | null = null,
+): string {
+  const params: string[] = [];
+  if (deviceId) {
+    params.push(`${EVENTS_DEVICE_ID_PARAM}=${encodeURIComponent(deviceId)}`);
+  }
+  if (adminToken) {
+    params.push(
+      `${EVENTS_ADMIN_TOKEN_PARAM}=${encodeURIComponent(adminToken)}`,
+    );
+  }
+  return `/api/events${params.length > 0 ? `?${params.join("&")}` : ""}`;
 }
 
 // One `data:` line of the stream, or null if it isn't a LiveEvent.
@@ -231,7 +296,8 @@ export function openLiveStream(
   const connect = () => {
     // Read now, not when the page rendered: the remote stores a new phone's
     // device ID in an effect, which runs before the one that opens this.
-    const current = new EventSource(eventsUrl(storedIdentity().deviceId));
+    const { deviceId, adminToken } = storedIdentity();
+    const current = new EventSource(eventsUrl(deviceId, adminToken));
     source = current;
     current.onopen = onOpen;
     current.onmessage = (message) => {
@@ -262,7 +328,8 @@ export function openLiveStream(
 }
 
 // One stream for the page. Mount it once, at the root. With checkAdmin, it
-// also asks whoami each time it connects, for useIsAdmin().
+// also asks whoami each time it connects and each time the phone signs in or
+// out, for useIsAdmin().
 export function LiveStateProvider({
   children,
   checkAdmin = false,
@@ -282,12 +349,29 @@ export function LiveStateProvider({
 
   useEffect(() => {
     let stopped = false;
+    // Only the latest question's answer counts.
+    let asked = 0;
+    const askWhoami = () => {
+      const question = ++asked;
+      const token = storedAdminToken();
+      call("whoami", {})
+        .then((who) => {
+          if (stopped || question !== asked) return;
+          setIsAdmin(who.isAdmin);
+          // The session ended (the password changed, say): sign out here
+          // too, so the phone offers to sign in again.
+          if (!who.isAdmin && token !== null && storedAdminToken() === token) {
+            storeAdminToken(null);
+          }
+        })
+        .catch((err) => console.warn("Couldn't ask whoami:", err));
+    };
+    const stopWatchingToken = checkAdmin
+      ? onAdminTokenChange(askWhoami)
+      : () => {};
     const close = openLiveStream(
       () => {
-        if (!checkAdmin) return;
-        call("whoami", {})
-          .then((who) => !stopped && setIsAdmin(who.isAdmin))
-          .catch((err) => console.warn("Couldn't ask whoami:", err));
+        if (checkAdmin) askWhoami();
       },
       (event) => {
         if (event.type === "state") {
@@ -304,6 +388,7 @@ export function LiveStateProvider({
     );
     return () => {
       stopped = true;
+      stopWatchingToken();
       close();
     };
   }, [checkAdmin, listeners, store]);
