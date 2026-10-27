@@ -1,11 +1,11 @@
 import React from "react";
 import { Link } from "react-router";
 
+import type { DamSong } from "../../../common/api";
 import { ListItem } from "../List";
 import WeebText from "../WeebText";
-import { Artist_artistById$data } from "./__generated__/Artist_artistById.graphql";
 
-type Props = Artist_artistById$data["artistById"]["songs"]["edges"][0]["node"];
+type Props = Pick<DamSong, "id" | "name" | "nameYomi">;
 
 const ArtistSongItem = ({ id, name, nameYomi }: Props) => (
   <Link to={`/song/${id}`}>

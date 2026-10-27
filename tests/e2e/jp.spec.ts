@@ -1,25 +1,173 @@
-import { expect, test } from "./fixtures";
+import type { Page } from "@playwright/test";
+
+import { expect, NICKNAME, test } from "./fixtures";
 
 // DAM and Joysound only answer Japanese IPs and need the logins from the
 // installed app's config.yaml. Run with KARAFRIENDS_E2E_JP=1.
+
+const CATALOGS = ["DAM", "Joysound"] as const;
+
+// Searches the catalog by title and returns the results' links.
+async function searchTitle(
+  remote: Page,
+  catalog: (typeof CATALOGS)[number],
+  title: string,
+) {
+  await remote
+    .getByRole("link", { name: `Title (${catalog})`, exact: true })
+    .click();
+  await expect(
+    remote.getByRole("heading", { name: "Search by song title" }),
+  ).toBeVisible();
+  await remote.getByPlaceholder("Start typing...").fill(title);
+  return remote.getByRole("main").getByRole("link").filter({ hasText: title });
+}
+
+// Opens the first result's song page; returns the song's title.
+async function openFirstSong(
+  remote: Page,
+  results: ReturnType<Page["getByRole"]>,
+) {
+  await expect(results.first()).toBeVisible({ timeout: 30_000 });
+  await results.first().click();
+  await remote.waitForURL(/#\/(song|joysoundSong)\//);
+  // The song's name, once its page has loaded.
+  const heading = remote
+    .getByRole("main")
+    .getByRole("heading", { level: 2 })
+    .filter({ hasNotText: "Search by" });
+  await expect(heading).toBeVisible({ timeout: 30_000 });
+  return (await heading.textContent()) ?? "";
+}
+
+// Clicks a queue button and checks that /api/queueSong took the song.
+async function queue(remote: Page, button: ReturnType<Page["getByRole"]>) {
+  const answer = remote.waitForResponse((res) =>
+    res.url().endsWith("/api/queueSong"),
+  );
+  await button.click();
+  expect(await (await answer).json()).toMatchObject({ ok: true });
+}
+
+// Takes this phone's song off the queue the way a person would.
+async function removeFromQueue(remote: Page, title: string) {
+  const queue = remote.getByRole("region", { name: "Queue" });
+  const removal = remote.waitForResponse((res) =>
+    res.url().endsWith("/api/removeSong"),
+  );
+  await queue.getByRole("button", { name: `Queued by ${NICKNAME}` }).click();
+  await queue.getByRole("button", { name: "Remove from queue" }).click();
+  expect(await (await removal).json()).toBe(true);
+  await expect(queue.getByText(title)).toHaveCount(0);
+  await expect(queue.getByText("The queue is empty")).toBeVisible();
+}
+
 test.describe("DAM and Joysound", { tag: "@jp" }, () => {
   test.use({ realCredentials: true });
 
-  for (const catalog of ["DAM", "Joysound"]) {
+  for (const catalog of CATALOGS) {
     test(`a ${catalog} title search finds Lemon`, async ({ remote }) => {
-      await remote
-        .getByRole("link", { name: `Title (${catalog})`, exact: true })
-        .click();
-      await expect(
-        remote.getByRole("heading", { name: "Search by song title" }),
-      ).toBeVisible();
-      await remote.getByPlaceholder("Start typing...").fill("Lemon");
-
-      const results = remote
-        .getByRole("main")
-        .getByRole("link")
-        .filter({ hasText: "Lemon" });
+      const results = await searchTitle(remote, catalog, "Lemon");
       await expect(results.first()).toBeVisible({ timeout: 30_000 });
     });
   }
+
+  test.describe("queueing", () => {
+    // A song the display starts at once and never finishes (a Niconico video
+    // that was never downloaded, so nothing plays), so a song queued after
+    // it waits in the queue until the test takes it off. The app is muted
+    // too.
+    test.use({
+      seedQueue: {
+        currentSong: null,
+        songQueue: [
+          {
+            kind: "nico",
+            songId: "sm70001",
+            name: "E2E placeholder",
+            artistName: "E2E artist",
+            playtime: 60,
+            timestamp: String(Date.UTC(2026, 0, 1)),
+            user: { deviceId: "e2e-placeholder", nickname: "placeholder" },
+          },
+        ],
+        songHistory: [],
+        playbackState: "WAITING",
+      },
+    });
+
+    // The display starts it within 5 seconds.
+    async function waitForPlaceholder(remote: Page) {
+      await expect(
+        remote
+          .getByRole("region", { name: "Now playing" })
+          .getByText("E2E placeholder")
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
+    }
+
+    test("a DAM song can be queued from its page and taken off", async ({
+      remote,
+    }) => {
+      await waitForPlaceholder(remote);
+      const title = await openFirstSong(
+        remote,
+        await searchTitle(remote, "DAM", "Lemon"),
+      );
+
+      // A DAM song joins the queue at once.
+      const button = remote
+        .getByRole("main")
+        .getByRole("button", { name: /^Queue song/ })
+        .first();
+      await queue(remote, button);
+      await expect(
+        remote.getByRole("main").getByText(/^Estimated wait: T-/),
+      ).toBeVisible();
+
+      await remote.getByRole("button", { name: "Show queue" }).click();
+      await expect(
+        remote.getByRole("region", { name: "Queue" }).getByText(title).first(),
+      ).toBeVisible();
+      await removeFromQueue(remote, title);
+    });
+
+    test.describe(() => {
+      // A Joysound song downloads before it joins the queue.
+      test.use({ mediaTools: "installed" });
+      test.describe.configure({ timeout: 300_000 });
+
+      test("a Joysound song can be queued from its page and taken off", async ({
+        remote,
+      }) => {
+        await waitForPlaceholder(remote);
+        const title = await openFirstSong(
+          remote,
+          await searchTitle(remote, "Joysound", "Lemon"),
+        );
+
+        await queue(
+          remote,
+          remote
+            .getByRole("main")
+            .getByRole("button", { name: "Queue song", exact: true }),
+        );
+        // The button follows the download in the live state.
+        await expect(
+          remote
+            .getByRole("main")
+            .getByRole("button", { name: /^Downloading/ }),
+        ).toBeVisible();
+
+        await remote.getByRole("button", { name: "Show queue" }).click();
+        await expect(
+          remote
+            .getByRole("region", { name: "Queue" })
+            .getByText(title)
+            .first(),
+        ).toBeVisible({ timeout: 240_000 });
+        await removeFromQueue(remote, title);
+      });
+    });
+  });
 });

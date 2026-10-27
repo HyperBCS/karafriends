@@ -1,13 +1,10 @@
 import React from "react";
 import { Link } from "react-router";
 
+import type { JoysoundArtist } from "../../../common/api";
 import { ListItem } from "../List";
-import { JoysoundArtistSearchResults_joysoundArtistsByKeyword$data } from "./__generated__/JoysoundArtistSearchResults_joysoundArtistsByKeyword.graphql";
 
-type Props =
-  JoysoundArtistSearchResults_joysoundArtistsByKeyword$data["joysoundArtistsByKeyword"]["edges"][0]["node"];
-
-const JoysoundArtistSearchResultsItem = ({ id, name }: Props) => (
+const JoysoundArtistSearchResultsItem = ({ id, name }: JoysoundArtist) => (
   <Link to={`/joysoundArtist/${id}`}>
     <ListItem>
       <strong>{name}</strong>

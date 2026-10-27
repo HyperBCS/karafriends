@@ -1,10 +1,10 @@
 import React from "react";
 
+import type { YoutubeVideoInfo } from "../../../common/api";
 import * as styles from "./YouTubeInfo.module.scss";
-import { YouTubeInfoVideoInfoQuery$data } from "./__generated__/YouTubeInfoVideoInfoQuery.graphql";
 
 interface Props {
-  videoInfo: YouTubeInfoVideoInfoQuery$data["youtubeVideoInfo"];
+  videoInfo: YoutubeVideoInfo;
   onSelectCaption: (language: string | undefined) => void;
   onAdhocLyricsChanged: (lyrics: string | null) => void;
 }
@@ -14,8 +14,6 @@ const YouTubeLyricsForm = ({
   onSelectCaption,
   onAdhocLyricsChanged,
 }: Props) => {
-  if (videoInfo.__typename !== "YoutubeVideoInfo") return null;
-
   return (
     <div className={styles.lyricsForm}>
       <h3>Lyrics</h3>

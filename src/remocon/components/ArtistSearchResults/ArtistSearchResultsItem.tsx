@@ -1,15 +1,17 @@
 import React from "react";
 import { Link } from "react-router";
 
+import type { DamArtist } from "../../../common/api";
 import { ListItem } from "../List";
 import WeebText from "../WeebText";
 import * as styles from "./ArtistSearchResults.module.scss";
-import { ArtistSearchResults_artistsByName$data } from "./__generated__/ArtistSearchResults_artistsByName.graphql";
 
-type Props =
-  ArtistSearchResults_artistsByName$data["artistsByName"]["edges"][0]["node"];
-
-const ArtistSearchResultsItem = ({ id, name, nameYomi, songCount }: Props) => (
+const ArtistSearchResultsItem = ({
+  id,
+  name,
+  nameYomi,
+  songCount,
+}: DamArtist) => (
   <Link to={`/artist/${id}`}>
     <ListItem>
       <WeebText bold text={name} yomi={nameYomi} />

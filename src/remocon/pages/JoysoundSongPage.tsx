@@ -1,27 +1,14 @@
 import React, { useRef, useState } from "react";
-import { graphql, useLazyLoadQuery } from "react-relay";
 import { Link, useParams } from "react-router";
 
+import { useApiQuery } from "../../common/apiQueries";
 import Button from "../components/Button";
 import JoysoundQueueButtons from "../components/JoysoundQueueButtons";
 import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
 import { withLoader } from "../components/Loader";
 import SearchFormWrapper from "../components/SearchFormWrapper";
-import { JoysoundSongPageQuery } from "./__generated__/JoysoundSongPageQuery.graphql";
 
 import { getVideoId as getYoutubeVideoId } from "./YouTubePage";
-
-const joysoundSongPageQuery = graphql`
-  query JoysoundSongPageQuery($id: String!) {
-    joysoundSongDetail(id: $id) {
-      id
-      name
-      artistName
-      lyricsPreview
-      tieUp
-    }
-  }
-`;
 
 type RouteParams = {
   id: string;
@@ -32,11 +19,7 @@ const JoysoundSongPage = () => {
   const params = useParams<RouteParams>();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const data = useLazyLoadQuery<JoysoundSongPageQuery>(joysoundSongPageQuery, {
-    id: params.id!,
-  });
-
-  const song = data.joysoundSongDetail;
+  const song = useApiQuery("joysoundSong", { id: params.id! });
 
   const [youtubeVideoId, setYoutubeVideoId] = useState<string>(
     params.youtubeVideoId || "",

@@ -1,42 +1,28 @@
 import React from "react";
 import { Link } from "react-router";
-import { invariant } from "ts-invariant";
 
+import type { SharedQueueItem } from "../../../common/api";
+import songLink from "../../songLink";
 import { ListItem } from "../List";
 import * as styles from "./SongHistory.module.scss";
-import { SongHistory_songHistory$data } from "./__generated__/SongHistory_songHistory.graphql";
 
-type Props = SongHistory_songHistory$data["songHistory"]["edges"][0]["node"];
+// Tells history entries apart: a song may have been sung more than once.
+export const historyKey = (song: SharedQueueItem) =>
+  `${song.kind}_${song.songId}_${song.timestamp}`;
 
-function getSongLink(queueItemType: string, songId: string): string {
-  switch (queueItemType) {
-    case "DamQueueItem":
-      return `/song/${songId}`;
-    case "JoysoundQueueItem":
-      return `/joysoundSong/${songId}`;
-    case "YoutubeQueueItem":
-      return `/search/youtube/${songId}`;
-    case "NicoQueueItem":
-      return `/search/niconico/${songId}`;
-  }
-
-  return `/song/${songId}`;
+interface Props {
+  song: SharedQueueItem;
 }
 
 const SongHistoryItem = ({ song }: Props) => {
-  invariant(song.__typename !== "%other");
-
-  const songLink = getSongLink(song.__typename, song.songId);
   const date = new Date(parseInt(song.timestamp, 10));
 
   return (
-    <Link to={songLink}>
+    <Link to={songLink(song)}>
       <ListItem>
         <div>
           <strong>{song.name}</strong>
-          <span className={styles.date}>
-            Queued by: {song.userIdentity.nickname}
-          </span>
+          <span className={styles.date}>Queued by: {song.user.nickname}</span>
         </div>
 
         <div>

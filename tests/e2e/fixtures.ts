@@ -12,6 +12,9 @@
 // remote's pages), not the server API, so they keep working when the API and
 // the bundler are replaced. The exceptions are api.spec.ts, which tests the
 // JSON RPC API itself, and the device-ID checks in live.spec.ts.
+//
+// Neither client may talk GraphQL any more: every test fails if the display
+// or a phone sends a request to /graphql (see forbidGraphql).
 
 import fs from "fs";
 import net from "net";
@@ -22,6 +25,7 @@ import {
   _electron as electron,
   test as base,
   expect,
+  type BrowserContext,
   type ElectronApplication,
   type Page,
   type TestInfo,
@@ -64,10 +68,30 @@ export type Karafriends = {
 };
 
 type Fixtures = {
+  // The /graphql requests the clients made, which must stay empty.
+  graphqlRequests: string[];
   karafriends: Karafriends;
   display: Page;
   remote: Page;
 };
+
+const GRAPHQL_URL = /\/graphql(?:[?#]|$)/;
+
+// Refuses the browser context's GraphQL requests (HTTP and WebSocket), noting
+// each in `seen`. The display and the remote only use /api now; the server's
+// /graphql stays until Phase 5e, and tests may still call it from Node.
+export async function forbidGraphql(context: BrowserContext, seen: string[]) {
+  context.on("request", (request) => {
+    if (GRAPHQL_URL.test(request.url())) {
+      seen.push(`${request.method()} ${request.url()}`);
+    }
+  });
+  await context.route(GRAPHQL_URL, (route) => route.abort());
+  await context.routeWebSocket(GRAPHQL_URL, (ws) => {
+    seen.push(`WebSocket ${ws.url()}`);
+    ws.close();
+  });
+}
 
 // Where an installed (or `yarn run-dev`) karafriends keeps its config.yaml and
 // downloaded binaries: Electron's userData for the app name "karafriends".
@@ -185,6 +209,7 @@ function freePort(): Promise<number> {
 
 async function launchKarafriends(
   options: Options,
+  graphqlRequests: string[],
   testInfo: TestInfo,
 ): Promise<{ karafriends: Karafriends; close: () => Promise<void> }> {
   if (!fs.existsSync(MAIN_ENTRY)) {
@@ -299,6 +324,7 @@ async function launchKarafriends(
       env,
       timeout: 60_000,
     });
+    await forbidGraphql(app.context(), graphqlRequests);
 
     // The main process logs DAM tokens and Joysound cookies once logged in,
     // so its output is only kept when the test runs without real logins.
@@ -366,13 +392,30 @@ export const test = base.extend<Options & Fixtures>({
   realCredentials: [false, { option: true }],
   appConfig: [{}, { option: true }],
 
+  // Checked once the test (and every fixture using it) is done.
+  // oxlint-disable-next-line no-empty-pattern
+  graphqlRequests: async ({}, use) => {
+    const requests: string[] = [];
+    await use(requests);
+    expect(requests, "the display and the remote must not use GraphQL").toEqual(
+      [],
+    );
+  },
+
+  // Every page a test opens, the remote included.
+  context: async ({ context, graphqlRequests }, use) => {
+    await forbidGraphql(context, graphqlRequests);
+    await use(context);
+  },
+
   karafriends: async (
-    { seedQueue, mediaTools, realCredentials, appConfig },
+    { seedQueue, mediaTools, realCredentials, appConfig, graphqlRequests },
     use,
     testInfo,
   ) => {
     const { karafriends, close } = await launchKarafriends(
       { seedQueue, mediaTools, realCredentials, appConfig },
+      graphqlRequests,
       testInfo,
     );
     try {
