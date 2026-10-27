@@ -114,7 +114,7 @@ All commit hashes change, so first finish or abandon every branch and worktree, 
 4. **You**, on GitHub:
    - Rename the current repo to `karafriends-fork-archive`.
    - Create a new empty public `HyperBCS/karafriends` with no README.
-   - Re-add the Actions secrets `MACOS_SIGNING_CERT_BASE`, `MACOS_SIGNING_CERT_PASSWORD`, `MACOS_KEYCHAIN_PASSWORD` and `MACOS_NOTARIZATION_API_KEY_BASE`.
+   - Re-add the Actions secrets `MACOS_SIGNING_CERT_BASE64`, `MACOS_SIGNING_CERT_PASSWORD`, `MACOS_KEYCHAIN_PASSWORD` and `MACOS_NOTARIZATION_API_KEY_BASE64`.
 5. Push the filtered repo to the new repo: `git push origin --all` and `git push origin --tags`.
 6. **Verify:**
    - The new `master`'s `HEAD^{tree}` equals the old one. Phase 1 already untracked the cache, so the trees must match exactly.
