@@ -1217,6 +1217,13 @@ export const joysoundCredentialsProvider = memoizeSuccess(async () => {
   return JoysoundAPI.login(joysoundEmail, joysoundPassword);
 });
 
+// The clients keep no per-request state, so every request shares one of each.
+const upstreamClients: IDataSources["dataSources"] = {
+  minsei: new MinseiAPI(minseiCredentialsProvider),
+  joysound: new JoysoundAPI(joysoundCredentialsProvider),
+  dkwebsys: new DkwebsysAPI(),
+};
+
 function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
@@ -1317,15 +1324,7 @@ export function applyGraphQLMiddleware(app: Application) {
         "/graphql",
         express.json(),
         expressMiddleware(server, {
-          context: async () => {
-            return {
-              dataSources: {
-                minsei: new MinseiAPI(minseiCredentialsProvider),
-                joysound: new JoysoundAPI(joysoundCredentialsProvider),
-                dkwebsys: new DkwebsysAPI(),
-              },
-            };
-          },
+          context: async () => ({ dataSources: upstreamClients }),
         }),
       );
       httpServer.listen(karafriendsConfig.remoconPort, () => {
