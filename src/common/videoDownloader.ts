@@ -17,6 +17,7 @@ import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 import {
   isNicoVideoId,
+  limitLookups,
   NicoVideoMetadata,
   nicoWatchUrl,
   parseNicoVideoInfo,
@@ -1118,12 +1119,9 @@ function downloadYoutubeVideoImpl(
 
 // Look up a Niconico video's metadata with yt-dlp, which already downloads
 // these videos and keeps up with changes to Niconico's site.
-export async function getNicoVideoInfo(
+async function lookUpNicoVideoInfo(
   videoId: string,
 ): Promise<NicoVideoMetadata> {
-  if (!isNicoVideoId(videoId)) {
-    throw new Error(`Not a Niconico video ID: ${JSON.stringify(videoId)}`);
-  }
   await ensureExternalResources();
   const { stdout } = await execFileAsync(
     resourcePaths.ytdlp,
@@ -1136,6 +1134,27 @@ export async function getNicoVideoInfo(
     },
   );
   return parseNicoVideoInfo(stdout);
+}
+
+// Any phone can ask, and each lookup starts a yt-dlp (on Windows, an exe
+// that unpacks itself and starts Python), so a script asking for sm1, sm2,
+// ... at once would swamp the karaoke PC. Results are shared and kept for an
+// hour, two lookups run at a time, and a few more may wait; past that a
+// lookup fails at once.
+const limitedNicoVideoInfo = limitLookups(lookUpNicoVideoInfo, {
+  concurrency: 2,
+  maxWaiting: 8,
+  cacheSize: 200,
+  cacheMs: 60 * 60 * 1000,
+});
+
+export async function getNicoVideoInfo(
+  videoId: string,
+): Promise<NicoVideoMetadata> {
+  if (!isNicoVideoId(videoId)) {
+    throw new Error(`Not a Niconico video ID: ${JSON.stringify(videoId)}`);
+  }
+  return limitedNicoVideoInfo(videoId);
 }
 
 export function downloadNicoVideo(

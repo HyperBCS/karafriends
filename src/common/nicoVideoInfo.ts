@@ -37,6 +37,79 @@ export function nicoWatchUrl(videoId: string): string {
   return `https://www.nicovideo.jp/watch/${videoId}`;
 }
 
+export interface LookupLimits {
+  // How many lookups may run at once.
+  concurrency: number;
+  // How many more may wait for one of those; past that, a lookup fails at
+  // once.
+  maxWaiting: number;
+  // How many results to keep, and for how long.
+  cacheSize: number;
+  cacheMs: number;
+}
+
+// Wraps lookup(id) so each ID is looked up once: calls while it runs share
+// its promise, and its result is kept for cacheMs (a failure isn't, so the
+// next call tries again). At most `concurrency` lookups run at once.
+export function limitLookups<T>(
+  lookup: (id: string) => Promise<T>,
+  { concurrency, maxWaiting, cacheSize, cacheMs }: LookupLimits,
+  now: () => number = Date.now,
+): (id: string) => Promise<T> {
+  // In insertion order, oldest first. doneAt is null while running.
+  const cache = new Map<string, { value: Promise<T>; doneAt: number | null }>();
+  let running = 0;
+  const waiting: (() => void)[] = [];
+
+  const takeSlot = (): Promise<void> => {
+    if (running < concurrency) {
+      running++;
+      return Promise.resolve();
+    }
+    if (waiting.length >= maxWaiting) {
+      return Promise.reject(new Error("Too many lookups at once; try again"));
+    }
+    return new Promise((resolve) => waiting.push(resolve));
+  };
+  // Hands the slot to the next in line, if any.
+  const releaseSlot = () => {
+    const next = waiting.shift();
+    if (next) next();
+    else running--;
+  };
+
+  return (id) => {
+    const hit = cache.get(id);
+    if (hit && (hit.doneAt === null || now() - hit.doneAt < cacheMs)) {
+      return hit.value;
+    }
+    cache.delete(id);
+
+    const value = takeSlot().then(async () => {
+      try {
+        return await lookup(id);
+      } finally {
+        releaseSlot();
+      }
+    });
+    const entry = { value, doneAt: null as number | null };
+    cache.set(id, entry);
+    value.then(
+      () => {
+        entry.doneAt = now();
+      },
+      () => {
+        if (cache.get(id) === entry) cache.delete(id);
+      },
+    );
+    for (const oldest of cache.keys()) {
+      if (cache.size <= cacheSize) break;
+      cache.delete(oldest);
+    }
+    return value;
+  };
+}
+
 export function parseNicoVideoInfo(ytDlpJson: string): NicoVideoMetadata {
   const info: YtDlpNicoInfo = JSON.parse(ytDlpJson);
   if (typeof info.title !== "string") {
