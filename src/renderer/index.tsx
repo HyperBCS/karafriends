@@ -4,11 +4,9 @@ import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji";
 import { QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { RelayEnvironmentProvider } from "react-relay";
 
 import { LiveStateProvider } from "../common/apiClient";
 import { createQueryClient } from "../common/apiQueries";
-import environment from "../common/graphqlEnvironment";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import App from "./App";
 import ErrorBoundary from "./ErrorBoundary";
@@ -36,11 +34,9 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RelayEnvironmentProvider environment={environment}>
-          <LiveStateProvider>
-            <App kuroshiro={kuroshiroSingleton} audio={audio} />
-          </LiveStateProvider>
-        </RelayEnvironmentProvider>
+        <LiveStateProvider>
+          <App kuroshiro={kuroshiroSingleton} audio={audio} />
+        </LiveStateProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,
