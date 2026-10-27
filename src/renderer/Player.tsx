@@ -136,7 +136,7 @@ function Player(props: {
                       switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
                           console.log(
-                            "network error on playlist load, skipping to next song."
+                            "network error on playlist load, skipping to next song.",
                           );
                           M.toast({
                             html: `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
@@ -145,7 +145,7 @@ function Player(props: {
                           break;
                         // You can handle other error types here if needed
                       }
-                    }
+                    },
                   );
 
                   hls.attachMedia(videoRef.current);

@@ -6,7 +6,7 @@ export default function ipAddresses() {
       Object.values(networkInterfaces())
         .flat()
         .filter((iface) => iface && !iface.internal)
-        .map((iface) => iface!.address)
-    )
+        .map((iface) => iface!.address),
+    ),
   );
 }
