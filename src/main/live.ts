@@ -185,7 +185,11 @@ export function createLiveHub(
   // At most one state event per interval: about 4 a second while downloads
   // report progress.
   intervalMs = 250,
-): LiveHub {
+): LiveHub & {
+  // Sends the state again if it changed some other way than through the
+  // store: config's supervisedMode, from the settings.
+  refresh(): void;
+} {
   const listeners = new Map<(event: LiveEvent) => void, Viewer>();
   // The last state sent to everyone, serialized, so unchanged state isn't
   // sent again.
@@ -243,6 +247,7 @@ export function createLiveHub(
   };
 
   return {
+    refresh: scheduleFlush,
     publish(message) {
       // Send a pending state change first, so a client never hears about a
       // queued song before it can see it in the queue.
