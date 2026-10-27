@@ -1,210 +1,132 @@
-/* The parts of Materialize CSS 1.0 the display used, which it once imported
-   whole: the base text and box sizing, the grid, and the sidebar's headings,
-   button, settings and queue list. */
-
-html {
-  box-sizing: border-box;
-  -webkit-text-size-adjust: 100%;
-  color: var(--kf-text);
-  font-size: 14px;
-  font-weight: normal;
-  line-height: 1.5;
-}
-
-@media only screen and (min-width: 992px) {
-  html {
-    font-size: 14.5px;
-  }
-}
-
-@media only screen and (min-width: 1200px) {
-  html {
-    font-size: 15px;
-  }
-}
+/* The display's controls: buttons, text fields, checkboxes and selects, at
+   the display's sizes (tokens.css). */
 
 *,
 *::before,
 *::after {
-  box-sizing: inherit;
+  box-sizing: border-box;
 }
 
 button,
+input,
 select {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu,
-    Cantarell, "Helvetica Neue", sans-serif;
-  font-size: 100%;
-  line-height: 1.15;
-  text-transform: none;
+  font: inherit;
+  color: inherit;
 }
 
-canvas,
-video {
-  display: inline-block;
-}
-
-h1 {
-  margin: 2.8rem 0 1.68rem;
-  font-size: 4.2rem;
-  font-weight: 400;
-  line-height: 110%;
-}
-
-.row {
-  margin: 0 auto 20px;
-}
-
-.row::after {
-  content: "";
-  display: table;
-  clear: both;
-}
-
-.row .col {
-  float: left;
-  min-height: 1px;
-  padding: 0 0.75rem;
-}
-
-.row .col.s1 {
-  width: 8.3333333333%;
-}
-
-.row .col.s11 {
-  width: 91.6666666667%;
-}
-
-.row .col.s12 {
-  width: 100%;
-}
-
-.valign-wrapper {
-  display: flex;
-  align-items: center;
-}
-
-.center-align {
-  text-align: center;
-}
-
-.section {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-}
-
-nav {
-  width: 100%;
-  height: 56px;
-  border-bottom: 1px solid var(--kf-border);
-  background-color: var(--kf-surface);
-  color: var(--kf-text);
-  line-height: 56px;
-}
-
-@media only screen and (min-width: 601px) {
-  nav {
-    height: 64px;
-    line-height: 64px;
-  }
-}
-
-.btn {
-  display: inline-block;
-  height: 36px;
-  padding: 0 16px;
-  border: none;
-  outline: 0;
+.kfButton {
+  min-height: 64px;
+  padding: 0 var(--kf-space-5);
+  border: 2px solid var(--kf-border-strong);
   border-radius: var(--kf-radius);
+  background-color: transparent;
+  color: var(--kf-text);
+  font-size: var(--kf-text-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kfButton.primary {
+  border-color: var(--kf-accent);
   background-color: var(--kf-accent);
   color: var(--kf-on-accent);
-  font-size: 14px;
-  letter-spacing: 0.5px;
-  line-height: 36px;
-  text-align: center;
-  text-transform: uppercase;
-  vertical-align: middle;
-  cursor: pointer;
-  transition: background-color 0.2s ease-out;
-  -webkit-tap-highlight-color: transparent;
 }
 
-.btn:active {
+.kfButton:active {
+  background-color: var(--kf-surface-pressed);
+}
+
+.kfButton.primary:active {
+  border-color: var(--kf-accent-pressed);
   background-color: var(--kf-accent-pressed);
 }
 
-.btn:focus-visible {
-  outline: 2px solid var(--kf-accent);
-  outline-offset: 2px;
+.kfButton:disabled {
+  border-color: var(--kf-border);
+  background-color: transparent;
+  color: var(--kf-muted);
+  cursor: default;
 }
 
-/* A select with its label above it, as Materialize's select drew it but
-   with the browser's own list. */
-.input-field {
-  position: relative;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-
-.input-field > select {
-  display: block;
-  width: 100%;
-  height: calc(3rem + 1px);
-  margin: 0 0 8px;
+.kfIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
   padding: 0;
   border: none;
-  border-bottom: 1px solid var(--kf-muted);
-  border-radius: 0;
-  outline: none;
-  background: transparent
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%23f5f5f5'/%3E%3C/svg%3E")
-    no-repeat right center;
-  color: var(--kf-text);
-  font-size: 16px;
-  line-height: 3rem;
-  cursor: pointer;
-  appearance: none;
-}
-
-.input-field > select:focus {
-  border-bottom-color: var(--kf-accent);
-}
-
-.input-field > select > option {
-  background-color: var(--kf-surface);
-  color: var(--kf-text);
-}
-
-.input-field > label {
-  position: absolute;
-  top: -14px;
-  left: 0;
-  color: var(--kf-muted);
-  font-size: 0.8rem;
-}
-
-.collection {
-  position: relative;
-  margin: 0.5rem 0 1rem;
-  border: 1px solid var(--kf-border);
   border-radius: var(--kf-radius);
-  overflow: hidden;
-}
-
-.collection .collection-item {
-  margin: 0;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--kf-border);
-  background-color: var(--kf-surface);
-  line-height: 1.5rem;
-}
-
-.collection .collection-item:last-child {
-  border-bottom: none;
-}
-
-.secondary-content {
-  float: right;
+  background: transparent;
   color: var(--kf-muted);
+  cursor: pointer;
+}
+
+.kfIconButton:active {
+  background-color: var(--kf-surface-pressed);
+  color: var(--kf-text);
+}
+
+.kfButton:focus-visible,
+.kfIconButton:focus-visible,
+.kfField:focus-visible,
+.kfCheckbox input:focus-visible {
+  outline: 3px solid var(--kf-accent);
+  outline-offset: 3px;
+}
+
+/* A label over its field. */
+.kfLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kf-space-2);
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+}
+
+.kfField {
+  width: 100%;
+  min-height: 72px;
+  padding: 0 var(--kf-space-4);
+  border: 2px solid var(--kf-border-strong);
+  border-radius: var(--kf-radius);
+  background-color: var(--kf-bg);
+  color: var(--kf-text);
+  font-size: var(--kf-text-body);
+}
+
+.kfField:focus {
+  border-color: var(--kf-accent);
+}
+
+select.kfField {
+  appearance: none;
+  padding-right: 64px;
+  background: var(--kf-bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%23f5f5f5'/%3E%3C/svg%3E")
+    no-repeat right 8px center;
+  cursor: pointer;
+}
+
+select.kfField > option {
+  background-color: var(--kf-surface);
+  color: var(--kf-text);
+}
+
+.kfCheckbox {
+  display: flex;
+  align-items: center;
+  gap: var(--kf-space-4);
+  min-height: 64px;
+  font-size: var(--kf-text-body);
+  cursor: pointer;
+}
+
+.kfCheckbox input {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  accent-color: var(--kf-accent);
+  cursor: pointer;
 }

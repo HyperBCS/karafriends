@@ -1,42 +1,24 @@
-import React, { useId } from "react";
+import React from "react";
 
 import "./global";
 import { InputDevice } from "./nativeAudio";
-
-const MicrophoneSettingOption = ({
-  name,
-  channel,
-}: {
-  name: string;
-  channel: number;
-}) => (
-  <option data-name={name} data-channel={channel} value={`${name}_${channel}`}>
-    {`${name} (Channel ${channel})`}
-  </option>
-);
 
 interface Props {
   mic: InputDevice | null;
   onChange: (mic: InputDevice) => void;
 }
 
+// One microphone: an input device and one of its channels.
 export default function MicrophoneSetting({ mic, onChange }: Props) {
-  const id = useId();
-
-  console.log(window.karafriends.nativeAudio.inputDevices());
-
   return (
-    <div className="input-field">
+    <label className="kfLabel">
+      Microphone
       <select
-        id={id}
+        className="kfField"
         value={mic ? `${mic.name}_${mic.channelSelection}` : ""}
         onChange={(e) => {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
-          const newMic = new InputDevice(
-            dataset.name!,
-            parseInt(dataset.channel!, 10),
-          );
-          onChange(newMic);
+          onChange(new InputDevice(dataset.name!, Number(dataset.channel)));
         }}
       >
         <option value="" disabled={true}>
@@ -45,16 +27,18 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
         {window.karafriends.nativeAudio
           .inputDevices()
           .map(([name, channelCount]) =>
-            [...Array(channelCount)].map((_, i) => (
-              <MicrophoneSettingOption
-                key={`${name}_${i}`}
-                name={name}
-                channel={i}
-              />
+            [...Array(channelCount)].map((_, channel) => (
+              <option
+                key={`${name}_${channel}`}
+                data-name={name}
+                data-channel={channel}
+                value={`${name}_${channel}`}
+              >
+                {`${name} (Channel ${channel})`}
+              </option>
             )),
           )}
       </select>
-      <label htmlFor={id}>Microphone</label>
-    </div>
+    </label>
   );
 }

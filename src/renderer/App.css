@@ -1,18 +1,29 @@
-.appMainContainer {
+/* The notice bar, if any, over the screen: the video (or the idle screen
+   over it) above the up-next strip. Settings cover the screen. */
+.app {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background-color: var(--kf-bg);
 }
 
-.appPlayer,
-.appSidebar {
-  padding: 0 !important;
-  height: 100%;
+.appScreen {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.appSidebar {
+/* The video as large as fits, centered (Player.css sizes it from this
+   box). */
+.appStage {
   display: flex;
-  flex-direction: column;
-  background-color: var(--kf-surface);
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  container-type: size;
 }

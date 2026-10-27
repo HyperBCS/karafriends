@@ -1,42 +1,30 @@
-import React, { useId, useState } from "react";
+import React from "react";
 
 import { HOSTNAME } from "../common/constants";
 import "./global";
 
+// Which of this computer's names or addresses the QR code points phones at,
+// with the remote's port: "karafriends.local:8080".
 export default function HostnameSetting(props: {
   hostname: string;
-  onChange: (name: string) => void;
+  port: number;
+  onChange: (hostname: string) => void;
 }) {
-  const port = window.karafriends.remoconPort();
-  const hostnameToValue = new Map([
-    [HOSTNAME, `${HOSTNAME}:${port}`],
-    ...window.karafriends
-      .ipAddresses()
-      .map((address): [string, string] => [address, `${address}:${port}`]),
-  ]);
-
-  const [currentValue, setCurrentValue] = useState(
-    hostnameToValue.get(props.hostname),
-  );
-  const id = useId();
-
+  const names = [HOSTNAME, ...window.karafriends.ipAddresses()];
   return (
-    <div className="input-field">
+    <label className="kfLabel">
+      Address
       <select
-        id={id}
-        value={currentValue}
-        onChange={(e) => {
-          setCurrentValue(e.target.value);
-          props.onChange(e.target.value);
-        }}
+        className="kfField"
+        value={props.hostname}
+        onChange={(event) => props.onChange(event.target.value)}
       >
-        {Array.from(hostnameToValue).map(([key, value]) => (
-          <option key={value} value={value}>
-            {key}
+        {names.map((name) => (
+          <option key={name} value={`${name}:${props.port}`}>
+            {name}
           </option>
         ))}
       </select>
-      <label htmlFor={id}>Hostname</label>
-    </div>
+    </label>
   );
 }

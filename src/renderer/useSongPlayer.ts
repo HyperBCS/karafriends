@@ -33,7 +33,8 @@ export interface Announcement {
   label: string;
   title: string;
   detail: string;
-  problem?: boolean;
+  // The current song in the accent, a problem in red, anything else grey.
+  tone?: "current" | "problem";
 }
 
 // Plays the queue in the display's <video>: while nothing plays it asks for
@@ -81,7 +82,7 @@ export default function useSongPlayer({
       label: "Couldn't play",
       title: song.name,
       detail: "Skipping to the next song",
-      problem: true,
+      tone: "problem",
     });
     pollQueue();
   };
@@ -204,6 +205,7 @@ export default function useSongPlayer({
     });
     announce({
       label: "Now playing",
+      tone: "current",
       title: song.name,
       detail: [song.artistName, song.user.nickname].filter(Boolean).join(" · "),
     });
