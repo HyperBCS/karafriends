@@ -229,6 +229,11 @@ export function createLiveHub(
       deliver(messageEvents(message));
     },
     subscribe(listener, viewer = NOBODY) {
+      // Send a pending state change first, so the new listener starts from
+      // what was last sent. Otherwise, should the state change back before
+      // the pending flush, that flush would see nothing new to send and
+      // leave the new listener with a state that no longer exists.
+      if (flushTimer) flush();
       listeners.set(listener, viewer);
       const state = store.getState();
       if (listeners.size === 1) {
