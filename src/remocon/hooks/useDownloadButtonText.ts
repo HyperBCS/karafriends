@@ -2,17 +2,22 @@ import { useEffect, useRef, useState } from "react";
 
 import type { DownloadProgress, LiveState } from "../../common/api";
 import { useLiveState } from "../../common/apiClient";
+import { t } from "../i18n";
 
+// What a queue button is doing, as text. downloadButtonLabel() turns these
+// into what the button says, in the phone's language.
 export const WAITING_FOR_SERVER = "Waiting for server...";
 export const DOWNLOADING = "Downloading";
 export const FINISHED = "Finished Downloading";
-// Followed by ": <reason>".
+// Each followed by ": <reason>" or ": <wait>".
 export const FAILED = "Couldn't download";
+export const ERROR = "Error";
+export const QUEUED = "Queued";
 
 // How long a queued song may take to show up in the downloads before the
 // button stops waiting for it (it may have been downloaded already).
 export const START_GRACE_MS = 5_000;
-// How long "Finished Downloading", a failure or an error shows.
+// How long "Finished Downloading", the wait, a failure or an error shows.
 export const RESULT_MS = 2_500;
 
 // What a queue button shows next, given what it shows now, the progress of
@@ -24,10 +29,11 @@ export function nextDownloadText(
   defaultText: string,
   failure: string | null = null,
 ): { text: string; afterMs: number } | null {
-  if (text === FINISHED || text.includes("Error") || text.startsWith(FAILED)) {
+  if (text === defaultText || text === WAITING_FOR_SERVER) return null;
+  // A result: the wait, "Finished Downloading", a failure or an error.
+  if (!text.startsWith(DOWNLOADING)) {
     return { text: defaultText, afterMs: RESULT_MS };
   }
-  if (!text.startsWith(DOWNLOADING)) return null;
   if (failure !== null) return { text: `${FAILED}: ${failure}`, afterMs: 0 };
   if (progress !== null) {
     return {
@@ -44,11 +50,30 @@ export function nextDownloadText(
   return { text: FINISHED, afterMs: START_GRACE_MS };
 }
 
-// The label of a queue button for a song that downloads before it joins the
-// queue. Set it to WAITING_FOR_SERVER when asking to queue, then DOWNLOADING
-// (or an error) when the server answers; from there it follows the download
-// in the live state, shows why if it fails, and goes back to defaultText
-// (calling onReset) when it's done.
+// What the button says for a text from nextDownloadText or the queue
+// button; any other text (the button's own label) as it is.
+export function downloadButtonLabel(text: string): string {
+  if (text === WAITING_FOR_SERVER) return t("queueButton.waiting");
+  if (text === DOWNLOADING) return t("queueButton.downloading");
+  if (text === FINISHED) return t("queueButton.finished");
+  const percent = text.match(/^Downloading -- (.*)%$/);
+  if (percent) {
+    return t("queueButton.downloadingPercent", { percent: percent[1] });
+  }
+  const [prefix, ...rest] = text.split(": ");
+  const detail = rest.join(": ");
+  if (prefix === FAILED) return t("queueButton.failed", { reason: detail });
+  if (prefix === ERROR) return t("queueButton.error", { reason: detail });
+  if (prefix === QUEUED) return t("queueButton.queued", { eta: detail });
+  return text;
+}
+
+// The text of a queue button. Set it to WAITING_FOR_SERVER when asking to
+// queue, then DOWNLOADING, the wait (QUEUED) or an error when the server
+// answers; from there it follows the download in the live state, shows why
+// if it fails, and goes back to defaultText (calling onReset) when it's done.
+// A song that doesn't download first (DAM) shows the wait, then
+// defaultText.
 export default function useDownloadButtonText(
   defaultText: string,
   download: {

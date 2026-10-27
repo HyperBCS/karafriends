@@ -1,27 +1,10 @@
-import React, { useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import React from "react";
+import { Navigate, useParams } from "react-router";
 
 import type { SharedQueueItem } from "../../common/api";
 import { useLiveState } from "../../common/apiClient";
-
-import Button from "../components/Button";
-import { withLoader } from "../components/Loader";
-import SearchFormWrapper from "../components/SearchFormWrapper";
 import YouTubeInfo from "../components/YouTubeInfo";
-
-export function getVideoId(videoQuery: string): string | null {
-  try {
-    const url = new URL(videoQuery);
-    return url.hostname === "youtu.be"
-      ? url.pathname.replace("/", "")
-      : url.searchParams.get("v");
-  } catch (e) {
-    if (e instanceof Error && e.name !== "TypeError") {
-      throw e;
-    }
-  }
-  return videoQuery;
-}
+import * as styles from "./SongPage.module.scss";
 
 // Whether this phone's YouTube video with adhoc lyrics is playing, so its
 // singer gets the lyrics controls.
@@ -37,52 +20,21 @@ export function isYouTubeVideoWithLyricsPlaying(
   );
 }
 
-type YouTubeParams = {
-  videoId: string;
-};
-
+// A YouTube video's page (opened by pasting its link into the search box).
+// While its singer's video with lyrics plays, the page is the lyrics
+// controls instead.
 const YouTubePage = () => {
-  const navigate = useNavigate();
+  const { videoId } = useParams<{ videoId: string }>();
   const currentSong = useLiveState((state) => state?.currentSong);
 
-  const params = useParams<YouTubeParams>();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const [videoId, setVideoId] = useState<string>(params.videoId || "");
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputRef.current) return;
-    const newVideoId = getVideoId(inputRef.current.value);
-    if (newVideoId !== null) {
-      setVideoId(newVideoId);
-      history.replaceState({}, "", `#/search/youtube/${newVideoId}`);
-    }
-  };
-
-  if (
-    isYouTubeVideoWithLyricsPlaying(
-      currentSong,
-      videoId || params.videoId || "",
-    )
-  ) {
-    navigate(`/adhocLyrics/${videoId || params.videoId || ""}`);
+  if (isYouTubeVideoWithLyricsPlaying(currentSong, videoId!)) {
+    return <Navigate to={`/adhocLyrics/${videoId}`} />;
   }
-
   return (
-    <SearchFormWrapper>
-      <h2>Add YouTube video</h2>
-      <form onSubmit={onSubmit}>
-        <input
-          ref={inputRef}
-          placeholder="YouTube video URL or ID"
-          defaultValue={videoId}
-        />
-        <Button type="submit">Get Video Info</Button>
-      </form>
-      {videoId !== "" && <YouTubeInfo videoId={videoId} />}
-    </SearchFormWrapper>
+    <div className={styles.page}>
+      <YouTubeInfo videoId={videoId!} />
+    </div>
   );
 };
 
-export default withLoader(YouTubePage);
+export default YouTubePage;

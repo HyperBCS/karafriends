@@ -1,39 +1,52 @@
 import React from "react";
 
 import { useApiQuery } from "../../../common/apiQueries";
+import { t } from "../../i18n";
+import * as styles from "../../pages/SongPage.module.scss";
 import { withLoader } from "../Loader";
+import { QueueButton } from "../QueueButtons";
+import { InlineError } from "../ui";
 import VideoMetadata from "../VideoMetadata";
-import * as styles from "./NiconicoInfo.module.scss";
-import NiconicoQueueButton from "./NiconicoQueueButton";
 
 interface Props {
   videoId: string;
 }
 
+// A Niconico video: its thumbnail (a link to it), details and queue button.
 const NiconicoInfo = ({ videoId }: Props) => {
   const videoInfo = useApiQuery("nicoInfo", { videoId });
 
+  if (!videoInfo.ok) {
+    return (
+      <InlineError>
+        {t("video.infoFailed", { reason: videoInfo.reason })}
+      </InlineError>
+    );
+  }
+  const { info } = videoInfo;
   return (
-    <div className={styles.container}>
-      {!videoInfo.ok && (
-        <div>
-          Unable to get video info for the following reason: {videoInfo.reason}
-        </div>
-      )}
-      {videoInfo.ok && (
-        <>
-          <a href={`https://www.nicovideo.jp/watch/${videoId}`} target="_blank">
-            <img src={videoInfo.info.thumbnailUrl} />
-          </a>
-          <VideoMetadata videoSource="niconico" videoInfo={videoInfo.info} />
-          <div className={styles.note}>
-            ※ Note that Niconico videos tend to take longer to download. Please
-            wait warmly until they are ready.
-          </div>
-          <NiconicoQueueButton videoId={videoId} videoInfo={videoInfo.info} />
-        </>
-      )}
-    </div>
+    <>
+      <a
+        className={styles.video}
+        href={`https://www.nicovideo.jp/watch/${videoId}`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        <img src={info.thumbnailUrl} alt={info.title} />
+      </a>
+      <VideoMetadata videoSource="niconico" videoInfo={info} />
+      <QueueButton
+        label={t("queueButton.video")}
+        song={{
+          kind: "nico",
+          songId: videoId,
+          name: info.title,
+          artistName: info.author,
+          playtime: info.lengthSeconds,
+        }}
+      />
+      <p className={styles.note}>{t("video.niconicoSlow")}</p>
+    </>
   );
 };
 
