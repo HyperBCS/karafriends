@@ -9,6 +9,7 @@ import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
 import { PROXY_KEYS } from "../common/configSchema";
+import { toolsStatus, updateTools } from "../common/externalResources";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -174,6 +175,10 @@ export const api: ApiHandlers = {
     restart: () => {
       app.relaunch();
       app.exit(0);
+    },
+    tools: {
+      status: () => ({ ...toolsStatus(), problem: null, problemSince: null }),
+      update: updateTools,
     },
   }),
 };

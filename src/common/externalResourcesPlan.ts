@@ -1,5 +1,7 @@
 import path from "path";
 
+import type { ToolStatus } from "./api";
+
 // Pure, dependency-free planning and decision logic for the external runtime
 // binaries. It is kept separate from externalResources.ts (which touches
 // electron, the filesystem and the network) so the cross-platform behaviour can
@@ -21,7 +23,12 @@ export interface Validator {
   lastModified?: string;
 }
 
-export type Versions = Record<string, Validator>;
+// versions.json: each downloaded tool's validator, the version it reports
+// (--version) and when it was downloaded (ms since the epoch).
+export type Versions = Record<
+  string,
+  Validator & { version?: string; updatedAt?: number }
+>;
 
 // One extraction pass: unpack `input` (relative to the temp dir) into `outDir`
 // (relative to the temp dir). Archives that need multiple passes (e.g. .tar.xz)
@@ -69,6 +76,38 @@ export function toolOverrides(
     if (value) overrides[id] = path.resolve(value);
   }
   return overrides;
+}
+
+// The version in a tool's --version output: yt-dlp prints "2026.10.01",
+// ffmpeg "ffmpeg version 7.1-full_build-www.gyan.dev Copyright (c) ...".
+// Null if it printed nothing.
+export function parseToolVersion(output: string): string | null {
+  const firstLine = output.trim().split(/\r?\n/)[0].trim();
+  const afterVersion = firstLine.match(/\bversion (\S+)/);
+  return afterVersion ? afterVersion[1] : firstLine.split(/\s+/)[0] || null;
+}
+
+// One tool's status for the settings screen. An overridden tool is never
+// downloaded, so it has no updatedAt, and its version is the one it gave at
+// this launch's check.
+export function toolStatus(
+  id: AssetPlan["id"],
+  stored: Versions,
+  overrides: Partial<ResourcePaths>,
+  overrideVersions: Partial<Record<AssetPlan["id"], string | null>>,
+): ToolStatus {
+  if (overrides[id] !== undefined) {
+    return {
+      version: overrideVersions[id] ?? null,
+      updatedAt: null,
+      overridden: true,
+    };
+  }
+  return {
+    version: stored[id]?.version ?? null,
+    updatedAt: stored[id]?.updatedAt ?? null,
+    overridden: false,
+  };
 }
 
 // Refresh the cached copy once it is older than this when the server exposes no

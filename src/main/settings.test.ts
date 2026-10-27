@@ -37,12 +37,21 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+const TOOLS_STATUS = {
+  ffmpeg: { version: "7.1", updatedAt: 1, overridden: false },
+  ytdlp: { version: null, updatedAt: null, overridden: true },
+  lastCheck: 2,
+  problem: null,
+  problemSince: null,
+};
+
 type LoginFake = (username: string, password: string) => Promise<unknown>;
 
 function setup(
   options: {
     logins?: Partial<Record<LoginService, LoginFake>>;
     name?: string;
+    updateTools?: () => Promise<void>;
   } = {},
 ) {
   const filePath = path.join(dir, options.name ?? "config.yaml");
@@ -64,6 +73,10 @@ function setup(
       }),
     logins: { dam: recording("dam"), joysound: recording("joysound") },
     restart: () => restarts.push(Date.now()),
+    tools: {
+      status: () => TOOLS_STATUS,
+      update: options.updateTools ?? (async () => {}),
+    },
   });
   const onDisk = () => parse(fs.readFileSync(filePath, "utf8"));
   return { api, store, onDisk, tried, restarts };
@@ -134,6 +147,8 @@ describe("getSettings", () => {
     await rejectsWith(api.exportConfig({}, phone), 403);
     await rejectsWith(api.importConfig({ yaml: "" }, phone), 403);
     await rejectsWith(api.restartApp({}, phone), 403);
+    await rejectsWith(api.getToolsStatus({}, phone), 403);
+    await rejectsWith(api.updateTools({}, phone), 403);
   });
 });
 
@@ -421,6 +436,26 @@ describe("exportConfig and importConfig", () => {
     );
     assert.equal(result.ok, false);
     assert.doesNotMatch(result.problems.join(" "), /secret-pw/);
+  });
+});
+
+describe("getToolsStatus and updateTools", () => {
+  test("getToolsStatus answers with the tools' status", async () => {
+    const { api } = setup();
+    assert.deepEqual(await api.getToolsStatus({}, display), TOOLS_STATUS);
+  });
+
+  test("updateTools answers ok, or why not, instead of throwing", async () => {
+    assert.deepEqual(await setup().api.updateTools({}, display), { ok: true });
+    const { api } = setup({
+      updateTools: async () => {
+        throw new Error("503");
+      },
+    });
+    assert.deepEqual(await api.updateTools({}, display), {
+      ok: false,
+      reason: "Couldn't update the tools: 503",
+    });
   });
 });
 

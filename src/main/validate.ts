@@ -302,4 +302,6 @@ export const validators: {
     yaml: string(fields(raw, ["yaml"]), "yaml", 1_000_000),
   }),
   restartApp: nothing,
+  getToolsStatus: nothing,
+  updateTools: nothing,
 };
