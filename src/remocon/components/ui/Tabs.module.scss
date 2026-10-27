@@ -1,0 +1,42 @@
+@use "../../tokens" as *;
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid $kf-border;
+}
+
+.tab {
+  flex: 1;
+  min-height: $kf-tap;
+  margin: 0;
+  padding: 0 $kf-space-3;
+  border: none;
+  // The selected tab's underline; transparent keeps every tab one height.
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: $kf-muted;
+  font: inherit;
+  font-size: $kf-text-body;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+
+  // Not the mixins: in /dev/ui, data-demo shows the state on the selected
+  // tab only.
+  &:active,
+  [data-demo="pressed"] &[aria-selected="true"] {
+    background-color: $kf-surface-pressed;
+  }
+
+  &:focus-visible,
+  [data-demo="focus"] &[aria-selected="true"] {
+    @include kf-focus-ring;
+    outline-offset: -2px;
+  }
+
+  &[aria-selected="true"] {
+    border-bottom-color: $kf-accent;
+    color: $kf-text;
+  }
+}

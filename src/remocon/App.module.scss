@@ -1,3 +1,5 @@
+@use "./tokens" as *;
+
 .app {
   position: fixed;
   top: 0;
@@ -14,7 +16,10 @@ main {
   overflow: auto;
 }
 
-header,
+header {
+  border-bottom: 1px solid $kf-border;
+}
+
 footer {
-  box-shadow: 0 0 4px #aaa;
+  box-shadow: $kf-shadow-sheet;
 }

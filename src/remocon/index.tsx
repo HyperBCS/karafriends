@@ -5,9 +5,14 @@ import { createRoot } from "react-dom/client";
 import { LiveStateProvider } from "../common/apiClient";
 import { createQueryClient } from "../common/apiQueries";
 import App from "./App";
+import { LanguageProvider } from "./i18n";
 import "./index.scss";
 
 const queryClient = createQueryClient();
+
+// iOS Safari only shows :active (the buttons' pressed state) on a page that
+// listens for touches.
+document.addEventListener("touchstart", () => {}, { passive: true });
 
 const container = document.getElementById("root");
 const root = createRoot(container!);
@@ -16,7 +21,11 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <LiveStateProvider checkAdmin>
-        <App />
+        {/* Inside the data providers: a language change remounts the app
+            but keeps the queries and the live connection. */}
+        <LanguageProvider>
+          <App />
+        </LanguageProvider>
       </LiveStateProvider>
     </QueryClientProvider>
   </React.StrictMode>,

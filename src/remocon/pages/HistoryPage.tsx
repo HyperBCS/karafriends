@@ -1,10 +1,11 @@
 import React from "react";
 
 import SongHistory from "../components/SongHistory";
+import { t } from "../i18n";
 
 const HistoryPage = () => (
   <>
-    <h2>History</h2>
+    <h2>{t("history.heading")}</h2>
     <SongHistory />
   </>
 );

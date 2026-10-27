@@ -46,7 +46,10 @@ async function openPhone(
   who: { deviceId: string; nickname: string },
   graphqlRequests: string[],
 ): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const context = await browser.newContext({
+    ...devices["Pixel 7"],
+    locale: "en-US",
+  });
   await forbidGraphql(context, graphqlRequests);
   const page = await context.newPage();
   await page.addInitScript(

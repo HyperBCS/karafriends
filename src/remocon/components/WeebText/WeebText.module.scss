@@ -1,8 +1,10 @@
+@use "../../tokens" as *;
+
 .bold {
   font-weight: bold;
 }
 
 .romaji {
-  color: #666;
+  color: $kf-muted;
   font-weight: lighter;
 }

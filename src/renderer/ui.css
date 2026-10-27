@@ -5,7 +5,7 @@
 html {
   box-sizing: border-box;
   -webkit-text-size-adjust: 100%;
-  color: rgba(0, 0, 0, 0.87);
+  color: var(--kf-text);
   font-size: 14px;
   font-weight: normal;
   line-height: 1.5;
@@ -97,12 +97,9 @@ h1 {
 nav {
   width: 100%;
   height: 56px;
-  background-color: #ee6e73;
-  box-shadow:
-    0 2px 2px 0 rgba(0, 0, 0, 0.14),
-    0 3px 1px -2px rgba(0, 0, 0, 0.12),
-    0 1px 5px 0 rgba(0, 0, 0, 0.2);
-  color: #fff;
+  border-bottom: 1px solid var(--kf-border);
+  background-color: var(--kf-surface);
+  color: var(--kf-text);
   line-height: 56px;
 }
 
@@ -118,14 +115,10 @@ nav {
   height: 36px;
   padding: 0 16px;
   border: none;
-  border-radius: 2px;
   outline: 0;
-  background-color: #26a69a;
-  box-shadow:
-    0 2px 2px 0 rgba(0, 0, 0, 0.14),
-    0 3px 1px -2px rgba(0, 0, 0, 0.12),
-    0 1px 5px 0 rgba(0, 0, 0, 0.2);
-  color: #fff;
+  border-radius: var(--kf-radius);
+  background-color: var(--kf-accent);
+  color: var(--kf-on-accent);
   font-size: 14px;
   letter-spacing: 0.5px;
   line-height: 36px;
@@ -137,16 +130,13 @@ nav {
   -webkit-tap-highlight-color: transparent;
 }
 
-.btn:hover {
-  background-color: #2bbbad;
-  box-shadow:
-    0 3px 3px 0 rgba(0, 0, 0, 0.14),
-    0 1px 7px 0 rgba(0, 0, 0, 0.12),
-    0 3px 1px -1px rgba(0, 0, 0, 0.2);
+.btn:active {
+  background-color: var(--kf-accent-pressed);
 }
 
-.btn:focus {
-  background-color: #1d7d74;
+.btn:focus-visible {
+  outline: 2px solid var(--kf-accent);
+  outline-offset: 2px;
 }
 
 /* A select with its label above it, as Materialize's select drew it but
@@ -164,13 +154,13 @@ nav {
   margin: 0 0 8px;
   padding: 0;
   border: none;
-  border-bottom: 1px solid #9e9e9e;
+  border-bottom: 1px solid var(--kf-muted);
   border-radius: 0;
   outline: none;
   background: transparent
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill-opacity='.87'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%23f5f5f5'/%3E%3C/svg%3E")
     no-repeat right center;
-  color: #000;
+  color: var(--kf-text);
   font-size: 16px;
   line-height: 3rem;
   cursor: pointer;
@@ -178,30 +168,35 @@ nav {
 }
 
 .input-field > select:focus {
-  border-bottom-color: #26a69a;
+  border-bottom-color: var(--kf-accent);
+}
+
+.input-field > select > option {
+  background-color: var(--kf-surface);
+  color: var(--kf-text);
 }
 
 .input-field > label {
   position: absolute;
   top: -14px;
   left: 0;
-  color: #9e9e9e;
+  color: var(--kf-muted);
   font-size: 0.8rem;
 }
 
 .collection {
   position: relative;
   margin: 0.5rem 0 1rem;
-  border: 1px solid #e0e0e0;
-  border-radius: 2px;
+  border: 1px solid var(--kf-border);
+  border-radius: var(--kf-radius);
   overflow: hidden;
 }
 
 .collection .collection-item {
   margin: 0;
   padding: 10px 20px;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #fff;
+  border-bottom: 1px solid var(--kf-border);
+  background-color: var(--kf-surface);
   line-height: 1.5rem;
 }
 
@@ -211,5 +206,5 @@ nav {
 
 .secondary-content {
   float: right;
-  color: #26a69a;
+  color: var(--kf-muted);
 }

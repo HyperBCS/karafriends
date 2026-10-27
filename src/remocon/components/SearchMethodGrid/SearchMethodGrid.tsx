@@ -2,17 +2,24 @@ import React from "react";
 
 import * as styles from "./SearchMethodGrid.module.scss";
 import SearchMethodGridItem from "./SearchMethodGridItem";
+import { t } from "../../i18n";
 
 const SearchMethodGrid = () => (
   <div>
-    <h2>Find a song</h2>
+    <h2>{t("search.heading")}</h2>
     <div className={styles.grid}>
-      <SearchMethodGridItem method="joysoundSong" text="Title (Joysound)" />
-      <SearchMethodGridItem method="joysoundArtist" text="Artist (Joysound)" />
-      <SearchMethodGridItem method="song" text="Title (DAM)" />
-      <SearchMethodGridItem method="artist" text="Artist (DAM)" />
-      <SearchMethodGridItem method="youtube" text="YouTube" />
-      <SearchMethodGridItem method="niconico" text="Niconico" />
+      <SearchMethodGridItem
+        method="joysoundSong"
+        text={t("search.titleJoysound")}
+      />
+      <SearchMethodGridItem
+        method="joysoundArtist"
+        text={t("search.artistJoysound")}
+      />
+      <SearchMethodGridItem method="song" text={t("search.titleDam")} />
+      <SearchMethodGridItem method="artist" text={t("search.artistDam")} />
+      <SearchMethodGridItem method="youtube" text={t("source.youtube")} />
+      <SearchMethodGridItem method="niconico" text={t("source.niconico")} />
     </div>
   </div>
 );

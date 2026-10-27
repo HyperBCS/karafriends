@@ -5,6 +5,7 @@
 The product round: the phone remote, the display, settings and party-time failures. Each phase adds its line when it merges.
 
 - A failed Joysound, YouTube or Niconico download now tells the phone that queued it why ("Couldn't download: Video unavailable"), the display shows it too, and the song can be queued again at once. Downloads that hang are stopped after 15 minutes.
+- The display and the phone remote are dark now, with one accent color and larger type. The remote can be switched to Japanese (it picks the phone's language at first).
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 
 ## 0.1.0

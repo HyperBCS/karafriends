@@ -5,6 +5,7 @@ import { List } from "../List";
 import { withLoader } from "../Loader";
 import MoreButton from "../MoreButton";
 import ArtistSearchResultsItem from "./ArtistSearchResultsItem";
+import { t } from "../../i18n";
 
 const Results = withLoader(function Results({ query }: { query: string }) {
   const paged = usePagedApiQuery(
@@ -17,7 +18,7 @@ const Results = withLoader(function Results({ query }: { query: string }) {
   return (
     <>
       {paged.items.length === 0 ? (
-        <span>No results found</span>
+        <span>{t("search.noResults")}</span>
       ) : (
         <List>
           {paged.items.map((artist) => (

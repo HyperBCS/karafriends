@@ -1,0 +1,24 @@
+@use "../../tokens" as *;
+
+.empty {
+  padding: $kf-space-5 $kf-space-4;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+  text-align: center;
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $kf-space-2 $kf-space-3;
+  padding: $kf-space-3 $kf-space-4;
+  border-left: 4px solid $kf-danger;
+  background-color: $kf-surface;
+}
+
+.errorText {
+  flex: 1 1 12em;
+  color: $kf-text;
+  font-size: $kf-text-body;
+}

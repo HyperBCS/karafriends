@@ -1,0 +1,107 @@
+@use "../../tokens" as *;
+
+// Shared by Button and IconButton.
+%base {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $kf-space-2;
+  min-width: $kf-tap;
+  min-height: $kf-tap;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: $kf-radius;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+
+  @include kf-focus-visible;
+
+  &:disabled {
+    cursor: default;
+  }
+
+  // The icon's wrapper.
+  > [aria-hidden="true"] {
+    display: inline-flex;
+    flex: none;
+  }
+}
+
+.button {
+  @extend %base;
+  padding: 0 $kf-space-4;
+  font-size: $kf-text-control;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.full {
+  width: 100%;
+}
+
+.primary {
+  background-color: $kf-accent;
+  color: $kf-on-accent;
+
+  @include kf-pressed {
+    background-color: $kf-accent-pressed;
+  }
+}
+
+.secondary {
+  border-color: $kf-border-strong;
+  background-color: transparent;
+  color: $kf-text;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+}
+
+.danger {
+  background-color: $kf-danger;
+  color: $kf-on-accent;
+
+  @include kf-pressed {
+    background-color: $kf-danger-pressed;
+  }
+}
+
+// Every variant looks the same when it can't be pressed.
+.button:disabled {
+  border-color: transparent;
+  background-color: $kf-surface;
+  color: $kf-muted;
+}
+
+.iconButton {
+  @extend %base;
+  padding: 0;
+  font-size: $kf-text-icon;
+  color: $kf-text;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  &:disabled {
+    color: $kf-border-strong;
+  }
+}
+
+// The action that matters most in a row of icons (play), or a toggle that
+// is on.
+.accent,
+.iconButton[aria-pressed="true"] {
+  color: $kf-accent;
+}
+
+.dangerIcon {
+  color: $kf-danger;
+}

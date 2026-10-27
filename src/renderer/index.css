@@ -1,3 +1,5 @@
+@import "./tokens.css";
+
 @font-face {
   font-family: "notoSerifJP";
   src: url("./fonts/NotoSerifJP-SemiBold.otf");
@@ -17,9 +19,9 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
-    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  background-color: var(--kf-bg);
+  color: var(--kf-text);
+  font-family: var(--kf-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

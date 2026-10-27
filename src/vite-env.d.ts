@@ -24,3 +24,16 @@ declare module "*.node" {
   const native: any;
   export default native;
 }
+
+// The values Vite puts in import.meta.env (only the ones used).
+interface ImportMetaEnv {
+  // True on the dev server (yarn dev), false in a build.
+  readonly DEV: boolean;
+  // "1" builds the remote's /dev/ui review page into a production build, for
+  // screenshots (see tests/e2e/screenshots.spec.ts).
+  readonly VITE_KARAFRIENDS_DEV_UI?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

@@ -1,24 +1,31 @@
+@use "../../tokens" as *;
+
 .searchForm {
   input {
     border: none;
-    border-bottom: 4px solid #1cb3ff;
+    border-bottom: 2px solid $kf-muted;
+    background-color: transparent;
+    color: $kf-text;
     font-size: 20px;
     width: 100%;
     margin: 8px 0;
 
     &:focus {
       outline: none;
+      border-bottom-color: $kf-accent;
     }
 
     &::placeholder {
-      color: #aaa;
+      color: $kf-muted;
     }
   }
 
   select,
   textarea {
-    border: 2px solid #1cb3ff;
-    border-radius: 4px;
+    border: 1px solid $kf-border;
+    border-radius: $kf-radius;
+    background-color: $kf-surface;
+    color: $kf-text;
     width: 100%;
     margin: 4px 0;
     padding: 8px;

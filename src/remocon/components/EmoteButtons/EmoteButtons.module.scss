@@ -1,3 +1,5 @@
+@use "../../tokens" as *;
+
 .emotes {
   display: flex;
   flex-direction: row-reverse;
@@ -16,8 +18,8 @@
 }
 
 .custom {
-  color: #1cb3ff;
-  background-color: white;
+  color: $kf-text;
+  background-color: $kf-surface-pressed;
   height: 32px;
   width: 32px;
   line-height: 0px;

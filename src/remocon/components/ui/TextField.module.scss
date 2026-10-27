@@ -1,0 +1,69 @@
+@use "../../tokens" as *;
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+}
+
+.label {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+}
+
+// Hidden but read: when the screen already says what the field is for.
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.box {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid $kf-border-strong;
+  border-radius: $kf-radius;
+  background-color: $kf-surface;
+
+  &:focus-within,
+  [data-demo="focus"] & {
+    border-color: $kf-accent;
+    // A second pixel of accent, so focus doesn't depend on color alone.
+    outline: 1px solid $kf-accent;
+  }
+}
+
+.leading {
+  display: inline-flex;
+  padding-left: $kf-space-3;
+  color: $kf-muted;
+  font-size: 24px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0 $kf-space-3;
+  border: none;
+  outline: none;
+  background: none;
+  color: $kf-text;
+  font: inherit;
+  // 16px or more, or iOS zooms in on focus.
+  font-size: $kf-text-control;
+
+  &::placeholder {
+    color: $kf-muted;
+    opacity: 1;
+  }
+
+  // The browser's own clear button; this field has its own.
+  &::-webkit-search-cancel-button {
+    display: none;
+  }
+}
