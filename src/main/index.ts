@@ -146,6 +146,26 @@ function createWindow() {
         delete details.responseHeaders["access-control-allow-origin"];
         details.responseHeaders["Access-Control-Allow-Origin"] = ["*"];
       }
+      // In dev the display comes from the Parcel dev server, another origin,
+      // so its JSON POSTs to /api send a preflight first. The server answers
+      // it 404 (no CORS, on purpose: see server.ts), so pass it here, for the
+      // display only.
+      if (
+        details.method === "OPTIONS" &&
+        details.url.startsWith(
+          `http://localhost:${karafriendsConfig.remoconPort}/api/`,
+        )
+      ) {
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Access-Control-Allow-Headers": ["*"],
+            "Access-Control-Allow-Methods": ["POST"],
+          },
+          statusLine: "HTTP/1.1 204 No Content",
+        });
+        return;
+      }
       callback({ responseHeaders: details.responseHeaders });
     },
   );
