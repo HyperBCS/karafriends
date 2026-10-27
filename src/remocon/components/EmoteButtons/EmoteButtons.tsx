@@ -1,5 +1,4 @@
 import React, { useRef, useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { MdEdit } from "react-icons/md";
 import { graphql, useMutation } from "react-relay";
 
@@ -18,7 +17,9 @@ const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
 const EmoteButtons = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [emotes, setEmotes] = useState<string[]>(
-    JSON.parse(localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES))
+    JSON.parse(
+      localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES),
+    ),
   );
   const userIdentity = useUserIdentity();
   const [commit] = useMutation<EmoteButtonsMutation>(emoteButtonsMutation);

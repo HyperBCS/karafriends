@@ -1,7 +1,5 @@
 import React, { useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { BsMusicPlayerFill } from "react-icons/bs";
-// tslint:disable-next-line:no-submodule-imports
 import { FaAngleDown, FaAngleUp, FaSmile } from "react-icons/fa";
 
 import EmoteButtons from "../EmoteButtons";
@@ -12,10 +10,10 @@ import NowPlaying from "./NowPlaying";
 
 const ControlBar = () => {
   const [expanded, _setExpanded] = useState(
-    localStorage.getItem("expanded") === "true" || false
+    localStorage.getItem("expanded") === "true" || false,
   );
   const [showEmotes, _setShowEmotes] = useState(
-    localStorage.getItem("showEmotes") === "true" || false
+    localStorage.getItem("showEmotes") === "true" || false,
   );
 
   const setExpanded = (value: boolean) => {

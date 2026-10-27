@@ -6,7 +6,7 @@ import useQueue from "../../common/hooks/useQueue";
 async function registerServiceWorker() {
   return navigator.serviceWorker.register(
     new URL("../notificationServiceWorker.ts", import.meta.url),
-    { scope: "/" }
+    { scope: "/" },
   );
 }
 
@@ -17,7 +17,7 @@ async function showNotification(
     const registration = await registerServiceWorker();
     return registration.showNotification(...args);
   } else if ("Notification" in window) {
-    new Notification(...args); // tslint:disable-line:no-unused-expression
+    new Notification(...args);
   } else {
     console.warn("this notif is fukt");
   }

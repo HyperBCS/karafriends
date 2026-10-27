@@ -1,5 +1,3 @@
-/* tslint:disable:max-classes-per-file */
-
 import convert from "color-convert";
 import Spline from "cubic-spline";
 import vec from "gl-vec2";
@@ -53,7 +51,7 @@ function edgesToTriangles(top: number[][], bottom: number[][]) {
     const x3 = bottom[i + 1][0];
     const y3 = bottom[i + 1][1];
 
-    triangles.push(...[x0, y0, x1, y1, x2, y2, x1, y1, x2, y2, x3, y3]);
+    triangles.push(x0, y0, x1, y1, x2, y2, x1, y1, x2, y2, x3, y3);
   }
 
   return triangles;
@@ -598,7 +596,7 @@ export default function PianoRoll(props: {
         noteProgram.draw(time, canvasWidth);
       }
 
-      pitchPollers.forEach(([buffer, shader, _]) => {
+      pitchPollers.forEach(([buffer, shader]) => {
         if (buffer.positions.length > 0) {
           shader.draw(time, canvasWidth, buffer.positions);
         }

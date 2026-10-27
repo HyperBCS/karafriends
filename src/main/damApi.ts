@@ -1,5 +1,3 @@
-/* tslint:disable:max-classes-per-file */
-
 import promiseRetry from "promise-retry";
 
 import { http, httpFetch } from "./http";

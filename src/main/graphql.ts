@@ -3,28 +3,24 @@ import { createServer } from "http";
 import path from "path";
 import { WebSocketServer } from "ws";
 
-import { ApolloServer } from "@apollo/server"; // tslint:disable-line:no-submodule-imports
+import { ApolloServer } from "@apollo/server";
 import {
   ApolloServerPluginCacheControlDisabled,
   ApolloServerPluginInlineTraceDisabled,
   ApolloServerPluginLandingPageDisabled,
   ApolloServerPluginSchemaReportingDisabled,
   ApolloServerPluginUsageReportingDisabled,
-} from "@apollo/server/plugin/disabled"; // tslint:disable-line:no-submodule-imports
-// tslint:disable-next-line:no-submodule-imports
+} from "@apollo/server/plugin/disabled";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-// tslint:disable-next-line:no-submodule-imports
 import { expressMiddleware } from "@as-integrations/express5";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-// tslint:disable-next-line:no-implicit-dependencies
 import { app as electronApp, dialog } from "electron";
 import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
-import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
+import { useServer } from "graphql-ws/use/ws";
 import { Innertube } from "youtubei.js";
 
-// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import rawSchema from "inline-string:../common/schema.graphql";
 import karafriendsConfig from "../common/config";
 import {
@@ -39,7 +35,7 @@ import {
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
 
-import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
+import "regenerator-runtime/runtime";
 
 export interface IDataSources {
   dataSources: {
@@ -79,10 +75,6 @@ interface ArtistParent {
   readonly name: string;
   readonly nameYomi: string;
   readonly songCount: number;
-}
-
-interface Artist extends ArtistParent {
-  readonly songs: Connection<SongParent, string>;
 }
 
 interface Connection<NodeType, CursorType> {
@@ -237,11 +229,6 @@ type QueueNicoSongInput = {
 
 interface SongHistoryItem {
   readonly song: QueueItem;
-}
-
-interface SubscriptionQueueChanged {
-  readonly currentSong: QueueItem | null;
-  readonly newQueue: QueueItem[];
 }
 
 enum PlaybackState {
@@ -528,7 +515,7 @@ const resolvers = {
       return dataSources.dkwebsys
         .getMusicListByArtist(parent.id, firstInt, afterInt)
         .then((result) => ({
-          edges: result.list.map((song, i) => ({
+          edges: result.list.map((song) => ({
             node: {
               id: song.requestNo,
               name: song.title,
@@ -1059,7 +1046,7 @@ const resolvers = {
       saveDb();
       return true;
     },
-    popSong: (_: any, args: {}): QueueItem | null => {
+    popSong: (): QueueItem | null => {
       const newSong = db.songQueue.shift() || null;
 
       db.currentSongAdhocLyrics = [];
@@ -1289,7 +1276,7 @@ export function applyGraphQLMiddleware(app: Application) {
     console.error("WebSocket server error:", err);
   });
 
-  const serverCleanup = useServer({ schema }, wsServer);
+  useServer({ schema }, wsServer);
 
   db = loadDb();
 

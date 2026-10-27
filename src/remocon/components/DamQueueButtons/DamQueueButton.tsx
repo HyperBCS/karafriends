@@ -77,7 +77,7 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
         switch (queueDamSong.__typename) {
           case "QueueSongInfo":
             setText(
-              `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`
+              `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`,
             );
             break;
           case "QueueSongError":

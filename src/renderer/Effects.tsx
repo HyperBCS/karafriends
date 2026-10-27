@@ -29,7 +29,7 @@ const Effects = () => {
           effectsDiv.appendChild(emoteDiv);
           setTimeout(() => effectsDiv.removeChild(emoteDiv), 1000);
         },
-      }
+      },
     );
     return () => subscription.dispose();
   }, []);

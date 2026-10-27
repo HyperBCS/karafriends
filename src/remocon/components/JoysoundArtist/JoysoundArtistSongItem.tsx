@@ -7,7 +7,7 @@ import { JoysoundArtist_joysoundSongsByArtist$data } from "./__generated__/Joyso
 type Props =
   JoysoundArtist_joysoundSongsByArtist$data["joysoundSongsByArtist"]["edges"][0]["node"];
 
-const JoysoundArtistSongItem = ({ id, name, artistName }: Props) => (
+const JoysoundArtistSongItem = ({ id, name }: Props) => (
   <Link to={`/joysoundSong/${id}`}>
     <ListItem>
       <strong>{name}</strong>

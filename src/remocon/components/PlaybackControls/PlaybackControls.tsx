@@ -1,6 +1,5 @@
 import classnames from "classnames";
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "react-icons/md";
 
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
@@ -32,7 +31,7 @@ const PlaybackControls = () => {
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
   console.log(
-    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`
+    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`,
   );
 
   return (

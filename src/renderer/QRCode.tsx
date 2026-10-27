@@ -22,7 +22,7 @@ function QRCode(props: { hostname: string }) {
           if (error) {
             console.error(error);
           }
-        }
+        },
       );
     }
 

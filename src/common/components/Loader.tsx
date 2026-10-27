@@ -21,7 +21,7 @@ const Loader = () => (
 );
 
 export const withLoader = <P extends object>(
-  WrappedComponent: React.ComponentType<P>
+  WrappedComponent: React.ComponentType<P>,
 ) =>
   class WithLoader extends React.Component<P> {
     render() {

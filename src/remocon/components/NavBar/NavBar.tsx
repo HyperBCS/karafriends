@@ -1,8 +1,6 @@
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { FaHistory, FaHome } from "react-icons/fa";
 import { Link } from "react-router";
-// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import icon from "url:../../images/icon.png";
 
 import * as styles from "./NavBar.module.scss";

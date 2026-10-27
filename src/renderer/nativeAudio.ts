@@ -1,5 +1,5 @@
 const registry = new FinalizationRegistry(
-  window.karafriends.nativeAudio.inputDevice_delete
+  window.karafriends.nativeAudio.inputDevice_delete,
 );
 
 export class InputDevice {
@@ -10,7 +10,7 @@ export class InputDevice {
   constructor(name: string, channelSelection: number) {
     this.deviceId = window.karafriends.nativeAudio.inputDevice_new(
       name,
-      channelSelection
+      channelSelection,
     );
     this.name = name;
     this.channelSelection = channelSelection;

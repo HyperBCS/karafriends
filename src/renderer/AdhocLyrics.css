@@ -9,7 +9,11 @@
 .entry-container {
   font-size: 44px;
   /* Replace with real stroke when https://bugs.chromium.org/p/chromium/issues/detail?id=815111 is fixed */
-  text-shadow: 0 0 4px black, 0 0 4px black, 0 0 4px black, 0 0 4px black;
+  text-shadow:
+    0 0 4px black,
+    0 0 4px black,
+    0 0 4px black,
+    0 0 4px black;
   position: absolute;
   left: 0%;
   top: 100%;

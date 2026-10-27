@@ -1,5 +1,4 @@
 import React, { Suspense } from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { BiLoaderAlt } from "react-icons/bi";
 
 import * as styles from "./Loader.module.scss";
@@ -11,7 +10,7 @@ const Loader = () => (
 );
 
 export const withLoader = <P extends object>(
-  WrappedComponent: React.ComponentType<P>
+  WrappedComponent: React.ComponentType<P>,
 ) =>
   class WithLoader extends React.Component<P> {
     render() {

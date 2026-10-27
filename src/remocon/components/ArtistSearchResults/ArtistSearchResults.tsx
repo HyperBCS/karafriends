@@ -46,7 +46,7 @@ const ArtistSearchResults = ({ query }: Props) => {
 
   const queryData = useLazyLoadQuery<ArtistSearchResultsViewQuery>(
     artistSearchResultsViewQuery,
-    { name: query }
+    { name: query },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

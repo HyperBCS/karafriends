@@ -1,5 +1,3 @@
-/* tslint:disable:no-bitwise */
-
 export function cyrb53(str: string, seed = 0) {
   let h1 = 0xdeadbeef ^ seed;
   let h2 = 0x41c6ce57 ^ seed;

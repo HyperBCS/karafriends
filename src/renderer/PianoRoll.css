@@ -14,5 +14,7 @@
 }
 
 .pianoRollPog {
-  box-shadow: inset 0px 0px 50px white, 0px 0px 75px white;
+  box-shadow:
+    inset 0px 0px 50px white,
+    0px 0px 75px white;
 }

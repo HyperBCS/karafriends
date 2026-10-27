@@ -33,16 +33,8 @@ function AdhocLyrics() {
   function handleNewLyrics(
     response: AdhocLyricsCurrentLyricsSubscription$data,
   ) {
-    setLyricLines((prevLyricLines) => {
+    setLyricLines(() => {
       const newLyricsLineCount = response.currentSongAdhocLyricsChanged.length;
-      const newLyricIndices = response.currentSongAdhocLyricsChanged.map(
-        (lyricEntry) => lyricEntry.lyricIndex,
-      );
-
-      const currentLyricIndices = prevLyricLines.map(
-        (lyricEntry) => lyricEntry.lyricIndex,
-      );
-
       const newLyricEntry: LyricEntry[] =
         response.currentSongAdhocLyricsChanged.map((lyricEntry, index) => {
           const height = getTextHeight(

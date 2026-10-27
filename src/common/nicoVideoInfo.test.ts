@@ -1,6 +1,5 @@
 // This file runs on Node's built-in test runner, not through the app bundle, so
 // it uses node: core modules directly.
-/* tslint:disable:no-submodule-imports no-implicit-dependencies */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 

@@ -44,7 +44,7 @@ export default function usePlaybackState() {
       fetchQuery<usePlaybackStateQuery>(
         environment,
         playbackStateQuery,
-        {}
+        {},
       ).subscribe({
         next: (response: usePlaybackStateQuery["response"]) =>
           setLocalPlaybackState(response.playbackState),
@@ -56,7 +56,7 @@ export default function usePlaybackState() {
     const initialQuery = fetchQuery<usePlaybackStateQuery>(
       environment,
       playbackStateQuery,
-      {}
+      {},
     ).subscribe({
       next: (response: usePlaybackStateQuery["response"]) =>
         setLocalPlaybackState(response.playbackState),
@@ -70,7 +70,7 @@ export default function usePlaybackState() {
         onNext: (response) => {
           if (response) setLocalPlaybackState(response.playbackStateChanged);
         },
-      }
+      },
     );
 
     return () => {

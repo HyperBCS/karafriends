@@ -15,7 +15,7 @@ const Button = ({ className, disabled, full, ...rest }: Props) => (
         [styles.disabled]: disabled,
         [styles.full]: full,
       },
-      className
+      className,
     )}
     disabled={disabled}
     {...rest}

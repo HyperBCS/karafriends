@@ -1,5 +1,5 @@
 import { ChildProcess, execFile, spawn } from "child_process";
-import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
+import { app } from "electron";
 import fs from "fs";
 import path from "path";
 import process from "process";

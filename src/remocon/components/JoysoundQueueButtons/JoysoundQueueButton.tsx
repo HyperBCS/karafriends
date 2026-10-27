@@ -69,7 +69,7 @@ const JoysoundQueueButton = ({
 
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<JoysoundQueueButtonMutation>(
-    joysoundQueueButtonMutation
+    joysoundQueueButtonMutation,
   );
 
   useEffect(() => {
@@ -94,10 +94,10 @@ const JoysoundQueueButton = ({
               videoDownloadType: 0,
               songId: song.id,
               suffix: youtubeVideoId,
-            }
+            },
           ).subscribe({
             next: (
-              data: JoysoundQueueButtonGetVideoDownloadProgressQuery["response"]
+              data: JoysoundQueueButtonGetVideoDownloadProgressQuery["response"],
             ) => {
               if (
                 data.videoDownloadProgress.progress === 1.0 ||
@@ -109,7 +109,7 @@ const JoysoundQueueButton = ({
                 setText(
                   `Downloading -- ${(
                     data.videoDownloadProgress.progress * 100
-                  ).toFixed(1)}%`
+                  ).toFixed(1)}%`,
                 );
               }
             },

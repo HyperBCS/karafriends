@@ -14,7 +14,7 @@ const useUserIdentity = (shouldPrompt?: boolean) => {
       while ((localStorage.getItem("nickname") || "").length === 0) {
         localStorage.setItem(
           "nickname",
-          prompt("Please set your nickname:") || ""
+          prompt("Please set your nickname:") || "",
         );
       }
     }
