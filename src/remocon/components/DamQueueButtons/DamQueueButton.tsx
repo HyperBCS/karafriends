@@ -2,7 +2,7 @@ import formatDuration from "format-duration";
 import React, { useEffect, useState } from "react";
 import { graphql, useMutation } from "react-relay";
 
-import { SongPageQuery$data } from "../../pages/__generated__/SongPageQuery.graphql";
+import type { DamSongDetail } from "../../../common/api";
 import Button from "../Button";
 import {
   DamQueueButtonMutation,
@@ -44,7 +44,7 @@ function getDefaultText(vocalType: string) {
 }
 
 interface Props {
-  song: SongPageQuery$data["songById"];
+  song: DamSongDetail;
   streamingUrlIndex: number;
   userIdentity: DamQueueButtonMutation$variables["input"]["userIdentity"];
 }

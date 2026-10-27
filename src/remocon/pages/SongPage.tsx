@@ -1,26 +1,9 @@
 import React from "react";
-import { graphql, useLazyLoadQuery } from "react-relay";
 import { Link, useParams } from "react-router";
 
+import { useApiQuery } from "../../common/apiQueries";
 import DamQueueButtons from "../components/DamQueueButtons";
 import { withLoader } from "../components/Loader";
-import { SongPageQuery } from "./__generated__/SongPageQuery.graphql";
-
-const songPageQuery = graphql`
-  query SongPageQuery($id: String!) {
-    songById(id: $id) {
-      id
-      name
-      nameYomi
-      artistName
-      artistNameYomi
-      lyricsPreview
-      vocalTypes
-      tieUp
-      playtime
-    }
-  }
-`;
 
 type RouteParams = {
   id: string;
@@ -28,10 +11,7 @@ type RouteParams = {
 
 const SongPage = () => {
   const params = useParams<RouteParams>();
-  const data = useLazyLoadQuery<SongPageQuery>(songPageQuery, {
-    id: params.id!,
-  });
-  const song = data.songById;
+  const song = useApiQuery("damSong", { id: params.id! });
 
   return (
     <div>

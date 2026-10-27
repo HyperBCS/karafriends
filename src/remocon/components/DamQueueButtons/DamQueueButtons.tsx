@@ -1,12 +1,12 @@
 import React from "react";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import { SongPageQuery$data } from "../../pages/__generated__/SongPageQuery.graphql";
+import type { DamSongDetail } from "../../../common/api";
 import DamQueueButton from "./DamQueueButton";
 import * as styles from "./DamQueueButtons.module.scss";
 
 interface Props {
-  song: SongPageQuery$data["songById"];
+  song: DamSongDetail;
 }
 
 const DamQueueButtons = ({ song }: Props) => {
