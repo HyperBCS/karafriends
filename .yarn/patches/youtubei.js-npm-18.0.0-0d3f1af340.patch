@@ -1,0 +1,25 @@
+diff --git a/dist/src/platform/node.js b/dist/src/platform/node.js
+index 418bd27b4cfc3b11b8570df488d2ad151f63a9c0..2cec282372bcee35b5cd34d1a34bdbd36066df32 100644
+--- a/dist/src/platform/node.js
++++ b/dist/src/platform/node.js
+@@ -10,7 +10,19 @@ import { fileURLToPath } from 'url';
+ import evaluate from './jsruntime/default.js';
+ const meta_url = import.meta.url;
+ const is_cjs = !meta_url;
+-const __dirname__ = is_cjs ? __dirname : path.dirname(fileURLToPath(meta_url));
++// karafriends: Parcel inlines import.meta.url as a project-relative
++// file:///.yarn/... URL, which fileURLToPath rejects on Windows (no drive
++// letter). Fall back to __dirname, which Parcel rewrites to the real path.
++const __dirname__ = (() => {
++    if (is_cjs)
++        return __dirname;
++    try {
++        return path.dirname(fileURLToPath(meta_url));
++    }
++    catch {
++        return __dirname;
++    }
++})();
+ class Cache {
+     #persistent_directory;
+     #persistent;
