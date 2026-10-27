@@ -29,6 +29,7 @@
     "@apollo/server": "5.5.1",
     "@as-integrations/express5": "1.1.2",
     "@graphql-tools/schema": "10.1.0",
+    "@tanstack/react-query": "5.104.2",
     "@types/youtube-player": "5.5.11",
     "bufferutil": "4.1.0",
     "classnames": "2.5.1",

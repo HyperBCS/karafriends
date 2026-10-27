@@ -7,6 +7,14 @@
   animation: rotation 1s infinite linear;
 }
 
+.error {
+  margin: 8px 0;
+
+  p {
+    margin: 0 0 8px;
+  }
+}
+
 @keyframes rotation {
   from {
     transform: rotate(0deg);
