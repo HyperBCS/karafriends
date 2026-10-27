@@ -153,15 +153,23 @@ export interface AdhocLyricsEntry {
   lyricIndex: number;
 }
 
-// A Joysound, YouTube or Niconico download in progress. (DAM songs download
-// in the background without reporting progress.)
+// A Joysound, YouTube or Niconico download in progress, or one that failed
+// in the last 30 seconds. (DAM songs download in the background without
+// reporting progress.) The song joins the queue once its download is done.
 export interface DownloadProgress {
-  kind: Exclude<QueueItemKind, "dam">;
+  // Unique among the server's downloads: a new try at the same song gets a
+  // new id.
+  id: number;
+  kind: QueueItemKind;
   songId: string;
   // Joysound: the YouTube video used as the background, if any.
   suffix: string | null;
   // 0 to 1.
   progress: number;
+  status: "downloading" | "failed";
+  // Why it failed, in words for guests ("Video unavailable"). Null while
+  // downloading.
+  reason: string | null;
   // Whether the phone watching started it.
   isMine: boolean;
 }
@@ -189,7 +197,10 @@ export interface LiveState {
 export type LiveEvent =
   | { type: "state"; state: LiveState }
   | { type: "emote"; emote: string; user: PublicUser }
-  | { type: "queueAdded"; item: SharedQueueItem };
+  | { type: "queueAdded"; item: SharedQueueItem }
+  // A song's download failed, so it won't join the queue. Only the phone
+  // that queued it and the display hear about it.
+  | { type: "queueFailed"; item: SharedQueueItem; reason: string };
 
 export type LiveEventType = LiveEvent["type"];
 

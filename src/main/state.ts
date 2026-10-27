@@ -3,7 +3,8 @@
 //
 // Everything that changes the state goes through update(), which saves it and
 // tells the listeners. The one exception is downloadQueue, which
-// videoDownloader changes in place as downloads start, progress and finish.
+// videoDownloader changes in place (with the helpers below) as downloads
+// start, progress, finish and fail.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { EventEmitter } from "events";
@@ -19,14 +20,119 @@ import type {
 } from "../common/api";
 import { PLAYBACK_STATES } from "../common/api";
 
-// A download in progress.
+// A download in progress, or one that failed in the last
+// FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
 export interface DownloadQueueItem {
-  // 0 Joysound, 1 YouTube, 2 Niconico.
-  downloadType: number;
+  // Unique among this run's downloads, so a phone can tell a new try at a
+  // song from the failure before it.
+  id: number;
+  kind: QueueItemKind;
   userIdentity: UserIdentity;
   songId: string;
+  // Joysound: the YouTube video used as the background, if any.
   suffix: string | null;
   progress: number;
+  status: "downloading" | "failed";
+  // Why it failed, in words for guests. Null while downloading.
+  reason: string | null;
+  // When it failed (ms since the epoch). Null while downloading.
+  failedAt: number | null;
+}
+
+// How long a failed download stays in the download queue.
+export const FAILED_DOWNLOAD_KEPT_MS = 30_000;
+
+let lastDownloadId = 0;
+
+// The download queue's changes. videoDownloader makes them in place, outside
+// update(); the live hub looks at the queue while it isn't empty.
+
+// Adds a download of kind/songId/suffix to queue and returns it. A failure
+// of the same download goes, as do failures older than
+// FAILED_DOWNLOAD_KEPT_MS (in case a timer that should have removed one
+// didn't run).
+export function startDownload(
+  queue: DownloadQueueItem[],
+  download: Pick<
+    DownloadQueueItem,
+    "kind" | "userIdentity" | "songId" | "suffix"
+  >,
+  now = Date.now(),
+): DownloadQueueItem {
+  removeExpiredDownloads(queue, now);
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (queue[i].status === "failed" && sameDownload(queue[i], download)) {
+      queue.splice(i, 1);
+    }
+  }
+  const item: DownloadQueueItem = {
+    ...download,
+    id: ++lastDownloadId,
+    progress: 0,
+    status: "downloading",
+    reason: null,
+    failedAt: null,
+  };
+  queue.push(item);
+  return item;
+}
+
+// Whether kind/songId/suffix is downloading now (a failure doesn't count).
+export function isDownloading(
+  queue: readonly DownloadQueueItem[],
+  download: Pick<DownloadQueueItem, "kind" | "songId" | "suffix">,
+): boolean {
+  return queue.some(
+    (item) => item.status === "downloading" && sameDownload(item, download),
+  );
+}
+
+// Marks item failed with reason, unless it already failed or is gone.
+// Returns whether it did.
+export function failDownload(
+  queue: readonly DownloadQueueItem[],
+  item: DownloadQueueItem,
+  reason: string,
+  now = Date.now(),
+): boolean {
+  if (item.status !== "downloading" || !queue.includes(item)) return false;
+  item.status = "failed";
+  item.reason = reason;
+  item.failedAt = now;
+  return true;
+}
+
+// Takes item out of queue, if it's there.
+export function removeDownload(
+  queue: DownloadQueueItem[],
+  item: DownloadQueueItem,
+): void {
+  const index = queue.indexOf(item);
+  if (index !== -1) queue.splice(index, 1);
+}
+
+// Takes out the failures older than FAILED_DOWNLOAD_KEPT_MS. Returns whether
+// any went.
+export function removeExpiredDownloads(
+  queue: DownloadQueueItem[],
+  now = Date.now(),
+): boolean {
+  let removed = false;
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const { failedAt } = queue[i];
+    if (failedAt !== null && now - failedAt >= FAILED_DOWNLOAD_KEPT_MS) {
+      queue.splice(i, 1);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+function sameDownload(
+  a: Pick<DownloadQueueItem, "kind" | "songId" | "suffix">,
+  b: Pick<DownloadQueueItem, "kind" | "songId" | "suffix">,
+): boolean {
+  return a.kind === b.kind && a.songId === b.songId && a.suffix === b.suffix;
 }
 
 export interface HistoryItem {

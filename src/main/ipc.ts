@@ -126,9 +126,12 @@ export function createDisplayIpc({
       }
       endLive();
       const contents = source.sender;
-      stopLive = hub.subscribe((event: LiveEvent) => {
-        if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.live, event);
-      });
+      stopLive = hub.subscribe(
+        (event: LiveEvent) => {
+          if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.live, event);
+        },
+        { deviceId: null, isDisplay: true },
+      );
     },
 
     // The display window closed.

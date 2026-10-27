@@ -112,7 +112,7 @@ export const api = createApi({
   getNicoVideoInfo,
   downloads: {
     dam: downloadDamVideo,
-    joysound: (item, pushToHead, onReady) =>
+    joysound: (item, pushToHead, onReady, onFailed) =>
       downloadJoysoundData(
         store.getState().downloadQueue,
         item.user,
@@ -120,21 +120,24 @@ export const api = createApi({
         item,
         pushToHead,
         onReady,
+        onFailed,
       ),
-    youtube: (item, captionCode, onReady) =>
+    youtube: (item, captionCode, onReady, onFailed) =>
       downloadYoutubeVideo(
         store.getState().downloadQueue,
         item.user,
         item.songId,
         captionCode,
         onReady,
+        onFailed,
       ),
-    nico: (item, onReady) =>
+    nico: (item, onReady, onFailed) =>
       downloadNicoVideo(
         store.getState().downloadQueue,
         item.user,
         item.songId,
         onReady,
+        onFailed,
       ),
   },
   publish: hub.publish,

@@ -10,7 +10,13 @@ import type { QueueItem } from "../common/api";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import type { HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
-import { adhocLyricsKey, createStateStore, type StateStore } from "./state";
+import {
+  adhocLyricsKey,
+  createStateStore,
+  failDownload,
+  startDownload,
+  type StateStore,
+} from "./state";
 import { validators } from "./validate";
 
 const ADMIN_DEVICE = "admin-device";
@@ -763,6 +769,69 @@ describe("queueSong", () => {
     const impostor = phone("impostor-device", ADMIN_NICK);
     assert.equal((await queue(impostor, 6)).ok, true);
     assert.equal((await queue(impostor, 7)).ok, false);
+  });
+});
+
+describe("a failed download", () => {
+  const queueVideo = (api: ReturnType<typeof makeApi>, caller: Caller) =>
+    api.queueSong(
+      {
+        kind: "youtube",
+        songId: "jNQXAC9IVRw",
+        name: "Me at the zoo",
+        artistName: "jawed",
+        adhocLyrics: "la",
+        captionCode: null,
+        gainValue: 1,
+      },
+      caller,
+    );
+
+  test("tells the phone that queued it, and queues nothing", async () => {
+    const api = makeApi(
+      {},
+      {
+        downloads: {
+          youtube: (_item, _captions, _onReady, onFailed) =>
+            onFailed("Video unavailable"),
+        } as ApiDeps["downloads"],
+      },
+    );
+    assert.equal((await queueVideo(api, alice)).ok, true);
+    assert.deepEqual(store.getState().songQueue, []);
+    assert.deepEqual(store.getState().idToAdhocLyrics, {});
+    assert.equal(published.length, 1);
+    const [message] = published;
+    assert.equal(message.type, "queueFailed");
+    assert.ok(message.type === "queueFailed");
+    assert.equal(message.reason, "Video unavailable");
+    assert.equal(message.item.songId, "jNQXAC9IVRw");
+    assert.deepEqual(message.item.user, {
+      deviceId: "alice-device",
+      nickname: "alice",
+    });
+  });
+
+  test("frees its place under the per-person limit at once", async () => {
+    const api = makeApi(
+      { paxSongQueueLimit: 1 },
+      {
+        downloads: {
+          // Still downloading.
+          youtube: () => {},
+        } as unknown as ApiDeps["downloads"],
+      },
+    );
+    const { downloadQueue } = store.getState();
+    const download = startDownload(downloadQueue, {
+      kind: "youtube",
+      userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      songId: "jNQXAC9IVRw",
+      suffix: null,
+    });
+    assert.equal((await queueVideo(api, alice)).ok, false);
+    failDownload(downloadQueue, download, "Video unavailable");
+    assert.equal((await queueVideo(api, alice)).ok, true);
   });
 });
 
