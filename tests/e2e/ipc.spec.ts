@@ -57,6 +57,28 @@ test("the display uses IPC, not the HTTP API", async ({
   expect(karafriends.displayRequests.filter(isApiRequest)).toEqual([]);
 });
 
+test("a reloaded display gets the live state again, and its updates", async ({
+  karafriends,
+  display,
+}) => {
+  await expectSong1Started(display);
+  await display.reload();
+  const queue = display.getByRole("list", { name: "Queue" });
+  await expect(queue.getByText(title(2)).first()).toBeVisible();
+
+  // A phone takes song 2 off the queue.
+  const res = await fetch(new URL("api/removeSong", karafriends.remoconUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      songId: song(2).songId,
+      timestamp: song(2).timestamp,
+    }),
+  });
+  expect(await res.json()).toBe(true);
+  await expect(queue.getByRole("listitem")).toHaveCount(0);
+});
+
 test.describe("with the remote's port taken", () => {
   test.use({ occupyPort: true });
 
