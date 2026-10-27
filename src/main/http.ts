@@ -27,6 +27,18 @@ const TIMEOUT_MS = 30000;
 
 let agent: Agent | undefined;
 
+// An error status without the service's own answer. From DAM or Joysound,
+// 403 usually means the request didn't come from a Japanese IP address.
+export class HttpStatusError extends Error {
+  constructor(
+    readonly status: number,
+    url: string,
+  ) {
+    super(`${status} from ${url}`);
+    this.name = "HttpStatusError";
+  }
+}
+
 // Sends every later request through config.yaml's proxy, if it enables one.
 export function setProxy(
   config: Pick<

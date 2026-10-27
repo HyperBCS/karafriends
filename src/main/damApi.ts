@@ -1,6 +1,6 @@
 import promiseRetry from "promise-retry";
 
-import { formBody, http, httpFetch } from "./http";
+import { formBody, http, httpFetch, HttpStatusError } from "./http";
 import { DAM_PAGE_SIZE, damPageWindow } from "./paging";
 
 const BASE_MINSEI_REQUEST = {
@@ -86,18 +86,25 @@ export class MinseiAPI {
   }
 
   // The body is read whatever the HTTP status, so a rejected login reports
-  // DAM's own status code and message through checkError.
-  static login(loginId: string, password: string) {
-    return httpFetch(
-      `https://win10.clubdam.com/cwa/win/minsei/auth/LoginByDamtomoMemberId.api`,
-      {
-        method: "POST",
-        body: formBody({ loginId, password, format: "json" }),
-        headers: MINSEI_HEADERS,
-      },
-    )
-      .then((data) => data.json() as Promise<MinseiLogin>)
-      .then((data) => MinseiAPI.checkError(data));
+  // DAM's own status code and message through checkError. An error status
+  // without DAM's JSON (a 403 from outside Japan, say) is an
+  // HttpStatusError.
+  static async login(loginId: string, password: string) {
+    const url = `https://win10.clubdam.com/cwa/win/minsei/auth/LoginByDamtomoMemberId.api`;
+    const resp = await httpFetch(url, {
+      method: "POST",
+      body: formBody({ loginId, password, format: "json" }),
+      headers: MINSEI_HEADERS,
+    });
+    const text = await resp.text();
+    let data: MinseiLogin;
+    try {
+      data = JSON.parse(text) as MinseiLogin;
+    } catch (err) {
+      if (!resp.ok) throw new HttpStatusError(resp.status, url);
+      throw err;
+    }
+    return MinseiAPI.checkError(data);
   }
 
   getMusicStreamingUrls(requestNo: string) {
