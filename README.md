@@ -19,7 +19,7 @@ Download the zip for your computer from the [Releases page](https://github.com/H
 
 ### Settings: `config.yaml`
 
-The first start writes a `config.yaml` with every setting. Edit it with any text editor while the app is closed, then start the app again.
+The first start writes a `config.yaml` with every setting. Edit it with any text editor while the app is closed, then start the app again. A settings screen on the display is coming in a later update (phase D), with Export and Import buttons that move this whole file, DAM and Joysound logins and the admin password included, to another computer, so keep an exported file as safe as the logins themselves.
 
 | System  | Where it is                                             |
 | ------- | ------------------------------------------------------- |
