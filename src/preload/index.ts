@@ -13,6 +13,7 @@ let inputDeviceCount = 0;
 const inputDevices: { [deviceId: number]: any } = {};
 
 let karafriendsConfig: KarafriendsConfig | null = null;
+let displayToken: string | null = null;
 
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
@@ -23,6 +24,14 @@ contextBridge.exposeInMainWorld("karafriends", {
     }
 
     return karafriendsConfig;
+  },
+  // The secret the display sends with its API requests, which makes it an
+  // admin.
+  displayToken: (): string | null => {
+    if (displayToken === null) {
+      displayToken = ipcRenderer.sendSync("displayToken");
+    }
+    return displayToken;
   },
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected

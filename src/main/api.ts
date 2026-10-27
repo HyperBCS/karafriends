@@ -34,6 +34,8 @@ import type { StateStore } from "./state";
 export interface Caller {
   deviceId: string | null;
   nickname: string | null;
+  // The display window, which is always an admin.
+  isDisplay: boolean;
 }
 
 // An error the caller caused, with the HTTP status to answer with.
@@ -111,10 +113,35 @@ export function createApi(deps: ApiDeps): ApiHandlers {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
+  // The display, or a phone on the admin lists in config.yaml.
   const isAdmin = (caller: Caller) =>
+    caller.isDisplay ||
     (caller.nickname !== null && config.adminNicks.includes(caller.nickname)) ||
     (caller.deviceId !== null &&
       config.adminDeviceIds.includes(caller.deviceId));
+
+  // Like the remote, count a song as the caller's if either its device ID
+  // or its nickname matches.
+  const owns = (item: QueueItem | null, caller: Caller) =>
+    item !== null &&
+    ((caller.deviceId !== null && item.user.deviceId === caller.deviceId) ||
+      (caller.nickname !== null && item.user.nickname === caller.nickname));
+
+  // In supervised mode, only an admin or the singer of the current song may
+  // pause, skip, restart or change the key: what the remote's controls
+  // allow.
+  const requirePlaybackControl = (caller: Caller) => {
+    if (
+      config.supervisedMode &&
+      !isAdmin(caller) &&
+      !owns(store.getState().currentSong, caller)
+    ) {
+      throw new ApiError(
+        403,
+        "Supervised mode: only an admin or the current singer can do that",
+      );
+    }
+  };
 
   const requireIdentity = (caller: Caller): UserIdentity => {
     if (caller.deviceId === null || caller.nickname === null) {
@@ -494,26 +521,36 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       return { ok: true, eta };
     },
 
-    async removeSong({ songId, timestamp }) {
-      return store.update((state) => {
-        const index = state.songQueue.findIndex(
+    async removeSong({ songId, timestamp }, caller) {
+      const item = store
+        .getState()
+        .songQueue.find(
           (item) => item.songId === songId && item.timestamp === timestamp,
         );
-        // The song may already be playing or removed by another phone.
-        if (index === -1) return false;
-        state.songQueue.splice(index, 1);
+      // The song may already be playing or removed by another phone.
+      if (!item) return false;
+      if (config.supervisedMode && !isAdmin(caller) && !owns(item, caller)) {
+        throw new ApiError(
+          403,
+          "Supervised mode: only an admin or whoever queued it can remove a song",
+        );
+      }
+      return store.update((state) => {
+        state.songQueue.splice(state.songQueue.indexOf(item), 1);
         return true;
       });
     },
 
-    async setPlaybackState({ playbackState }) {
+    async setPlaybackState({ playbackState }, caller) {
+      requirePlaybackControl(caller);
       store.update((state) => {
         state.playbackState = playbackState;
       });
       return true;
     },
 
-    async setPitchShiftSemis({ semis }) {
+    async setPitchShiftSemis({ semis }, caller) {
+      requirePlaybackControl(caller);
       store.update((state) => {
         state.pitchShiftSemis = semis;
       });
@@ -532,7 +569,10 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       return true;
     },
 
-    async popSong() {
+    async popSong(_input, caller) {
+      if (!isAdmin(caller)) {
+        throw new ApiError(403, "Only the display starts the next song");
+      }
       const song = store.update((state) => {
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];

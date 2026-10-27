@@ -5,6 +5,7 @@ declare global {
     karafriends: {
       ipAddresses(): string[];
       karafriendsConfig(): KarafriendsConfig;
+      displayToken(): string | null;
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

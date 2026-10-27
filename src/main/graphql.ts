@@ -37,6 +37,7 @@ import type {
 import karafriendsConfig from "../common/config";
 import { getVideoDownloadProgress } from "./../common/videoDownloader";
 import type { Caller } from "./api";
+import { callerFromHeaders } from "./caller";
 import { api, hub, store, upstreamClients } from "./services";
 import type { State } from "./state";
 
@@ -576,12 +577,6 @@ const schema = makeExecutableSchema({
   resolvers,
 });
 
-// The caller of a GraphQL request. Filled in from its headers in a later
-// change.
-function callerOf(): Caller {
-  return { deviceId: null, nickname: null };
-}
-
 export function applyGraphQLMiddleware(app: Application) {
   const httpServer = createServer(app);
 
@@ -643,9 +638,9 @@ export function applyGraphQLMiddleware(app: Application) {
         "/graphql",
         express.json(),
         expressMiddleware(server, {
-          context: async () => ({
+          context: async ({ req }) => ({
             dataSources: upstreamClients,
-            caller: callerOf(),
+            caller: callerFromHeaders(req.headers),
           }),
         }),
       );
