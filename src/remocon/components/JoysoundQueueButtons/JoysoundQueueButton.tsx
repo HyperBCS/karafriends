@@ -7,7 +7,7 @@ import useDownloadButtonText, {
 } from "../../hooks/useDownloadButtonText";
 import Button from "../Button";
 
-import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
+import type { JoysoundSongDetail } from "../../../common/api";
 import {
   JoysoundQueueButtonMutation,
   JoysoundQueueButtonMutation$variables,
@@ -33,7 +33,7 @@ const joysoundQueueButtonMutation = graphql`
 `;
 
 interface Props {
-  song: JoysoundSongPageQuery$data["joysoundSongDetail"];
+  song: JoysoundSongDetail;
   youtubeVideoId: string | null;
   userIdentity: JoysoundQueueButtonMutation$variables["input"]["userIdentity"];
   isRomaji: boolean;

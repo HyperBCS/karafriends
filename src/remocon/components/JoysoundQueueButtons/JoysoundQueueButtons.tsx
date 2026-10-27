@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
+import type { JoysoundSongDetail } from "../../../common/api";
 import JoysoundQueueButton from "./JoysoundQueueButton";
 import * as styles from "./JoysoundQueueButtons.module.scss";
 
 interface Props {
-  song: JoysoundSongPageQuery$data["joysoundSongDetail"];
+  song: JoysoundSongDetail;
   youtubeVideoId: string | null;
   validatedYoutubeId: string | null;
 }
