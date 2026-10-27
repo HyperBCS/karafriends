@@ -20,9 +20,10 @@ export interface KarafriendsConfig {
   joysoundEmail: string;
   // Joysound password for joysound creds
   joysoundPassword: string;
-  // List of admins by nickname
-  adminNicks: string[];
-  // List of admins by deviceId
+  // Deprecated, and no longer makes anyone an admin, since anyone can take a
+  // nickname. Still read, to warn that it no longer counts (src/main/api.ts).
+  adminNicks?: string[];
+  // List of admins by deviceId: the only way to make a phone an admin.
   adminDeviceIds: string[];
   // Whether to enable supervised mode
   supervisedMode: boolean;
@@ -46,7 +47,6 @@ const DEFAULT_CONFIG: KarafriendsConfig = {
   damPassword: "YOUR_PASSWORD_HERE",
   joysoundEmail: "YOUR_EMAIL_HERE",
   joysoundPassword: "YOUR_PASSWORD_HERE",
-  adminNicks: [],
   adminDeviceIds: [],
   supervisedMode: false,
   proxyEnable: false,

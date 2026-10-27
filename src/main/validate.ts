@@ -238,13 +238,9 @@ export const validators: {
   setPitchShiftSemis: (raw) => ({
     semis: integer(fields(raw, ["semis"]), "semis", -24, 24),
   }),
-  pushAdhocLyrics: (raw) => {
-    const input = fields(raw, ["lyric", "lyricIndex"]);
-    return {
-      lyric: string(input, "lyric"),
-      lyricIndex: integer(input, "lyricIndex", 0, 100_000),
-    };
-  },
+  pushAdhocLyrics: (raw) => ({
+    lyricIndex: integer(fields(raw, ["lyricIndex"]), "lyricIndex", 0, 100_000),
+  }),
   sendEmote: (raw) => {
     const emote = string(fields(raw, ["emote"]), "emote", 32);
     if (emote === "") fail(`"emote" must not be empty`);

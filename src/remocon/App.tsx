@@ -19,15 +19,17 @@ import SongSearchPage from "./pages/SongSearchPage";
 import YouTubePage from "./pages/YouTubePage";
 
 import * as styles from "./App.module.scss";
-import useQueueNotifications from "./hooks/useQueueNotifications";
+import { QueueNotifications } from "./hooks/useQueueNotifications";
 
+// Nothing here reads the live state, which can change several times a second:
+// each component that shows some of it follows just that part.
 const App = () => {
   // Asks a new phone for its nickname.
   useUserIdentity(true);
-  useQueueNotifications();
 
   return (
     <HashRouter>
+      <QueueNotifications />
       <div className={styles.app}>
         <header>
           <NavBar />

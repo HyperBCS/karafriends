@@ -1,6 +1,7 @@
 // Runs on Node's test runner through tsx (yarn test:unit). The router runs on
 // a real Express server, with stub handlers and a stub live feed.
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { after, before, describe, test } from "node:test";
@@ -9,10 +10,16 @@ import { setTimeout as sleep } from "node:timers/promises";
 import compression from "compression";
 import express from "express";
 
-import type { LiveEvent } from "../common/api";
+import type { LiveEvent, LiveState } from "../common/api";
 import { ApiError, type Caller } from "./api";
 import type { Viewer } from "./live";
-import { apiRouter, serializeEvent, shouldCompress } from "./server";
+import {
+  apiRouter,
+  eventWriter,
+  serializeEvent,
+  shouldCompress,
+  streamCounter,
+} from "./server";
 
 const callers: Caller[] = [];
 const handlers = {
@@ -190,6 +197,123 @@ describe("GET /api/events", () => {
       { deviceId: "phone 1/ü" },
       { deviceId: null },
     ]);
+  });
+});
+
+describe("event stream limits", () => {
+  test("streamCounter: so many in all, and from one address but this machine's", () => {
+    const streams = streamCounter({ total: 4, perAddress: 2 });
+    assert.equal(streams.tryOpen("192.168.1.20"), true);
+    assert.equal(streams.tryOpen("192.168.1.20"), true);
+    assert.equal(streams.tryOpen("192.168.1.20"), false);
+    // A proxy here connects for every phone.
+    assert.equal(streams.tryOpen("127.0.0.1"), true);
+    assert.equal(streams.tryOpen("::ffff:127.0.0.1"), true);
+    assert.equal(streams.tryOpen("192.168.1.21"), false);
+    streams.close("192.168.1.20");
+    assert.equal(streams.tryOpen("192.168.1.21"), true);
+    assert.equal(streams.tryOpen("127.0.0.1"), false);
+  });
+
+  test("GET /api/events answers 503 past the limit, until one closes", async () => {
+    const app = express();
+    app.use(
+      "/api",
+      apiRouter(handlers as never, hub, { total: 2, perAddress: 1 }),
+    );
+    const limited = app.listen(0, "127.0.0.1");
+    await new Promise((resolve) => limited.once("listening", resolve));
+    const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/api/events`;
+    const controllers: AbortController[] = [];
+    const open = async () => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      return (await fetch(url, { signal: controller.signal })).status;
+    };
+    try {
+      assert.deepEqual(
+        [await open(), await open(), await open()],
+        [200, 200, 503],
+      );
+      controllers[0].abort();
+      let status = 503;
+      for (let i = 0; i < 50 && status === 503; i++) {
+        await sleep(20);
+        status = await open();
+      }
+      assert.equal(status, 200);
+    } finally {
+      for (const controller of controllers) controller.abort();
+      limited.closeAllConnections();
+      limited.close();
+    }
+  });
+
+  // A response whose buffer is full until drained.
+  class FakeResponse extends EventEmitter {
+    written: string[] = [];
+    full = false;
+    destroyed = false;
+    write(chunk: string) {
+      this.written.push(chunk);
+      return !this.full;
+    }
+    destroy() {
+      this.destroyed = true;
+    }
+    drain() {
+      this.full = false;
+      this.emit("drain");
+    }
+  }
+
+  const state = (pitchShiftSemis: number): LiveEvent => ({
+    type: "state",
+    state: { pitchShiftSemis } as LiveState,
+  });
+  const emote: LiveEvent = {
+    type: "emote",
+    emote: "🎉",
+    user: { nickname: "n" },
+  };
+
+  test("eventWriter holds back all but the latest state while a phone is behind", () => {
+    const res = new FakeResponse();
+    const writer = eventWriter(res);
+    writer.start();
+    writer.send(state(1));
+    res.full = true;
+    // This one fills the buffer: from now on, the phone is behind.
+    writer.send(state(2));
+    writer.send(state(3));
+    writer.send(emote);
+    writer.send(state(4));
+    writer.heartbeat();
+    assert.equal(res.written.length, 3);
+
+    res.drain();
+    writer.send(emote);
+    assert.deepEqual(res.written.slice(1), [
+      `data: ${JSON.stringify(state(1))}\n\n`,
+      `data: ${JSON.stringify(state(2))}\n\n`,
+      `data: ${JSON.stringify(state(4))}\n\n`,
+      `data: ${JSON.stringify(emote)}\n\n`,
+    ]);
+    assert.equal(res.destroyed, false);
+  });
+
+  test("eventWriter cuts off a phone that stays behind", () => {
+    const res = new FakeResponse();
+    let now = 0;
+    const writer = eventWriter(res, () => now);
+    res.full = true;
+    writer.send(state(1));
+    now = 10_000;
+    writer.heartbeat();
+    assert.equal(res.destroyed, false);
+    now = 20_000;
+    writer.heartbeat();
+    assert.equal(res.destroyed, true);
   });
 });
 

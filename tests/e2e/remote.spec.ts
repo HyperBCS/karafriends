@@ -111,6 +111,70 @@ test.describe("a DAM title search", () => {
   });
 });
 
+// The live state changes several times a second while anything downloads.
+// That used to re-render the whole remote each time, which kept a DAM queue
+// button's 2.5-second reset from ever going off.
+test("a DAM queue button is ready again while the live state keeps changing", async ({
+  karafriends,
+  remote,
+}) => {
+  // DAM only answers Japanese IPs: made-up answers, as above. queueSong too,
+  // so nothing asks DAM for the song.
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        id: "e2e-1",
+        name: "E2E DAM song",
+        nameYomi: "",
+        artistName: "E2E artist",
+        artistNameYomi: "",
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 200,
+      },
+    }),
+  );
+  await remote.route("**/api/queueSong", (route) =>
+    route.fulfill({ json: { ok: true, eta: 60 } }),
+  );
+  await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
+  const button = remote.getByRole("button", {
+    name: /^Queue song$|^Estimated wait/,
+  });
+  await expect(button).toHaveText("Queue song");
+
+  // Change the key about 6 times a second, as download progress would.
+  let changing = true;
+  let changed = 0;
+  const changes = (async () => {
+    for (let semis = 1; changing; semis = (semis % 4) + 1) {
+      const res = await fetch(
+        new URL("api/setPitchShiftSemis", karafriends.remoconUrl),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ semis }),
+        },
+      );
+      expect(res.status).toBe(200);
+      changed++;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  })();
+  try {
+    await expect.poll(() => changed).toBeGreaterThan(2);
+    await button.click();
+    await expect(button).toHaveText("Estimated wait: T-1:00");
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveText("Queue song", { timeout: 5_000 });
+    await expect(button).toBeEnabled();
+  } finally {
+    changing = false;
+    await changes;
+  }
+});
+
 test.describe("history", () => {
   const HISTORY_LENGTH = 35;
   const songName = (n: number) =>

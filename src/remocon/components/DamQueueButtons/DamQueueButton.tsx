@@ -35,10 +35,14 @@ const DamQueueButton = ({ song, streamingUrlIndex }: Props) => {
     (eta) => `Estimated wait: T-${formatDuration(eta * 1000)}`,
   );
 
+  // The ETA or error shows for a while, then the button is ready again.
+  // (Only when the text changes: a timer started again on every render would
+  // never go off while something else re-renders the page.)
   useEffect(() => {
+    if (text === defaultText) return;
     const timeout = setTimeout(() => setText(defaultText), 2500);
     return () => clearTimeout(timeout);
-  });
+  }, [text, defaultText]);
 
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) =>
     queueSong(

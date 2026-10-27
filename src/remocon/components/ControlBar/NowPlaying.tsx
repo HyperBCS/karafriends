@@ -5,7 +5,7 @@ import SongQueueItem from "../SongQueue/SongQueueItem";
 import * as styles from "./ControlBar.module.scss";
 
 const NowPlaying = () => {
-  const currentSong = useLiveState()?.currentSong;
+  const currentSong = useLiveState((state) => state?.currentSong);
 
   return (
     <div className={styles.nowPlaying} role="region" aria-label="Now playing">

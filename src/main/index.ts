@@ -220,7 +220,16 @@ function createWindow() {
   }
 
   // If it can't listen, phones can't connect, but the display still works.
-  startHttpServer(expressApp, displayIpc.reportRemoconProblem);
+  startHttpServer(
+    expressApp,
+    {
+      port: karafriendsConfig.remoconPort,
+      // LOCAL_ONLY (tests and checks): this machine only, so no firewall
+      // prompt.
+      host: LOCAL_ONLY ? "127.0.0.1" : undefined,
+    },
+    displayIpc.reportRemoconProblem,
+  );
 
   if (rendererWindow) {
     // A failed load (dev server not ready, a transient file/protocol error)

@@ -27,7 +27,7 @@ import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
-import type { StateStore } from "./state";
+import { adhocLyricsKey, type StateStore } from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -102,7 +102,39 @@ export interface ApiDeps {
   };
   publish: (message: HubMessage) => void;
   now?: () => number;
+  // How long popSong waits for DAM (see DAM_POP_TIMEOUT_MS).
+  damPopTimeoutMs?: number;
 }
+
+// popSong has already started the song when it asks DAM for the song's
+// streaming URLs and scoring data, and the display waits for the answer. DAM
+// retries a failing request for up to about 17 minutes, so give up after this
+// long, and start the song without them: a downloaded song plays from its
+// file, and a song without scoring data still plays.
+const DAM_POP_TIMEOUT_MS = 10_000;
+
+// promise's outcome, or a rejection after ms. (promise carries on, but its
+// outcome is ignored.)
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// The most adhoc lyrics one song can show (pushAdhocLyrics). Every live-state
+// event carries them all, to every phone, so they must stay small. A singer
+// sends a few dozen lines; these leave room to go round a song again.
+const MAX_ADHOC_LINES_SHOWN = 400;
+const MAX_ADHOC_CHARS_SHOWN = 30_000;
+
+// The most adhoc lyrics the queue holds, all songs together. They are saved
+// to queue.json on every change, and one song's may be 100,000 characters.
+const MAX_ADHOC_CHARS_QUEUED = 1_000_000;
+
+const totalLength = (lines: readonly string[]) =>
+  lines.reduce((sum, line) => sum + line.length, 0);
 
 // Song and video IDs end up in file names and yt-dlp arguments.
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -113,19 +145,31 @@ export function createApi(deps: ApiDeps): ApiHandlers {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
-  // The display, or a phone on the admin lists in config.yaml.
+  // Nicknames grant nothing, since anyone can pick any nickname and every
+  // phone sees everyone's. Device IDs never leave the server, so they decide
+  // who is an admin and whose a song is.
+  const adminNicks = Array.isArray(config.adminNicks) ? config.adminNicks : [];
+  if (adminNicks.length > 0) {
+    console.warn(
+      "adminNicks in config.yaml no longer makes anyone an admin, since " +
+        "anyone can take a nickname. List the admins' device IDs in " +
+        "adminDeviceIds instead: their phones' IDs are logged when they " +
+        "connect with one of those nicknames.",
+    );
+  }
+
+  // The display, or a phone on the admin list in config.yaml.
   const isAdmin = (caller: Caller) =>
     caller.isDisplay ||
-    (caller.nickname !== null && config.adminNicks.includes(caller.nickname)) ||
     (caller.deviceId !== null &&
       config.adminDeviceIds.includes(caller.deviceId));
 
-  // Like the remote, count a song as the caller's if either its device ID
-  // or its nickname matches.
+  // Whether the caller queued item, from the same device (isMine, to the
+  // phones).
   const owns = (item: QueueItem | null, caller: Caller) =>
     item !== null &&
-    ((caller.deviceId !== null && item.user.deviceId === caller.deviceId) ||
-      (caller.nickname !== null && item.user.nickname === caller.nickname));
+    caller.deviceId !== null &&
+    item.user.deviceId === caller.deviceId;
 
   // In supervised mode, only an admin or the singer of the current song may
   // pause, skip, restart or change the key: what the remote's controls
@@ -180,11 +224,31 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     );
   };
 
-  const pushSongToQueue = (item: QueueItem, pushToHead: boolean) => {
+  const queuedLyricsLength = () =>
+    Object.values(store.getState().idToAdhocLyrics).reduce(
+      (sum, lines) => sum + totalLength(lines),
+      0,
+    );
+
+  // A YouTube song's adhoc lyrics, if it has them.
+  const adhocLyricsOf = (item: QueueItem | null) =>
+    item?.kind === "youtube" && item.hasAdhocLyrics
+      ? store.getState().idToAdhocLyrics[adhocLyricsKey(item)]
+      : undefined;
+
+  // adhocLyrics: a YouTube song's, kept with it while it is queued.
+  const pushSongToQueue = (
+    item: QueueItem,
+    pushToHead: boolean,
+    adhocLyrics?: string[],
+  ) => {
     console.log(
       `pushSongToQueue: pushing ${JSON.stringify(item)}; pushToHead=${pushToHead}`,
     );
     store.update((state) => {
+      if (adhocLyrics) {
+        state.idToAdhocLyrics[adhocLyricsKey(item)] = adhocLyrics;
+      }
       if (pushToHead) {
         // To give things time to download, we don't actually push to the
         // front, but the second. splice handles an empty queue too.
@@ -405,7 +469,12 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async adhocLyrics({ songId }) {
-      return store.getState().idToAdhocLyrics[songId] ?? null;
+      // The video's that is playing, or else the next one's in the queue.
+      const { currentSong, songQueue } = store.getState();
+      const item = [currentSong, ...songQueue].find(
+        (item) => item?.songId === songId && adhocLyricsOf(item),
+      );
+      return adhocLyricsOf(item ?? null) ?? null;
     },
 
     async history({ offset = 0, limit = DEFAULT_LIMIT.history }, caller) {
@@ -491,24 +560,41 @@ export function createApi(deps: ApiDeps): ApiHandlers {
           );
           break;
         case "youtube": {
+          const lyrics = (input.adhocLyrics ?? "")
+            .split("\n")
+            .filter((line) => line.trim() !== "");
+          const fits = () =>
+            queuedLyricsLength() + totalLength(lyrics) <=
+            MAX_ADHOC_CHARS_QUEUED;
+          if (lyrics.length > 0 && !fits()) {
+            return {
+              ok: false,
+              reason:
+                "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
+            };
+          }
           const item: YoutubeQueueItem = {
             kind: "youtube",
             ...base,
-            hasAdhocLyrics: Boolean(input.adhocLyrics),
+            hasAdhocLyrics: lyrics.length > 0,
             hasCaptions: Boolean(input.captionCode),
             gainValue: input.gainValue,
           };
-          if (input.adhocLyrics) {
-            const lyrics = input.adhocLyrics
-              .split("\n")
-              .filter((line) => line.trim() !== "");
-            store.update((state) => {
-              state.idToAdhocLyrics[item.songId] = lyrics;
-            });
-          }
-          deps.downloads.youtube(item, input.captionCode, () =>
-            pushSongToQueue(item, pushToHead),
-          );
+          // The lyrics are kept only once the song is queued: a download
+          // that fails never is.
+          deps.downloads.youtube(item, input.captionCode, () => {
+            if (!item.hasAdhocLyrics) {
+              pushSongToQueue(item, pushToHead);
+            } else if (fits()) {
+              pushSongToQueue(item, pushToHead, lyrics);
+            } else {
+              // Others came in while it downloaded.
+              console.warn(
+                `Queueing ${item.songId} without its lyrics: the queue holds too many`,
+              );
+              pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
+            }
+          });
           break;
         }
         case "nico": {
@@ -538,6 +624,7 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       }
       return store.update((state) => {
         state.songQueue.splice(state.songQueue.indexOf(item), 1);
+        delete state.idToAdhocLyrics[adhocLyricsKey(item)];
         return true;
       });
     },
@@ -558,7 +645,29 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       return true;
     },
 
-    async pushAdhocLyrics({ lyric, lyricIndex }) {
+    async pushAdhocLyrics({ lyricIndex }, caller) {
+      const { currentSong, currentSongAdhocLyrics } = store.getState();
+      const lyrics = adhocLyricsOf(currentSong);
+      // The song may just have ended.
+      if (lyrics === undefined) return false;
+      // Who may sing along is who may control the song.
+      requirePlaybackControl(caller);
+      // The line comes from the lyrics queued with the song, never from the
+      // phone.
+      const lyric = lyrics[lyricIndex];
+      if (lyric === undefined) {
+        throw new ApiError(400, `The song has no line ${lyricIndex}`);
+      }
+      const shownChars = currentSongAdhocLyrics.reduce(
+        (sum, entry) => sum + entry.lyric.length,
+        0,
+      );
+      if (
+        currentSongAdhocLyrics.length >= MAX_ADHOC_LINES_SHOWN ||
+        shownChars + lyric.length > MAX_ADHOC_CHARS_SHOWN
+      ) {
+        throw new ApiError(400, "This song can't show any more lines");
+      }
       store.update((state) => {
         state.currentSongAdhocLyrics.push({ lyric, lyricIndex });
       });
@@ -578,9 +687,7 @@ export function createApi(deps: ApiDeps): ApiHandlers {
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];
         const previous = state.currentSong;
-        if (previous?.kind === "youtube" && previous.hasAdhocLyrics) {
-          delete state.idToAdhocLyrics[previous.songId];
-        }
+        if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
         state.currentSong = next;
 
         if (next) {
@@ -599,14 +706,20 @@ export function createApi(deps: ApiDeps): ApiHandlers {
 
       if (song?.kind !== "dam") return song;
       // The display streams a DAM song if its download isn't there, and
-      // scores the singing against the scoring data. Without the scoring data
-      // it can still play the song.
+      // scores the singing against the scoring data. Neither is essential,
+      // and the song has already started, so neither may hold it up for long
+      // or fail it.
+      const timeoutMs = deps.damPopTimeoutMs ?? DAM_POP_TIMEOUT_MS;
       const [urls, scoringData] = await Promise.all([
-        streamingUrls(song.songId),
-        deps.minsei
-          .getScoringData(song.songId)
+        withTimeout(streamingUrls(song.songId), timeoutMs).catch(
+          (err): string[] => {
+            console.error(`No streaming URLs for ${song.songId}:`, err);
+            return [];
+          },
+        ),
+        withTimeout(deps.minsei.getScoringData(song.songId), timeoutMs)
           .then((data) => Array.from(new Uint8Array(data)))
-          .catch((err) => {
+          .catch((err): number[] => {
             console.error(`No scoring data for ${song.songId}:`, err);
             return [];
           }),
@@ -616,7 +729,23 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async whoami(_input, caller) {
-      return { isAdmin: isAdmin(caller) };
+      const admin = isAdmin(caller);
+      // The remote asks each time it connects. Tell the host which device to
+      // list, should this be their phone.
+      if (
+        !admin &&
+        caller.deviceId !== null &&
+        caller.nickname !== null &&
+        adminNicks.includes(caller.nickname)
+      ) {
+        console.warn(
+          `A phone calling itself "${caller.nickname}", from adminNicks, ` +
+            "connected. adminNicks no longer counts; if the phone is an " +
+            "admin's, add its device ID to adminDeviceIds in config.yaml: " +
+            caller.deviceId,
+        );
+      }
+      return { isAdmin: admin };
     },
   };
 }

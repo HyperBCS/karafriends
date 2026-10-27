@@ -5,7 +5,7 @@ import useOptimisticValue from "./useOptimisticValue";
 
 // The display's playback state, live, and a setter for it.
 export default function usePlaybackState() {
-  const live = useLiveState()?.playbackState ?? "WAITING";
+  const live = useLiveState((state) => state?.playbackState ?? "WAITING");
   const [playbackState, setPending, clearPending] = useOptimisticValue(live);
   const { mutate } = useApiMutation("setPlaybackState", {
     onError: (err) => {

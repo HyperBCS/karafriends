@@ -20,7 +20,7 @@ function AdhocLyrics() {
   const [lyricLines, setLyricLines] = useState<LyricEntry[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // The lines the singer has pushed so far, live.
-  const adhocLyrics = useLiveState()?.adhocLyrics ?? NO_LYRICS;
+  const adhocLyrics = useLiveState((state) => state?.adhocLyrics ?? NO_LYRICS);
 
   function handleNewLyrics(lyrics: AdhocLyricsEntry[]) {
     setLyricLines(() => {

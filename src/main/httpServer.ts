@@ -1,18 +1,25 @@
 // The HTTP server on the remocon port: the phone remote's pages and the API
 // (server.ts), for the phones. The display uses IPC instead (ipc.ts).
+//
+// No Electron imports, so unit tests can load this file under plain Node.
 import { createServer, type Server } from "http";
+import type { Duplex } from "stream";
 
 import type { Application } from "express";
 
-import karafriendsConfig, { LOCAL_ONLY } from "../common/config";
+export interface ListenOptions {
+  port: number;
+  // Where to listen: undefined for every interface.
+  host?: string;
+}
 
 // onProblem gets a sentence for the display when phones can't connect.
 export function startHttpServer(
   app: Application,
+  { port, host }: ListenOptions,
   onProblem: (message: string) => void,
 ): Server {
   const httpServer = createServer(app);
-  const port = karafriendsConfig.remoconPort;
 
   // The server is an EventEmitter: an unhandled "error" event (most commonly
   // the port already being in use, by another karafriends, say) would crash
@@ -28,18 +35,25 @@ export function startHttpServer(
     onProblem(message);
   });
 
-  // Nothing here speaks WebSocket, so refuse upgrades, as graphql-ws did for
-  // any other path, instead of Node handing them to Express. (In dev, the
-  // remote's hot-reload socket goes to the Vite dev server, not here.)
-  httpServer.on("upgrade", (_req, socket) => {
-    socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
-  });
+  httpServer.on("upgrade", (_req, socket) => refuseUpgrade(socket));
 
-  // LOCAL_ONLY (tests and checks): this machine only, so no firewall prompt.
-  const host = LOCAL_ONLY ? "127.0.0.1" : undefined;
   httpServer.listen(port, host, () => {
     console.log(`Server is now running on http://localhost:${port}`);
   });
 
   return httpServer;
+}
+
+// Nothing here speaks WebSocket, so refuse upgrades, as graphql-ws did for
+// any other path, instead of Node handing them to Express. (In dev, the
+// remote's hot-reload socket goes to the Vite dev server, not here.)
+//
+// Node takes its own error handler off the socket before it emits "upgrade",
+// so this one needs its own: an unhandled "error" (the phone resetting the
+// connection, say) would be an uncaught exception, which ends the app (see
+// index.ts). Once the answer is out, close the socket, as ws does.
+export function refuseUpgrade(socket: Duplex) {
+  socket.on("error", () => socket.destroy());
+  socket.once("finish", () => socket.destroy());
+  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 }

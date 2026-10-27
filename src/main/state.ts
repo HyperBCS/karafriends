@@ -36,6 +36,8 @@ export interface HistoryItem {
 export interface State {
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
+  // The lines of each queued (or current) YouTube song with adhoc lyrics, by
+  // adhocLyricsKey. Nothing else: they go when the song does.
   idToAdhocLyrics: Record<string, string[]>;
   pitchShiftSemis: number;
   playbackState: PlaybackState;
@@ -54,6 +56,15 @@ export interface StateStore {
   update<T>(mutator: (state: State) => T): T;
   // Called after every update(). Returns a function that stops it.
   onChange(listener: (state: Readonly<State>) => void): () => void;
+}
+
+// A queue item's key in idToAdhocLyrics: the queue item, not the video,
+// since anyone may queue the same video again with other lyrics.
+export function adhocLyricsKey(item: {
+  songId: string;
+  timestamp: string;
+}): string {
+  return `${item.songId}@${item.timestamp}`;
 }
 
 export function emptyState(): State {
@@ -77,11 +88,11 @@ export function createStateStore(filePath: string): StateStore {
   let lastSaved: string | null = null;
 
   const save = () => {
-    const serialized = serializeState(state);
-    // The display asks for the next song every 5 seconds while idle; don't
-    // rewrite the same file each time.
-    if (serialized === lastSaved) return;
     try {
+      const serialized = serializeState(state);
+      // The display asks for the next song every 5 seconds while idle; don't
+      // rewrite the same file each time.
+      if (serialized === lastSaved) return;
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       // Write to a temp file and rename into place so an interrupted write
       // can never leave a half-written queue.json that fails to parse on next
@@ -180,13 +191,21 @@ export function parseState(raw: Record<string, unknown>): State {
         ? { lyric: entry.lyric, lyricIndex: entry.lyricIndex }
         : null,
   );
-  if (isObject(raw.idToAdhocLyrics)) {
-    for (const [songId, lyrics] of Object.entries(raw.idToAdhocLyrics)) {
-      if (Array.isArray(lyrics)) {
-        state.idToAdhocLyrics[songId] = lyrics.filter(
-          (line): line is string => typeof line === "string",
-        );
-      }
+  // Only the lyrics of songs still queued: older versions kept those of
+  // songs that never played. And they saved them by video ID.
+  const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
+  const saved = (key: string) =>
+    Object.prototype.hasOwnProperty.call(savedLyrics, key)
+      ? savedLyrics[key]
+      : undefined;
+  for (const item of [state.currentSong, ...state.songQueue]) {
+    if (item?.kind !== "youtube" || !item.hasAdhocLyrics) continue;
+    const key = adhocLyricsKey(item);
+    const lyrics = saved(key) ?? saved(item.songId);
+    if (Array.isArray(lyrics)) {
+      state.idToAdhocLyrics[key] = lyrics.filter(
+        (line): line is string => typeof line === "string",
+      );
     }
   }
   if (typeof raw.pitchShiftSemis === "number") {

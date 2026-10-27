@@ -105,8 +105,10 @@ type Shared<Item> = Item extends QueueItem
 export type SharedQueueItem = Shared<QueueItem>;
 
 // What popSong hands the display. A DAM song comes with what the display needs
-// to play and score it.
+// to play and score it, as far as DAM answered in time: either list may be
+// empty.
 export interface PoppedDamSong extends DamQueueItem {
+  // For a song that isn't downloaded.
   streamingUrls: string[];
   scoringData: number[];
 }
@@ -307,7 +309,8 @@ export interface Api {
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and
   // setPlaybackState and setPitchShiftSemis for the current song's owner or
-  // an admin.
+  // an admin. The owner is the device that queued it (isMine), and admins
+  // are listed by device ID: a nickname counts for nothing.
   queueSong: { input: QueueSongInput; output: QueueSongResult };
   // False if the song isn't in the queue (any more).
   removeSong: {
@@ -319,7 +322,10 @@ export interface Api {
     output: boolean;
   };
   setPitchShiftSemis: { input: { semis: number }; output: boolean };
-  pushAdhocLyrics: { input: AdhocLyricsEntry; output: boolean };
+  // Shows line lyricIndex of the current song's adhoc lyrics. In supervised
+  // mode, for its owner or an admin. False if no song with adhoc lyrics is
+  // playing (any more).
+  pushAdhocLyrics: { input: { lyricIndex: number }; output: boolean };
   sendEmote: { input: { emote: string }; output: boolean };
 
   // The display only: start the next song, or null if the queue is empty.

@@ -237,6 +237,41 @@ describe("createLiveHub", () => {
     assert.deepEqual(queueLengths, [0, 1, 5]);
   });
 
+  test("a listener that joins between flushes ends up with the latest state", async () => {
+    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const playbackStates = (events: LiveEvent[]) =>
+      events.flatMap((event) =>
+        event.type === "state" ? [event.state.playbackState] : [],
+      );
+    const first: LiveEvent[] = [];
+    const stopFirst = hub.subscribe((event) => first.push(event));
+    await sleep(INTERVAL_MS * 2);
+    // Goes out at once: it's been a while.
+    store.update((state) => {
+      state.playbackState = "PLAYING";
+    });
+    // Within the next interval: a change, a new phone, and the change undone.
+    store.update((state) => {
+      state.playbackState = "PAUSED";
+    });
+    const second: LiveEvent[] = [];
+    const stopSecond = hub.subscribe((event) => second.push(event));
+    store.update((state) => {
+      state.playbackState = "PLAYING";
+    });
+    await sleep(INTERVAL_MS * 3);
+    stopFirst();
+    stopSecond();
+    assert.deepEqual(playbackStates(first), [
+      "WAITING",
+      "PLAYING",
+      "PAUSED",
+      "PLAYING",
+    ]);
+    // It used to get PAUSED and nothing after: PLAYING was what was last sent.
+    assert.deepEqual(playbackStates(second), ["PAUSED", "PLAYING"]);
+  });
+
   test("notices download progress, which changes outside the store", async () => {
     const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
     const progress: number[][] = [];

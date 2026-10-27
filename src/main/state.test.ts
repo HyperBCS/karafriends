@@ -6,7 +6,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import type { QueueItem } from "../common/api";
-import { createStateStore, loadState, type State } from "./state";
+import {
+  adhocLyricsKey,
+  createStateStore,
+  loadState,
+  type State,
+} from "./state";
 
 const song = (n: number, overrides: Partial<QueueItem> = {}): QueueItem =>
   ({
@@ -47,16 +52,19 @@ describe("createStateStore", () => {
 
   test("saves on update and loads it back", () => {
     const store = createStateStore(file);
+    const withLyrics = song(1, { hasAdhocLyrics: true });
     store.update((state) => {
-      state.songQueue.push(song(1), song(2));
+      state.songQueue.push(withLyrics, song(2));
       state.songHistory.unshift({ song: song(0) });
-      state.idToAdhocLyrics.video1 = ["la", "la"];
+      state.idToAdhocLyrics[adhocLyricsKey(withLyrics)] = ["la", "la"];
     });
 
     const loaded = createStateStore(file).getState();
-    assert.deepEqual(loaded.songQueue, [song(1), song(2)]);
+    assert.deepEqual(loaded.songQueue, [withLyrics, song(2)]);
     assert.deepEqual(loaded.songHistory, [{ song: song(0) }]);
-    assert.deepEqual(loaded.idToAdhocLyrics, { video1: ["la", "la"] });
+    assert.deepEqual(loaded.idToAdhocLyrics, {
+      [adhocLyricsKey(withLyrics)]: ["la", "la"],
+    });
   });
 
   test("returns what the mutator returns and tells listeners", () => {
@@ -231,6 +239,27 @@ describe("loadState", () => {
     assert.deepEqual(state.songHistory, [{ song: song(2) }]);
     assert.equal(state.playbackState, "WAITING");
     assert.equal(state.pitchShiftSemis, 0);
+  });
+
+  test("keeps only the adhoc lyrics of queued songs, and moves older ones' to their song", () => {
+    const keyed = song(1, { hasAdhocLyrics: true });
+    // Saved by video ID, as older versions did.
+    const old = song(2, { hasAdhocLyrics: true });
+    write({
+      songQueue: [keyed, old, song(3)],
+      idToAdhocLyrics: {
+        [adhocLyricsKey(keyed)]: ["one", 1, "two"],
+        video2: ["old"],
+        // Songs that aren't queued (a failed download, say).
+        video3: ["not queued with lyrics"],
+        video4: ["never queued"],
+        "video5@1": ["gone"],
+      },
+    });
+    assert.deepEqual(loadState(file).idToAdhocLyrics, {
+      [adhocLyricsKey(keyed)]: ["one", "two"],
+      [adhocLyricsKey(old)]: ["old"],
+    });
   });
 
   test("sets a corrupt queue.json aside and starts empty", () => {
