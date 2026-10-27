@@ -3,18 +3,15 @@ import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
-const COOKIE_IDS: string[] = ["AWSALB", "AWSALBCORS", "JSESSIONID"];
-
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
   csrfToken: string;
 }>;
 
-interface JoysoundCookies {
-  AWSALB: string;
-  AWSALBCORS: string;
-  JSESSIONID: string;
-}
+// Keyed by cookie name. sound-cafe changes which cookies it sets (JSESSIONID
+// is now only issued after login, and the CSRF token lives in XSRF-TOKEN), so
+// keep whatever it sends instead of a fixed list.
+type JoysoundCookies = Record<string, string>;
 
 interface JoysoundArtistListItem {
   selSongNo: null;
@@ -60,19 +57,15 @@ interface ServiceTypeData {
 }
 
 function generateCookieString(cookies: JoysoundCookies) {
-  return COOKIE_IDS.map(
-    (cookieId) => cookieId + "=" + cookies[cookieId as keyof JoysoundCookies],
-  ).join("; ");
+  return Object.entries(cookies)
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
-function parseCookies(setCookie: string, target: JoysoundCookies) {
-  for (const cookieId of COOKIE_IDS) {
-    const re = new RegExp(cookieId + "=([^;]+);");
-
-    const matchData = setCookie.match(re);
-    invariant(matchData);
-
-    target[cookieId as keyof JoysoundCookies] = matchData[1];
+function parseCookies(resp: Response, target: JoysoundCookies) {
+  for (const setCookie of resp.headers.getSetCookie()) {
+    const matchData = setCookie.match(/^([^=;\s]+)=([^;]*)/);
+    if (matchData) target[matchData[1]] = matchData[2];
   }
 }
 
@@ -139,7 +132,7 @@ export class JoysoundAPI extends RESTDataSource {
         this.baseURL
       }${url} -d "${body}" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Cookie: ${generateCookieString(
         creds.cookies,
-      )}" -H "X-CSRF-TOKEN: ${creds.csrfToken}"`,
+      )}" -H "X-XSRF-TOKEN: ${creds.csrfToken}"`,
     );
 
     return super.post(url, {
@@ -150,7 +143,7 @@ export class JoysoundAPI extends RESTDataSource {
         Referer: "https://www.sound-cafe.jp/player",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
-        "X-CSRF-TOKEN": creds.csrfToken,
+        "X-XSRF-TOKEN": creds.csrfToken,
       },
     });
   }
@@ -272,11 +265,7 @@ export class JoysoundAPI extends RESTDataSource {
   }
 
   static async login(email: string, password: string) {
-    const loginCookies: JoysoundCookies = {
-      AWSALB: "",
-      AWSALBCORS: "",
-      JSESSIONID: "",
-    };
+    const loginCookies: JoysoundCookies = {};
 
     const csrfToken = await fetch("https://www.sound-cafe.jp/login", {
       headers: {
@@ -285,10 +274,7 @@ export class JoysoundAPI extends RESTDataSource {
       },
     })
       .then((resp) => {
-        const setCookie = resp.headers.get("set-cookie");
-        invariant(setCookie);
-
-        parseCookies(setCookie, loginCookies);
+        parseCookies(resp, loginCookies);
 
         return resp.text();
       })
@@ -308,18 +294,25 @@ export class JoysoundAPI extends RESTDataSource {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         Cookie: generateCookieString(loginCookies),
         Origin: "https://www.sound-cafe.jp",
-        Referer: "https:/www.sound-cafe.jp/login",
+        Referer: "https://www.sound-cafe.jp/login",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
-        "X-CSRF-TOKEN": csrfToken,
+        "X-XSRF-TOKEN": csrfToken,
         "X-Requested-With": "XMLHttpRequest",
       },
     })
       .then((resp) => {
-        const setCookie = resp.headers.get("set-cookie");
-        invariant(setCookie);
+        parseCookies(resp, loginCookies);
 
-        parseCookies(setCookie, loginCookies);
+        return resp.json() as Promise<{ result: number }>;
+      })
+      .then((check) => {
+        // 0 means the credentials were accepted; 1 means a wrong email/password
+        if (check.result !== 0) {
+          throw new Error(
+            `Joysound login rejected (result ${check.result}); check joysoundEmail and joysoundPassword in config.yaml`,
+          );
+        }
 
         return fetch("https://www.sound-cafe.jp/login", {
           method: "POST",
@@ -328,7 +321,7 @@ export class JoysoundAPI extends RESTDataSource {
             "Content-Type": "application/x-www-form-urlencoded",
             Cookie: generateCookieString(loginCookies),
             Origin: "https://www.sound-cafe.jp",
-            Referer: "https:/www.sound-cafe.jp/login",
+            Referer: "https://www.sound-cafe.jp/login",
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
           },
@@ -336,10 +329,7 @@ export class JoysoundAPI extends RESTDataSource {
         });
       })
       .then((resp) => {
-        const setCookie = resp.headers.get("set-cookie");
-        invariant(setCookie);
-
-        parseCookies(setCookie, loginCookies);
+        parseCookies(resp, loginCookies);
 
         return fetch("https://www.sound-cafe.jp", {
           headers: {
@@ -350,10 +340,7 @@ export class JoysoundAPI extends RESTDataSource {
         });
       })
       .then((resp) => {
-        const setCookie = resp.headers.get("set-cookie");
-        invariant(setCookie);
-
-        parseCookies(setCookie, loginCookies);
+        parseCookies(resp, loginCookies);
 
         return resp.text();
       })
