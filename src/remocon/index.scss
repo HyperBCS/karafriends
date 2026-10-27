@@ -16,6 +16,8 @@ body {
   font-family: $kf-font;
   font-size: $kf-text-body;
   line-height: $kf-line-height;
+  // Japanese wraps between phrases, not mid-word (where supported).
+  word-break: auto-phrase;
   -webkit-tap-highlight-color: transparent;
 }
 
