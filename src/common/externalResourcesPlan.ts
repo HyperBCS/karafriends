@@ -49,6 +49,28 @@ export interface AssetPlan {
   download: Download;
 }
 
+// Environment variables that point a tool at another copy (a test's fake,
+// or a host's own build). karafriends then never downloads that tool.
+export const TOOL_PATH_ENV = {
+  ytdlp: "KARAFRIENDS_YTDLP_PATH",
+  ffmpeg: "KARAFRIENDS_FFMPEG_PATH",
+} as const satisfies Record<AssetPlan["id"], string>;
+
+// The tools env overrides, by id. An empty value counts as unset.
+export function toolOverrides(
+  env: Record<string, string | undefined>,
+): Partial<ResourcePaths> {
+  const overrides: Partial<ResourcePaths> = {};
+  for (const [id, name] of Object.entries(TOOL_PATH_ENV) as [
+    AssetPlan["id"],
+    string,
+  ][]) {
+    const value = env[name]?.trim();
+    if (value) overrides[id] = path.resolve(value);
+  }
+  return overrides;
+}
+
 // Refresh the cached copy once it is older than this when the server exposes no
 // cache validators, so it neither re-downloads on every launch nor goes stale
 // forever.

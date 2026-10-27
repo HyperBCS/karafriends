@@ -13,6 +13,7 @@ import {
   isStale,
   resourcePathsFor,
   STALE_MS,
+  toolOverrides,
   type Platform,
 } from "./externalResourcesPlan.ts";
 
@@ -91,6 +92,36 @@ describe("resourcePathsFor", () => {
       assert.equal(paths.ytdlp, path.join(cacheDir, "ytdlp", expected.ytdlp));
     });
   }
+});
+
+describe("toolOverrides", () => {
+  test("takes KARAFRIENDS_YTDLP_PATH and KARAFRIENDS_FFMPEG_PATH, made absolute", () => {
+    const ytdlp = path.resolve("tests", "fixtures", "bin", "yt-dlp-fails.cmd");
+    assert.deepEqual(
+      toolOverrides({
+        KARAFRIENDS_YTDLP_PATH: path.join(
+          "tests",
+          "fixtures",
+          "bin",
+          "yt-dlp-fails.cmd",
+        ),
+        KARAFRIENDS_FFMPEG_PATH: "/opt/ffmpeg/bin/ffmpeg",
+        PATH: "/usr/bin",
+      }),
+      { ytdlp, ffmpeg: path.resolve("/opt/ffmpeg/bin/ffmpeg") },
+    );
+  });
+
+  test("ignores unset and empty ones", () => {
+    assert.deepEqual(toolOverrides({}), {});
+    assert.deepEqual(
+      toolOverrides({
+        KARAFRIENDS_YTDLP_PATH: " ",
+        KARAFRIENDS_FFMPEG_PATH: "",
+      }),
+      {},
+    );
+  });
 });
 
 describe("assetPlans", () => {
