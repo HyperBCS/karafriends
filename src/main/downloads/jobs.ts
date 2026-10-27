@@ -230,7 +230,7 @@ function runJoysoundFFmpeg(
   songId: string,
   ffmpegArgs: string[],
   ffmpegLogFilename: string,
-  options: Pick<ToolRun, "onStderr" | "stdin"> &
+  options: Pick<ToolRun, "onStderr" | "stdin" | "signal"> &
     Partial<Pick<ToolRun, "reasonForExit">> = {},
 ): Promise<void> {
   return runTool({
@@ -250,6 +250,7 @@ function downloadJoysoundVideoPromise(
   downloadQueueItem: DownloadQueueItem,
   tempFilename: string,
   ffmpegLogFilename: string,
+  signal: AbortSignal,
 ): Promise<void> {
   let songFrames = 0;
 
@@ -286,6 +287,7 @@ function downloadJoysoundVideoPromise(
   return runJoysoundFFmpeg(paths, songId, ffmpegArgs, ffmpegLogFilename, {
     onStderr,
     reasonForExit: () => REASONS.joysound,
+    signal,
   });
 }
 
@@ -295,6 +297,7 @@ async function downloadJoysoundYoutubeVideoPromise(
   youtubeVideoId: string,
   downloadQueueItem: DownloadQueueItem,
   tempFilename: string,
+  signal: AbortSignal,
 ): Promise<void> {
   await runTool({
     label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
@@ -320,6 +323,7 @@ async function downloadJoysoundYoutubeVideoPromise(
     env: envWithoutHttpProxy(),
     onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
     reasonForExit: ytdlpFailureReason,
+    signal,
   });
   safeUnlink(tempFilename);
   safeRename(tempFilename + ".mp4", tempFilename);
@@ -561,6 +565,8 @@ export async function joysoundJob(
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
+  // Stops the video step when the song data fails.
+  const stopVideo = new AbortController();
   const songDataPromise = joysoundApi
     .getSongRawData(songId)
     .catch(joysoundFailure);
@@ -571,6 +577,7 @@ export async function joysoundJob(
         queueItem.youtubeVideoId,
         downloadQueueItem,
         tempFilename,
+        stopVideo.signal,
       )
     : joysoundApi
         .getMovieUrls(songId)
@@ -583,13 +590,24 @@ export async function joysoundJob(
             downloadQueueItem,
             tempFilename,
             ffmpegLogFilename,
+            stopVideo.signal,
           ),
         );
 
-  const [, joysoundSongRawData] = await Promise.all([
-    videoDataPromise,
-    songDataPromise,
-  ]);
+  let joysoundSongRawData;
+  try {
+    [, joysoundSongRawData] = await Promise.all([
+      videoDataPromise,
+      songDataPromise,
+    ]);
+  } catch (err) {
+    // One step failed. The video step stops and, once its tool has exited,
+    // the download fails: runDownload then deletes what both left. (The
+    // song data is only a request, which writes nothing.)
+    stopVideo.abort();
+    await videoDataPromise.catch(() => {});
+    throw err;
+  }
 
   const telopBase64 = joysoundSongRawData.telop;
   const oggBase64 = joysoundSongRawData.ogg;

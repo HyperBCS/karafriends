@@ -49,14 +49,20 @@ export interface ToolRun {
   reasonForExit: (output: string) => string;
   // TOOL_TIMEOUT_MS, unless a test wants less.
   timeoutMs?: number;
+  // Stops the tool when aborted (the other step of the download failed).
+  signal?: AbortSignal;
 }
 
 // Runs a tool to the end, its output going to the console and the log.
 // Resolves when it exits 0. Rejects with a DownloadFailure when it can't
 // start, exits non-zero, or runs longer than its timeout (then it's
-// stopped). Never throws: a throw in a spawn callback would crash the app.
+// stopped), or when signal aborts it (once it has exited, so its files can
+// go). Never throws: a throw in a spawn callback would crash the app.
 export function runTool(run: ToolRun): Promise<void> {
   const timeoutMs = run.timeoutMs ?? TOOL_TIMEOUT_MS;
+  const stopped = () =>
+    new DownloadFailure(REASONS.other, `${run.label} was stopped`);
+  if (run.signal?.aborted) return Promise.reject(stopped());
   return new Promise((resolve, reject) => {
     const log = fs.createWriteStream(run.logFilename, {
       flags: run.freshLog ? "w" : "a",
@@ -69,10 +75,12 @@ export function runTool(run: ToolRun): Promise<void> {
     };
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop: (() => void) | undefined;
     const settle = (failure: DownloadFailure | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (stop) run.signal?.removeEventListener("abort", stop);
       if (failure) {
         log.write(`\nkarafriends: ${failure.detail}\n`);
         reject(failure);
@@ -124,8 +132,16 @@ export function runTool(run: ToolRun): Promise<void> {
     // Emitted when the tool can't be launched (missing, not executable).
     // Unhandled, an "error" event crashes the app.
     proc.on("error", failedToStart);
+    let stopping = false;
+    stop = () => {
+      stopping = true;
+      proc.kill();
+    };
+    run.signal?.addEventListener("abort", stop, { once: true });
     proc.on("close", (code, signal) => {
-      if (code === 0) {
+      if (stopping) {
+        settle(stopped());
+      } else if (code === 0) {
         settle(null);
       } else {
         settle(
