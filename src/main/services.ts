@@ -17,6 +17,7 @@ import {
 } from "../common/videoDownloader";
 import { createApi } from "./api";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
+import { setProxy } from "./http";
 import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
 import { createStateStore } from "./state";
@@ -57,6 +58,9 @@ const joysoundCredentialsProvider = memoizeSuccess(async () => {
   );
   return JoysoundAPI.login(joysoundEmail, joysoundPassword);
 });
+
+// The clients' requests go through config.yaml's proxy, if it enables one.
+setProxy(karafriendsConfig);
 
 // The clients keep no per-request state, so every request shares one of each.
 const upstreamClients = {
