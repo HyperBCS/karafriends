@@ -20,7 +20,23 @@ export const IPC_CHANNELS = {
   // sentence to show: invoke() -> string | null as the page loads, and
   // main -> display when it happens.
   remoconProblem: "remocon:problem",
+  // invoke(suggestedName, text) -> boolean: a save dialog, then the file
+  // written (Export config).
+  saveTextFile: "file:saveText",
+  // invoke() -> string | null: an open dialog, then the file read (Import
+  // config).
+  openTextFile: "file:openText",
 } as const;
+
+// window.karafriends's file dialogs, in the display window.
+export interface DisplayFiles {
+  // Asks where to save, suggesting suggestedName in the Documents folder,
+  // and writes text there as UTF-8. False if the host canceled; rejects if
+  // the file can't be written.
+  saveTextFile(suggestedName: string, text: string): Promise<boolean>;
+  // Asks for a .yaml file and reads it as UTF-8. Null if the host canceled.
+  openTextFile(): Promise<string | null>;
+}
 
 // The display window's command-line switch (webPreferences
 // .additionalArguments) with the phones' server port, which the preload

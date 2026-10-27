@@ -1,10 +1,12 @@
-import type { DisplayApi } from "../common/ipc";
+import type { DisplayApi, DisplayFiles } from "../common/ipc";
 
 // What the preload (src/preload/index.ts) gives the display window. Phones
 // don't have it.
 declare global {
   interface Window {
-    karafriends: {
+    // saveTextFile and openTextFile: the dialogs for Export and Import
+    // config.
+    karafriends: DisplayFiles & {
       ipAddresses(): string[];
       // The phones' server port, for the remote's address.
       remoconPort(): number;
