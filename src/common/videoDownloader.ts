@@ -199,7 +199,11 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
 
     fieldOffset = i + FIELD_TAG.length;
 
-    const fieldLengthView = new DataView(oggBuffer.buffer, i - 4, 4);
+    const fieldLengthView = new DataView(
+      oggBuffer.buffer,
+      oggBuffer.byteOffset + i - 4,
+      4,
+    );
     fieldLength = fieldLengthView.getUint32(0, true) - FIELD_TAG.length;
 
     break;
@@ -532,15 +536,21 @@ function composeJoysoundVideoPromise(
       safeUnlink(tempFilename);
 
       if (code === 0) {
-        const metadata: JoysoundVideoData = {
-          songDuration: getSongDuration(telopBuffer.buffer) * 1000,
-          songPlaytime: getJoysoundOggPlaytime(oggBuffer),
-          songId,
-          oggBuffer,
-          videoPlaytime,
-        };
+        // This runs in a child-process exit callback, so an exception here
+        // would be uncaught and take down the whole app; fail just this song.
+        try {
+          const metadata: JoysoundVideoData = {
+            songDuration: getSongDuration(telopBuffer) * 1000,
+            songPlaytime: getJoysoundOggPlaytime(oggBuffer),
+            songId,
+            oggBuffer,
+            videoPlaytime,
+          };
 
-        resolve(metadata);
+          resolve(metadata);
+        } catch (err) {
+          reject(err);
+        }
       } else {
         console.error(
           `Error downloading Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
@@ -852,7 +862,7 @@ function downloadJoysoundDataImpl(
 
       queueItem = {
         ...queueItem,
-        playtime: getSongDuration(telopBuffer.buffer),
+        playtime: getSongDuration(telopBuffer),
       };
 
       pushSongToQueue(queueItem, pushToHead);

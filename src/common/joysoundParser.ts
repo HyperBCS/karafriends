@@ -921,12 +921,13 @@ async function parseJoysoundData(
   };
 }
 
-export function getSongDuration(data: ArrayBufferLike): number {
-  const offsetView = new DataView(data, 6, 4);
-  const metadataOffset = offsetView.getUint32(0, true);
-  const metadataView = new DataView(data, metadataOffset, 20);
+export function getSongDuration(data: Uint8Array): number {
+  // Respect the view's offset: a small Node Buffer is a slice of a shared pool,
+  // so data.buffer on its own does not start at the JOY-02 header.
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const metadataOffset = view.getUint32(6, true);
 
-  return metadataView.getUint16(18, true);
+  return view.getUint16(metadataOffset + 18, true);
 }
 
 export default parseJoysoundData;
