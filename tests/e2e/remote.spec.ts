@@ -21,10 +21,10 @@ test.describe("history", () => {
   const songName = (n: number) =>
     `E2E history song ${String(n).padStart(2, "0")}`;
 
-  // queue.json in the format saveDb writes (src/main/graphql.ts), with a
-  // history of 35 songs, newest first. The queue is empty rather than the
-  // [null] that saveDb writes when nothing is playing: loading that makes
-  // queue lookups fail until the display's first check (a known bug).
+  // queue.json in the format older versions wrote (GraphQL-shaped items with
+  // __typename and userIdentity), with a history of 35 songs, newest first.
+  // The app still reads it (parseState in src/main/state.ts), so this also
+  // checks that an old queue.json survives an upgrade.
   test.use({
     seedQueue: {
       currentSong: null,

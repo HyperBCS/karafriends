@@ -7,13 +7,9 @@ import { promisify } from "util";
 
 import invariant from "ts-invariant";
 
-import {
-  DownloadQueueItem,
-  JoysoundQueueItem,
-  QueueSongResult,
-  UserIdentity,
-} from "../main/graphql";
-import { JoysoundAPI } from "../main/joysoundApi";
+import type { JoysoundAPI } from "../main/joysoundApi";
+import type { DownloadQueueItem } from "../main/state";
+import type { JoysoundQueueItem, UserIdentity } from "./api";
 
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
@@ -586,10 +582,7 @@ function padJoysoundVideoPromise(
   ffmpegLogFilename: string,
   queueItem: JoysoundQueueItem,
   pushToHead: boolean,
-  pushSongToQueue: (
-    queueItem: JoysoundQueueItem,
-    pushToHead: boolean,
-  ) => QueueSongResult,
+  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
 ): Promise<number> {
   const videoBaseFilename = videoFilename.substr(0, videoFilename.length - 4);
 
@@ -812,10 +805,7 @@ export function downloadJoysoundData(
   joysoundApi: JoysoundAPI,
   queueItem: JoysoundQueueItem,
   pushToHead: boolean,
-  pushSongToQueue: (
-    queueItem: JoysoundQueueItem,
-    pushToHead: boolean,
-  ) => QueueSongResult,
+  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
 ): void {
   ensureExternalResources()
     .then(() =>
@@ -839,10 +829,7 @@ function downloadJoysoundDataImpl(
   joysoundApi: JoysoundAPI,
   queueItem: JoysoundQueueItem,
   pushToHead: boolean,
-  pushSongToQueue: (
-    queueItem: JoysoundQueueItem,
-    pushToHead: boolean,
-  ) => QueueSongResult,
+  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
 ): void {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);

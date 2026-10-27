@@ -1,6 +1,4 @@
-import fs from "fs";
 import { createServer } from "http";
-import path from "path";
 import { WebSocketServer } from "ws";
 
 import { ApolloServer } from "@apollo/server";
@@ -22,6 +20,15 @@ import { useServer } from "graphql-ws/use/ws";
 import { Innertube } from "youtubei.js";
 
 import rawSchema from "inline-string:../common/schema.graphql";
+import type {
+  DamQueueItem,
+  JoysoundQueueItem,
+  NicoQueueItem,
+  PlaybackState,
+  QueueItem,
+  UserIdentity,
+  YoutubeQueueItem,
+} from "../common/api";
 import karafriendsConfig from "../common/config";
 import {
   downloadDamVideo,
@@ -30,10 +37,11 @@ import {
   downloadYoutubeVideo,
   getNicoVideoInfo,
   getVideoDownloadProgress,
-  TEMP_FOLDER,
 } from "./../common/videoDownloader";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
+import { store } from "./services";
+import type { HistoryItem, State } from "./state";
 
 import "regenerator-runtime/runtime";
 
@@ -133,45 +141,6 @@ interface NicoVideoInfoError {
 
 type NicoVideoInfoResult = NicoVideoInfo | NicoVideoInfoError;
 
-export interface UserIdentity {
-  readonly deviceId: string;
-  readonly nickname: string;
-}
-
-interface QueueItemInterface {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly timestamp: string;
-  readonly userIdentity: UserIdentity;
-}
-
-export interface JoysoundQueueItem extends QueueItemInterface {
-  readonly __typename: "JoysoundQueueItem";
-  readonly isRomaji: boolean;
-  readonly youtubeVideoId: string | null;
-}
-
-interface DamQueueItem extends QueueItemInterface {
-  readonly __typename: "DamQueueItem";
-  readonly streamingUrlIdx: string;
-}
-
-interface YoutubeQueueItem extends QueueItemInterface {
-  readonly __typename: "YoutubeQueueItem";
-  readonly hasAdhocLyrics: boolean;
-  readonly hasCaptions: boolean;
-  readonly gainValue: number;
-}
-
-interface NicoQueueItem extends QueueItemInterface {
-  readonly __typename: "NicoQueueItem";
-}
-
-type QueueItem =
-  DamQueueItem | JoysoundQueueItem | YoutubeQueueItem | NicoQueueItem;
-
 type QueueSongInfo = {
   readonly __typename: "QueueSongInfo";
   readonly eta: number;
@@ -182,7 +151,7 @@ interface QueueSongError {
   readonly reason: string;
 }
 
-export type QueueSongResult = QueueSongInfo | QueueSongError;
+type QueueSongResult = QueueSongInfo | QueueSongError;
 
 type Emote = {
   readonly userIdentity: UserIdentity;
@@ -194,7 +163,7 @@ type QueueDamSongInput = {
   readonly name: string;
   readonly artistName: string;
   readonly playtime?: number | null;
-  readonly streamingUrlIdx: string;
+  readonly streamingUrlIdx: number;
   readonly userIdentity: UserIdentity;
 };
 
@@ -227,50 +196,14 @@ type QueueNicoSongInput = {
   readonly userIdentity: UserIdentity;
 };
 
-interface SongHistoryItem {
-  readonly song: QueueItem;
-}
-
-enum PlaybackState {
-  PAUSED = "PAUSED",
-  PLAYING = "PLAYING",
-  RESTARTING = "RESTARTING",
-  SKIPPING = "SKIPPING",
-  WAITING = "WAITING",
-}
-
 type PushAdhocLyricsInput = {
   readonly lyric: string;
   readonly lyricIndex: number;
 };
 
-type AdhocLyricsEntry = {
-  readonly lyric: string;
-  readonly lyricIndex: number;
-};
-
-export interface DownloadQueueItem {
-  downloadType: number;
-  userIdentity: UserIdentity;
-  songId: string;
-  suffix: string | null;
-  progress: number;
-}
-
 interface VideoDownloadProgress {
   progress: number;
 }
-
-type NotARealDb = {
-  currentSong: QueueItem | null;
-  currentSongAdhocLyrics: AdhocLyricsEntry[];
-  idToAdhocLyrics: Record<string, string[]>;
-  pitchShiftSemis: number;
-  playbackState: PlaybackState;
-  songQueue: QueueItem[];
-  downloadQueue: DownloadQueueItem[];
-  songHistory: SongHistoryItem[];
-};
 
 enum SubscriptionEvent {
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
@@ -282,85 +215,80 @@ enum SubscriptionEvent {
   QueueChanged = "QueueChanged",
 }
 
-// TODO: make this gql context instead of global
-let db: NotARealDb = {
-  currentSong: null,
-  currentSongAdhocLyrics: [],
-  idToAdhocLyrics: {},
-  pitchShiftSemis: 0,
-  playbackState: PlaybackState.WAITING,
-  songQueue: [],
-  downloadQueue: [],
-  songHistory: [],
-};
+// The state keeps queue items in the API's shape (src/common/api.ts); the
+// schema wants a __typename and userIdentity instead of kind and user.
+const TYPENAME_BY_KIND = {
+  dam: "DamQueueItem",
+  joysound: "JoysoundQueueItem",
+  youtube: "YoutubeQueueItem",
+  nico: "NicoQueueItem",
+} as const;
 
-const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
-
-// TODO: write a db interface and call these from within mutating methods instead of at their call sites
-function saveDb() {
-  try {
-    if (!fs.existsSync(TEMP_FOLDER)) {
-      fs.mkdirSync(TEMP_FOLDER, { recursive: true });
-    }
-    const serialized = JSON.stringify({
-      ...db,
-      pitchShiftSemis: 0,
-      currentSong: null,
-      currentSongAdhocLyrics: [],
-      songQueue: [db.currentSong, ...db.songQueue],
-      downloadQueue: [],
-    });
-    // Write to a temp file and rename into place so an interrupted write can
-    // never leave a half-written queue.json that fails to parse on next launch.
-    const tmpPath = `${DB_PATH}.tmp`;
-    fs.writeFileSync(tmpPath, serialized, "utf-8");
-    fs.renameSync(tmpPath, DB_PATH);
-  } catch (err) {
-    // A failed persist shouldn't take down the app; the in-memory queue is
-    // still intact and will be retried on the next mutation.
-    console.error(`Failed to persist queue to ${DB_PATH}:`, err);
-  }
+function toGqlItem(item: QueueItem) {
+  const { kind, user, ...fields } = item;
+  return { __typename: TYPENAME_BY_KIND[kind], ...fields, userIdentity: user };
 }
 
-function loadDb(): NotARealDb {
-  const defaults: NotARealDb = {
-    currentSong: null,
-    currentSongAdhocLyrics: [],
-    idToAdhocLyrics: {},
-    pitchShiftSemis: 0,
-    playbackState: PlaybackState.WAITING,
-    songQueue: [],
-    downloadQueue: [],
-    songHistory: [],
-  };
-  if (!fs.existsSync(DB_PATH)) {
-    return defaults;
-  }
-  try {
-    return { ...defaults, ...JSON.parse(fs.readFileSync(DB_PATH, "utf-8")) };
-  } catch (err) {
-    // A corrupt or partially-written queue.json (e.g. an interrupted save or a
-    // power loss mid-party) previously threw here at startup, bricking every
-    // launch. Preserve the bad file for debugging and start from a clean state.
-    console.error(
-      `Failed to load saved queue from ${DB_PATH}; ignoring it:`,
-      err,
-    );
-    try {
-      fs.renameSync(DB_PATH, `${DB_PATH}.corrupt`);
-    } catch (renameErr) {
-      console.error("Failed to back up corrupt queue file:", renameErr);
-    }
-    return defaults;
-  }
+function toGqlItemOrNull(item: QueueItem | null) {
+  return item ? toGqlItem(item) : null;
 }
 
 const pubsub = new PubSub();
 
+// Publishes the subscription events for whatever an update changed.
+store.onChange(
+  (() => {
+    const snapshot = (state: Readonly<State>) => ({
+      queue: JSON.stringify(state.songQueue),
+      currentSong: JSON.stringify(state.currentSong),
+      playbackState: state.playbackState,
+      pitchShiftSemis: state.pitchShiftSemis,
+      adhocLyrics: JSON.stringify(state.currentSongAdhocLyrics),
+    });
+    let published = snapshot(store.getState());
+    return (state: Readonly<State>) => {
+      const next = snapshot(state);
+      if (
+        next.queue !== published.queue ||
+        next.currentSong !== published.currentSong
+      ) {
+        pubsub.publish(SubscriptionEvent.QueueChanged, {
+          queueChanged: {
+            currentSong: toGqlItemOrNull(state.currentSong),
+            newQueue: state.songQueue.map(toGqlItem),
+          },
+        });
+      }
+      if (next.currentSong !== published.currentSong) {
+        pubsub.publish(SubscriptionEvent.CurrentSongChanged, {
+          currentSongChanged: toGqlItemOrNull(state.currentSong),
+        });
+      }
+      if (next.playbackState !== published.playbackState) {
+        pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
+          playbackStateChanged: state.playbackState,
+        });
+      }
+      if (next.pitchShiftSemis !== published.pitchShiftSemis) {
+        pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
+          pitchShiftSemisChanged: state.pitchShiftSemis,
+        });
+      }
+      if (next.adhocLyrics !== published.adhocLyrics) {
+        pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
+          currentSongAdhocLyricsChanged: [...state.currentSongAdhocLyrics],
+        });
+      }
+      published = next;
+    };
+  })(),
+);
+
 function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
+  const db = store.getState();
   // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
   const songsQueuedByUser: number = db.songQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
+    (x) => x.user.deviceId === userIdentity.deviceId,
   ).length;
 
   const songsDownloadingByUser: number = db.downloadQueue.filter(
@@ -394,36 +322,30 @@ function pushSongToQueue(
   queueItem: QueueItem,
   pushToHead: boolean = false,
 ): QueueSongResult {
-  const eta =
-    (db.currentSong?.playtime || 0) +
-    db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
+  const eta = store.update((db) => {
+    const eta =
+      (db.currentSong?.playtime || 0) +
+      db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
 
-  console.log(
-    `pushSongToQueue: pushing ${JSON.stringify(
-      queueItem,
-    )} with an eta of ${eta}; pushToHead=${pushToHead}`,
-  );
+    console.log(
+      `pushSongToQueue: pushing ${JSON.stringify(
+        queueItem,
+      )} with an eta of ${eta}; pushToHead=${pushToHead}`,
+    );
 
-  if (pushToHead === true) {
-    // To give things time to download, we don't actually push to the front, but the second.
-    // Due to :js:, this is OK regardless of the size of db.songQueue
-    db.songQueue.splice(1, 0, queueItem);
-  } else {
-    db.songQueue.push(queueItem);
-  }
-
-  pubsub.publish(SubscriptionEvent.QueueChanged, {
-    queueChanged: {
-      currentSong: db.currentSong,
-      newQueue: db.songQueue,
-    },
+    if (pushToHead === true) {
+      // To give things time to download, we don't actually push to the front, but the second.
+      // Due to :js:, this is OK regardless of the size of db.songQueue
+      db.songQueue.splice(1, 0, queueItem);
+    } else {
+      db.songQueue.push(queueItem);
+    }
+    return eta;
   });
 
   pubsub.publish(SubscriptionEvent.QueueAdded, {
-    queueAdded: queueItem,
+    queueAdded: toGqlItem(queueItem),
   });
-
-  saveDb();
 
   return {
     __typename: "QueueSongInfo",
@@ -433,6 +355,12 @@ function pushSongToQueue(
 
 function cleanupAdhocSongLyrics(lyrics: string): string[] {
   return lyrics.split("\n").filter((entry) => entry.trim() !== "");
+}
+
+function queueEta(): number {
+  return store
+    .getState()
+    .songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
 }
 
 const resolvers = {
@@ -553,8 +481,8 @@ const resolvers = {
     },
   },
   Query: {
-    adhocLyrics(_: any, args: { id: string }): string[] {
-      return db.idToAdhocLyrics[args.id];
+    adhocLyrics(_: any, args: { id: string }): string[] | null {
+      return store.getState().idToAdhocLyrics[args.id] ?? null;
     },
     joysoundSongDetail: (
       _: any,
@@ -751,11 +679,10 @@ const resolvers = {
         }));
     },
     currentSong: () => {
-      return db.currentSong;
+      return toGqlItemOrNull(store.getState().currentSong);
     },
     queue: () => {
-      if (!db.songQueue.length) return [];
-      return db.songQueue;
+      return store.getState().songQueue.map(toGqlItem);
     },
     config: () => {
       // Every phone can read this, so return only what the schema exposes,
@@ -770,21 +697,22 @@ const resolvers = {
     songHistory: (
       _: any,
       args: { first: number | null; after: string | null },
-    ): Connection<SongHistoryItem, string> => {
+    ) => {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
+      const songHistory: HistoryItem[] = store.getState().songHistory;
 
       // A cursor is the number of items before the next page.
       return {
-        edges: db.songHistory
+        edges: songHistory
           .slice(afterInt, afterInt + firstInt)
           .map((songHistoryItem, i) => ({
-            node: songHistoryItem,
+            node: { song: toGqlItem(songHistoryItem.song) },
             cursor: (afterInt + i + 1).toString(),
           })),
         pageInfo: {
           hasPreviousPage: false,
-          hasNextPage: firstInt + afterInt < db.songHistory.length,
+          hasNextPage: firstInt + afterInt < songHistory.length,
           startCursor: "0",
           endCursor: (firstInt + afterInt).toString(),
         },
@@ -852,8 +780,8 @@ const resolvers = {
         };
       }
     },
-    pitchShiftSemis: () => db.pitchShiftSemis,
-    playbackState: () => db.playbackState,
+    pitchShiftSemis: () => store.getState().pitchShiftSemis,
+    playbackState: () => store.getState().playbackState,
     videoDownloadProgress: (
       _: any,
       args: {
@@ -863,7 +791,7 @@ const resolvers = {
       },
     ): VideoDownloadProgress => {
       const progress = getVideoDownloadProgress(
-        db.downloadQueue,
+        store.getState().downloadQueue,
         args.videoDownloadType,
         args.songId,
         args.suffix,
@@ -882,26 +810,30 @@ const resolvers = {
       args: { input: QueueJoysoundSongInput; tryHeadOfQueue: boolean },
       { dataSources }: IDataSources,
     ): QueueSongResult => {
+      const { userIdentity, ...input } = args.input;
       const queueItem: JoysoundQueueItem = {
-        __typename: "JoysoundQueueItem",
+        kind: "joysound",
         timestamp: Date.now().toString(),
-        ...args.input,
+        ...input,
+        playtime: input.playtime ?? null,
+        youtubeVideoId: input.youtubeVideoId ?? null,
+        user: userIdentity,
       };
 
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
+      if (hasMaxSongsInQueue(queueItem.user)) {
         return {
           __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
+          reason: `${queueItem.user.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
         };
       }
 
       const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
+        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.user);
       console.log(`queueJoysoundSong: pushToHead=${pushToHead}`);
 
       downloadJoysoundData(
-        db.downloadQueue,
-        queueItem.userIdentity,
+        store.getState().downloadQueue,
+        queueItem.user,
         dataSources.joysound,
         queueItem,
         pushToHead,
@@ -910,7 +842,7 @@ const resolvers = {
 
       return {
         __typename: "QueueSongInfo",
-        eta: db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0),
+        eta: queueEta(),
       };
     },
     queueDamSong: (
@@ -918,33 +850,39 @@ const resolvers = {
       args: { input: QueueDamSongInput; tryHeadOfQueue: boolean },
       { dataSources }: IDataSources,
     ): QueueSongResult => {
+      const { userIdentity, ...input } = args.input;
       const queueItem: DamQueueItem = {
+        kind: "dam",
         timestamp: Date.now().toString(),
-        ...args.input,
-        __typename: "DamQueueItem",
+        ...input,
+        playtime: input.playtime ?? null,
+        user: userIdentity,
       };
 
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
+      if (hasMaxSongsInQueue(queueItem.user)) {
         return {
           __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
+          reason: `${queueItem.user.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
         };
       }
 
       const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
+        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.user);
       console.log(`queueDamSong: pushToHead=${pushToHead}`);
 
       console.log(`Starting offline download of ${queueItem.songId}`);
       dataSources.minsei
         .getMusicStreamingUrls(queueItem.songId)
         .then((data) => {
-          // XXX: This should be already be a number but typescript tells me it is not
-          const selectedIndex = data.list[+queueItem.streamingUrlIdx];
+          const selectedIndex = data.list[queueItem.streamingUrlIdx];
           const url = karafriendsConfig.useLowBitrateUrl
             ? selectedIndex.lowBitrateUrl
             : selectedIndex.highBitrateUrl;
-          downloadDamVideo(url, queueItem.songId, queueItem.streamingUrlIdx);
+          downloadDamVideo(
+            url,
+            queueItem.songId,
+            String(queueItem.streamingUrlIdx),
+          );
         });
 
       return pushSongToQueue(queueItem, pushToHead);
@@ -954,34 +892,39 @@ const resolvers = {
       args: { input: QueueYoutubeSongInput; tryHeadOfQueue: boolean },
     ): QueueSongResult => {
       const queueItem: YoutubeQueueItem = {
+        kind: "youtube",
+        songId: args.input.songId,
+        name: args.input.name,
+        artistName: args.input.artistName,
+        playtime: args.input.playtime ?? null,
         timestamp: Date.now().toString(),
-        ...args.input,
+        user: args.input.userIdentity,
         hasAdhocLyrics: args.input.adhocSongLyrics ? true : false,
         hasCaptions: args.input.captionCode ? true : false,
         gainValue: args.input.gainValue,
-        __typename: "YoutubeQueueItem",
       };
 
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
+      if (hasMaxSongsInQueue(queueItem.user)) {
         return {
           __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
+          reason: `${queueItem.user.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
         };
       }
 
       const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
+        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.user);
       console.log(`queueDamSong: pushToHead=${pushToHead}`);
 
       if (args.input.adhocSongLyrics) {
-        db.idToAdhocLyrics[args.input.songId] = cleanupAdhocSongLyrics(
-          args.input.adhocSongLyrics,
-        );
+        const lyrics = cleanupAdhocSongLyrics(args.input.adhocSongLyrics);
+        store.update((db) => {
+          db.idToAdhocLyrics[args.input.songId] = lyrics;
+        });
       }
 
       downloadYoutubeVideo(
-        db.downloadQueue,
-        queueItem.userIdentity,
+        store.getState().downloadQueue,
+        queueItem.user,
         args.input.songId,
         args.input.captionCode,
         pushSongToQueue.bind(null, queueItem, pushToHead),
@@ -991,35 +934,36 @@ const resolvers = {
       // but let's optimistically return the eta assuming it will successfully queue
       return {
         __typename: "QueueSongInfo",
-        eta:
-          db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0) +
-          (args.input.playtime || 0),
+        eta: queueEta() + (args.input.playtime || 0),
       };
     },
     queueNicoSong: (
       _: any,
       args: { input: QueueNicoSongInput; tryHeadOfQueue: boolean },
     ): QueueSongResult => {
+      const { userIdentity, ...input } = args.input;
       const queueItem: NicoQueueItem = {
+        kind: "nico",
         timestamp: Date.now().toString(),
-        ...args.input,
-        __typename: "NicoQueueItem",
+        ...input,
+        playtime: input.playtime ?? null,
+        user: userIdentity,
       };
 
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
+      if (hasMaxSongsInQueue(queueItem.user)) {
         return {
           __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
+          reason: `${queueItem.user.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
         };
       }
 
       const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
+        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.user);
       console.log(`queueDamSong: pushToHead=${pushToHead}`);
 
       downloadNicoVideo(
-        db.downloadQueue,
-        queueItem.userIdentity,
+        store.getState().downloadQueue,
+        queueItem.user,
         args.input.songId,
         pushSongToQueue.bind(null, queueItem, pushToHead),
       );
@@ -1027,95 +971,72 @@ const resolvers = {
       // but let's optimistically return the eta assuming it will successfully queue
       return {
         __typename: "QueueSongInfo",
-        eta:
-          db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0) +
-          (args.input.playtime || 0),
+        eta: queueEta() + (args.input.playtime || 0),
       };
     },
     pushAdhocLyrics: (
       _: any,
       args: { input: PushAdhocLyricsInput },
     ): boolean => {
-      db.currentSongAdhocLyrics.push({
-        lyric: args.input.lyric,
-        lyricIndex: args.input.lyricIndex,
+      store.update((db) => {
+        db.currentSongAdhocLyrics.push({
+          lyric: args.input.lyric,
+          lyricIndex: args.input.lyricIndex,
+        });
       });
-      pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
-        currentSongAdhocLyricsChanged: db.currentSongAdhocLyrics,
-      });
-      saveDb();
       return true;
     },
-    popSong: (): QueueItem | null => {
-      const newSong = db.songQueue.shift() || null;
+    popSong: () => {
+      const newSong = store.update((db) => {
+        const newSong = db.songQueue.shift() || null;
 
-      db.currentSongAdhocLyrics = [];
-
-      if (
-        db.currentSong &&
-        db.currentSong.__typename === "YoutubeQueueItem" &&
-        db.currentSong.hasAdhocLyrics
-      ) {
-        delete db.idToAdhocLyrics[db.currentSong.songId];
-      }
-
-      pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
-        currentSongAdhocLyricsChanged: db.currentSongAdhocLyrics,
-      });
-
-      db.currentSong = newSong;
-      pubsub.publish(SubscriptionEvent.CurrentSongChanged, {
-        currentSongChanged: db.currentSong,
-      });
-
-      pubsub.publish(SubscriptionEvent.QueueChanged, {
-        queueChanged: {
-          currentSong: db.currentSong,
-          newQueue: db.songQueue,
-        },
-      });
-
-      if (db.currentSong) {
-        const prevSong: QueueItem | null = db.songHistory[0]?.song || null;
+        db.currentSongAdhocLyrics = [];
 
         if (
-          !prevSong ||
-          db.currentSong.__typename !== prevSong.__typename ||
-          db.currentSong.songId !== prevSong.songId ||
-          db.currentSong.timestamp !== prevSong.timestamp
+          db.currentSong &&
+          db.currentSong.kind === "youtube" &&
+          db.currentSong.hasAdhocLyrics
         ) {
-          db.songHistory.unshift({ song: db.currentSong });
+          delete db.idToAdhocLyrics[db.currentSong.songId];
         }
-      }
 
-      saveDb();
-      return newSong;
+        db.currentSong = newSong;
+
+        if (db.currentSong) {
+          const prevSong: QueueItem | null = db.songHistory[0]?.song || null;
+
+          if (
+            !prevSong ||
+            db.currentSong.kind !== prevSong.kind ||
+            db.currentSong.songId !== prevSong.songId ||
+            db.currentSong.timestamp !== prevSong.timestamp
+          ) {
+            db.songHistory.unshift({ song: db.currentSong });
+          }
+        }
+        return newSong;
+      });
+      return toGqlItemOrNull(newSong);
     },
     removeSong: (
       _: any,
       args: { songId: string; timestamp: string },
     ): boolean => {
-      const songIdx = db.songQueue.findIndex(
-        (item) =>
-          item.songId === args.songId && item.timestamp === args.timestamp,
-      );
-      // The song may already be playing or removed by another phone; without
-      // this check, splice(-1, 1) would remove the last song in the queue.
-      if (songIdx === -1) return false;
-      db.songQueue.splice(songIdx, 1);
-      pubsub.publish(SubscriptionEvent.QueueChanged, {
-        queueChanged: {
-          currentSong: db.currentSong,
-          newQueue: db.songQueue,
-        },
+      return store.update((db) => {
+        const songIdx = db.songQueue.findIndex(
+          (item) =>
+            item.songId === args.songId && item.timestamp === args.timestamp,
+        );
+        // The song may already be playing or removed by another phone; without
+        // this check, splice(-1, 1) would remove the last song in the queue.
+        if (songIdx === -1) return false;
+        db.songQueue.splice(songIdx, 1);
+        return true;
       });
-      saveDb();
-      return true;
     },
     setPitchShiftSemis: (_: any, args: { semis: number }): boolean => {
-      db.pitchShiftSemis = args.semis;
-      pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
-        pitchShiftSemisChanged: args.semis,
+      store.update((db) => {
+        db.pitchShiftSemis = args.semis;
       });
       return true;
     },
@@ -1123,11 +1044,9 @@ const resolvers = {
       _: any,
       args: { playbackState: PlaybackState },
     ): boolean => {
-      db.playbackState = args.playbackState;
-      pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
-        playbackStateChanged: args.playbackState,
+      store.update((db) => {
+        db.playbackState = args.playbackState;
       });
-      saveDb();
       return true;
     },
   },
@@ -1277,8 +1196,6 @@ export function applyGraphQLMiddleware(app: Application) {
   });
 
   useServer({ schema }, wsServer);
-
-  db = loadDb();
 
   const server = new ApolloServer<IDataSources>({
     schema,
