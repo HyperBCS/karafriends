@@ -43,9 +43,8 @@ test("a failed YouTube download says why on the remote and the display, and can 
     route.fulfill({ json: { ok: true, info: VIDEO_INFO } }),
   );
 
-  await remote.getByRole("link", { name: "YouTube", exact: true }).click();
-  await remote.getByPlaceholder("YouTube video URL or ID").fill(VIDEO_ID);
-  await remote.getByRole("button", { name: "Get Video Info" }).click();
+  // An ID in the search box opens the video's page.
+  await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
   await expect(
     remote.getByText(VIDEO_INFO.title, { exact: true }),
   ).toBeVisible();

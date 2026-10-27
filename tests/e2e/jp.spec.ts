@@ -13,14 +13,12 @@ async function searchTitle(
   catalog: (typeof CATALOGS)[number],
   title: string,
 ) {
-  await remote
-    .getByRole("link", { name: `Title (${catalog})`, exact: true })
-    .click();
-  await expect(
-    remote.getByRole("heading", { name: "Search by song title" }),
-  ).toBeVisible();
-  await remote.getByPlaceholder("Start typing...").fill(title);
-  return remote.getByRole("main").getByRole("link").filter({ hasText: title });
+  await remote.getByRole("tab", { name: catalog, exact: true }).click();
+  await remote.getByRole("searchbox", { name: "Search" }).fill(title);
+  return remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link")
+    .filter({ hasText: title });
 }
 
 // Opens the first result's song page; returns the song's title.
@@ -32,10 +30,7 @@ async function openFirstSong(
   await results.first().click();
   await remote.waitForURL(/#\/(song|joysoundSong)\//);
   // The song's name, once its page has loaded.
-  const heading = remote
-    .getByRole("main")
-    .getByRole("heading", { level: 2 })
-    .filter({ hasNotText: "Search by" });
+  const heading = remote.getByRole("main").getByRole("heading", { level: 2 });
   await expect(heading).toBeVisible({ timeout: 30_000 });
   return (await heading.textContent()) ?? "";
 }
@@ -55,7 +50,9 @@ async function removeFromQueue(remote: Page, title: string) {
   const removal = remote.waitForResponse((res) =>
     res.url().endsWith("/api/removeSong"),
   );
-  await queue.getByRole("button", { name: `Queued by ${NICKNAME}` }).click();
+  await queue
+    .getByRole("button", { name: `${title}, Queued by ${NICKNAME}` })
+    .click();
   await queue.getByRole("button", { name: "Remove from queue" }).click();
   expect(await (await removal).json()).toBe(true);
   await expect(queue.getByText(title)).toHaveCount(0);
@@ -122,7 +119,7 @@ test.describe("DAM and Joysound", { tag: "@jp" }, () => {
         .first();
       await queue(remote, button);
       await expect(
-        remote.getByRole("main").getByText(/^Estimated wait: T-/),
+        remote.getByRole("main").getByText(/^Queued, up in /),
       ).toBeVisible();
 
       await remote.getByRole("button", { name: "Show queue" }).click();
