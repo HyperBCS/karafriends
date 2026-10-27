@@ -1,14 +1,15 @@
+@use "../../tokens" as *;
+
 .navBar {
   width: 100vw;
   height: 48px;
   padding: 0 12px;
-  background-color: #1cb3ff;
+  background-color: $kf-surface;
   display: flex;
   justify-content: space-between;
   align-items: center;
 
-  color: #fff;
+  color: $kf-text;
   font-size: 24px;
   line-height: 24px;
-  animation: rotation 2s infinite linear;
 }

@@ -1,9 +1,11 @@
+@use "../../tokens" as *;
+
 .loader {
   margin: 8px auto;
   width: 36px;
   height: 36px;
   font-size: 36px;
-  color: #1cb3ff;
+  color: $kf-accent;
   animation: rotation 1s infinite linear;
 }
 

@@ -1,3 +1,5 @@
+@use "../../tokens" as *;
+
 .list {
   margin: 8px 0;
   display: flex;
@@ -7,8 +9,9 @@
 
 .listItem {
   padding: 8px;
-  box-shadow: 0 0 4px #ccc;
-  border-radius: 4px;
+  border: 1px solid $kf-border;
+  border-radius: $kf-radius;
+  background-color: $kf-surface;
   overflow: hidden;
   overflow-wrap: anywhere;
 }

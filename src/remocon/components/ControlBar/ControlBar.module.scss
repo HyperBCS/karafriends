@@ -1,5 +1,7 @@
+@use "../../tokens" as *;
+
 .controlBar {
-  background-color: #1cb3ff;
+  background-color: $kf-surface;
   overflow: hidden;
 }
 
@@ -16,7 +18,7 @@
   justify-content: space-between;
   align-items: center;
 
-  color: #fff;
+  color: $kf-text;
   font-size: 24px;
   line-height: 24px;
 }
@@ -25,8 +27,9 @@
   height: 30vh;
   padding: 4px 12px;
   overflow: auto;
-  background-color: #fff;
-  color: #1cb3ff;
+  border-top: 1px solid $kf-border;
+  background-color: $kf-bg;
+  color: $kf-text;
   text-align: center;
 }
 
@@ -36,8 +39,8 @@
   left: 8px;
   bottom: 8px;
   display: flex;
-  color: #1cb3ff;
-  background-color: white;
+  color: $kf-text;
+  background-color: $kf-surface-pressed;
   height: 32px;
   line-height: 0;
   border-radius: 16px;

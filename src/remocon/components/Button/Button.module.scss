@@ -1,14 +1,17 @@
+@use "../../tokens" as *;
+
 .button {
   padding: 8px;
   border: none;
-  border-radius: 4px;
-  background-color: #1cb3ff;
-  color: #fff;
+  border-radius: $kf-radius;
+  background-color: $kf-accent;
+  color: $kf-on-accent;
   font-size: 16px;
 }
 
 .disabled {
-  background-color: #ccc;
+  background-color: $kf-surface-pressed;
+  color: $kf-muted;
 }
 
 .full {

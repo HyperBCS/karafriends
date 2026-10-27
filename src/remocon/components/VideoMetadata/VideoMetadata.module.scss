@@ -1,5 +1,7 @@
+@use "../../tokens" as *;
+
 .channel {
-  color: #1cb3ff;
+  color: $kf-muted;
 }
 
 .title {
@@ -7,7 +9,7 @@
 }
 
 .numbers {
-  color: #999;
+  color: $kf-muted;
   display: flex;
   gap: 16px;
 }

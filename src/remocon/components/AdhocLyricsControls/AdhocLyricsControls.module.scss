@@ -1,4 +1,4 @@
-@use "sass:color";
+@use "../../tokens" as *;
 
 .noLyrics {
   margin-top: 1em;
@@ -36,7 +36,7 @@ $wheel-height: 6 * $line-height;
     left: 0;
     right: 0;
     height: 1px;
-    background-color: #d9d9d9;
+    background-color: $kf-border;
     transform: scaleY(0.5);
     pointer-events: none;
   }
@@ -77,7 +77,7 @@ $wheel-height: 6 * $line-height;
   height: $line-height;
   padding: 0 10px;
   overflow: hidden;
-  color: #999;
+  color: $kf-muted;
   line-height: $line-height;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -85,14 +85,14 @@ $wheel-height: 6 * $line-height;
   cursor: pointer;
 
   &.selected {
-    color: #222;
+    color: $kf-text;
   }
 }
 
 .controller {
   flex: 1;
-  border: 2px dashed #1cb3ff;
-  background-color: color.adjust(#1cb3ff, $lightness: 40%);
+  border: 2px dashed $kf-accent;
+  background-color: $kf-surface;
   display: flex;
   flex-direction: column;
   justify-content: center;

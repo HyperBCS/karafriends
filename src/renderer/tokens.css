@@ -1,0 +1,57 @@
+/* The display's design tokens (see the design brief in
+   notes/PLAN-product.md). The colors match the phone remote's
+   (src/remocon/tokens.scss) except the background: pure black behind the
+   video, and a surface just above it for panels.
+
+   Sizes are for a 1080p screen viewed from 3 m: nothing a guest reads is
+   under 32px. Contrast ratios are WCAG 2 ratios against --kf-bg. */
+
+:root {
+  color-scheme: dark;
+
+  /* Behind the video, and the idle screen. */
+  --kf-bg: #000000;
+  /* The one lighter surface: panels, the settings screen, notices. */
+  --kf-surface: #141414;
+  --kf-surface-pressed: #262626;
+  /* Hairlines between rows and around fields (decorative). */
+  --kf-border: #3a3a3a;
+  /* Text, 19.3:1. */
+  --kf-text: #f5f5f5;
+  /* Secondary text: artists, singers, ETAs. 8.3:1 (7.3:1 on the surface). */
+  --kf-muted: #a3a3a3;
+  /* The accent: the fill of the app icon's circle (icon.png), sampled as its
+     most common opaque pixel. The current song and the primary action only.
+     8.9:1 as text. White text on it is 2.4:1, so text on it is
+     --kf-on-accent. */
+  --kf-accent: #1cb3ff;
+  --kf-accent-pressed: #1590cc;
+  --kf-on-accent: #121212;
+  /* Errors and destructive actions. 6.7:1 as text. */
+  --kf-danger: #ff5c5c;
+
+  --kf-space-1: 4px;
+  --kf-space-2: 8px;
+  --kf-space-3: 12px;
+  --kf-space-4: 16px;
+  --kf-space-5: 24px;
+  --kf-space-6: 32px;
+
+  /* One radius; borders and spacing instead of shadows. */
+  --kf-radius: 4px;
+  /* The one shadow, for a bottom sheet only. */
+  --kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.6);
+
+  /* UI text uses the system stack; lyrics keep the bundled Noto fonts. */
+  --kf-font:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans",
+    "Noto Sans JP", sans-serif;
+  /* Settings labels, the address under the QR code's caption. */
+  --kf-text-label: 32px;
+  /* Queue and up-next rows, notices, settings fields. */
+  --kf-text-body: 36px;
+  /* Section headings, the up-next song's title. */
+  --kf-text-heading: 48px;
+  /* The current song's title in the start overlay. */
+  --kf-text-title: 64px;
+}

@@ -1,0 +1,104 @@
+// The phone remote's design tokens. Every color, size and space in the
+// remote comes from here (see the design brief in notes/PLAN-product.md).
+//
+// Use them in a module with `@use "<relative path>/tokens" as *;`. This file
+// emits no CSS by itself; index.scss puts the same values on :root as custom
+// properties (--kf-*) with the custom-properties mixin below, for inline
+// styles and anything outside Sass.
+//
+// Contrast ratios are WCAG 2 ratios against $kf-bg unless noted.
+
+// Colors.
+
+// The page: near-black, not pure black, so the lighter surface reads as one.
+$kf-bg: #121212;
+// The one lighter surface: lists, sheets, fields, secondary buttons.
+$kf-surface: #1e1e1e;
+// A surface while pressed.
+$kf-surface-pressed: #2a2a2a;
+// Hairlines between rows and around fields. Decorative (1.6:1), so never the
+// only thing that tells two controls apart.
+$kf-border: #3a3a3a;
+// Text, 17.2:1 (15.3:1 on the surface).
+$kf-text: #f5f5f5;
+// Secondary text: artists, ETAs, labels. 7.4:1 (6.6:1 on the surface).
+$kf-muted: #a3a3a3;
+// The accent: the fill of the app icon's circle (icon.png), sampled as its
+// most common opaque pixel, #1cb3ff. It means one thing: the primary action
+// or the current item. 8.0:1 as text on the page, 7.1:1 on the surface.
+// White text on it is only 2.4:1, so text on the accent is $kf-on-accent.
+$kf-accent: #1cb3ff;
+$kf-accent-pressed: #1590cc;
+// Text on the accent (8.0:1) and on the danger color (6.2:1).
+$kf-on-accent: #121212;
+// Destructive actions and errors. 6.2:1 as text (5.5:1 on the surface).
+$kf-danger: #ff5c5c;
+$kf-danger-pressed: #e04848;
+
+// Spacing.
+$kf-space-1: 4px;
+$kf-space-2: 8px;
+$kf-space-3: 12px;
+$kf-space-4: 16px;
+$kf-space-5: 24px;
+$kf-space-6: 32px;
+
+// Shape. One radius everywhere; borders and spacing instead of shadows.
+$kf-radius: 4px;
+// The one shadow, for the bottom sheet only.
+$kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.6);
+
+// Tap targets.
+$kf-tap: 44px;
+
+// Type. The system stack covers Japanese on iOS and Android.
+$kf-font:
+  system-ui,
+  -apple-system,
+  "Segoe UI",
+  Roboto,
+  "Hiragino Sans",
+  "Noto Sans JP",
+  sans-serif;
+$kf-text-label: 14px; // source labels, field labels
+$kf-text-body: 16px; // the minimum for anything a guest reads
+$kf-text-title: 18px; // list row titles
+$kf-text-control: 20px; // buttons, the top bar title, fields
+$kf-text-icon: 28px; // icon-only buttons
+$kf-line-height: 1.35;
+
+// Focus: a ring outside the element, so it shows on any background.
+@mixin kf-focus-ring {
+  outline: 2px solid $kf-accent;
+  outline-offset: 2px;
+}
+
+// The tokens as custom properties; index.scss includes this under :root.
+@mixin custom-properties {
+  --kf-bg: #{$kf-bg};
+  --kf-surface: #{$kf-surface};
+  --kf-surface-pressed: #{$kf-surface-pressed};
+  --kf-border: #{$kf-border};
+  --kf-text: #{$kf-text};
+  --kf-muted: #{$kf-muted};
+  --kf-accent: #{$kf-accent};
+  --kf-accent-pressed: #{$kf-accent-pressed};
+  --kf-on-accent: #{$kf-on-accent};
+  --kf-danger: #{$kf-danger};
+  --kf-danger-pressed: #{$kf-danger-pressed};
+  --kf-space-1: #{$kf-space-1};
+  --kf-space-2: #{$kf-space-2};
+  --kf-space-3: #{$kf-space-3};
+  --kf-space-4: #{$kf-space-4};
+  --kf-space-5: #{$kf-space-5};
+  --kf-space-6: #{$kf-space-6};
+  --kf-radius: #{$kf-radius};
+  --kf-shadow-sheet: #{$kf-shadow-sheet};
+  --kf-tap: #{$kf-tap};
+  --kf-font: #{$kf-font};
+  --kf-text-label: #{$kf-text-label};
+  --kf-text-body: #{$kf-text-body};
+  --kf-text-title: #{$kf-text-title};
+  --kf-text-control: #{$kf-text-control};
+  --kf-text-icon: #{$kf-text-icon};
+}
