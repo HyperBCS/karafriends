@@ -220,6 +220,8 @@ test.describe("phase C", () => {
     browser,
   }) => {
     const { remoconUrl } = karafriends;
+    // A real-looking nickname, not the fixture's (this runs after its).
+    await remote.addInitScript(() => localStorage.setItem("nickname", "Ken"));
     for (const catalog of ["dam", "joysound"] as const) {
       await remote.route(`**/api/${catalog}SearchSongs`, (route) =>
         route.fulfill({
