@@ -22,10 +22,6 @@ process.on("uncaughtException", handleError);
 process.on("unhandledRejection", handleError);
 
 import inspector from "inspector";
-
-// Start a debug server if we don't have one already. If we already have one, this would throw.
-if (inspector.url() === undefined) inspector.open();
-
 import path from "path";
 
 import compression from "compression";
@@ -51,6 +47,11 @@ import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowe
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import { default as preloadUrl } from "url:../preload";
+
+// In dev, start a debug server if we don't have one already (opening a
+// second one would throw). Packaged builds don't open one, since anything
+// on this machine could attach to it and run code in the main process.
+if (isDev && inspector.url() === undefined) inspector.open();
 
 try {
   nativeAudio.allocConsole();
