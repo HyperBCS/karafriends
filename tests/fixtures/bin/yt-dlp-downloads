@@ -1,9 +1,15 @@
 #!/bin/sh
-# A stand-in for yt-dlp that "downloads" at once: it creates the (empty)
-# file named after -o and exits 0. tests/e2e/player.spec.ts points
-# KARAFRIENDS_YTDLP_PATH here.
+# A stand-in for yt-dlp that "downloads" at once: it prints yt-dlp's
+# progress lines, creates the (empty) file named after -o and exits 0.
+# tests/e2e/player.spec.ts points KARAFRIENDS_YTDLP_PATH here, and
+# src/main/downloads/jobs.test.ts runs it as yt-dlp.
 while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then : > "$2"; fi
+  if [ "$1" = "-o" ]; then
+    echo "[download] Destination: $2"
+    : > "$2"
+  fi
   shift
 done
+echo "[download] 100.0% of    1.00MiB at    1.00MiB/s ETA 00:00"
+echo "[download] 100% of    1.00MiB in 00:00:00 at    1.00MiB/s"
 exit 0
