@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/browser";
 import Kuroshiro from "kuroshiro";
 import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji";
 
@@ -12,11 +11,6 @@ import App from "./App";
 import ErrorBoundary from "./ErrorBoundary";
 import "./index.css";
 import KarafriendsAudio from "./webAudio";
-
-Sentry.init({
-  dsn: "https://80cbda8ca4af42d9b95c60eb1f00566f@sentry.io/6728669",
-  debug: true,
-});
 
 const kuroshiro = new Kuroshiro();
 const kuromojiAnalyzer = new KuromojiAnalyzer({ dictPath: "./dict" });
