@@ -6,13 +6,12 @@ on:
     branches:
       - master
 permissions:
-  pull-requests: write
+  contents: read
 jobs:
   build-macos-aarch64:
-    runs-on: [self-hosted, karafriends-integration]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: Homebrew/actions/setup-homebrew@master
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
@@ -26,12 +25,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: yarn
       - run: npm install -g yarn
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install ephemeral-port-reserve
       - run: yarn install --immutable
       - run: yarn test:unit
       - run: yarn build-dev
@@ -41,24 +36,6 @@ jobs:
       - run: cargo install cargo-careful
         continue-on-error: true
       - run: yarn test:native
-      - run: yarn test:wdio
-      - run: |
-          echo RENDERER_URL=$(curl -F "reqtype=fileupload" -F "fileToUpload=@renderer.png" https://catbox.moe/user/api.php) >> $GITHUB_ENV
-          echo REMOCON_CHROME_URL=$(curl -F "reqtype=fileupload" -F "fileToUpload=@remocon-chrome.png" https://catbox.moe/user/api.php) >> $GITHUB_ENV
-          echo REMOCON_SAFARI_URL=$(curl -F "reqtype=fileupload" -F "fileToUpload=@remocon-Safari.png" https://catbox.moe/user/api.php) >> $GITHUB_ENV
-        if: github.event_name == 'pull_request'
-      - uses: peter-evans/create-or-update-comment@v5
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            # WDIO Screenshots
-            ## Renderer (Electron)
-            ![renderer.png](${{ env.RENDERER_URL }})
-            ## Remocon (Chrome / Pixel 6)
-            ![remocon-chrome.png](${{ env.REMOCON_CHROME_URL }})
-            ## Remocon (Safari iPhone 15)
-            ![remocon-Safari.png](${{ env.REMOCON_SAFARI_URL }})
-        if: github.event_name == 'pull_request'
   build-macos-x86_64:
     runs-on: macos-latest
     steps:
