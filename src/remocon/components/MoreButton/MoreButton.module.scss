@@ -1,0 +1,8 @@
+@use "../../tokens" as *;
+
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-3;
+  padding: $kf-space-4;
+}

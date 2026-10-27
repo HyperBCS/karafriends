@@ -1,0 +1,123 @@
+@use "../tokens" as *;
+
+// The song pages (DAM, Joysound, YouTube, Niconico): the song, then its
+// queue buttons, then its options.
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-4;
+  padding: $kf-space-4;
+}
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.reading,
+.source {
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}
+
+.artist {
+  align-self: flex-start;
+  color: $kf-text;
+  font-size: $kf-text-title;
+  text-decoration: underline;
+  text-decoration-color: $kf-border-strong;
+  text-underline-offset: 3px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-3;
+  padding-top: $kf-space-4;
+  border-top: 1px solid $kf-border;
+}
+
+.sectionTitle {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: 600;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-3;
+}
+
+.formButtons {
+  display: flex;
+  gap: $kf-space-2;
+}
+
+// A native picker (captions), in the fields' look.
+.select,
+.textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 $kf-space-3;
+  border: 1px solid $kf-border-strong;
+  border-radius: $kf-radius;
+  background-color: $kf-surface;
+  color: $kf-text;
+  font: inherit;
+  font-size: $kf-text-body;
+
+  &:focus-visible {
+    border-color: $kf-accent;
+    outline: 1px solid $kf-accent;
+  }
+}
+
+.textarea {
+  min-height: 120px;
+  padding: $kf-space-3;
+  resize: vertical;
+
+  &::placeholder {
+    color: $kf-muted;
+    opacity: 1;
+  }
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+  color: $kf-muted;
+  font-size: $kf-text-label;
+}
+
+.note {
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}
+
+// An embedded player or a thumbnail, as wide as the page.
+.video {
+  overflow: hidden;
+  border-radius: $kf-radius;
+  background-color: $kf-surface;
+  aspect-ratio: 16 / 9;
+
+  iframe,
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    object-fit: cover;
+  }
+}

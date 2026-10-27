@@ -1,27 +1,23 @@
 @use "../../tokens" as *;
 
 .loader {
-  margin: 8px auto;
-  width: 36px;
-  height: 36px;
-  font-size: 36px;
+  display: flex;
+  justify-content: center;
+  padding: $kf-space-4;
   color: $kf-accent;
-  animation: rotation 1s infinite linear;
+  font-size: 32px;
+
+  svg {
+    animation: rotation 1s infinite linear;
+  }
 }
 
 .error {
-  margin: 8px 0;
-
-  p {
-    margin: 0 0 8px;
-  }
+  margin: $kf-space-4;
 }
 
 @keyframes rotation {
-  from {
-    transform: rotate(0deg);
-  }
   to {
-    transform: rotate(359deg);
+    transform: rotate(360deg);
   }
 }

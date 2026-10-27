@@ -347,10 +347,7 @@ test.describe("supervised mode", () => {
       // The remote: its UI hides the remove button and disables the playback
       // controls...
       const queue = page.getByRole("region", { name: "Queue" });
-      // (The marquee repeats the title.)
-      await expect(
-        queue.getByText("E2E supervised song 2").first(),
-      ).toBeVisible();
+      await expect(queue.getByText("E2E supervised song 2")).toBeVisible();
       await queue.getByRole("button", { name: "Queued by someone" }).click();
       await expect(
         queue.getByRole("button", { name: "Remove from queue" }),
@@ -464,7 +461,7 @@ test.describe("supervised mode", () => {
       await expect(
         page.getByRole("heading", { name: "Profile" }),
       ).toBeVisible();
-      await expect(page.getByRole("definition")).toHaveText(NICKNAME);
+      await expect(page.getByLabel("Nickname")).toHaveValue(NICKNAME);
       const password = page.getByLabel("Admin password");
       const signIn = page.getByRole("button", { name: "Sign in" });
 
@@ -682,7 +679,9 @@ test.describe("supervised mode", () => {
             .getByRole("listbox", { name: "Lyrics" })
             .getByRole("option", { selected: true }),
         ).toHaveText(`0 | ${LYRICS[0]}`);
-        await page.getByText("TAP HERE").click();
+        await page
+          .getByRole("button", { name: "Tap here to show the next line" })
+          .click();
 
         await expect(display.getByText(LYRICS[0])).toBeVisible();
         expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([

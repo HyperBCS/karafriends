@@ -1,0 +1,9 @@
+@use "../tokens" as *;
+
+.error {
+  margin: $kf-space-4 $kf-space-4 0;
+}
+
+.list {
+  margin-top: $kf-space-4;
+}

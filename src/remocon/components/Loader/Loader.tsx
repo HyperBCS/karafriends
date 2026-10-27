@@ -1,13 +1,14 @@
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import React, { Suspense } from "react";
 
-import { BiLoaderAlt } from "../../icons";
-import Button from "../Button";
-import * as styles from "./Loader.module.scss";
 import { t } from "../../i18n";
+import { BiLoaderAlt } from "../../icons";
+import { InlineError } from "../ui";
+import * as styles from "./Loader.module.scss";
 
+// A spinner in place of what's loading.
 const Loader = () => (
-  <div className={styles.loader}>
+  <div className={styles.loader} role="status" aria-label={t("common.loading")}>
     <BiLoaderAlt />
   </div>
 );
@@ -66,14 +67,9 @@ class LoadError extends React.Component<
     const { error } = this.state;
     if (error === null) return this.props.children;
     return (
-      <div className={styles.error} role="alert">
-        <p>
-          {t("common.loadFailed", {
-            reason: error.message || String(error),
-          })}
-        </p>
-        <Button onClick={this.reset}>{t("common.tryAgain")}</Button>
-      </div>
+      <InlineError className={styles.error} onRetry={this.reset}>
+        {t("common.loadFailed", { reason: error.message || String(error) })}
+      </InlineError>
     );
   }
 }

@@ -1,15 +1,72 @@
 import React from "react";
 import { useParams } from "react-router";
 
-import Artist from "../components/Artist";
+import { usePagedApiQuery } from "../../common/apiQueries";
+import { withLoader } from "../components/Loader";
+import MoreButton from "../components/MoreButton";
+import { List, ListRow } from "../components/ui";
+import { t } from "../i18n";
+import * as styles from "./SongPage.module.scss";
 
-type RouteParams = {
-  id: string;
+function useDamArtist(id: string) {
+  const paged = usePagedApiQuery(
+    "damArtist",
+    { id },
+    (artist) => artist.songs,
+    (song) => song.id,
+  );
+  return {
+    name: paged.first.name,
+    songCount: paged.first.songCount as number | null,
+    paged,
+  };
+}
+
+function useJoysoundArtist(id: string) {
+  const paged = usePagedApiQuery(
+    "joysoundArtistSongs",
+    { id },
+    (page) => page,
+    (song) => song.id,
+  );
+  return { name: paged.items[0]?.artistName ?? "", songCount: null, paged };
+}
+
+const SONG_PAGES = { dam: "/song/", joysound: "/joysoundSong/" };
+
+// A DAM or Joysound artist's songs. (Render it with key={kind}: the kind
+// picks the lookup.)
+const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
+  const { id } = useParams<{ id: string }>();
+  const useArtist = kind === "dam" ? useDamArtist : useJoysoundArtist;
+  const { name, songCount, paged } = useArtist(id!);
+  const source = t(kind === "dam" ? "source.dam" : "source.joysound");
+
+  return (
+    <>
+      <div className={styles.page}>
+        <div className={styles.about}>
+          <h2 className={styles.title}>{name}</h2>
+          <p className={styles.source}>
+            {source}
+            {songCount !== null &&
+              ` · ${t("search.songCount", { count: songCount })}`}
+          </p>
+        </div>
+      </div>
+      <List label={t("search.results")}>
+        {paged.items.map((song) => (
+          <ListRow
+            key={song.id}
+            title={song.name}
+            source={source}
+            to={`${SONG_PAGES[kind]}${song.id}`}
+          />
+        ))}
+      </List>
+      <MoreButton paged={paged} />
+    </>
+  );
 };
 
-const ArtistPage = () => {
-  const params = useParams<RouteParams>();
-  return <Artist id={params.id!} />;
-};
-
-export default ArtistPage;
+export default withLoader(ArtistPage);

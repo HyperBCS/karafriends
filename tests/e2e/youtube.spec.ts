@@ -27,7 +27,10 @@ test.describe("YouTube", { tag: "@net" }, () => {
     // Once downloaded, the video joins the queue, and the display starts it at
     // its next check (every 5 seconds). Either way both screens show it.
     const remoteQueue = remote.getByRole("region", { name: "Queue" });
-    const queued = remoteQueue.getByText(VIDEO_TITLE);
+    // Queued (a row to open), not playing (the current row).
+    const queued = remoteQueue.getByRole("button", {
+      name: `${VIDEO_TITLE}, Queued by ${NICKNAME}`,
+    });
     const nowPlaying = remote
       .getByRole("region", { name: "Now playing" })
       .getByText(VIDEO_TITLE);
@@ -46,9 +49,7 @@ test.describe("YouTube", { tag: "@net" }, () => {
     let tookOffBy = "";
     await expect(async () => {
       if ((await queued.count()) > 0) {
-        await remoteQueue
-          .getByRole("button", { name: `Queued by ${NICKNAME}` })
-          .click({ timeout: 2_000 });
+        await queued.click({ timeout: 2_000 });
         await remoteQueue
           .getByRole("button", { name: "Remove from queue" })
           .click({ timeout: 2_000 });
@@ -109,15 +110,14 @@ test.describe("YouTube", { tag: "@net" }, () => {
 });
 
 async function queueVideo(remote: Page) {
-  await remote.getByRole("link", { name: "YouTube", exact: true }).click();
-  await remote.getByPlaceholder("YouTube video URL or ID").fill(VIDEO_ID);
-  await remote.getByRole("button", { name: "Get Video Info" }).click();
+  // An ID in the search box opens the video's page.
+  await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
 
   // YouTube sometimes answers a lookup with "Sign in to confirm you're not a
   // bot". Like a person would, reload the page (its address now names the
   // video) and look it up again.
   const title = remote.getByText(VIDEO_TITLE, { exact: true });
-  const failure = remote.getByText("Unable to get video info");
+  const failure = remote.getByText("Couldn't get this video");
   await expect(async () => {
     await expect(title.or(failure)).toBeVisible({ timeout: 30_000 });
     if (await failure.isVisible()) {

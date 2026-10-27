@@ -1,33 +1,102 @@
-import { expect, test } from "./fixtures";
+import type { Page, Route } from "@playwright/test";
+
+import { adminPasswordConfig, expect, NICKNAME, test } from "./fixtures";
 
 test("the remote opens on the search screen", async ({ remote }) => {
   await expect(
     remote.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
-  for (const name of [
-    "Title (Joysound)",
-    "Artist (Joysound)",
-    "Title (DAM)",
-    "Artist (DAM)",
-    "YouTube",
-    "Niconico",
-  ]) {
-    await expect(remote.getByRole("link", { name, exact: true })).toBeVisible();
+  await expect(remote.getByRole("searchbox", { name: "Search" })).toBeVisible();
+  for (const [group, tabs] of [
+    ["Search by", ["Title", "Artist"]],
+    ["Source", ["All", "DAM", "Joysound"]],
+  ] as const) {
+    await expect(
+      remote.getByRole("tablist", { name: group }).getByRole("tab"),
+    ).toHaveText([...tabs]);
   }
+  await expect(remote.getByRole("link", { name: "Profile" })).toBeVisible();
+  await expect(remote.getByRole("link", { name: "History" })).toBeVisible();
 });
 
-test.describe("a DAM title search", () => {
-  // DAM only answers Japanese IPs, so the remote's damSearchSongs and damSong
-  // requests get made-up answers here: this tests the remote, not DAM.
-  const RESULTS = 35;
-  const songName = (n: number) => `E2E DAM song ${String(n).padStart(2, "0")}`;
-  const song = (n: number) => ({
-    id: `e2e-${n}`,
-    name: songName(n),
-    nameYomi: "",
-    artistName: "E2E artist",
-    artistNameYomi: "",
+test("a new phone picks a nickname before anything else", async ({
+  karafriends,
+  page,
+}) => {
+  await page.goto(new URL("#/history", karafriends.remoconUrl).href);
+  await expect(page).toHaveURL(/#\/profile$/);
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  const nickname = page.getByLabel("Nickname");
+  await expect(nickname).toBeFocused();
+  // Nothing else until it has one: no profile button, no sheet.
+  await expect(page.getByRole("link", { name: "Profile" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Now playing" })).toHaveCount(
+    0,
+  );
+
+  await nickname.fill("  ken  ");
+  await page.getByRole("button", { name: "Start" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("nickname"))).toBe(
+    "ken",
+  );
+
+  // It can change it later, on the profile screen.
+  await page.getByRole("link", { name: "Profile" }).click();
+  await expect(page.getByLabel("Nickname")).toHaveValue("ken");
+  await page.getByLabel("Nickname").fill("ken2");
+  await page.getByRole("button", { name: "Save nickname" }).click();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("nickname")))
+    .toBe("ken2");
+});
+
+test("the language toggle switches the remote to Japanese", async ({
+  remote,
+}) => {
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("tab", { name: "日本語" }).click();
+  await expect(
+    remote.getByRole("heading", { name: "プロフィール" }),
+  ).toBeVisible();
+  await remote.getByRole("button", { name: "戻る" }).click();
+  await expect(remote.getByRole("heading", { name: "曲を探す" })).toBeVisible();
+  await expect(remote.locator("html")).toHaveAttribute("lang", "ja");
+});
+
+// DAM and Joysound only answer Japanese IPs, so the remote's searches and
+// song lookups get made-up answers here: this tests the remote, not them.
+const PAGE_SIZE = 30;
+const songName = (n: number) => `E2E DAM song ${String(n).padStart(2, "0")}`;
+const damSong = (n: number) => ({
+  id: `e2e-${n}`,
+  name: songName(n),
+  nameYomi: "",
+  artistName: "E2E artist",
+  artistNameYomi: "",
+});
+
+// Answers a search with `total` made-up results, PAGE_SIZE at a time.
+function fakePages(
+  route: Route,
+  total: number,
+  item: (n: number) => object,
+): Promise<void> {
+  const { offset } = route.request().postDataJSON();
+  const items = Array.from(
+    { length: Math.min(PAGE_SIZE, total - offset) },
+    (_, i) => item(offset + i + 1),
+  );
+  const next = offset + items.length;
+  return route.fulfill({
+    json: { items, nextOffset: next < total ? next : null },
   });
+}
+
+test.describe("a DAM title search", () => {
+  const RESULTS = 35;
 
   test("says why it failed, tries again, pages with More, and is kept for going back", async ({
     remote,
@@ -46,20 +115,13 @@ test.describe("a DAM title search", () => {
           json: { error: "DAM didn't answer" },
         });
       }
-      const items = Array.from(
-        { length: Math.min(30, RESULTS - offset) },
-        (_, i) => song(offset + i + 1),
-      );
-      const next = offset + items.length;
-      return route.fulfill({
-        json: { items, nextOffset: next < RESULTS ? next : null },
-      });
+      return fakePages(route, RESULTS, damSong);
     });
     await remote.route("**/api/damSong", (route) => {
       const { id } = route.request().postDataJSON();
       return route.fulfill({
         json: {
-          ...song(Number(id.replace("e2e-", ""))),
+          ...damSong(Number(id.replace("e2e-", ""))),
           lyricsPreview: null,
           vocalTypes: ["NORMAL"],
           tieUp: null,
@@ -68,28 +130,29 @@ test.describe("a DAM title search", () => {
       });
     });
 
-    await remote
-      .getByRole("link", { name: "Title (DAM)", exact: true })
-      .click();
-    await remote.getByPlaceholder("Start typing...").fill("E2E");
+    await remote.getByRole("tab", { name: "DAM" }).click();
+    await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
 
     // The failure shows in place of the results; the page around it stays.
     const main = remote.getByRole("main");
     const alert = main.getByRole("alert");
-    await expect(alert).toContainText("Couldn't load this: DAM didn't answer");
-    await expect(
-      remote.getByRole("heading", { name: "Search by song title" }),
-    ).toBeVisible();
+    await expect(alert).toContainText("Couldn't search DAM: DAM didn't answer");
+    await expect(remote.getByRole("searchbox", { name: "Search" })).toHaveValue(
+      "E2E",
+    );
 
     await alert.getByRole("button", { name: "Try again" }).click();
     const songs = main.getByRole("link", { name: /E2E DAM song/ });
     await expect(songs).toHaveCount(30);
+    await expect(songs.first()).toContainText("DAM");
     await expect(alert).toHaveCount(0);
 
     // A failed "More" keeps what's there and can be pressed again.
     const more = main.getByRole("button", { name: "More" });
     await more.click();
-    await expect(alert).toContainText("Couldn't load more: DAM didn't answer");
+    await expect(alert).toContainText(
+      "Couldn't load more from DAM: DAM didn't answer",
+    );
     await expect(songs).toHaveCount(30);
     await more.click();
     await expect(songs).toHaveCount(RESULTS);
@@ -105,10 +168,82 @@ test.describe("a DAM title search", () => {
     await expect(
       remote.getByRole("button", { name: "Queue song", exact: true }),
     ).toBeVisible();
-    await remote.goBack();
+    await remote.getByRole("button", { name: "Back" }).click();
     await expect(songs).toHaveCount(RESULTS);
     expect(offsets).toEqual([0, 0, 30, 30]);
   });
+});
+
+test("an artist search from both catalogs shows a page from each in turn", async ({
+  remote,
+}) => {
+  const artist = (source: string) => (n: number) => ({
+    id: `${source}-${n}`,
+    name: `E2E ${source} artist ${String(n).padStart(2, "0")}`,
+    nameYomi: "",
+    songCount: n,
+  });
+  await remote.route("**/api/damSearchArtists", (route) =>
+    fakePages(route, 40, artist("DAM")),
+  );
+  await remote.route("**/api/joysoundSearchArtists", (route) =>
+    fakePages(route, 35, artist("Joysound")),
+  );
+
+  await remote.getByRole("tab", { name: "Artist" }).click();
+  await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
+  const results = remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link");
+  await expect(results).toHaveCount(60);
+  await remote.getByRole("button", { name: "More" }).click();
+  await expect(results).toHaveCount(75);
+
+  const names = (await results.allTextContents()).map((text) => {
+    const [, source, n] = text.match(/E2E (DAM|Joysound) artist (\d+)/)!;
+    return `${source} ${Number(n)}`;
+  });
+  const run = (source: string, from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => `${source} ${from + i}`);
+  expect(names).toEqual([
+    ...run("DAM", 1, 30),
+    ...run("Joysound", 1, 30),
+    ...run("DAM", 31, 40),
+    ...run("Joysound", 31, 35),
+  ]);
+  // The address keeps the search, for going back to it.
+  const hash = new URL(remote.url()).hash;
+  expect(
+    Object.fromEntries(new URLSearchParams(hash.replace(/^#\/\?/, ""))),
+  ).toEqual({ q: "E2E", by: "artist" });
+});
+
+test("a pasted YouTube or Niconico link opens the video's page", async ({
+  remote,
+}) => {
+  await remote.route(/youtube\.com|ytimg\.com|nicovideo\.jp/, (route) =>
+    route.abort(),
+  );
+  await remote.route("**/api/youtubeInfo", (route) =>
+    route.fulfill({ json: { ok: false, reason: "E2E offline" } }),
+  );
+  await remote.route("**/api/nicoInfo", (route) =>
+    route.fulfill({ json: { ok: false, reason: "E2E offline" } }),
+  );
+  const search = remote.getByRole("searchbox", { name: "Search" });
+
+  await search.fill("https://youtu.be/jNQXAC9IVRw?si=e2e");
+  await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
+  await expect(remote.getByRole("heading", { name: "YouTube" })).toBeVisible();
+  await expect(remote.getByRole("alert")).toHaveText(
+    "Couldn't get this video: E2E offline",
+  );
+
+  await remote.getByRole("button", { name: "Back" }).click();
+  await search.fill("sm9");
+  await search.press("Enter");
+  await expect(remote).toHaveURL(/#\/search\/niconico\/sm9$/);
+  await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
 });
 
 // The live state changes several times a second while anything downloads.
@@ -118,16 +253,12 @@ test("a DAM queue button is ready again while the live state keeps changing", as
   karafriends,
   remote,
 }) => {
-  // DAM only answers Japanese IPs: made-up answers, as above. queueSong too,
-  // so nothing asks DAM for the song.
+  // Made-up answers, as above. queueSong too, so nothing asks DAM for the
+  // song.
   await remote.route("**/api/damSong", (route) =>
     route.fulfill({
       json: {
-        id: "e2e-1",
-        name: "E2E DAM song",
-        nameYomi: "",
-        artistName: "E2E artist",
-        artistNameYomi: "",
+        ...damSong(1),
         lyricsPreview: null,
         vocalTypes: ["NORMAL"],
         tieUp: null,
@@ -140,7 +271,7 @@ test("a DAM queue button is ready again while the live state keeps changing", as
   );
   await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
   const button = remote.getByRole("button", {
-    name: /^Queue song$|^Estimated wait/,
+    name: /^Queue song$|^Queued/,
   });
   await expect(button).toHaveText("Queue song");
 
@@ -165,7 +296,7 @@ test("a DAM queue button is ready again while the live state keeps changing", as
   try {
     await expect.poll(() => changed).toBeGreaterThan(2);
     await button.click();
-    await expect(button).toHaveText("Estimated wait: T-1:00");
+    await expect(button).toHaveText("Queued, up in 1:00");
     await expect(button).toBeDisabled();
     await expect(button).toHaveText("Queue song", { timeout: 5_000 });
     await expect(button).toBeEnabled();
@@ -173,6 +304,125 @@ test("a DAM queue button is ready again while the live state keeps changing", as
     changing = false;
     await changes;
   }
+});
+
+test("a song already queued says why it wasn't queued again", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.route("**/api/queueSong", (route) =>
+    route.fulfill({
+      json: { ok: false, reason: "That song is already in the queue" },
+    }),
+  );
+  await remote.route("**/api/nicoInfo", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        info: {
+          title: "新・豪血寺一族 -煩悩解放 - レッツゴー！陰陽師",
+          author: "中の",
+          channelId: "4",
+          lengthSeconds: 320,
+          description: "",
+          viewCount: 1,
+          thumbnailUrl: "data:,",
+        },
+      },
+    }),
+  );
+  await remote.goto(
+    new URL("#/search/niconico/sm9", karafriends.remoconUrl).href,
+  );
+  await remote.getByRole("button", { name: "Queue video" }).click();
+  await expect(
+    remote.getByRole("button", {
+      name: "Not queued: That song is already in the queue",
+    }),
+  ).toBeDisabled();
+  await expect(
+    remote.getByRole("button", { name: "Queue video" }),
+  ).toBeEnabled();
+});
+
+test.describe("an admin's queue", () => {
+  const PASSWORD = "e2e remote admin";
+  const song = (n: number) => ({
+    kind: "nico",
+    songId: `sm6000${n}`,
+    name: `E2E queue song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-someone", nickname: "someone" },
+  });
+  test.use({
+    appConfig: { supervisedMode: true, ...adminPasswordConfig(PASSWORD) },
+    seedQueue: {
+      currentSong: null,
+      songQueue: [1, 2, 3, 4].map(song),
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  async function rows(remote: Page) {
+    return remote
+      .getByRole("region", { name: "Queue" })
+      .getByRole("listitem")
+      .allTextContents();
+  }
+
+  test("moves songs, which a guest can't", async ({ remote }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const queue = remote.getByRole("region", { name: "Queue" });
+    // Song 1 starts within 5 seconds and is the accented first row.
+    await expect(queue.locator('[aria-current="true"]')).toContainText(
+      "E2E queue song 1",
+      { timeout: 15_000 },
+    );
+    const song4 = queue.getByRole("button", { name: /E2E queue song 4/ });
+
+    // A guest sees who queued it, and nothing to press.
+    await song4.click();
+    await expect(song4).toHaveAttribute("aria-expanded", "true");
+    await expect(queue).toContainText("Queued by someone");
+    await expect(
+      queue.getByRole("button", { name: "Move to top" }),
+    ).toHaveCount(0);
+    await expect(
+      queue.getByRole("button", { name: "Remove from queue" }),
+    ).toHaveCount(0);
+
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Admin password").fill(PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+
+    // (The row stays open.)
+    await queue.getByRole("button", { name: "Move to top" }).click();
+    await expect
+      .poll(() => rows(remote))
+      .toEqual([
+        expect.stringContaining("song 1"),
+        expect.stringContaining("song 4"),
+        expect.stringContaining("song 2"),
+        expect.stringContaining("song 3"),
+      ]);
+    // At the top, it can only go down.
+    await expect(queue.getByRole("button", { name: "Move up" })).toBeDisabled();
+    await queue.getByRole("button", { name: "Move down" }).click();
+    await expect
+      .poll(() => rows(remote))
+      .toEqual([
+        expect.stringContaining("song 1"),
+        expect.stringContaining("song 2"),
+        expect.stringContaining("song 4"),
+        expect.stringContaining("song 3"),
+      ]);
+    await queue.getByRole("button", { name: "Remove from queue" }).click();
+    await expect(queue.getByText("E2E queue song 4")).toHaveCount(0);
+  });
 });
 
 test.describe("history", () => {
@@ -203,7 +453,7 @@ test.describe("history", () => {
             artistName: "E2E artist",
             playtime: 60,
             timestamp: String(Date.UTC(2026, 0, 1) + n * 60_000),
-            userIdentity: { deviceId: "e2e-device", nickname: "e2e" },
+            userIdentity: { deviceId: "e2e-device", nickname: NICKNAME },
             hasAdhocLyrics: false,
             hasCaptions: false,
             gainValue: 1,
@@ -213,7 +463,9 @@ test.describe("history", () => {
     },
   });
 
-  test("pages through all 35 songs", async ({ remote }) => {
+  test("pages through all 35 songs, each with who queued it", async ({
+    remote,
+  }) => {
     await remote.getByRole("link", { name: "History" }).click();
     await expect(
       remote.getByRole("heading", { name: "History" }),
@@ -225,6 +477,9 @@ test.describe("history", () => {
     // The first page holds 30.
     await expect(songs).toHaveCount(30);
     await expect(songs.first()).toContainText(songName(35));
+    await expect(
+      remote.getByRole("main").getByRole("listitem").first(),
+    ).toContainText(NICKNAME);
 
     await remote.getByRole("button", { name: "More" }).click();
     await expect(songs).toHaveCount(HISTORY_LENGTH);
@@ -232,5 +487,9 @@ test.describe("history", () => {
     for (let n = 1; n <= HISTORY_LENGTH; n++) {
       await expect(songs.filter({ hasText: songName(n) })).toHaveCount(1);
     }
+
+    // Tapping one opens its page.
+    await songs.filter({ hasText: songName(35) }).click();
+    await expect(remote).toHaveURL(/#\/search\/youtube\/e2e-history-35$/);
   });
 });

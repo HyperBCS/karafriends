@@ -384,7 +384,7 @@ const DevUiPage = () => {
       <Section title="TextField">
         <Demo state="empty, placeholder">
           <TextField
-            label={t("search.bySongTitle")}
+            label={t("search.label")}
             placeholder={t("search.placeholder")}
             value={empty}
             onValueChange={setEmpty}
@@ -393,7 +393,7 @@ const DevUiPage = () => {
         </Demo>
         <Demo state="filled, clear button">
           <TextField
-            label={t("search.bySongTitle")}
+            label={t("search.label")}
             value={query}
             onValueChange={setQuery}
             clearable
@@ -406,7 +406,7 @@ const DevUiPage = () => {
             icon={<MdSearch />}
             type="search"
             enterKeyHint="search"
-            placeholder={t("search.youtubePlaceholder")}
+            placeholder={t("search.placeholder")}
             value=""
             onValueChange={noop}
           />
@@ -458,7 +458,9 @@ const DevUiPage = () => {
           <InlineError onRetry={noop}>{t("common.offline")}</InlineError>
         </Demo>
         <Demo state="without retry">
-          <InlineError>{t("common.downloadFailed")}</InlineError>
+          <InlineError>
+            {t("queueButton.failed", { reason: "Video unavailable" })}
+          </InlineError>
         </Demo>
       </Section>
 

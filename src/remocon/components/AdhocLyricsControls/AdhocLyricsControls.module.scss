@@ -1,14 +1,11 @@
 @use "../../tokens" as *;
 
-.noLyrics {
-  margin-top: 1em;
-  text-align: center;
-}
-
 .container {
-  height: 100%;
   display: flex;
   flex-direction: column;
+  gap: $kf-space-4;
+  height: 100%;
+  padding: $kf-space-4;
 }
 
 .picker {
@@ -24,7 +21,7 @@ $wheel-height: 6 * $line-height;
 .lyricsPicker {
   position: relative;
   width: 100%;
-  font-size: 1.2em;
+  font-size: $kf-text-control;
   user-select: none;
   -webkit-user-select: none;
 
@@ -89,12 +86,24 @@ $wheel-height: 6 * $line-height;
   }
 }
 
+// The whole lower half of the screen is the button.
 .controller {
   flex: 1;
-  border: 2px dashed $kf-accent;
+  min-height: 160px;
+  margin: 0;
+  border: 2px solid $kf-accent;
+  border-radius: $kf-radius;
   background-color: $kf-surface;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  color: $kf-text;
+  font: inherit;
+  font-size: $kf-text-control;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible;
 }

@@ -2,23 +2,21 @@ import type { MouseEvent } from "react";
 
 import type { QueueSongInput } from "../../common/api";
 import { useApiMutation } from "../../common/apiQueries";
+import { ERROR } from "./useDownloadButtonText";
 
 // Queues a song (the queueSong method) for a queue button. The server answers
-// with the ETA, or why it won't queue it; show() gets onQueued(eta) or an
-// "Error: ..." text for the button.
+// with the ETA, or why it won't queue it (already queued, over the limit);
+// show() gets onQueued(eta) or "Error: <reason>" for the button.
 export default function useQueueSong(
   show: (text: string) => void,
   onQueued: (eta: number) => string,
 ) {
-  const { mutate, isPending } = useApiMutation("queueSong", {
+  const { mutate } = useApiMutation("queueSong", {
     onSuccess: (result) =>
-      show(result.ok ? onQueued(result.eta) : `Error: ${result.reason}`),
-    onError: (err) => show(`Error: ${err.message}`),
+      show(result.ok ? onQueued(result.eta) : `${ERROR}: ${result.reason}`),
+    onError: (err) => show(`${ERROR}: ${err.message}`),
   });
-  return {
-    // Holding shift asks to put it next (only an admin's request does).
-    queueSong: (input: QueueSongInput, e: MouseEvent) =>
-      mutate({ ...input, tryHeadOfQueue: e.shiftKey }),
-    isPending,
-  };
+  // Holding shift asks to put it next (only an admin's request does).
+  return (input: QueueSongInput, e: MouseEvent) =>
+    mutate({ ...input, tryHeadOfQueue: e.shiftKey });
 }

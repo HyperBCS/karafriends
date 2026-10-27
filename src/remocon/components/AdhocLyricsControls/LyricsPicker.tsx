@@ -1,6 +1,7 @@
 import classnames from "classnames";
 import React, { useEffect, useRef } from "react";
 
+import { t } from "../../i18n";
 import * as styles from "./AdhocLyricsControls.module.scss";
 
 // The height of a line, as $line-height in AdhocLyricsControls.module.scss.
@@ -61,7 +62,7 @@ const LyricsPicker = ({ lyrics, selectedIndex, onSelectLine }: Props) => {
         ref={listRef}
         className={styles.lyricsList}
         role="listbox"
-        aria-label="Lyrics"
+        aria-label={t("lyrics.heading")}
         tabIndex={0}
         onScroll={onScroll}
       >

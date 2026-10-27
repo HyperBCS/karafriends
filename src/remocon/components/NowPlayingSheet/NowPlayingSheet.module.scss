@@ -1,0 +1,99 @@
+@use "../../tokens" as *;
+
+%one-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.now {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nowTitle {
+  @extend %one-line;
+  font-size: $kf-text-title;
+  font-weight: 600;
+}
+
+.nowSubtitle,
+.nothing {
+  @extend %one-line;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}
+
+.initial {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: $kf-surface-pressed;
+  font-size: $kf-text-body;
+  font-weight: 600;
+}
+
+// Below the queue, kept in view while the queue scrolls.
+.controls {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $kf-space-2;
+  min-height: 60px;
+  padding: $kf-space-2;
+  border-top: 1px solid $kf-border;
+  background-color: $kf-surface;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: $kf-space-1;
+}
+
+.key {
+  min-width: 2.5em;
+  color: $kf-text;
+  font-size: $kf-text-control;
+  font-weight: 600;
+  text-align: center;
+}
+
+.emotes {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  align-items: center;
+  gap: $kf-space-2;
+  overflow-x: auto;
+}
+
+.emote {
+  flex: none;
+  min-width: $kf-tap;
+  min-height: $kf-tap;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: $kf-radius;
+  background: none;
+  font-size: $kf-text-icon;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible;
+}

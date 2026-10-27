@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  downloadButtonLabel,
   DOWNLOADING,
   FAILED,
   FINISHED,
   nextDownloadText,
+  QUEUED,
   RESULT_MS,
   START_GRACE_MS,
   WAITING_FOR_SERVER,
@@ -75,6 +77,7 @@ describe("nextDownloadText", () => {
       FINISHED,
       "Error: e2e already has 1 song(s)",
       `${FAILED}: Video unavailable`,
+      `${QUEUED}: 4:12`,
     ]) {
       assert.deepEqual(next(text, null), {
         text: DEFAULT,
@@ -86,5 +89,30 @@ describe("nextDownloadText", () => {
         afterMs: RESULT_MS,
       });
     }
+  });
+});
+
+describe("downloadButtonLabel", () => {
+  test("says each state in words", () => {
+    assert.equal(downloadButtonLabel(WAITING_FOR_SERVER), "Waiting for server");
+    assert.equal(downloadButtonLabel(DOWNLOADING), "Downloading");
+    assert.equal(
+      downloadButtonLabel("Downloading -- 42.6%"),
+      "Downloading 42.6%",
+    );
+    assert.equal(downloadButtonLabel(FINISHED), "Downloaded");
+    assert.equal(
+      downloadButtonLabel(`${FAILED}: Video unavailable`),
+      "Couldn't download: Video unavailable",
+    );
+    assert.equal(
+      downloadButtonLabel("Error: e2e already has 1 song(s)"),
+      "Not queued: e2e already has 1 song(s)",
+    );
+    assert.equal(downloadButtonLabel(`${QUEUED}: 4:12`), "Queued, up in 4:12");
+  });
+
+  test("leaves the button's own label alone", () => {
+    assert.equal(downloadButtonLabel("Queue song"), "Queue song");
   });
 });
