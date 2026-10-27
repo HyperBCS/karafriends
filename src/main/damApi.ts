@@ -1,6 +1,6 @@
 import promiseRetry from "promise-retry";
 
-import { http, httpFetch } from "./http";
+import { formBody, http, httpFetch } from "./http";
 import { DAM_PAGE_SIZE, damPageWindow } from "./paging";
 
 const BASE_MINSEI_REQUEST = {
@@ -12,6 +12,13 @@ const BASE_MINSEI_REQUEST = {
   serviceId: "1",
   contractId: "1",
 };
+
+// The fixed fields, joined unencoded as they always have been: DAM also
+// accepts compAuthKey percent-encoded, but the app has only ever sent it as
+// is.
+const BASE_MINSEI_BODY = Object.entries(BASE_MINSEI_REQUEST)
+  .map(([k, v]) => `${k}=${v}`)
+  .join("&");
 
 const MINSEI_HEADERS = {
   "Content-Type": "application/x-www-form-urlencoded",
@@ -57,13 +64,9 @@ export class MinseiAPI {
     this.credsProvider = credsProvider;
   }
 
-  post<T>(url: string, data: object): Promise<T> {
-    const body = Object.entries({
-      ...BASE_MINSEI_REQUEST,
-      ...data,
-    })
-      .map(([k, v]) => `${k}=${v}`)
-      .join("&");
+  // The fixed fields, then data's (the song, the login) percent-encoded.
+  post<T>(url: string, data: Record<string, string>): Promise<T> {
+    const body = `${BASE_MINSEI_BODY}&${formBody(data)}`;
     console.debug(
       `[minsei] curl ${this.baseURL}${url} -d '${JSON.stringify(body)}'`,
     );
@@ -89,7 +92,7 @@ export class MinseiAPI {
       `https://win10.clubdam.com/cwa/win/minsei/auth/LoginByDamtomoMemberId.api`,
       {
         method: "POST",
-        body: `loginId=${loginId}&password=${password}&format=json`,
+        body: formBody({ loginId, password, format: "json" }),
         headers: MINSEI_HEADERS,
       },
     )

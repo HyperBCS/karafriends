@@ -1,7 +1,7 @@
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
-import { getSetCookies, http, httpFetch, HttpResponse } from "./http";
+import { formBody, getSetCookies, http, httpFetch, HttpResponse } from "./http";
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -116,10 +116,8 @@ export class JoysoundAPI {
     this.credsProvider = credsProvider;
   }
 
-  async post<T>(url: string, data: object): Promise<T> {
-    const body = Object.entries(data)
-      .map(([k, v]) => `${k}=${v}`)
-      .join("&");
+  async post<T>(url: string, data: Record<string, string>): Promise<T> {
+    const body = formBody(data);
 
     const creds = await this.credsProvider();
 
@@ -286,7 +284,7 @@ export class JoysoundAPI {
 
     return httpFetch("https://www.sound-cafe.jp/login/check", {
       method: "POST",
-      body: `mailAddress=${email}&password=${password}`,
+      body: formBody({ mailAddress: email, password }),
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         Cookie: generateCookieString(loginCookies),
@@ -313,7 +311,7 @@ export class JoysoundAPI {
 
         return httpFetch("https://www.sound-cafe.jp/login", {
           method: "POST",
-          body: `_csrf=${csrfToken}&mailAddress=${email}&password=${password}`,
+          body: formBody({ _csrf: csrfToken, mailAddress: email, password }),
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
             Cookie: generateCookieString(loginCookies),

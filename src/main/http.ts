@@ -48,14 +48,22 @@ export function setProxy(
 export interface HttpRequest {
   method?: "GET" | "POST";
   headers?: Record<string, string>;
-  // A string is sent as is (callers join form bodies themselves, since
-  // URLSearchParams would re-encode values like DAM's auth key); an object is
+  // A string is sent as is (a form body from formBody, say); an object is
   // sent as JSON.
   body?: string | object;
   redirect?: RequestRedirect;
   // How long the server may stay silent: before the headers, or between two
   // chunks of the body. 30 seconds by default.
   timeoutMs?: number;
+}
+
+// An application/x-www-form-urlencoded body with each name and value
+// percent-encoded, so a search term or password with &, +, = or % stays one
+// value. (DAM and Joysound decode it, Japanese included.)
+export function formBody(fields: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
 }
 
 // The raw response, whatever its status, for callers that need its headers

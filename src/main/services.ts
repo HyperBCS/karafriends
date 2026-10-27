@@ -51,13 +51,12 @@ const minseiCredentialsProvider = memoizeSuccess(async () => {
   };
 });
 
-const joysoundCredentialsProvider = memoizeSuccess(async () => {
-  const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
-  const joysoundPassword = encodeURIComponent(
+const joysoundCredentialsProvider = memoizeSuccess(() =>
+  JoysoundAPI.login(
+    karafriendsConfig.joysoundEmail,
     karafriendsConfig.joysoundPassword,
-  );
-  return JoysoundAPI.login(joysoundEmail, joysoundPassword);
-});
+  ),
+);
 
 // The clients' requests go through config.yaml's proxy, if it enables one.
 setProxy(karafriendsConfig);
