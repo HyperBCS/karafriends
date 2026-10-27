@@ -114,6 +114,9 @@ ipcMain.handle(IPC_CHANNELS.call, (event, method: unknown, input: unknown) =>
 ipcMain.on(IPC_CHANNELS.liveSubscribe, (event) =>
   displayIpc.subscribeLive(event),
 );
+ipcMain.handle(IPC_CHANNELS.remoconProblem, (event) =>
+  displayIpc.remoconProblem(event),
+);
 
 function createWindow() {
   rendererWindow = new BrowserWindow({
@@ -205,7 +208,8 @@ function createWindow() {
   // This middleware terminates the request/response cycle and should be applied last
   expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
 
-  startHttpServer(expressApp);
+  // If it can't listen, phones can't connect, but the display still works.
+  startHttpServer(expressApp, displayIpc.reportRemoconProblem);
 
   if (rendererWindow) {
     // A failed load (dev server not ready, a transient file/protocol error)

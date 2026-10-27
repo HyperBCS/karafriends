@@ -51,9 +51,37 @@ const api: DisplayApi = {
   },
 };
 
+// Why phones can't connect, if they can't: asked for as the page loads (it
+// usually happens first), and sent when it happens.
+type ProblemListener = (message: string) => void;
+const problemListeners = new Set<ProblemListener>();
+let remoconProblem: string | null = null;
+
+const setRemoconProblem = (message: unknown) => {
+  if (typeof message !== "string" || message === remoconProblem) return;
+  remoconProblem = message;
+  for (const listener of problemListeners) listener(message);
+};
+ipcRenderer.on(IPC_CHANNELS.remoconProblem, (_event, message: unknown) =>
+  setRemoconProblem(message),
+);
+ipcRenderer
+  .invoke(IPC_CHANNELS.remoconProblem)
+  .then(setRemoconProblem)
+  .catch((err) => console.error("Couldn't ask about the remote:", err));
+
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
   remoconPort: (): number => remoconPort,
+  // Calls listener with why phones can't connect, at once if it is known.
+  // Returns a function that stops it.
+  onRemoconProblem: (listener: ProblemListener): (() => void) => {
+    problemListeners.add(listener);
+    if (remoconProblem !== null) listener(remoconProblem);
+    return () => {
+      problemListeners.delete(listener);
+    };
+  },
   api,
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected

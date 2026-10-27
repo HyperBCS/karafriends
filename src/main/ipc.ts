@@ -76,6 +76,7 @@ export function createDisplayIpc({
       `Refused ${what} over IPC from ${source.senderFrame?.url ?? "a gone frame"}: not the display`,
     );
 
+  let remoconProblem: string | null = null;
   let stopLive: (() => void) | null = null;
   const endLive = () => {
     stopLive?.();
@@ -132,6 +133,22 @@ export function createDisplayIpc({
 
     // The display window closed.
     endLive,
+
+    // The remote's server can't take connections (its port is taken, say),
+    // so phones can't connect. The display works without it, so tell it.
+    reportRemoconProblem(message: string) {
+      remoconProblem = message;
+      const contents = display();
+      if (contents && !contents.isDestroyed()) {
+        contents.send(IPC_CHANNELS.remoconProblem, message);
+      }
+    },
+
+    // ipcMain.handle(IPC_CHANNELS.remoconProblem): the display's page asks as
+    // it loads, since the problem usually comes first.
+    remoconProblem(source: IpcSource): string | null {
+      return isFromDisplay(source) ? remoconProblem : null;
+    },
   };
 }
 
