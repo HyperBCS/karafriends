@@ -1,0 +1,51 @@
+/* Over the (empty) video, so the whole screen is black. */
+.idleScreen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 160px;
+  padding: var(--kf-space-6) 96px;
+  background-color: var(--kf-bg);
+}
+
+.idleSettings {
+  position: absolute;
+  top: var(--kf-space-5);
+  right: var(--kf-space-5);
+}
+
+.idleJoin {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* 45% of the screen's height, white with its own quiet zone. */
+.idleQRCode {
+  width: 45vh;
+  border-radius: var(--kf-radius);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.idleScan {
+  margin: var(--kf-space-6) 0 0;
+  font-size: var(--kf-text-title);
+  font-weight: 700;
+}
+
+.idleAddress {
+  margin: var(--kf-space-2) 0 0;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-heading);
+}
+
+.idleUpNext {
+  flex: 1;
+  min-width: 0;
+  max-width: 900px;
+}

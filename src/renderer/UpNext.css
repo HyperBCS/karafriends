@@ -1,0 +1,98 @@
+.upNextList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upNextHeading {
+  margin: 0;
+  font-weight: 600;
+}
+
+.upNextTitle,
+.upNextArtist,
+.upNextMeta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.upNextArtist,
+.upNextMeta,
+.upNextEmpty {
+  color: var(--kf-muted);
+}
+
+/* The idle screen: a row per song, title over artist over singer and ETA. */
+.upNext-rows .upNextHeading {
+  margin-bottom: var(--kf-space-4);
+  font-size: var(--kf-text-heading);
+}
+
+.upNext-rows .upNextItem {
+  display: flex;
+  flex-direction: column;
+  padding: var(--kf-space-4) 0;
+  border-top: 1px solid var(--kf-border);
+}
+
+.upNext-rows .upNextTitle {
+  font-size: var(--kf-text-body);
+  font-weight: 600;
+}
+
+.upNext-rows .upNextArtist,
+.upNext-rows .upNextMeta {
+  font-size: var(--kf-text-label);
+}
+
+/* While a song plays: one line along the bottom, as many songs as fit. */
+.upNext-strip {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--kf-space-6);
+  padding: var(--kf-space-3) var(--kf-space-6);
+  overflow: hidden;
+  border-top: 1px solid var(--kf-border);
+  background-color: var(--kf-bg);
+  font-size: var(--kf-text-label);
+  white-space: nowrap;
+}
+
+.upNext-strip .upNextHeading {
+  flex: none;
+  color: var(--kf-muted);
+  font-size: inherit;
+}
+
+.upNext-strip .upNextEmpty {
+  margin: 0;
+}
+
+.upNext-strip .upNextList {
+  display: flex;
+  gap: var(--kf-space-6);
+  min-width: 0;
+}
+
+.upNext-strip .upNextItem {
+  display: flex;
+  flex: none;
+  gap: var(--kf-space-3);
+  max-width: 900px;
+}
+
+.upNext-strip .upNextItem + .upNextItem {
+  padding-left: var(--kf-space-6);
+  border-left: 1px solid var(--kf-border);
+}
+
+.upNext-strip .upNextTitle {
+  min-width: 0;
+}
+
+.upNext-strip .upNextArtist,
+.upNext-strip .upNextMeta {
+  flex: none;
+}

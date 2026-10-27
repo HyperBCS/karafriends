@@ -1,0 +1,19 @@
+.noticeBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kf-space-6);
+  padding: var(--kf-space-4) var(--kf-space-6);
+  border-bottom: 1px solid var(--kf-border);
+  border-left: 8px solid var(--kf-danger);
+  background-color: var(--kf-surface);
+  font-size: var(--kf-text-label);
+}
+
+.noticeBarText {
+  flex: 1;
+}
+
+.noticeBarText p {
+  margin: 0;
+}

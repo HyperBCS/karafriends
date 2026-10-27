@@ -1,0 +1,161 @@
+// Screenshots of the display for reviewing it against the design brief in
+// notes/PLAN-product.md, at 1920×1080, saved to
+// notes/ui-refresh-screenshots/d-*.png. Not a test: skipped unless
+// KARAFRIENDS_SCREENSHOTS=1.
+//
+//   yarn build-prod
+//   KARAFRIENDS_SCREENSHOTS=1 yarn test:e2e screenshotsDisplay
+//
+// The songs are Niconico videos that were never downloaded; the one that
+// plays gets a black video (tests/fixtures/black.mp4). The failed Test login
+// is a real sign-in to DAM with a wrong password, so that shot needs the
+// internet.
+import fs from "fs";
+import path from "path";
+
+import type { Page } from "@playwright/test";
+
+import { expect, test } from "./fixtures";
+
+const OUT_DIR = path.resolve(
+  __dirname,
+  "..",
+  "..",
+  "notes",
+  "ui-refresh-screenshots",
+);
+
+// 60 s of black at 1280×720, no sound.
+const BLACK_VIDEO = path.resolve(__dirname, "..", "fixtures", "black.mp4");
+
+test.skip(
+  process.env.KARAFRIENDS_SCREENSHOTS !== "1",
+  "Screenshots only with KARAFRIENDS_SCREENSHOTS=1",
+);
+
+async function shoot(display: Page, name: string) {
+  await display.screenshot({
+    path: path.join(OUT_DIR, `d-${name}.png`),
+    animations: "disabled",
+  });
+}
+
+const song = (
+  n: number,
+  name: string,
+  artistName: string,
+  nickname: string,
+  playtime: number,
+) => ({
+  kind: "nico",
+  songId: `sm9100${n}`,
+  name,
+  artistName,
+  playtime,
+  timestamp: String(Date.UTC(2026, 0, 1) + n),
+  user: { deviceId: `e2e-screenshot-${nickname}`, nickname },
+});
+
+const SONGS = [
+  song(1, "千本桜", "黒うさP", "Ken", 245),
+  song(2, "紅蓮華", "LiSA", "あやか", 239),
+  song(3, "マリーゴールド", "あいみょん", "Mio", 303),
+  song(4, "夜に駆ける", "YOASOBI", "Yuki", 261),
+];
+
+// A DAM login the app never tries unless asked (Test login), so Settings
+// doesn't open by itself.
+const LOGIN = { damUsername: "karaoke-host", damPassword: "not-the-password" };
+
+test.beforeEach(async ({ display }) => {
+  await display.setViewportSize({ width: 1920, height: 1080 });
+});
+
+test.describe("phase D, with a login", () => {
+  test.use({ appConfig: LOGIN });
+
+  test("idle with an empty queue", async ({ display }) => {
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    await shoot(display, "idle-empty");
+  });
+
+  test.describe("four queued", () => {
+    // Saved as paused with no current song, the display starts the first
+    // song only at its first check, 5 s after it loads, instead of at once:
+    // time for the idle screen with the queue, and to put the first song's
+    // video in place.
+    test.use({
+      seedQueue: {
+        currentSong: null,
+        songQueue: SONGS,
+        songHistory: [],
+        playbackState: "PAUSED",
+      },
+    });
+
+    test("idle with four queued, then the first playing", async ({
+      karafriends,
+      display,
+    }) => {
+      await expect(
+        display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+      ).toHaveCount(4);
+      await shoot(display, "idle-queued");
+
+      // The first song "downloaded": a black video, so the shot shows what
+      // the display puts over a video.
+      const temp = await karafriends.app.evaluate(({ app }) =>
+        app.getPath("temp"),
+      );
+      fs.copyFileSync(
+        BLACK_VIDEO,
+        path.join(temp, "karafriends_tmp", `nico-${SONGS[0].songId}.mp4`),
+      );
+      await expect(
+        display.getByRole("status").filter({ hasText: "Now playing" }),
+      ).toBeVisible({ timeout: 10_000 });
+      await expect
+        .poll(() =>
+          display
+            .locator("video")
+            .evaluate((video: HTMLVideoElement) => video.currentTime > 0.5),
+        )
+        .toBe(true);
+      await shoot(display, "playing-start");
+    });
+  });
+
+  test("settings, and a failed Test login", async ({ display }) => {
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    await display.keyboard.press("s");
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const dam = settings.getByRole("region", { name: "DAM login" });
+    await expect(dam.getByLabel("Username")).toHaveValue("karaoke-host");
+    await shoot(display, "settings");
+
+    await dam.getByRole("button", { name: "Test login" }).click();
+    await expect(dam.getByRole("status")).not.toHaveText("Signing in…", {
+      timeout: 30_000,
+    });
+    await expect(dam.getByRole("status")).not.toHaveText("Signed in to DAM.");
+    await shoot(display, "settings-test-failed");
+
+    // The rest of the screen, as it scrolls.
+    for (const [section, name] of [
+      ["Admin password", "settings-queue"],
+      ["Config file", "settings-more"],
+    ]) {
+      await settings
+        .getByRole("region", { name: section })
+        .evaluate((element) => element.scrollIntoView({ block: "start" }));
+      await shoot(display, name);
+    }
+  });
+});
+
+test("the first-launch banner", async ({ display }) => {
+  await expect(
+    display.getByText("Add your DAM or Joysound login", { exact: false }),
+  ).toBeVisible();
+  await shoot(display, "first-launch");
+});

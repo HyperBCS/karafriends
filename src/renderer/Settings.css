@@ -1,0 +1,129 @@
+/* Over the whole screen but the notice bar, scrolling. */
+.settings {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--kf-surface);
+}
+
+.settingsHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--kf-space-4) 96px;
+  border-bottom: 1px solid var(--kf-border);
+}
+
+.settingsHeader h1 {
+  margin: 0;
+  font-size: var(--kf-text-title);
+  font-weight: 700;
+}
+
+.settingsLoading {
+  padding: var(--kf-space-6) 96px;
+  font-size: var(--kf-text-body);
+}
+
+.settingsBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 96px var(--kf-space-6);
+}
+
+.settingsBanner {
+  max-width: 1600px;
+  margin: var(--kf-space-6) 0 0;
+  padding: var(--kf-space-4) var(--kf-space-5);
+  border: 2px solid var(--kf-border-strong);
+  border-radius: var(--kf-radius);
+  background-color: var(--kf-bg);
+  font-size: var(--kf-text-body);
+}
+
+.settingsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kf-space-4);
+  max-width: 1600px;
+  padding: var(--kf-space-6) 0;
+  border-bottom: 1px solid var(--kf-border);
+}
+
+.settingsSection h2 {
+  margin: 0;
+  font-size: var(--kf-text-heading);
+  font-weight: 700;
+}
+
+.settingsNote,
+.settingsRestart p {
+  margin: 0;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+}
+
+/* Fields side by side, two to a row. */
+.settingsFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--kf-space-4) var(--kf-space-6);
+}
+
+.settingsActions,
+.settingsInline,
+.settingsRestart {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--kf-space-4);
+}
+
+.settingsInline .kfLabel {
+  flex: 0 1 680px;
+}
+
+.settingsInline .kfButton {
+  min-height: 72px;
+}
+
+.settingsRestart p {
+  color: var(--kf-text);
+}
+
+.settingsMessage {
+  font-size: var(--kf-text-label);
+}
+
+.settingsMessage p,
+.settingsMessage ul {
+  margin: 0;
+}
+
+.settingsMessage.busy {
+  color: var(--kf-muted);
+}
+
+.settingsMessage.problem {
+  color: var(--kf-danger);
+}
+
+.settingsTools {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--kf-space-2) var(--kf-space-6);
+  margin: 0;
+  font-size: var(--kf-text-body);
+}
+
+.settingsTools dt {
+  font-weight: 600;
+}
+
+.settingsTools dd {
+  margin: 0;
+  color: var(--kf-muted);
+}
