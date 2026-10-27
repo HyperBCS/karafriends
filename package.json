@@ -18,7 +18,7 @@
     "get-external-resources": "node scripts/getExternalResources.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tests",
     "lint": "oxlint --deny-warnings",
-    "test:unit": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test:unit": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:native": "cargo clippy --manifest-path native/Cargo.toml && cargo +nightly careful test --manifest-path native/Cargo.toml",
     "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test",
@@ -111,6 +111,7 @@
     "path-browserify": "^1.0.0",
     "prettier": "3.9.6",
     "relay-compiler": "21.0.1",
+    "tsx": "4.23.15",
     "typescript": "6.0.3",
     "wait-on": "9.1.0"
   },
