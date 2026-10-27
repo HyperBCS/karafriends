@@ -53,6 +53,8 @@ import { applyGraphQLMiddleware } from "./graphql";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
+import { apiRouter, shouldCompress } from "./server";
+import { api, hub } from "./services";
 
 import { default as preloadUrl } from "url:../preload";
 
@@ -167,9 +169,11 @@ function createWindow() {
 
   const expressApp = express();
 
-  expressApp.use(compression());
+  expressApp.use(compression({ filter: shouldCompress }));
 
   applyGraphQLMiddleware(expressApp);
+
+  expressApp.use("/api", apiRouter(api, hub));
 
   expressApp.use(remoconServiceWorkerAllowed());
 
