@@ -49,7 +49,6 @@ export interface IDataSources {
     minsei: MinseiAPI;
     joysound: JoysoundAPI;
     dkwebsys: DkwebsysAPI;
-    youtube: Innertube;
   };
 }
 
@@ -825,11 +824,10 @@ const resolvers = {
     youtubeVideoInfo: (
       _: any,
       args: { videoId: string },
-      { dataSources }: IDataSources,
     ): Promise<YoutubeVideoInfoResult> => {
       return (
-        dataSources.youtube
-          .getBasicInfo(args.videoId)
+        innertubeApiProvider()
+          .then((youtube) => youtube.getBasicInfo(args.videoId))
           // youtubei.js's response is loosely/partially typed and its shape
           // shifts between versions, so treat it as untyped here.
           .then((data: any) => {
@@ -1258,11 +1256,11 @@ function withTimeout<T>(
   ) as Promise<T>;
 }
 
-// Every GraphQL request awaits this to build its context, so if
-// Innertube.create() hangs (YouTube unreachable) it would stall the entire
-// API. memoize would also cache a rejected promise forever, permanently
-// killing the backend until restart. Use a manual singleton that times out and
-// clears itself on failure so the next request retries.
+// Only youtubeVideoInfo needs the YouTube client, so it is created on first
+// use there rather than awaited in every request's context: a YouTube outage
+// then only affects YouTube lookups. memoize would cache a rejected promise
+// forever, so use a manual singleton that times out and clears itself on
+// failure so the next lookup retries.
 let innertubePromise: Promise<Innertube> | null = null;
 function innertubeApiProvider(): Promise<Innertube> {
   if (!innertubePromise) {
@@ -1369,8 +1367,6 @@ export function applyGraphQLMiddleware(app: Application) {
         express.json(),
         expressMiddleware(server, {
           context: async () => {
-            const innertubeApiInstance = await innertubeApiProvider();
-
             return {
               dataSources: {
                 minsei: new MinseiAPI(minseiCredentialsProvider, {
@@ -1385,7 +1381,6 @@ export function applyGraphQLMiddleware(app: Application) {
                   cache: server.cache,
                   fetch: fetcher,
                 }),
-                youtube: innertubeApiInstance,
               },
             };
           },
