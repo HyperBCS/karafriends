@@ -3,42 +3,28 @@
 .profile {
   display: flex;
   flex-direction: column;
-  gap: $kf-space-5;
-  padding: $kf-space-2;
 }
 
-.facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: $kf-space-2 $kf-space-4;
-  margin: 0;
-  font-size: $kf-text-body;
-
-  dt {
-    color: $kf-muted;
-  }
-
-  dd {
-    margin: 0;
-    color: $kf-text;
-    overflow-wrap: anywhere;
-  }
-}
-
-.form,
-.signedIn {
+.section {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: $kf-space-3;
+  padding: $kf-space-4;
+  border-bottom: 1px solid $kf-border;
+
+  > button {
+    align-self: flex-start;
+  }
 }
 
-.form > :first-child {
-  align-self: stretch;
+.heading {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: 600;
 }
 
-.signedIn p {
-  margin: 0;
+.text {
   color: $kf-text;
-  font-size: $kf-text-title;
+  font-size: $kf-text-body;
 }

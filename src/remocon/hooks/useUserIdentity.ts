@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 import {
@@ -9,40 +9,44 @@ import {
 } from "../../common/apiClient";
 
 // The phone's identity, kept in localStorage: its device ID (made on first
-// visit), its nickname (asked for on first visit, with shouldPrompt), and
-// its admin token while it is signed in as an admin ("adminToken"; see
-// adminSignIn in apiClient, which also sends it with every request).
-const useUserIdentity = (shouldPrompt?: boolean) => {
-  const [deviceId, setDeviceId] = useState<string>("Unknown");
-  const [nickname, setNickname] = useState<string>("Unknown");
-  const [adminToken, setAdminToken] = useState<string | null>(storedAdminToken);
+// visit), its nickname (set on the profile screen, which a new phone opens
+// on), and its admin token while it is signed in as an admin ("adminToken";
+// see adminSignIn in apiClient). apiClient reads them from localStorage for
+// every request's headers, so a new nickname goes out with the next one.
+
+const nicknameListeners = new Set<() => void>();
+
+function storedNickname(): string | null {
+  try {
+    return localStorage.getItem("nickname") || null;
+  } catch {
+    return null;
+  }
+}
+
+function onNicknameChange(listener: () => void): () => void {
+  nicknameListeners.add(listener);
+  return () => nicknameListeners.delete(listener);
+}
+
+export function saveNickname(nickname: string) {
+  localStorage.setItem("nickname", nickname);
+  for (const listener of nicknameListeners) listener();
+}
+
+const useUserIdentity = () => {
+  const nickname = useSyncExternalStore(onNicknameChange, storedNickname);
+  const adminToken = useSyncExternalStore(onAdminTokenChange, storedAdminToken);
 
   useEffect(() => {
     if (!localStorage.getItem("deviceId")) {
       localStorage.setItem("deviceId", uuidv4());
     }
-
-    if (shouldPrompt) {
-      while ((localStorage.getItem("nickname") || "").length === 0) {
-        localStorage.setItem(
-          "nickname",
-          prompt("Please set your nickname:") || "",
-        );
-      }
-    }
-
-    setDeviceId(localStorage.getItem("deviceId") || "Unknown");
-    setNickname(localStorage.getItem("nickname") || "Unknown");
   }, []);
 
-  useEffect(
-    () => onAdminTokenChange(() => setAdminToken(storedAdminToken())),
-    [],
-  );
-
   return {
+    // Null until the phone has picked one.
     nickname,
-    deviceId,
     adminToken,
     signIn: adminSignIn,
     signOut: adminSignOut,
