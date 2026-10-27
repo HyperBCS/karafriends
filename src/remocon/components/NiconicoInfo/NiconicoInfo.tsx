@@ -2,7 +2,6 @@ import React from "react";
 import { graphql, useLazyLoadQuery } from "react-relay";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import Button from "../Button";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./NiconicoInfo.module.scss";
@@ -38,7 +37,7 @@ const NiconicoInfo = ({ videoId }: Props) => {
 
   const videoData = useLazyLoadQuery<NiconicoInfoVideoInfoQuery>(
     niconicoInfoVideoInfoQuery,
-    { videoId }
+    { videoId },
   );
 
   return (

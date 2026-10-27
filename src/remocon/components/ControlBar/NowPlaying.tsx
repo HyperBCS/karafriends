@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import useNowPlaying from "../../hooks/useNowPlaying";
 import useUserIdentity from "../../hooks/useUserIdentity";

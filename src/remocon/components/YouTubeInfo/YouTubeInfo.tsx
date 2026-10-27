@@ -1,10 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { graphql, useLazyLoadQuery } from "react-relay";
-import { Link } from "react-router";
 import YouTubePlayer from "youtube-player";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import Button from "../Button";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./YouTubeInfo.module.scss";

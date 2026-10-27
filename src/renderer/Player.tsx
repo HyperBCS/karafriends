@@ -4,8 +4,7 @@ import Hls from "hls.js";
 import M from "materialize-css";
 
 import React, { useEffect, useRef, useState } from "react";
-import { commitMutation, fetchQuery, graphql } from "react-relay";
-import YoutubePlayer from "youtube-player";
+import { commitMutation, graphql } from "react-relay";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
 
 import environment from "../common/graphqlEnvironment";

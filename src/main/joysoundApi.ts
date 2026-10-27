@@ -1,5 +1,4 @@
 import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
-import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 

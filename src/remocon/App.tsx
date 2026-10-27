@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { HashRouter, Route, Routes } from "react-router";
 
 import ControlBar from "./components/ControlBar";

@@ -4,7 +4,7 @@ import convert from "color-convert";
 import Spline from "cubic-spline";
 import vec from "gl-vec2";
 import getNormals from "polyline-normals";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";

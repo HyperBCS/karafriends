@@ -1,10 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import {
-  SongPageQuery$data,
-  VocalType,
-} from "../../pages/__generated__/SongPageQuery.graphql";
+import { SongPageQuery$data } from "../../pages/__generated__/SongPageQuery.graphql";
 import DamQueueButton from "./DamQueueButton";
 import * as styles from "./DamQueueButtons.module.scss";
 

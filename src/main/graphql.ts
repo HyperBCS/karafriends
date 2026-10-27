@@ -30,7 +30,7 @@ import { Innertube } from "youtubei.js";
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import rawSchema from "inline-string:../common/schema.graphql";
-import karafriendsConfig, { KarafriendsConfig } from "../common/config";
+import karafriendsConfig from "../common/config";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -39,8 +39,8 @@ import {
   getVideoDownloadProgress,
   TEMP_FOLDER,
 } from "./../common/videoDownloader";
-import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
-import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
+import { DkwebsysAPI, MinseiAPI } from "./damApi";
+import { JoysoundAPI } from "./joysoundApi";
 
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 

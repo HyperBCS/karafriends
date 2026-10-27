@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import useQueue from "../../../common/hooks/useQueue";
 import useUserIdentity from "../../hooks/useUserIdentity";

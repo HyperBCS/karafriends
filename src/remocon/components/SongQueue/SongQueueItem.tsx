@@ -15,7 +15,6 @@ import useConfig from "../../hooks/useConfig";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import Marquee from "../Marquee";
 import * as styles from "./SongQueue.module.scss";
-import { SongQueueItemRemoveSongMutation } from "./__generated__/SongQueueItemRemoveSongMutation.graphql";
 
 const removeSongMutation = graphql`
   mutation SongQueueItemRemoveSongMutation(

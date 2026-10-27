@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchQuery, graphql, requestSubscription } from "react-relay";
+import { fetchQuery, graphql } from "react-relay";
 
-import { KarafriendsConfig } from "../../common/config";
 import environment from "../../common/graphqlEnvironment";
 import {
   useConfigQuery,
@@ -27,7 +26,7 @@ export default function useConfig() {
     const initialQuery = fetchQuery<useConfigQuery>(
       environment,
       configQuery,
-      {}
+      {},
     ).subscribe({
       next: (response: useConfigQuery$data) => setConfig(response.config),
     });

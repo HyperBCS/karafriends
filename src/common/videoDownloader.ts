@@ -12,7 +12,7 @@ import {
   QueueSongResult,
   UserIdentity,
 } from "../main/graphql";
-import { JoysoundAPI, JoysoundSongRawData } from "../main/joysoundApi";
+import { JoysoundAPI } from "../main/joysoundApi";
 
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";

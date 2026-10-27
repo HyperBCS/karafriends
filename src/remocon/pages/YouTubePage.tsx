@@ -1,6 +1,6 @@
 import { invariant } from "ts-invariant";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import useNowPlaying from "../hooks/useNowPlaying";

@@ -1,6 +1,6 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { graphql, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";

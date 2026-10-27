@@ -1,6 +1,5 @@
 import React from "react";
 import { graphql, useLazyLoadQuery, usePaginationFragment } from "react-relay";
-import { Link } from "react-router";
 
 import Button from "../Button";
 import { List } from "../List";

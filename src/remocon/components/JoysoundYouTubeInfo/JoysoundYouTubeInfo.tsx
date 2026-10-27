@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { graphql, useLazyLoadQuery } from "react-relay";
 import YouTubePlayer from "youtube-player";
 
@@ -43,7 +43,7 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
   > | null> = useRef(null);
   const videoData = useLazyLoadQuery<JoysoundYouTubeInfoVideoInfoQuery>(
     joysoundYouTubeInfoVideoInfoQuery,
-    { videoId }
+    { videoId },
   );
 
   useEffect(() => {

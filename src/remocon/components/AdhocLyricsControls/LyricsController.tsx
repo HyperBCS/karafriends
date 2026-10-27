@@ -1,8 +1,7 @@
-import React, { useEffect } from "react";
+import React from "react";
 // tslint:disable-next-line:no-submodule-imports
 import { CgTapSingle } from "react-icons/cg";
 // tslint:disable-next-line:no-submodule-imports
-import { GiSideswipe } from "react-icons/gi";
 
 import * as styles from "./AdhocLyricsControls.module.scss";
 

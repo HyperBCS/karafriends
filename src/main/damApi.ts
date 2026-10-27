@@ -1,12 +1,6 @@
 /* tslint:disable:max-classes-per-file */
 
-import {
-  AugmentedRequest,
-  CacheOptions,
-  DataSourceConfig,
-  RESTDataSource,
-} from "@apollo/datasource-rest";
-import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
+import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
 import DataLoader from "dataloader";
 import promiseRetry from "promise-retry";
 
