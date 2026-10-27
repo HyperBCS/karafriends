@@ -4,21 +4,21 @@ The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                             | State       | Branch / commit | Notes |
-| ------------------------------------------------ | ----------- | --------------- | ----- |
-| A1: download failures reach the phone            | not started |                 |       |
-| A2: admin password instead of device IDs         | not started |                 |       |
-| A3: settings API, config export/import           | not started |                 |       |
-| A4: admin queue reorder                          | not started |                 |       |
-| A5: tool status and update, event-driven popSong | not started |                 |       |
-| B: design tokens, primitives, i18n scaffold      | not started |                 |       |
-| E: cleanup and build hygiene                     | not started |                 |       |
-| C: phone remote refresh                          | not started |                 |       |
-| D: display refresh and settings screen           | not started |                 |       |
-| A6: downloader rewrite with tests                | not started |                 |       |
-| F: tests for the new flows                       | not started |                 |       |
-| Final: orchestrated code review                  | not started |                 |       |
-| Final: party checklist                           | not started |                 |       |
+| Step                                             | State                            | Branch / commit                   | Notes                                                                                                                                 |
+| ------------------------------------------------ | -------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| A1: download failures reach the phone            | done in worktree, awaiting merge | `claude/download-failures-457181` | Joysound with a YouTube background ran once end to end (JP IP); the YouTube-background padding step isn't covered by a committed test |
+| A2: admin password instead of device IDs         | not started                      |                                   |                                                                                                                                       |
+| A3: settings API, config export/import           | not started                      |                                   |                                                                                                                                       |
+| A4: admin queue reorder                          | not started                      |                                   |                                                                                                                                       |
+| A5: tool status and update, event-driven popSong | not started                      |                                   |                                                                                                                                       |
+| B: design tokens, primitives, i18n scaffold      | not started                      |                                   |                                                                                                                                       |
+| E: cleanup and build hygiene                     | not started                      |                                   |                                                                                                                                       |
+| C: phone remote refresh                          | not started                      |                                   |                                                                                                                                       |
+| D: display refresh and settings screen           | not started                      |                                   |                                                                                                                                       |
+| A6: downloader rewrite with tests                | not started                      |                                   |                                                                                                                                       |
+| F: tests for the new flows                       | not started                      |                                   |                                                                                                                                       |
+| Final: orchestrated code review                  | not started                      |                                   |                                                                                                                                       |
+| Final: party checklist                           | not started                      |                                   |                                                                                                                                       |
 
 ## Decisions (from Q&A on 2026-10-27)
 
