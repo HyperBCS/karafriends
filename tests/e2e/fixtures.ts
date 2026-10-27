@@ -309,17 +309,19 @@ async function launchKarafriends(
     app.windows().forEach(watchForErrors);
     app.on("window", watchForErrors);
 
-    // Guard the real profile: stop if Electron ignored the isolation.
-    const appPaths = await app.evaluate(({ app }) => ({
+    // Stop if Electron ignored the isolation or the mute switch.
+    const appState = await app.evaluate(({ app }) => ({
       userData: app.getPath("userData"),
       temp: app.getPath("temp"),
+      muted: app.commandLine.hasSwitch("mute-audio"),
     }));
     if (
-      !samePath(appPaths.userData, userDataDir) ||
-      !samePath(appPaths.temp, tempDir)
+      !samePath(appState.userData, userDataDir) ||
+      !samePath(appState.temp, tempDir) ||
+      !appState.muted
     ) {
       throw new Error(
-        `The app isn't using the test profile: ${JSON.stringify(appPaths)}`,
+        `The app isn't isolated and muted: ${JSON.stringify(appState)}`,
       );
     }
 
