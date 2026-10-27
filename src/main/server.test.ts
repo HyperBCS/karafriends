@@ -12,7 +12,8 @@ import express from "express";
 import type { LiveEvent } from "../common/api";
 import { ApiError, type Caller } from "./api";
 import { displayToken } from "./caller";
-import { apiRouter, shouldCompress } from "./server";
+import type { Viewer } from "./live";
+import { apiRouter, serializeEvent, shouldCompress } from "./server";
 
 const callers: Caller[] = [];
 const handlers = {
@@ -30,14 +31,12 @@ const handlers = {
 };
 
 let subscribers = 0;
+const viewers: Viewer[] = [];
 const hub = {
-  subscribe(listener: (event: LiveEvent) => void) {
+  subscribe(listener: (event: LiveEvent) => void, viewer: Viewer) {
     subscribers++;
-    listener({
-      type: "emote",
-      emote: "👋",
-      user: { deviceId: "", nickname: "" },
-    });
+    viewers.push(viewer);
+    listener({ type: "emote", emote: "👋", user: { nickname: "" } });
     return () => {
       subscribers--;
     };
@@ -175,5 +174,42 @@ describe("GET /api/events", () => {
     controller.abort();
     for (let i = 0; i < 50 && subscribers > 0; i++) await sleep(20);
     assert.equal(subscribers, 0);
+  });
+
+  test("tells the hub which device is watching", async () => {
+    viewers.length = 0;
+    for (const query of [
+      "",
+      `?deviceId=${encodeURIComponent("phone 1/ü")}`,
+      "?deviceId=",
+    ]) {
+      const controller = new AbortController();
+      const res = await fetch(`${base}/events${query}`, {
+        signal: controller.signal,
+      });
+      assert.equal(res.status, 200);
+      controller.abort();
+    }
+    assert.deepEqual(viewers, [
+      { deviceId: null },
+      { deviceId: "phone 1/ü" },
+      { deviceId: null },
+    ]);
+  });
+});
+
+describe("serializeEvent", () => {
+  test("serializes an event once, however many phones get it", () => {
+    const event: LiveEvent = {
+      type: "emote",
+      emote: "🎉",
+      user: { nickname: "n" },
+    };
+    const first = serializeEvent(event);
+    assert.equal(first, JSON.stringify(event));
+    // Same object, same string (not just an equal one).
+    event.emote = "changed";
+    assert.equal(serializeEvent(event), first);
+    assert.notEqual(serializeEvent({ ...event }), first);
   });
 });

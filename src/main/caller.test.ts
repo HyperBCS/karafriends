@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { callerFromHeaders, displayToken } from "./caller";
+import { callerFromHeaders, deviceIdFromQuery, displayToken } from "./caller";
 
 describe("callerFromHeaders", () => {
   test("reads the percent-encoded identity headers", () => {
@@ -47,5 +47,19 @@ describe("callerFromHeaders", () => {
       }).isDisplay,
       false,
     );
+  });
+});
+
+describe("deviceIdFromQuery", () => {
+  test("takes one non-empty ID", () => {
+    assert.equal(deviceIdFromQuery("4f1c-device"), "4f1c-device");
+    assert.equal(deviceIdFromQuery(" 4f1c "), "4f1c");
+  });
+
+  test("ignores a missing, empty, repeated or oversized one", () => {
+    assert.equal(deviceIdFromQuery(undefined), null);
+    assert.equal(deviceIdFromQuery(""), null);
+    assert.equal(deviceIdFromQuery(["a", "b"]), null);
+    assert.equal(deviceIdFromQuery("x".repeat(201)), null);
   });
 });

@@ -25,7 +25,7 @@ import type {
 import type { KarafriendsConfig } from "../common/config";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
-import type { LiveMessage } from "./live";
+import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { StateStore } from "./state";
 
@@ -100,7 +100,7 @@ export interface ApiDeps {
     ): void;
     nico(item: NicoQueueItem, onReady: () => void): void;
   };
-  publish: (message: LiveMessage) => void;
+  publish: (message: HubMessage) => void;
   now?: () => number;
 }
 
@@ -408,12 +408,13 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       return store.getState().idToAdhocLyrics[songId] ?? null;
     },
 
-    async history({ offset = 0, limit = DEFAULT_LIMIT.history }) {
+    async history({ offset = 0, limit = DEFAULT_LIMIT.history }, caller) {
       const { songHistory } = store.getState();
       return {
+        // Without device IDs, like the live state.
         items: songHistory
           .slice(offset, offset + limit)
-          .map((entry) => entry.song),
+          .map((entry) => shareQueueItem(entry.song, caller.deviceId)),
         nextOffset: nextOffset(offset, limit, songHistory.length),
       };
     },
