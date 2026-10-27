@@ -2,6 +2,42 @@
 
 <img src="https://raw.githubusercontent.com/emmaworley/karafriends/master/icon.png" width="128" />
 
+## Running a party
+
+This part is for the host: the person whose computer plays the songs on the TV. Guests only need their phones.
+
+### Install
+
+Download the zip for your computer from the [Releases page](https://github.com/HyperBCS/karafriends/releases): `win32-x64` for Windows, `darwin-arm64` for an Apple Silicon Mac, `darwin-x64` for an Intel Mac, `linux-x64` for Linux. Unzip it anywhere and run `karafriends` inside. There's no installer; to update, unzip the new version over the old one or next to it.
+
+### First launch
+
+- The app opens full-screen on the main display. Plug in the TV before starting it, or move the window there.
+- The first start downloads ffmpeg and yt-dlp (for YouTube and Niconico songs), so be online and give it a minute.
+- Windows asks whether to let karafriends through the firewall. Allow it on private networks, or phones can't connect.
+- Press `Q` to show or hide the sidebar: the QR code, the hostname and microphone settings, and the queue.
+
+### Settings: `config.yaml`
+
+The first start writes a `config.yaml` with every setting. Edit it with any text editor while the app is closed, then start the app again.
+
+| System  | Where it is                                             |
+| ------- | ------------------------------------------------------- |
+| Windows | `%APPDATA%\karafriends\config.yaml`                     |
+| macOS   | `~/Library/Application Support/karafriends/config.yaml` |
+| Linux   | `~/.config/karafriends/config.yaml`                     |
+
+- `damUsername` and `damPassword`, `joysoundEmail` and `joysoundPassword`: your DAM and Joysound logins. Without them, only YouTube and Niconico songs work.
+- DAM and Joysound only answer from a Japanese IP address. Outside Japan, run a VPN to Japan on this computer, or set `proxyEnable`, `proxyHost` and `proxyPort` (and `proxyUser` and `proxyPass` if it needs them) to a proxy in Japan.
+- `remoconPort`: the port phones connect to, 8080 unless you change it. If another program already uses it, the display still works and shows a banner saying phones can't connect; pick another port.
+- `supervisedMode: true`: only an admin or the person singing can pause, skip or change the key.
+- `paxSongQueueLimit`: how many songs each person may have queued at once (0 for no limit).
+- `adminDeviceIds`: the phones that are admins, by device ID. A phone's ID appears as `deviceId` in `queue.json` (in the system temp folder, under `karafriends_tmp`) once that phone has queued a song.
+
+### Phones
+
+Phones join the same Wi-Fi as the computer and scan the QR code in the sidebar. If a phone can't open `karafriends.local`, pick the computer's IP address under Hostname in the sidebar and scan again. Guests choose a nickname, search DAM, Joysound, YouTube or Niconico, and queue songs; the queue plays in order.
+
 ## Building
 
 Dependencies
