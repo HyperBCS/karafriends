@@ -152,6 +152,10 @@ export interface State {
   downloadQueue: DownloadQueueItem[];
   // Newest first.
   songHistory: HistoryItem[];
+  // Set when a YouTube or Niconico download fails because of yt-dlp
+  // (isToolProblem), cleared when one works or the tools are updated. Not
+  // saved.
+  toolsProblem: { message: string; since: number } | null;
 }
 
 export interface StateStore {
@@ -183,6 +187,7 @@ export function emptyState(): State {
     songQueue: [],
     downloadQueue: [],
     songHistory: [],
+    toolsProblem: null,
   };
 }
 
@@ -236,11 +241,12 @@ export function createStateStore(filePath: string): StateStore {
 }
 
 // What goes in queue.json. The current song is saved at the head of the queue,
-// so after a restart it plays again from the start; downloads, pitch and the
-// pushed adhoc lyrics start over.
+// so after a restart it plays again from the start; downloads, pitch, the
+// pushed adhoc lyrics and the tools problem start over.
 export function serializeState(state: Readonly<State>): string {
+  const { toolsProblem: _, ...saved } = state;
   return JSON.stringify({
-    ...state,
+    ...saved,
     pitchShiftSemis: 0,
     currentSong: null,
     currentSongAdhocLyrics: [],

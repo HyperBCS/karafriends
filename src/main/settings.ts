@@ -1,6 +1,6 @@
 // The settings methods: the display's settings screen reads and changes
 // config.yaml, tests the DAM and Joysound logins, and exports and imports
-// the whole file. Display only: server.ts refuses them to phones
+// the whole file, and shows and updates ffmpeg and yt-dlp. Display only: server.ts refuses them to phones
 // (DISPLAY_ONLY_METHODS), and each handler checks again.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
@@ -11,6 +11,7 @@ import {
   type LoginService,
   type Settings,
   type TestLoginResult,
+  type ToolsStatus,
 } from "../common/api";
 import {
   CONFIG_KEYS,
@@ -34,6 +35,8 @@ export const SETTINGS_METHODS = [
   "exportConfig",
   "importConfig",
   "restartApp",
+  "getToolsStatus",
+  "updateTools",
 ] as const;
 
 export type SettingsMethod = (typeof SETTINGS_METHODS)[number];
@@ -64,6 +67,12 @@ export interface SettingsDeps {
   >;
   // app.relaunch() and app.exit(0).
   restart(): void;
+  // externalResources.ts's, with the live state's problem.
+  tools: {
+    status(): ToolsStatus;
+    // Downloads the tools again; then the problem is cleared.
+    update(): Promise<void>;
+  };
 }
 
 const TIMED_OUT = new Error("timed out");
@@ -275,6 +284,25 @@ export function createSettingsHandlers(
       // After the answer has gone out.
       setTimeout(deps.restart, 200);
       return {};
+    },
+
+    async getToolsStatus(_input, caller) {
+      requireDisplay(caller);
+      return deps.tools.status();
+    },
+
+    async updateTools(_input, caller) {
+      requireDisplay(caller);
+      try {
+        await deps.tools.update();
+        return { ok: true };
+      } catch (err) {
+        console.error("Updating the tools failed:", err);
+        return {
+          ok: false,
+          reason: `Couldn't update the tools: ${(err as Error)?.message ?? String(err)}`,
+        };
+      }
     },
   };
 }

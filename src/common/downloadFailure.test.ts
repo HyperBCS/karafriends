@@ -5,10 +5,45 @@ import { describe, test } from "node:test";
 import {
   DownloadFailure,
   failureReason,
+  isToolProblem,
   REASONS,
   toolCommand,
   ytdlpFailureReason,
 } from "./downloadFailure";
+
+describe("isToolProblem", () => {
+  test("a reason about the video is not the tools'", () => {
+    for (const reason of [
+      REASONS.unavailable,
+      REASONS.private,
+      REASONS.ageRestricted,
+      REASONS.membersOnly,
+      REASONS.geoBlocked,
+    ]) {
+      assert.equal(isToolProblem(reason), false, reason);
+    }
+  });
+
+  test("the bot check, an unnamed error, or a tool that won't run is", () => {
+    for (const reason of [
+      REASONS.botCheck,
+      REASONS.other,
+      REASONS.toolFailedToStart,
+      REASONS.noTools,
+      REASONS.timedOut,
+    ]) {
+      assert.equal(isToolProblem(reason), true, reason);
+    }
+    assert.equal(
+      isToolProblem(
+        ytdlpFailureReason(
+          "ERROR: [youtube] a: Sign in to confirm you're not a bot",
+        ),
+      ),
+      true,
+    );
+  });
+});
 
 describe("ytdlpFailureReason", () => {
   const cases: [string, string][] = [

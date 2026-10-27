@@ -75,6 +75,7 @@ describe("toLiveState", () => {
         suffix: "jNQXAC9IVRw",
       });
       failDownload(state.downloadQueue, failed, "Video unavailable");
+      state.toolsProblem = { message: "Update the tools", since: 5 };
     });
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
@@ -82,6 +83,7 @@ describe("toLiveState", () => {
       adminPasswordHash: "secret",
     } as { supervisedMode: boolean });
     assert.deepEqual(live.config, { supervisedMode: true });
+    assert.equal(live.toolsProblem, "Update the tools");
     assert.deepEqual(live.queue, [shared(false)]);
     const [download, failed] = store.getState().downloadQueue;
     assert.deepEqual(live.downloads, [

@@ -8,6 +8,8 @@ import { promisify } from "util";
 
 import fetch, { Response as FetchResponse } from "node-fetch";
 
+import type { ToolsStatus } from "./api";
+import { toolCommand } from "./downloadFailure";
 import {
   AssetPlan,
   assetPlans,
@@ -15,10 +17,12 @@ import {
   conditionalHeaders,
   extractorFileName,
   isStale,
+  parseToolVersion,
   ResourcePaths,
   resourcePathsFor,
   TOOL_PATH_ENV,
   toolOverrides,
+  toolStatus,
   Versions,
 } from "./externalResourcesPlan";
 
@@ -200,9 +204,12 @@ function mtimeMs(dest: string): number {
 
 // Make sure a single asset is present and up to date. Returns true when the
 // cached copy changed (so the version metadata needs to be persisted).
+// force: download it whatever the cache says, and fail if that fails (the
+// cached copy stays).
 async function ensureAsset(
   plan: AssetPlan,
   versions: Versions,
+  force: boolean,
 ): Promise<boolean> {
   const exists = fs.existsSync(plan.dest);
   const stored = versions[plan.id];
@@ -210,17 +217,21 @@ async function ensureAsset(
 
   // Without a stored validator we cannot make a conditional request, so a plain
   // GET would re-download every launch. Skip until the cached copy is stale.
-  if (canSkipUnvalidated(exists, stored, stale)) {
+  if (!force && canSkipUnvalidated(exists, stored, stale)) {
     return false;
   }
 
   let res: FetchResponse;
   try {
-    res = await fetchAsset(plan.url, conditionalHeaders(exists, stored), 5);
+    res = await fetchAsset(
+      plan.url,
+      force ? {} : conditionalHeaders(exists, stored),
+      5,
+    );
   } catch (err) {
     // Offline or the server is unreachable. Keep whatever we already have; only
     // fail if there is nothing cached to fall back on.
-    if (exists) {
+    if (exists && !force) {
       console.error(`Keeping cached ${plan.id}; version check failed: ${err}`);
       return false;
     }
@@ -242,7 +253,7 @@ async function ensureAsset(
     }
   } catch (err) {
     // A failed refresh must not destroy a working cached copy.
-    if (exists) {
+    if (exists && !force) {
       console.error(`Keeping cached ${plan.id}; update failed: ${err}`);
       return false;
     }
@@ -254,24 +265,80 @@ async function ensureAsset(
   versions[plan.id] = {
     etag: res.headers.get("etag") ?? undefined,
     lastModified: res.headers.get("last-modified") ?? undefined,
+    updatedAt: Date.now(),
   };
   return true;
 }
 
-async function doEnsure(): Promise<void> {
+// What tool id at bin says its version is, or null if it can't say. ffmpeg
+// takes -version; it refuses --version.
+async function toolVersion(
+  id: AssetPlan["id"],
+  bin: string,
+): Promise<string | null> {
+  const command = toolCommand(bin, [
+    id === "ffmpeg" ? "-version" : "--version",
+  ]);
+  try {
+    const { stdout } = await execFileAsync(command.file, command.args, {
+      timeout: 30000,
+      windowsHide: true,
+      windowsVerbatimArguments: command.windowsVerbatimArguments,
+    });
+    return parseToolVersion(stdout);
+  } catch (err) {
+    console.error(`Couldn't get the version of ${bin}: ${err}`);
+    return null;
+  }
+}
+
+// The overridden tools' versions, asked at each check.
+const overrideVersions: Partial<Record<AssetPlan["id"], string | null>> = {};
+let lastCheck: number | null = null;
+
+async function doEnsure(force: boolean): Promise<void> {
   const plans = assetPlans(process.platform, resourcePaths).filter(
     (plan) => !(plan.id in overrides),
   );
   const versions = readVersions();
 
-  const changed = await Promise.all(
-    plans.map((plan) => ensureAsset(plan, versions)),
+  const results = await Promise.allSettled(
+    plans.map((plan) => ensureAsset(plan, versions, force)),
+  );
+  let changed = results.some(
+    (result) => result.status === "fulfilled" && result.value,
   );
 
-  if (changed.some(Boolean)) {
+  // Record the version of each tool just downloaded, or cached before
+  // versions were recorded (their file's time stands in for the download's).
+  // A tool that can't say is asked again next launch.
+  await Promise.all([
+    ...plans.map(async (plan) => {
+      if (versions[plan.id]?.version || !fs.existsSync(plan.dest)) return;
+      const version = await toolVersion(plan.id, plan.dest);
+      if (version === null) return;
+      versions[plan.id] = {
+        ...versions[plan.id],
+        version,
+        updatedAt:
+          versions[plan.id]?.updatedAt ?? Math.round(mtimeMs(plan.dest)),
+      };
+      changed = true;
+    }),
+    ...(Object.entries(overrides) as [AssetPlan["id"], string][]).map(
+      async ([id, file]) => {
+        overrideVersions[id] = await toolVersion(id, file);
+      },
+    ),
+  ]);
+
+  if (changed) {
     await writeVersions(versions);
   }
 
+  for (const result of results) {
+    if (result.status === "rejected") throw result.reason;
+  }
   for (const [id, file] of Object.entries(overrides)) {
     if (!fs.existsSync(file)) {
       throw new Error(
@@ -285,20 +352,51 @@ async function doEnsure(): Promise<void> {
   ) {
     throw new Error("An external resource wasn't successfully downloaded!");
   }
+  lastCheck = Date.now();
 }
 
 let ensurePromise: Promise<void> | null = null;
+let updatePromise: Promise<void> | null = null;
+
+// Runs a check once any check in flight is done, and makes it the one
+// downloads wait for. A failed check is cleared so a later call can retry.
+function check(force: boolean): Promise<void> {
+  const previous = ensurePromise?.catch(() => {}) ?? Promise.resolve();
+  const promise: Promise<void> = previous
+    .then(() => doEnsure(force))
+    .catch((err) => {
+      if (ensurePromise === promise) ensurePromise = null;
+      throw err;
+    });
+  ensurePromise = promise;
+  return promise;
+}
 
 // Make sure the external runtime binaries are present and up to date, fetching
 // or refreshing them as needed. Runs its checks once per launch: concurrent and
 // repeat calls within a launch share a single in-flight promise, and a failed
 // attempt is cleared so a later call can retry.
 export function ensureExternalResources(): Promise<void> {
-  if (!ensurePromise) {
-    ensurePromise = doEnsure().catch((err) => {
-      ensurePromise = null;
-      throw err;
-    });
-  }
-  return ensurePromise;
+  return ensurePromise ?? check(false);
+}
+
+// Settings' Update tools: downloads each tool that isn't overridden again,
+// whatever the cache says, and records the versions. Rejects if a download
+// failed; the copy in the cache stays.
+export function updateTools(): Promise<void> {
+  updatePromise ??= check(true).finally(() => {
+    updatePromise = null;
+  });
+  return updatePromise;
+}
+
+// The tools' versions, and when they were last checked. (The problem is the
+// live state's: services.ts adds it.)
+export function toolsStatus(): Omit<ToolsStatus, "problem" | "problemSince"> {
+  const stored = readVersions();
+  return {
+    ffmpeg: toolStatus("ffmpeg", stored, overrides, overrideVersions),
+    ytdlp: toolStatus("ytdlp", stored, overrides, overrideVersions),
+    lastCheck,
+  };
 }

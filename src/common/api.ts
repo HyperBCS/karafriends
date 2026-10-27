@@ -195,6 +195,8 @@ export interface LiveState {
   // Only what every phone may see: no credentials, no admin list (ask
   // whoami instead).
   config: { supervisedMode: boolean };
+  // ToolsStatus's problem, for the display's notice. Phones ignore it.
+  toolsProblem: string | null;
 }
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"
@@ -306,6 +308,30 @@ export type LoginService = "dam" | "joysound";
 // ok: false comes with a sentence for the host ("Joysound answered 403:
 // this usually means no Japanese IP address").
 export type TestLoginResult = { ok: true } | { ok: false; reason: string };
+
+// ffmpeg's or yt-dlp's status. version: what it gave as its version
+// (ffmpeg -version, yt-dlp --version), or null (not asked yet, or it
+// couldn't say). updatedAt: when karafriends
+// downloaded it, in ms since the epoch. overridden: KARAFRIENDS_FFMPEG_PATH
+// or KARAFRIENDS_YTDLP_PATH names the copy in use, which karafriends never
+// downloads (updatedAt is null).
+export interface ToolStatus {
+  version: string | null;
+  updatedAt: number | null;
+  overridden: boolean;
+}
+
+export interface ToolsStatus {
+  ffmpeg: ToolStatus;
+  ytdlp: ToolStatus;
+  // When this launch last checked for new versions, or null.
+  lastCheck: number | null;
+  // "YouTube downloads are failing; try Update tools in Settings" while
+  // YouTube or Niconico downloads fail for a reason that isn't the video's,
+  // and since when; null once one works or Update tools has run.
+  problem: string | null;
+  problemSince: number | null;
+}
 
 // Every method: its input and output. Methods that take nothing take {}.
 export interface Api {
@@ -451,6 +477,18 @@ export interface Api {
   restartApp: {
     input: Record<string, never>;
     output: Record<string, never>;
+  };
+  // ffmpeg's and yt-dlp's versions, and whether YouTube downloads fail.
+  getToolsStatus: {
+    input: Record<string, never>;
+    output: ToolsStatus;
+  };
+  // Downloads ffmpeg and yt-dlp again (those not overridden), even if the
+  // cached copies look current, and clears the tools problem. ok: false
+  // with a sentence for the host if a download failed (the old copy stays).
+  updateTools: {
+    input: Record<string, never>;
+    output: { ok: true } | { ok: false; reason: string };
   };
 }
 

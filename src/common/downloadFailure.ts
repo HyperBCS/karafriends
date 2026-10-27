@@ -19,6 +19,28 @@ export const REASONS = {
   other: "Download failed",
 } as const;
 
+// The reasons that are about the one video, not the tools.
+const VIDEO_REASONS: readonly string[] = [
+  REASONS.unavailable,
+  REASONS.private,
+  REASONS.ageRestricted,
+  REASONS.membersOnly,
+  REASONS.geoBlocked,
+];
+
+// What the display says after a YouTube or Niconico download fails with
+// isToolProblem.
+export const TOOLS_PROBLEM =
+  "YouTube downloads are failing; try Update tools in Settings";
+
+// Whether a YouTube or Niconico download that failed for reason points at
+// yt-dlp rather than the video: YouTube's bot check (an old yt-dlp, often),
+// the tool not starting or not downloading, a timeout, or an error it
+// doesn't name.
+export function isToolProblem(reason: string): boolean {
+  return !VIDEO_REASONS.includes(reason);
+}
+
 // A download step that failed: reason is for guests, detail for the log.
 export class DownloadFailure extends Error {
   constructor(

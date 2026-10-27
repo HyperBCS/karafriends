@@ -106,11 +106,13 @@ describe("POST /api/<method>", () => {
     assert.deepEqual([...DISPLAY_ONLY_METHODS].sort(), [
       "exportConfig",
       "getSettings",
+      "getToolsStatus",
       "importConfig",
       "restartApp",
       "setAdminPassword",
       "setSettings",
       "testLogin",
+      "updateTools",
     ]);
     for (const method of DISPLAY_ONLY_METHODS) {
       const res = await post(method, "{}", {

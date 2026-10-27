@@ -224,6 +224,7 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       adhocLyrics: [],
       downloads: [],
       config: { supervisedMode: false },
+      toolsProblem: null,
     },
   });
 });

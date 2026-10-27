@@ -11,9 +11,11 @@ import {
   extractorFileName,
   hasValidator,
   isStale,
+  parseToolVersion,
   resourcePathsFor,
   STALE_MS,
   toolOverrides,
+  toolStatus,
   type Platform,
 } from "./externalResourcesPlan.ts";
 
@@ -258,5 +260,87 @@ describe("isStale", () => {
   test("honours a custom window", () => {
     assert.equal(isStale(0, 100, 50), true);
     assert.equal(isStale(60, 100, 50), false);
+  });
+});
+
+describe("parseToolVersion", () => {
+  test("reads yt-dlp's date", () => {
+    assert.equal(parseToolVersion("2026.10.01\n"), "2026.10.01");
+    assert.equal(
+      parseToolVersion("2026.10.01.232716\r\n"),
+      "2026.10.01.232716",
+    );
+  });
+
+  test("reads the token after ffmpeg's 'version'", () => {
+    assert.equal(
+      parseToolVersion(
+        "ffmpeg version 7.1-full_build-www.gyan.dev Copyright (c) 2000-2024 the FFmpeg developers\r\n" +
+          "built with gcc 14.2.0 (Rev1, Built by MSYS2 project)\r\n",
+      ),
+      "7.1-full_build-www.gyan.dev",
+    );
+    assert.equal(
+      parseToolVersion(
+        "ffmpeg version N-117000-gabcdef0-20241020 Copyright (c) 2000-2024\n",
+      ),
+      "N-117000-gabcdef0-20241020",
+    );
+    assert.equal(
+      parseToolVersion("ffmpeg version 6.1.1 Copyright (c) 2000-2023\n"),
+      "6.1.1",
+    );
+  });
+
+  test("is null for no output", () => {
+    assert.equal(parseToolVersion(""), null);
+    assert.equal(parseToolVersion(" \r\n"), null);
+  });
+});
+
+describe("toolStatus", () => {
+  const stored = {
+    ytdlp: { etag: '"e"', version: "2026.10.01", updatedAt: 1000 },
+    ffmpeg: { lastModified: "Tue, 01 Oct 2026 00:00:00 GMT" },
+  };
+
+  test("a downloaded tool: its recorded version and download time", () => {
+    assert.deepEqual(toolStatus("ytdlp", stored, {}, {}), {
+      version: "2026.10.01",
+      updatedAt: 1000,
+      overridden: false,
+    });
+    // Cached before versions were recorded, and not asked yet.
+    assert.deepEqual(toolStatus("ffmpeg", stored, {}, {}), {
+      version: null,
+      updatedAt: null,
+      overridden: false,
+    });
+    assert.deepEqual(toolStatus("ffmpeg", {}, {}, {}), {
+      version: null,
+      updatedAt: null,
+      overridden: false,
+    });
+  });
+
+  test("an overridden tool: the version it gave, and no download time", () => {
+    const overrides = { ytdlp: "/opt/yt-dlp" };
+    assert.deepEqual(
+      toolStatus("ytdlp", stored, overrides, { ytdlp: "2026.11.02" }),
+      { version: "2026.11.02", updatedAt: null, overridden: true },
+    );
+    // Not asked yet, or it couldn't say.
+    assert.deepEqual(toolStatus("ytdlp", stored, overrides, {}), {
+      version: null,
+      updatedAt: null,
+      overridden: true,
+    });
+    assert.deepEqual(toolStatus("ytdlp", stored, overrides, { ytdlp: null }), {
+      version: null,
+      updatedAt: null,
+      overridden: true,
+    });
+    // The other tool is unaffected.
+    assert.equal(toolStatus("ffmpeg", stored, overrides, {}).overridden, false);
   });
 });

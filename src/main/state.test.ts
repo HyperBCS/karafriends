@@ -106,6 +106,7 @@ describe("createStateStore", () => {
         songId: "video3",
         suffix: null,
       });
+      state.toolsProblem = { message: "Update the tools", since: 1 };
     });
 
     const file_ = saved();
@@ -114,6 +115,8 @@ describe("createStateStore", () => {
     assert.equal(file_.pitchShiftSemis, 0);
     assert.deepEqual(file_.currentSongAdhocLyrics, []);
     assert.deepEqual(file_.downloadQueue, []);
+    assert.equal("toolsProblem" in file_, false);
+    assert.equal(createStateStore(file).getState().toolsProblem, null);
   });
 
   test("doesn't save a null current song into the queue", () => {
