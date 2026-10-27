@@ -6,20 +6,26 @@
 // build/prod (see packager.js):
 //   build/<prod|dev>/main      the main process, plus the native module in chunks/
 //   build/<prod|dev>/preload   the display's preload
-//   build/<prod|dev>/web       renderer/ and remocon/ pages, their shared
-//                              assets/, and static/ (the kuromoji dict/ and
-//                              the remote's service worker)
+//   build/<prod|dev>/web       renderer/ and remocon/ pages, their assets/,
+//                              and static/ (the kuromoji dict/ and the
+//                              remote's service worker)
+//
+// The remote runs in phone browsers, so it's built on its own, for them (see
+// remoconBuild). Everything else targets Electron's Chromium.
 //
 // `yarn dev` (electron-vite dev -w) builds main and preload into build/dev,
 // rebuilding and restarting on change, and serves the pages from the Vite dev
 // server. That server is the phones' front door in dev: it serves the remote
-// with hot reload and proxies /api to the app's Express server.
+// with hot reload and proxies /api to the app's Express server. In dev, main
+// and preload load the native module from build/dev/native instead of chunks/
+// (see devNativeModule).
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
-import type { Plugin } from "vite";
+import { build, type Plugin } from "vite";
 
 import { HOSTNAME } from "./src/common/constants";
 
@@ -35,6 +41,52 @@ const localOnly = process.env.KARAFRIENDS_LOCAL_ONLY === "1";
 
 // The static/ folder: the kuromoji dict/ and the remote's service worker.
 const STATIC_DIR = path.resolve("static");
+
+const PAGES = {
+  renderer: path.resolve("src/renderer/index.html"),
+  remocon: path.resolve("src/remocon/index.html"),
+};
+
+// The remote's browsers: Vite's defaults, with iPhones back to iOS 15.
+const REMOCON_TARGET = [
+  "chrome111",
+  "edge111",
+  "firefox114",
+  "safari15",
+  "ios15",
+];
+
+// Builds only; the dev server serves the remote as it is. The display's build
+// targets Electron's Chromium, and its minifier drops CSS prefixes Chromium
+// doesn't need, such as the -webkit-user-select that iOS Safari does. So once
+// the display is written, the remote is built by itself for phones, which
+// also lowers its JS for older iPhones.
+function remoconBuild(mode: string, outDir: string): Plugin {
+  return {
+    name: "karafriends:remocon-build",
+    apply: "build",
+    async writeBundle() {
+      await build({
+        configFile: false,
+        mode,
+        root: "src",
+        base: "./",
+        // The display's build has copied static/ already.
+        publicDir: false,
+        plugins: [react()],
+        build: {
+          outDir,
+          emptyOutDir: false,
+          target: REMOCON_TARGET,
+          minify: mode === "production",
+          sourcemap: mode !== "production",
+          reportCompressedSize: false,
+          rolldownOptions: { input: { remocon: PAGES.remocon } },
+        },
+      });
+    },
+  };
+}
 
 // Two fixes to what the dev server serves.
 function devServerRoutes(): Plugin {
@@ -66,6 +118,53 @@ function devServerRoutes(): Plugin {
   };
 }
 
+const NATIVE_MODULE = path.resolve("native/index.node");
+const DEV_NATIVE_DIR = path.resolve("build/dev/native");
+
+// `yarn dev` only. The running app has the native module loaded, and Windows
+// can't delete or overwrite a loaded DLL. A rebuild of main or preload
+// empties its outDir and writes chunks/index-<hash>.node again, so it would
+// fail with EPERM and the app would never restart. Instead, main and preload
+// require a copy outside their outDirs, named by its content: a rebuild
+// leaves it alone, and a new native build gets a new copy.
+function devNativeModule(): Plugin {
+  return {
+    name: "karafriends:dev-native-module",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (
+        !importer ||
+        !source.endsWith(".node") ||
+        path.resolve(path.dirname(importer), source) !== NATIVE_MODULE
+      ) {
+        return;
+      }
+      // A new native build rebuilds main and preload, as an import would.
+      this.addWatchFile(NATIVE_MODULE);
+      const contents = fs.readFileSync(NATIVE_MODULE);
+      const hash = crypto.createHash("sha256").update(contents).digest("hex");
+      const name = `index-${hash.slice(0, 16)}.node`;
+      const copy = path.join(DEV_NATIVE_DIR, name);
+      if (!fs.existsSync(copy)) {
+        fs.mkdirSync(DEV_NATIVE_DIR, { recursive: true });
+        fs.writeFileSync(`${copy}.tmp`, contents);
+        fs.renameSync(`${copy}.tmp`, copy);
+      }
+      // Older copies go once no app has them loaded.
+      for (const file of fs.readdirSync(DEV_NATIVE_DIR)) {
+        if (file === name) continue;
+        try {
+          fs.rmSync(path.join(DEV_NATIVE_DIR, file), { force: true });
+        } catch {
+          // Still loaded; a later rebuild deletes it.
+        }
+      }
+      // Left as require("<absolute path>") in the output.
+      return { id: copy, external: "absolute" };
+    },
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
   const production = mode === "production";
   const outDir = path.resolve("build", production ? "prod" : "dev");
@@ -78,8 +177,10 @@ export default defineConfig(({ command, mode }) => {
       .filter(Boolean)
       .join(" ");
   }
+  const nodePlugins = () => (command === "serve" ? [devNativeModule()] : []);
   return {
     main: {
+      plugins: nodePlugins(),
       build: {
         externalizeDeps: false,
         outDir: path.join(outDir, "main"),
@@ -89,6 +190,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     preload: {
+      plugins: nodePlugins(),
       build: {
         externalizeDeps: false,
         outDir: path.join(outDir, "preload"),
@@ -101,7 +203,11 @@ export default defineConfig(({ command, mode }) => {
       root: "src",
       // Copied to the root of build/<mode>/web once, and served at / in dev.
       publicDir: STATIC_DIR,
-      plugins: [react(), devServerRoutes()],
+      plugins: [
+        react(),
+        devServerRoutes(),
+        remoconBuild(mode, path.join(outDir, "web")),
+      ],
       resolve: {
         // kuromoji (the display's furigana): its own browser bundle. Its
         // sources need Node's path, and the gunzip they use only works with
@@ -117,10 +223,9 @@ export default defineConfig(({ command, mode }) => {
         // The display's bundle is about 1 MB; it loads from disk.
         chunkSizeWarningLimit: 1500,
         rolldownOptions: {
-          input: {
-            renderer: path.resolve("src/renderer/index.html"),
-            remocon: path.resolve("src/remocon/index.html"),
-          },
+          // Both pages for the dev server (which also scans them for
+          // dependencies); a build leaves the remote to remoconBuild.
+          input: command === "serve" ? PAGES : { renderer: PAGES.renderer },
         },
       },
       server: {
