@@ -31,8 +31,6 @@ yarn-error.log*
 *.node
 */**/*.swp
 
-.parcel-cache/
-
 .vscode
 
 # Added by cargo

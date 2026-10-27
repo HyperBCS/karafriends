@@ -1,7 +1,5 @@
-import { fileURLToPath } from "url";
-
-import { default as nativeAudioUrl } from "url:../../native/index.node";
-const nativeAudio = require(fileURLToPath(nativeAudioUrl));
+// The native module is copied next to the bundle and loaded with require().
+import nativeAudio from "../../native/index.node";
 
 import { contextBridge, ipcRenderer } from "electron";
 

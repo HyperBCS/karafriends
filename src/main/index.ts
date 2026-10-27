@@ -1,7 +1,5 @@
-import { fileURLToPath } from "url";
-
-import { default as nativeAudioUrl } from "url:../../native/index.node";
-const nativeAudio = require(fileURLToPath(nativeAudioUrl));
+// The native module is copied next to the bundle and loaded with require().
+import nativeAudio from "../../native/index.node";
 
 import fs from "fs";
 import util from "util";
@@ -31,6 +29,7 @@ process.on("unhandledRejection", handleError);
 
 import inspector from "inspector";
 import path from "path";
+import { pathToFileURL } from "url";
 
 import compression from "compression";
 import {
@@ -51,12 +50,9 @@ import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
-import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
 import { apiRouter, shouldCompress } from "./server";
 import { api, hub } from "./services";
-
-import { default as preloadUrl } from "url:../preload";
 
 // In dev, start a debug server if we don't have one already (opening a
 // second one would throw). Packaged builds don't open one, since anything
@@ -92,10 +88,23 @@ protocol.registerSchemesAsPrivileged([
 
 let rendererWindow: BrowserWindow | null;
 
-// The display: the Parcel dev server's page in dev, the built one in prod.
-const rendererUrl = isDev
-  ? `http://localhost:${karafriendsConfig.devPort}/renderer/`
-  : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}`;
+// The built pages, next to this bundle (see electron.vite.config.ts).
+const WEB_DIR = path.join(__dirname, "..", "web");
+
+// `electron-vite dev` serves the pages from the Vite dev server, and says
+// where in ELECTRON_RENDERER_URL.
+const devServerUrl = isDev ? process.env.ELECTRON_RENDERER_URL : undefined;
+
+// The display's page.
+const rendererUrl = devServerUrl
+  ? new URL("renderer/", devServerUrl).href
+  : pathToFileURL(path.join(WEB_DIR, "renderer", "index.html")).href;
+
+// The port phones connect to, for the display's QR code: in dev, the dev
+// server's, which serves the remote and proxies /api to this app's server.
+const phonePort = devServerUrl
+  ? Number(new URL(devServerUrl).port)
+  : karafriendsConfig.remoconPort;
 
 // The display talks to this process over IPC, not HTTP (see ipc.ts).
 const displayIpc = createDisplayIpc({
@@ -131,12 +140,10 @@ function createWindow() {
       nodeIntegration: false,
       nodeIntegrationInSubFrames: false,
       nodeIntegrationInWorker: false,
-      preload: fileURLToPath(preloadUrl),
+      preload: path.join(__dirname, "..", "preload", "index.js"),
       // The preload reads the port from its process.argv, for the remote's
       // address in the QR code.
-      additionalArguments: [
-        `${REMOCON_PORT_ARG}${karafriendsConfig.remoconPort}`,
-      ],
+      additionalArguments: [`${REMOCON_PORT_ARG}${phonePort}`],
       sandbox: false,
       webSecurity: true,
     },
@@ -205,8 +212,12 @@ function createWindow() {
 
   expressApp.use(remoconServiceWorkerAllowed());
 
-  // This middleware terminates the request/response cycle and should be applied last
-  expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
+  // The phone remote: its page at /, and the assets and service worker it
+  // loads. (With the pages on the Vite dev server, phones use that instead.)
+  if (!devServerUrl) {
+    expressApp.use(express.static(path.join(WEB_DIR, "remocon")));
+    expressApp.use(express.static(WEB_DIR, { index: false }));
+  }
 
   // If it can't listen, phones can't connect, but the display still works.
   startHttpServer(expressApp, displayIpc.reportRemoconProblem);

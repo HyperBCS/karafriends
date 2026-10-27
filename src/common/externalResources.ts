@@ -33,11 +33,13 @@ const execFileAsync = promisify(execFile);
 // The pure planning and decision logic lives in externalResourcesPlan.ts so it
 // can be unit tested across platforms without electron, the filesystem, or the
 // network; this module wires that plan up to the real side effects.
-const isDev = process.env.NODE_ENV === "development";
-
-const extractorDir = isDev
-  ? path.join(app.getAppPath(), "..", "..", "..", "extraResources")
-  : path.join(process.resourcesPath, "extraResources");
+//
+// The extractor is in the packaged app's resources. Unpackaged, it's in
+// extraResources/ at the top of the repo, where the build copies it; this file
+// is bundled into build/<prod|dev>/main.
+const extractorDir = app.isPackaged
+  ? path.join(process.resourcesPath, "extraResources")
+  : path.join(__dirname, "..", "..", "..", "extraResources");
 
 const extractorPath = path.join(
   extractorDir,

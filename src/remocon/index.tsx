@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { LiveStateProvider } from "../common/apiClient";
 import { createQueryClient } from "../common/apiQueries";
 import App from "./App";
-import "./index.module.scss";
+import "./index.scss";
 
 const queryClient = createQueryClient();
 

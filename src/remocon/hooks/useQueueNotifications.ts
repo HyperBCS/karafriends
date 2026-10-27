@@ -4,10 +4,10 @@ import formatDuration from "format-duration";
 import useQueue from "../../common/hooks/useQueue";
 
 async function registerServiceWorker() {
-  return navigator.serviceWorker.register(
-    new URL("../notificationServiceWorker.ts", import.meta.url),
-    { scope: "/" },
-  );
+  // static/notificationServiceWorker.js, served at the root.
+  return navigator.serviceWorker.register("/notificationServiceWorker.js", {
+    scope: "/",
+  });
 }
 
 async function showNotification(

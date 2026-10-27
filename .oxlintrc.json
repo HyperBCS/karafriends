@@ -5,7 +5,7 @@
   },
   "overrides": [
     {
-      "files": ["src/remocon/notificationServiceWorker.ts"],
+      "files": ["static/notificationServiceWorker.js"],
       "rules": {
         "unicorn/no-empty-file": "off"
       }

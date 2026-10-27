@@ -2,16 +2,14 @@
   "name": "karafriends",
   "version": "0.1.0",
   "private": true,
-  "main": "build/prod/main_/index.js",
+  "main": "build/prod/main/index.js",
   "scripts": {
-    "build-native-dev": "cargo-cp-artifact --npm cdylib native/index.node -- cross-env-shell \"cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml ${CARGO_ARGS:-}\"",
-    "build-native-prod": "cargo-cp-artifact --npm cdylib native/index.node -- cross-env-shell \"cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml --release ${CARGO_ARGS:-}\"",
-    "build-parcel-dev": "parcel build --dist-dir build/dev --public-url . --no-optimize",
-    "build-parcel-prod": "parcel build --dist-dir build/prod --public-url . --no-source-maps",
-    "build-dev": "yarn get-external-resources && yarn build-native-dev && yarn build-parcel-dev",
-    "build-prod": "yarn get-external-resources && yarn build-native-prod && yarn build-parcel-prod",
-    "run-dev": "cross-env NODE_ENV=development yarn _run-dev",
-    "_run-dev": "yarn build-dev && concurrently --success !command-0 --kill-others \"parcel serve --target remocon --target renderer --dist-dir build/dev --port 3000\" \"wait-on http://127.0.0.1:3000/ && cross-env NODE_OPTIONS=--enable-source-maps electron build/dev/main_/index.js\"",
+    "build-native-dev": "cargo-cp-artifact --npm cdylib native/index.node -- cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml ${CARGO_ARGS:-}",
+    "build-native-prod": "cargo-cp-artifact --npm cdylib native/index.node -- cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml --release ${CARGO_ARGS:-}",
+    "build-dev": "yarn get-external-resources && yarn build-native-dev && electron-vite build --mode development",
+    "build-prod": "yarn get-external-resources && yarn build-native-prod && electron-vite build",
+    "dev": "yarn get-external-resources && yarn build-native-dev && electron-vite dev -w --entry build/dev/main/index.js",
+    "run-dev": "yarn dev",
     "package-prod": "node ./packager.js",
     "get-external-resources": "node scripts/getExternalResources.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tests",
@@ -39,9 +37,7 @@
     "kuroshiro-analyzer-kuromoji": "1.1.0",
     "multicast-dns": "7.2.5",
     "node-fetch": "3.3.2",
-    "parcel-reporter-static-files-copy": "1.5.3",
     "polyline-normals": "2.0.2",
-    "process": "0.11.10",
     "promise-retry": "2.0.1",
     "qrcode": "1.5.4",
     "react": "19.2.7",
@@ -53,16 +49,11 @@
     "wanakana": "5.3.1",
     "yaml": "2.9.0",
     "youtube-player": "5.6.0",
-    "youtubei.js": "patch:youtubei.js@npm%3A18.0.0#~/.yarn/patches/youtubei.js-npm-18.0.0-0d3f1af340.patch"
+    "youtubei.js": "18.0.0"
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",
     "@electron/packager": "20.3.0",
-    "@parcel/config-default": "2.16.4",
-    "@parcel/core": "2.16.4",
-    "@parcel/transformer-glsl": "2.16.4",
-    "@parcel/transformer-sass": "2.16.4",
-    "@parcel/transformer-worklet": "2.16.4",
     "@playwright/test": "1.64.1",
     "@types/compression": "1.8.1",
     "@types/express": "5.0.6",
@@ -74,50 +65,18 @@
     "@types/react-dom": "19.2.3",
     "@types/tunnel": "^0",
     "@types/youtube-player": "5.5.11",
-    "buffer": "^5.5.0||^6.0.0",
+    "@vitejs/plugin-react": "6.1.2",
     "cargo-cp-artifact": "0.1.9",
-    "concurrently": "10.0.5",
-    "cross-env": "10.1.0",
     "electron": "43.4.1",
+    "electron-vite": "6.0.0",
     "husky": "9.1.7",
     "lint-staged": "17.4.1",
     "oxlint": "1.90.0",
-    "parcel": "2.16.4",
-    "path-browserify": "^1.0.0",
     "prettier": "3.9.6",
+    "sass": "1.106.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "wait-on": "9.1.0"
+    "vite": "8.3.5"
   },
-  "packageManager": "yarn@4.18.1",
-  "targets": {
-    "main_": {
-      "source": "src/main/index.ts",
-      "context": "electron-main",
-      "includeNodeModules": true
-    },
-    "preload": {
-      "source": "src/preload/index.ts",
-      "context": "electron-renderer",
-      "includeNodeModules": true,
-      "scopeHoist": true
-    },
-    "renderer": {
-      "source": "src/renderer/index.html",
-      "context": "browser"
-    },
-    "remocon": {
-      "source": "src/remocon/index.html",
-      "context": "browser"
-    }
-  },
-  "@parcel/bundler-default": {
-    "minBundles": 100
-  },
-  "alias": {
-    "@parcel/error-overlay": "./src/common/disableParcelErrorOverlay.ts"
-  },
-  "@parcel/resolver-default": {
-    "packageExports": true
-  }
+  "packageManager": "yarn@4.18.1"
 }

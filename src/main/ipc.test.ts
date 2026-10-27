@@ -9,10 +9,10 @@ import { ApiError, type Caller } from "./api";
 import { createDisplayIpc, sameSite, type IpcSource } from "./ipc";
 import type { LiveHub } from "./live";
 
-// What index.ts passes on Windows in prod.
-const DISPLAY_URL = "file://C:\\karafriends\\build\\prod\\renderer\\index.html";
-// What Chromium reports for that page.
-const DISPLAY_PAGE = "file:///C:/karafriends/build/prod/renderer/index.html";
+// What index.ts passes on Windows in prod (pathToFileURL), and what Chromium
+// reports for that page.
+const DISPLAY_URL = "file:///C:/karafriends/build/prod/web/renderer/index.html";
+const DISPLAY_PAGE = DISPLAY_URL;
 
 const liveState: LiveState = {
   currentSong: null,
@@ -289,10 +289,10 @@ describe("sameSite", () => {
   test("same scheme, host and port", () => {
     assert.equal(sameSite(DISPLAY_PAGE, DISPLAY_URL), true);
     assert.equal(sameSite("file:///D:/elsewhere.html", DISPLAY_URL), true);
-    const dev = "http://localhost:3000/renderer/";
-    assert.equal(sameSite("http://localhost:3000/renderer/#x", dev), true);
+    const dev = "http://localhost:5173/renderer/";
+    assert.equal(sameSite("http://localhost:5173/renderer/#x", dev), true);
     assert.equal(sameSite("http://localhost:8080/", dev), false);
-    assert.equal(sameSite("https://localhost:3000/", dev), false);
+    assert.equal(sameSite("https://localhost:5173/", dev), false);
     assert.equal(sameSite("http://example.com/", dev), false);
     assert.equal(sameSite(DISPLAY_PAGE, dev), false);
     assert.equal(sameSite("not a URL", dev), false);
