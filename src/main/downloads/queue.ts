@@ -40,10 +40,11 @@ function failDownloadItem(
   console.error(`Error downloading ${description} (${reason}):`, err);
   if (!failDownload(downloadQueue, item, reason)) return;
   // startDownload also removes failures this old, should the timer be late.
+  // (Unref'd: it needn't keep a test's process alive.)
   setTimeout(
     () => removeDownload(downloadQueue, item),
     FAILED_DOWNLOAD_KEPT_MS,
-  );
+  ).unref();
   try {
     onFailed(reason);
   } catch (callbackErr) {
