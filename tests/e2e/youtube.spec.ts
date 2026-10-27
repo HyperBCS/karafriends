@@ -140,7 +140,8 @@ function skipButton(remote: Page) {
   return remote.getByRole("button", { name: "Skip", exact: true });
 }
 
-// The queue in the display's sidebar.
+// The queue on the display: the idle screen's up-next list, or the strip
+// under a playing song.
 function displayQueue(display: Page) {
   return display.getByRole("list", { name: "Queue" });
 }
