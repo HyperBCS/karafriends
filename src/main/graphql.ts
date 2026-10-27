@@ -13,7 +13,6 @@ import {
 } from "@apollo/server/plugin/disabled"; // tslint:disable-line:no-submodule-imports
 // tslint:disable-next-line:no-submodule-imports
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import { type FetcherRequestInit } from "@apollo/utils.fetcher";
 // tslint:disable-next-line:no-submodule-imports
 import { expressMiddleware } from "@as-integrations/express5";
 import { makeExecutableSchema } from "@graphql-tools/schema";
@@ -23,8 +22,6 @@ import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
 import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
-import nodeFetch from "node-fetch";
-import tunnel from "tunnel";
 import { Innertube } from "youtubei.js";
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
@@ -1220,6 +1217,13 @@ export const joysoundCredentialsProvider = memoizeSuccess(async () => {
   return JoysoundAPI.login(joysoundEmail, joysoundPassword);
 });
 
+// The clients keep no per-request state, so every request shares one of each.
+const upstreamClients: IDataSources["dataSources"] = {
+  minsei: new MinseiAPI(minseiCredentialsProvider),
+  joysound: new JoysoundAPI(joysoundCredentialsProvider),
+  dkwebsys: new DkwebsysAPI(),
+};
+
 function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
@@ -1313,33 +1317,6 @@ export function applyGraphQLMiddleware(app: Application) {
     });
   }
 
-  const tunnelAgent = karafriendsConfig.proxyEnable
-    ? tunnel.httpsOverHttp({
-        proxy: {
-          host: karafriendsConfig.proxyHost,
-          port: karafriendsConfig.proxyPort,
-          proxyAuth: `${karafriendsConfig.proxyUser}:${karafriendsConfig.proxyPass}`,
-        },
-      })
-    : undefined;
-
-  const fetcher = async (url: string, init?: FetcherRequestInit) => {
-    // Without a timeout, a hung upstream (DAM/Joysound) stalls the resolver —
-    // and the client request — indefinitely. Abort after 30s so it surfaces as
-    // an error (and the promise-retry wrappers can retry) instead of hanging.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    try {
-      return await nodeFetch(url, {
-        ...init,
-        agent: tunnelAgent,
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
   server
     .start()
     .then(() => {
@@ -1347,24 +1324,7 @@ export function applyGraphQLMiddleware(app: Application) {
         "/graphql",
         express.json(),
         expressMiddleware(server, {
-          context: async () => {
-            return {
-              dataSources: {
-                minsei: new MinseiAPI(minseiCredentialsProvider, {
-                  cache: server.cache,
-                  fetch: fetcher,
-                }),
-                joysound: new JoysoundAPI(joysoundCredentialsProvider, {
-                  cache: server.cache,
-                  fetch: fetcher,
-                }),
-                dkwebsys: new DkwebsysAPI({
-                  cache: server.cache,
-                  fetch: fetcher,
-                }),
-              },
-            };
-          },
+          context: async () => ({ dataSources: upstreamClients }),
         }),
       );
       httpServer.listen(karafriendsConfig.remoconPort, () => {

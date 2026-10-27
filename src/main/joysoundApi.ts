@@ -1,6 +1,7 @@
-import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
+
+import { getSetCookies, http, httpFetch, HttpResponse } from "./http";
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -61,8 +62,8 @@ function generateCookieString(cookies: JoysoundCookies) {
     .join("; ");
 }
 
-function parseCookies(resp: Response, target: JoysoundCookies) {
-  for (const setCookie of resp.headers.getSetCookie()) {
+function parseCookies(resp: HttpResponse, target: JoysoundCookies) {
+  for (const setCookie of getSetCookies(resp)) {
     const matchData = setCookie.match(/^([^=;\s]+)=([^;]*)/);
     if (matchData) target[matchData[1]] = matchData[2];
   }
@@ -107,15 +108,11 @@ function unescapeJoysoundString(str: string) {
   });
 }
 
-export class JoysoundAPI extends RESTDataSource {
-  override baseURL = "https://www.sound-cafe.jp";
+export class JoysoundAPI {
+  baseURL = "https://www.sound-cafe.jp";
   credsProvider: JoysoundCredentialsProvider;
 
-  constructor(
-    credsProvider: JoysoundCredentialsProvider,
-    options: DataSourceConfig,
-  ) {
-    super(options);
+  constructor(credsProvider: JoysoundCredentialsProvider) {
     this.credsProvider = credsProvider;
   }
 
@@ -134,7 +131,8 @@ export class JoysoundAPI extends RESTDataSource {
       )}" -H "X-XSRF-TOKEN: ${creds.csrfToken}"`,
     );
 
-    return super.post(url, {
+    return http<T>(`${this.baseURL}${url}`, {
+      method: "POST",
       body,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -186,7 +184,7 @@ export class JoysoundAPI extends RESTDataSource {
       };
     }
 
-    const data = await this.get(`songdetail/${id}`, {
+    const data = await http<string>(`${this.baseURL}/songdetail/${id}`, {
       headers: { Cookie: generateCookieString(creds.cookies) },
     });
 
@@ -212,7 +210,7 @@ export class JoysoundAPI extends RESTDataSource {
 
     const lyricsPreview = data.match(
       /<div class="flex items-center w-full border-b select-none border-gray">([^<>]*)/,
-    )[1];
+    )?.[1];
     invariant(lyricsPreview !== undefined);
 
     const payload: JoysoundSongDetail = {
@@ -266,7 +264,7 @@ export class JoysoundAPI extends RESTDataSource {
   static async login(email: string, password: string) {
     const loginCookies: JoysoundCookies = {};
 
-    const csrfToken = await fetch("https://www.sound-cafe.jp/login", {
+    const csrfToken = await httpFetch("https://www.sound-cafe.jp/login", {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
@@ -286,7 +284,7 @@ export class JoysoundAPI extends RESTDataSource {
         return matchData[1];
       });
 
-    return fetch("https://www.sound-cafe.jp/login/check", {
+    return httpFetch("https://www.sound-cafe.jp/login/check", {
       method: "POST",
       body: `mailAddress=${email}&password=${password}`,
       headers: {
@@ -313,7 +311,7 @@ export class JoysoundAPI extends RESTDataSource {
           );
         }
 
-        return fetch("https://www.sound-cafe.jp/login", {
+        return httpFetch("https://www.sound-cafe.jp/login", {
           method: "POST",
           body: `_csrf=${csrfToken}&mailAddress=${email}&password=${password}`,
           headers: {
@@ -330,7 +328,7 @@ export class JoysoundAPI extends RESTDataSource {
       .then((resp) => {
         parseCookies(resp, loginCookies);
 
-        return fetch("https://www.sound-cafe.jp", {
+        return httpFetch("https://www.sound-cafe.jp", {
           headers: {
             Cookie: generateCookieString(loginCookies),
             "User-Agent":
