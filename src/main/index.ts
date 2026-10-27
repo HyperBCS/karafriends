@@ -201,7 +201,15 @@ function createWindow() {
       /^\/+/,
       "",
     );
-    callback({ path: path.join(TEMP_FOLDER, file) });
+    const root = path.resolve(TEMP_FOLDER);
+    const target = path.resolve(root, file);
+    const relative = path.relative(root, target);
+    // Only serve files inside the temp folder (net::ERR_ACCESS_DENIED).
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      callback({ error: -10 });
+      return;
+    }
+    callback({ path: target });
   });
 
   const expressApp = express();

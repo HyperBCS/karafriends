@@ -144,11 +144,23 @@ const QUEUE_KIND_FIELDS: Record<QueueItemKind, string[]> = {
   nico: [],
 };
 
+// Song and video IDs become temp file names (dam-<id>.log, yt-<id>.mp4, ...),
+// so only allow characters that can't step outside the temp folder. Real DAM,
+// Joysound, YouTube and Niconico IDs all fit.
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+
+function safeId(id: string, key: string): string {
+  if (!SAFE_ID.test(id)) {
+    fail(`"${key}" may only contain letters, digits, "-" and "_"`);
+  }
+  return id;
+}
+
 function queueSong(raw: unknown): QueueSongInput {
   const kind = oneOf(fields(raw), "kind", QUEUE_KINDS);
   const input = fields(raw, [...QUEUE_FIELDS, ...QUEUE_KIND_FIELDS[kind]]);
   const song = {
-    songId: string(input, "songId", 64),
+    songId: safeId(string(input, "songId", 64), "songId"),
     name: string(input, "name"),
     artistName: string(input, "artistName"),
     playtime:
@@ -167,13 +179,18 @@ function queueSong(raw: unknown): QueueSongInput {
         ...song,
         streamingUrlIdx: integer(input, "streamingUrlIdx", 0, 99),
       };
-    case "joysound":
+    case "joysound": {
+      const youtubeVideoId = stringOrNull(input, "youtubeVideoId", 64);
       return {
         kind,
         ...song,
         isRomaji: boolean(input, "isRomaji"),
-        youtubeVideoId: stringOrNull(input, "youtubeVideoId", 64),
+        youtubeVideoId:
+          youtubeVideoId === null
+            ? null
+            : safeId(youtubeVideoId, "youtubeVideoId"),
       };
+    }
     case "youtube": {
       const gainValue = input.gainValue;
       if (

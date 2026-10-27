@@ -906,6 +906,23 @@ describe("validators", () => {
     invalid("queueSong", []);
     invalid("queueSong", "sm9");
     invalid("queueSong", { ...nico, kind: "cassette" });
+    // IDs become temp file names, so path characters are refused.
+    invalid("queueSong", { ...nico, songId: "../evil" });
+    invalid("queueSong", { ...nico, songId: "..\\evil" });
+    invalid("queueSong", { ...nico, songId: "a/b" });
+    invalid("queueSong", {
+      ...nico,
+      kind: "dam",
+      songId: "1.2",
+      streamingUrlIdx: 0,
+    });
+    invalid("queueSong", {
+      ...nico,
+      kind: "joysound",
+      songId: "123",
+      isRomaji: false,
+      youtubeVideoId: "../x",
+    });
     invalid("queueSong", { ...nico, kind: undefined });
     invalid("queueSong", { ...nico, songId: 9 });
     invalid("queueSong", { ...nico, name: undefined });
