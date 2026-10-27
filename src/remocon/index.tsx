@@ -1,5 +1,5 @@
 import React from "react";
-import { createRoot } from "react-dom/client"; // tslint:disable-line:no-submodule-imports
+import { createRoot } from "react-dom/client";
 import { RelayEnvironmentProvider } from "react-relay";
 
 import environment from "../common/graphqlEnvironment";

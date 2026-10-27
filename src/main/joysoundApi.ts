@@ -85,7 +85,7 @@ function unescapeJoysoundString(str: string) {
     apos: "'",
   };
 
-  return str.replace(/\&([^;]+);/g, (entity: string, entityCode: string) => {
+  return str.replace(/&([^;]+);/g, (entity: string, entityCode: string) => {
     let match;
 
     if (htmlEntities[entityCode as keyof typeof htmlEntities] !== undefined) {
@@ -171,7 +171,7 @@ export class JoysoundAPI {
   }
 
   async getSongDetail(id: string) {
-    const creds = await this.credsProvider().catch((err) => {
+    const creds = await this.credsProvider().catch(() => {
       console.log("Login Failed");
       return null;
     });

@@ -1,12 +1,8 @@
 import classnames from "classnames";
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { BsPersonSquare } from "react-icons/bs";
-// tslint:disable-next-line:no-submodule-imports
 import { FaYoutube } from "react-icons/fa";
-// tslint:disable-next-line:no-submodule-imports
 import { MdMusicVideo } from "react-icons/md";
-// tslint:disable-next-line:no-submodule-imports
 import { SiNiconico } from "react-icons/si";
 import { Link } from "react-router";
 

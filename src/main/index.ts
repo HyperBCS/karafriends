@@ -1,8 +1,7 @@
 import { fileURLToPath } from "url";
 
-// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import { default as nativeAudioUrl } from "url:../../native/index.node";
-const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-line:no-var-requires
+const nativeAudio = require(fileURLToPath(nativeAudioUrl));
 
 import fs from "fs";
 import util from "util";
@@ -42,7 +41,7 @@ import {
   ipcMain,
   IpcMainEvent,
   protocol,
-} from "electron"; // tslint:disable-line:no-implicit-dependencies
+} from "electron";
 import isDev from "electron-is-dev";
 import express from "express";
 
@@ -54,7 +53,6 @@ import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
 
-// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import { default as preloadUrl } from "url:../preload";
 
 // In dev, start a debug server if we don't have one already (opening a

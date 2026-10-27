@@ -1,10 +1,7 @@
 import formatDuration from "format-duration";
 import React, { useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { FaYoutube } from "react-icons/fa";
-// tslint:disable-next-line:no-submodule-imports
 import { MdClose, MdMusicVideo } from "react-icons/md";
-// tslint:disable-next-line:no-submodule-imports
 import { SiNiconico } from "react-icons/si";
 import { graphql, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
@@ -32,10 +29,10 @@ interface Props {
   isCurrent?: boolean;
 }
 
-const SongQueueItem = ({ item, eta, myNickname, isCurrent }: Props) => {
+const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
-  const [commit, isInFlight] = useMutation(removeSongMutation);
+  const [commit] = useMutation(removeSongMutation);
 
   const config = useConfig();
   const identity = useUserIdentity();

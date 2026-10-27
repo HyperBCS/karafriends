@@ -1,7 +1,5 @@
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { CgTapSingle } from "react-icons/cg";
-// tslint:disable-next-line:no-submodule-imports
 
 import * as styles from "./AdhocLyricsControls.module.scss";
 

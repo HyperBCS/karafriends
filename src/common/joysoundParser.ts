@@ -1,4 +1,3 @@
-/* tslint:disable:no-bitwise */
 import invariant from "ts-invariant";
 
 import Kuroshiro from "kuroshiro";
@@ -107,10 +106,8 @@ export function decodeJoysoundText(
   switch (fontCode) {
     case 0:
       return decodeSJIS(charCode, flags);
-      break;
     case 1:
       return decodeEucKR(charCode);
-      break;
     default:
       return decodeSJIS(charCode, flags);
   }
@@ -505,7 +502,6 @@ function mapCharsToFurigana(
     // XXX: To map a character to furigana we assume the furigana must
     //      cover at least 8 pixels
     let bestIntersection = 8;
-    const unicodeChar = decodeJoysoundText(char.charCode, char.font);
 
     for (let i = 0; i < furiganaList.length; i++) {
       const furigana = furiganaList[i];
@@ -695,7 +691,7 @@ function parseJoy02Metadata(
 
   const currOffset = 0;
 
-  const musicType = metadataView.getUint16(currOffset, true);
+  const _musicType = metadataView.getUint16(currOffset, true);
   const musicNameOffset = metadataView.getUint16(currOffset + 2, true);
   const artistNameOffset = metadataView.getUint16(currOffset + 4, true);
   const lyricistNameOffset = metadataView.getUint16(currOffset + 6, true);
@@ -703,7 +699,7 @@ function parseJoy02Metadata(
   const musicNameReadingOffset = metadataView.getUint16(currOffset + 10, true);
   const artistNameReadingOffset = metadataView.getUint16(currOffset + 12, true);
   const jasracCodeOffset = metadataView.getUint16(currOffset + 14, true);
-  const musicDuration = metadataView.getUint16(currOffset + 18, true);
+  const _musicDuration = metadataView.getUint16(currOffset + 18, true);
 
   const musicName = readSJISString(
     metadataView,
@@ -887,11 +883,9 @@ async function parseJoysoundData(
   data: ArrayBuffer,
   kuroshiro: KuroshiroSingleton,
 ): Promise<JoysoundTelopData> {
-  const lyricsBlocks = [];
-
   const view = new DataView(data, 6, 3 * 4);
 
-  const metadataOffset = view.getUint32(0 * 4, true);
+  const metadataOffset = view.getUint32(0, true);
   const lyricsOffset = view.getUint32(1 * 4, true);
   const timingOffset = view.getUint32(2 * 4, true);
 

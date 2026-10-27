@@ -116,10 +116,8 @@ function getFontFace(fontCode: number): string {
   switch (fontCode) {
     case 0:
       return JP_FONT_FACE;
-      break;
     case 1:
       return KR_FONT_FACE;
-      break;
     default:
       return JP_FONT_FACE;
   }
@@ -205,7 +203,7 @@ function getLyricsBlockWidth(lyricsBlock: JoysoundLyricsBlock): number {
   );
 }
 
-function getLyricsBlockHeight(lyricsBlock: JoysoundLyricsBlock): number {
+function getLyricsBlockHeight(_lyricsBlock: JoysoundLyricsBlock): number {
   return (
     MAIN_FONT_SIZE +
     MAIN_FONT_STROKE * 2 +
@@ -827,7 +825,6 @@ export default function JoysoundRenderer(props: {
 
       const metadata = joysoundData.metadata;
       const lyricsData = joysoundData.lyrics;
-      const timeline = joysoundData.timeline;
 
       invariant(canvasRef.current);
       const gl = canvasRef.current.getContext("webgl2", {
@@ -877,7 +874,7 @@ export default function JoysoundRenderer(props: {
         scrollType: scrollTypeBuffer,
       };
 
-      function draw(now: number) {
+      function draw() {
         invariant(gl);
         invariant(props.videoRef.current);
 

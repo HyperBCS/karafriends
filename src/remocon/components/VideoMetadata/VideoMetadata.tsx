@@ -1,5 +1,4 @@
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
 import { BsClockFill, BsEyeFill } from "react-icons/bs";
 
 import * as styles from "./VideoMetadata.module.scss";

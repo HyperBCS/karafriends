@@ -1,5 +1,3 @@
-/* tslint:disable:max-classes-per-file */
-
 import FFT from "fft.js";
 
 /** Adapted from https://github.com/olvb/phaze */
@@ -219,7 +217,11 @@ class OLAProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  processOLA(inputs: Float32Array[][], outputs: Float32Array[][], params: any) {
+  processOLA(
+    _inputs: Float32Array[][],
+    _outputs: Float32Array[][],
+    _params: any,
+  ) {
     console.assert(false, "Not overriden");
   }
 }
@@ -429,5 +431,3 @@ class PhaseVocoderProcessor extends OLAProcessor {
 }
 
 registerProcessor("phase-vocoder", PhaseVocoderProcessor);
-
-export {};

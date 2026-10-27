@@ -10,7 +10,7 @@ const SongQueue = () => {
 
   return (
     <div>
-      {queue.map(([item, eta], i) => (
+      {queue.map(([item, eta]) => (
         <SongQueueItem
           key={`${item.songId}_${item.timestamp}`}
           item={item}

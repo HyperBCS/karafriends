@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
+import { app } from "electron";
 import fs, { promises as fsp } from "fs";
 import os from "os";
 import path from "path";

@@ -24,5 +24,3 @@ declare global {
     register(target: object, heldValue: T): void;
   }
 }
-
-export {};
