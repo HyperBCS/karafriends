@@ -1,6 +1,8 @@
 // The JSON RPC API (POST /api/<method>, GET /api/events) and the server-side
 // admin checks. No network: the queued songs are Niconico videos that are
 // never downloaded, so the display can't play them.
+import net from "net";
+
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
@@ -90,6 +92,41 @@ test("/graphql answers 404", async ({ karafriends }) => {
   });
   expect(post.status).toBe(404);
   expect((await fetch(url)).status).toBe(404);
+});
+
+// Nothing speaks WebSocket. A phone that asks anyway, then resets the
+// connection, used to crash the app.
+test("a WebSocket upgrade is refused, and a reset after it is harmless", async ({
+  karafriends,
+}) => {
+  const { hostname, port } = new URL(karafriends.remoconUrl);
+  for (let i = 0; i < 3; i++) {
+    const socket = net.connect(Number(port), hostname);
+    socket.on("error", () => {});
+    const answer = await new Promise<string>((resolve, reject) => {
+      let text = "";
+      socket.once("error", reject);
+      socket.on("data", (data) => {
+        text += data;
+        if (text.includes("\r\n\r\n")) resolve(text);
+      });
+      socket.write(
+        "GET / HTTP/1.1\r\nHost: karafriends\r\n" +
+          "Connection: Upgrade\r\nUpgrade: websocket\r\n" +
+          "Sec-WebSocket-Version: 13\r\n" +
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
+      );
+    });
+    expect(answer).toMatch(/^HTTP\/1\.1 400 /);
+    socket.resetAndDestroy();
+  }
+  // Time for the resets to arrive, and for a crash to happen.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  const proc = karafriends.app.process();
+  expect([proc.exitCode, proc.signalCode]).toEqual([null, null]);
+  expect(
+    await call(karafriends.remoconUrl, "whoami", {}, REMOTE_HEADERS),
+  ).toEqual({ status: 200, body: { isAdmin: false } });
 });
 
 test("whoami answers, and the display is an admin", async ({
