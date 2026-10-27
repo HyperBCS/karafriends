@@ -6,9 +6,7 @@ import type { SharedQueueItem } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
 import { cyrb53 } from "../../../common/hash";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import { FaYoutube, MdClose, MdMusicVideo, SiNiconico } from "../../icons";
-import isOwnSong from "../../isOwnSong";
 import songLink from "../../songLink";
 import Marquee from "../Marquee";
 import * as styles from "./SongQueue.module.scss";
@@ -35,11 +33,10 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
 
   const supervisedMode = useLiveState()?.config.supervisedMode ?? false;
   const isAdmin = useIsAdmin();
-  const identity = useUserIdentity();
 
-  // What the server allows (removeSong in src/main/api.ts).
-  const canRemove =
-    !supervisedMode || isAdmin === true || isOwnSong(item, identity.nickname);
+  // What the server allows (removeSong in src/main/api.ts): in supervised
+  // mode, an admin or the phone that queued it.
+  const canRemove = !supervisedMode || isAdmin === true || item.isMine;
 
   const nickname = item.user.nickname || "Unknown";
   const nicknameHash = cyrb53(nickname);

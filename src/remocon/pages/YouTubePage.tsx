@@ -3,8 +3,6 @@ import { useNavigate, useParams } from "react-router";
 
 import type { SharedQueueItem } from "../../common/api";
 import { useLiveState } from "../../common/apiClient";
-import useUserIdentity from "../hooks/useUserIdentity";
-import isOwnSong from "../isOwnSong";
 
 import Button from "../components/Button";
 import { withLoader } from "../components/Loader";
@@ -30,12 +28,11 @@ export function getVideoId(videoQuery: string): string | null {
 export function isYouTubeVideoWithLyricsPlaying(
   currentSong: SharedQueueItem | null | undefined,
   videoId: string,
-  nickname: string,
 ): boolean {
   return (
     currentSong?.kind === "youtube" &&
     currentSong.songId === videoId &&
-    isOwnSong(currentSong, nickname) &&
+    currentSong.isMine &&
     currentSong.hasAdhocLyrics
   );
 }
@@ -46,7 +43,6 @@ type YouTubeParams = {
 
 const YouTubePage = () => {
   const navigate = useNavigate();
-  const { nickname } = useUserIdentity();
   const currentSong = useLiveState()?.currentSong;
 
   const params = useParams<YouTubeParams>();
@@ -68,7 +64,6 @@ const YouTubePage = () => {
     isYouTubeVideoWithLyricsPlaying(
       currentSong,
       videoId || params.videoId || "",
-      nickname,
     )
   ) {
     navigate(`/adhocLyrics/${videoId || params.videoId || ""}`);

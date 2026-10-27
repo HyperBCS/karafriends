@@ -3,9 +3,7 @@ import React from "react";
 
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "../../icons";
-import isOwnSong from "../../isOwnSong";
 import PitchControls from "../PitchControls/PitchControls";
 import * as styles from "./PlaybackControls.module.scss";
 
@@ -15,15 +13,14 @@ const PlaybackControls = () => {
 
   const live = useLiveState();
   const isAdmin = useIsAdmin();
-  const identity = useUserIdentity();
 
   // What the server allows (setPlaybackState in src/main/api.ts): in
-  // supervised mode, an admin or the current singer.
-  const currentSong = live?.currentSong ?? null;
+  // supervised mode, an admin or the current singer, from the phone that
+  // queued the song.
   const isUserEntitled =
     !live?.config.supervisedMode ||
     isAdmin === true ||
-    (currentSong !== null && isOwnSong(currentSong, identity.nickname));
+    live.currentSong?.isMine === true;
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
 

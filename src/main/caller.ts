@@ -1,8 +1,10 @@
 // Who is calling the API over HTTP, from the request headers
 // (IDENTITY_HEADERS in src/common/api.ts). Only phones use HTTP. They say who
-// they are; nothing proves it, so this only keeps honest phones in their
-// lane. The display uses IPC instead (ipc.ts), so nothing that comes over
-// HTTP is the display.
+// they are; nothing proves it. A device ID is a random secret that never
+// leaves the server, so api.ts lets it decide who is an admin and whose a
+// song is. A nickname is shown to every phone, so it only names the singer.
+// The display uses IPC instead (ipc.ts), so nothing that comes over HTTP is
+// the display.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import type { IncomingHttpHeaders } from "http";

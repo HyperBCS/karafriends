@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
 import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
-import useUserIdentity from "../../hooks/useUserIdentity";
 import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
 
 import { withLoader } from "../Loader";
@@ -17,7 +16,6 @@ type Props = {
 
 function AdhocLyricsControls({ id }: Props) {
   const navigate = useNavigate();
-  const { nickname } = useUserIdentity();
   // Undefined until the live state arrives.
   const live = useLiveState();
   const currentSong = live === null ? undefined : live.currentSong;
@@ -43,7 +41,7 @@ function AdhocLyricsControls({ id }: Props) {
   if (
     !adhocLyrics?.length ||
     (currentSong !== undefined &&
-      !isYouTubeVideoWithLyricsPlaying(currentSong, id, nickname))
+      !isYouTubeVideoWithLyricsPlaying(currentSong, id))
   ) {
     navigate("/");
 

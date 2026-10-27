@@ -13,8 +13,11 @@ import { damPageWindow, nextOffset } from "./paging";
 import { createStateStore, type StateStore } from "./state";
 import { validators } from "./validate";
 
-const ADMIN_NICK = "host";
 const ADMIN_DEVICE = "admin-device";
+// In the deprecated adminNicks, which grants nothing: tests that check a phone
+// can't pass for an admin by nickname list it.
+const ADMIN_NICK = "host";
+const WITH_ADMIN_NICK = { adminNicks: [ADMIN_NICK] };
 
 const phone = (deviceId: string, nickname: string): Caller => ({
   deviceId,
@@ -79,7 +82,6 @@ function makeApi(
 ) {
   const deps = {
     config: {
-      adminNicks: [ADMIN_NICK],
       adminDeviceIds: [ADMIN_DEVICE],
       paxSongQueueLimit: 0,
       supervisedMode: false,
@@ -159,14 +161,15 @@ const rejectsWith = (promise: Promise<unknown>, status: number) =>
   );
 
 describe("admin checks", () => {
-  test("whoami: the display and the phones on the admin lists", async () => {
-    const api = makeApi();
+  test("whoami: the display and the phones on the admin list", async () => {
+    const api = makeApi(WITH_ADMIN_NICK);
     assert.deepEqual(await api.whoami({}, display), { isAdmin: true });
-    assert.deepEqual(await api.whoami({}, phone("x", ADMIN_NICK)), {
-      isAdmin: true,
-    });
     assert.deepEqual(await api.whoami({}, phone(ADMIN_DEVICE, "x")), {
       isAdmin: true,
+    });
+    // adminNicks no longer counts: anyone can take a nickname.
+    assert.deepEqual(await api.whoami({}, phone("x", ADMIN_NICK)), {
+      isAdmin: false,
     });
     assert.deepEqual(await api.whoami({}, alice), { isAdmin: false });
     assert.deepEqual(
@@ -205,7 +208,7 @@ describe("admin checks", () => {
     });
 
     test("only the owner or an admin may remove a song", async () => {
-      const api = makeApi({ supervisedMode: true });
+      const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
       const remove = (n: number, caller: Caller) =>
         api.removeSong({ songId: `sm${n}`, timestamp: String(n) }, caller);
 
@@ -216,9 +219,12 @@ describe("admin checks", () => {
       );
       assert.equal(store.getState().songQueue.length, 2);
 
-      // By device ID or by nickname, as the remote decides.
+      // By device ID, as isMine says, whatever the nickname. Every phone
+      // sees the nickname, so it proves nothing.
+      await rejectsWith(remove(3, phone("other-device", "alice")), 403);
+      await rejectsWith(remove(3, phone("other-device", ADMIN_NICK)), 403);
       assert.equal(await remove(2, phone("alice-device", "someone")), true);
-      assert.equal(await remove(3, phone("other-device", "alice")), true);
+      assert.equal(await remove(3, alice), true);
 
       store.update((state) => state.songQueue.push(song(4, alice)));
       assert.equal(await remove(4, phone(ADMIN_DEVICE, "x")), true);
@@ -230,13 +236,23 @@ describe("admin checks", () => {
     });
 
     test("only the current singer or an admin may control playback", async () => {
-      const api = makeApi({ supervisedMode: true });
+      const api = makeApi({ ...WITH_ADMIN_NICK, supervisedMode: true });
 
       await rejectsWith(
         api.setPlaybackState({ playbackState: "PAUSED" }, bob),
         403,
       );
       await rejectsWith(api.setPitchShiftSemis({ semis: 2 }, bob), 403);
+      // The singer's or an admin's nickname, from another phone.
+      for (const nickname of ["alice", ADMIN_NICK]) {
+        await rejectsWith(
+          api.setPlaybackState(
+            { playbackState: "SKIPPING" },
+            phone("other-device", nickname),
+          ),
+          403,
+        );
+      }
       assert.equal(store.getState().playbackState, "PLAYING");
       assert.equal(store.getState().pitchShiftSemis, 0);
 
@@ -247,7 +263,7 @@ describe("admin checks", () => {
       assert.equal(
         await api.setPlaybackState(
           { playbackState: "SKIPPING" },
-          phone("x", ADMIN_NICK),
+          phone(ADMIN_DEVICE, "x"),
         ),
         true,
       );
@@ -330,7 +346,7 @@ describe("admin checks", () => {
   });
 
   test("only an admin's song may jump the queue", async () => {
-    const api = makeApi();
+    const api = makeApi(WITH_ADMIN_NICK);
     const queue = (caller: Caller, n: number) =>
       api.queueSong(
         {
@@ -351,10 +367,34 @@ describe("admin checks", () => {
     );
     // An admin's goes second, leaving the first time to download.
     await queue(phone(ADMIN_DEVICE, "host phone"), 4);
+    // Not by nickname.
+    await queue(phone("other-device", ADMIN_NICK), 5);
     assert.deepEqual(
       store.getState().songQueue.map((item) => item.songId),
-      ["sm1", "sm4", "sm2", "sm3"],
+      ["sm1", "sm4", "sm2", "sm3", "sm5"],
     );
+  });
+
+  test("adminNicks is only read, to warn that it no longer counts", async (t) => {
+    const warnings: string[] = [];
+    t.mock.method(console, "warn", (message: string) => warnings.push(message));
+    const api = makeApi({ adminNicks: [ADMIN_NICK], supervisedMode: true });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /adminNicks .* no longer makes anyone an admin/);
+
+    // A phone that takes that nickname is told nothing, but the host learns
+    // its device ID, to list it if the phone is theirs.
+    const impostor = phone("impostor-device", ADMIN_NICK);
+    assert.deepEqual(await api.whoami({}, impostor), { isAdmin: false });
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[1], /impostor-device/);
+    await rejectsWith(api.popSong({}, impostor), 403);
+
+    // Without adminNicks, no warning.
+    makeApi({ adminNicks: [] });
+    makeApi({ adminNicks: undefined });
+    await makeApi({ adminNicks: undefined }).whoami({}, impostor);
+    assert.equal(warnings.length, 2);
   });
 });
 
@@ -584,7 +624,7 @@ describe("queueSong", () => {
   });
 
   test("stops at the per-person limit, except for admins", async () => {
-    const api = makeApi({ paxSongQueueLimit: 1 });
+    const api = makeApi({ ...WITH_ADMIN_NICK, paxSongQueueLimit: 1 });
     const queue = (caller: Caller, n: number) =>
       api.queueSong(
         { kind: "nico", songId: `sm${n}`, name: "", artistName: "" },
@@ -596,9 +636,13 @@ describe("queueSong", () => {
       reason: "alice already has 1 song(s) in the queue or downloading",
     });
     assert.equal((await queue(bob, 3)).ok, true);
-    const host = phone("host-device", ADMIN_NICK);
+    const host = phone(ADMIN_DEVICE, "host phone");
     assert.equal((await queue(host, 4)).ok, true);
     assert.equal((await queue(host, 5)).ok, true);
+    // Not by nickname.
+    const impostor = phone("impostor-device", ADMIN_NICK);
+    assert.equal((await queue(impostor, 6)).ok, true);
+    assert.equal((await queue(impostor, 7)).ok, false);
   });
 });
 

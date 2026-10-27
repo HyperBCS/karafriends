@@ -132,19 +132,31 @@ export function createApi(deps: ApiDeps): ApiHandlers {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
-  // The display, or a phone on the admin lists in config.yaml.
+  // Nicknames grant nothing, since anyone can pick any nickname and every
+  // phone sees everyone's. Device IDs never leave the server, so they decide
+  // who is an admin and whose a song is.
+  const adminNicks = Array.isArray(config.adminNicks) ? config.adminNicks : [];
+  if (adminNicks.length > 0) {
+    console.warn(
+      "adminNicks in config.yaml no longer makes anyone an admin, since " +
+        "anyone can take a nickname. List the admins' device IDs in " +
+        "adminDeviceIds instead: their phones' IDs are logged when they " +
+        "connect with one of those nicknames.",
+    );
+  }
+
+  // The display, or a phone on the admin list in config.yaml.
   const isAdmin = (caller: Caller) =>
     caller.isDisplay ||
-    (caller.nickname !== null && config.adminNicks.includes(caller.nickname)) ||
     (caller.deviceId !== null &&
       config.adminDeviceIds.includes(caller.deviceId));
 
-  // Like the remote, count a song as the caller's if either its device ID
-  // or its nickname matches.
+  // Whether the caller queued item, from the same device (isMine, to the
+  // phones).
   const owns = (item: QueueItem | null, caller: Caller) =>
     item !== null &&
-    ((caller.deviceId !== null && item.user.deviceId === caller.deviceId) ||
-      (caller.nickname !== null && item.user.nickname === caller.nickname));
+    caller.deviceId !== null &&
+    item.user.deviceId === caller.deviceId;
 
   // In supervised mode, only an admin or the singer of the current song may
   // pause, skip, restart or change the key: what the remote's controls
@@ -641,7 +653,23 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async whoami(_input, caller) {
-      return { isAdmin: isAdmin(caller) };
+      const admin = isAdmin(caller);
+      // The remote asks each time it connects. Tell the host which device to
+      // list, should this be their phone.
+      if (
+        !admin &&
+        caller.deviceId !== null &&
+        caller.nickname !== null &&
+        adminNicks.includes(caller.nickname)
+      ) {
+        console.warn(
+          `A phone calling itself "${caller.nickname}", from adminNicks, ` +
+            "connected. adminNicks no longer counts; if the phone is an " +
+            "admin's, add its device ID to adminDeviceIds in config.yaml: " +
+            caller.deviceId,
+        );
+      }
+      return { isAdmin: admin };
     },
   };
 }

@@ -184,7 +184,8 @@ test.describe("supervised mode", () => {
     playbackState: "WAITING",
   });
 
-  test.use({ appConfig: { supervisedMode: true } });
+  // adminNicks is deprecated: it makes nobody an admin.
+  test.use({ appConfig: { supervisedMode: true, adminNicks: ["host"] } });
 
   // The remote, opened by the e2e phone (not an admin).
   async function openRemote(page: Page, remoconUrl: string) {
@@ -244,6 +245,35 @@ test.describe("supervised mode", () => {
           REMOTE_HEADERS,
         ),
       ).toMatchObject({ status: 403 });
+
+      // Nor can it pass for the singer, or for an admin, by nickname: every
+      // phone sees the nicknames.
+      for (const nickname of ["someone", "host"]) {
+        const headers = {
+          ...REMOTE_HEADERS,
+          "X-Karafriends-Nickname": nickname,
+        };
+        expect(await call(remoconUrl, "whoami", {}, headers)).toEqual({
+          status: 200,
+          body: { isAdmin: false },
+        });
+        expect(
+          await call(
+            remoconUrl,
+            "removeSong",
+            { songId: "sm90002", timestamp: song(2, someoneElse).timestamp },
+            headers,
+          ),
+        ).toMatchObject({ status: 403 });
+        expect(
+          await call(
+            remoconUrl,
+            "setPlaybackState",
+            { playbackState: "SKIPPING" },
+            headers,
+          ),
+        ).toMatchObject({ status: 403 });
+      }
 
       // The remote: its UI hides the remove button and disables the playback
       // controls...

@@ -309,7 +309,8 @@ export interface Api {
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and
   // setPlaybackState and setPitchShiftSemis for the current song's owner or
-  // an admin.
+  // an admin. The owner is the device that queued it (isMine), and admins
+  // are listed by device ID: a nickname counts for nothing.
   queueSong: { input: QueueSongInput; output: QueueSongResult };
   // False if the song isn't in the queue (any more).
   removeSong: {
