@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import formatDuration from "format-duration";
+import { useLiveEvent } from "../../common/apiClient";
 import useQueue from "../../common/hooks/useQueue";
 
 async function registerServiceWorker() {
@@ -26,7 +27,7 @@ async function showNotification(
 }
 
 // Whenever the queue changes, tells this phone about its songs due within
-// ten minutes. It updates with the queue, so use it in a component of its
+// ten minutes; and about its songs that couldn't be downloaded. It updates with the queue, so use it in a component of its
 // own (QueueNotifications), not one with the pages under it.
 export default function useQueueNotifications() {
   const queue = useQueue();
@@ -50,6 +51,13 @@ export default function useQueueNotifications() {
       }
     }
   }, [queue]);
+
+  // The server sends these only to the phone that queued the song.
+  useLiveEvent("queueFailed", ({ item, reason }) => {
+    showNotification("karafriends", {
+      body: `Couldn't download ${item.name}: ${reason}`,
+    }).catch((err) => console.warn("Couldn't show a notification:", err));
+  });
 }
 
 // Shows the queue notifications, and nothing else.

@@ -4,6 +4,7 @@ import { describe, test } from "node:test";
 
 import {
   DOWNLOADING,
+  FAILED,
   FINISHED,
   nextDownloadText,
   RESULT_MS,
@@ -12,8 +13,11 @@ import {
 } from "./useDownloadButtonText";
 
 const DEFAULT = "Queue video";
-const next = (text: string, progress: number | null) =>
-  nextDownloadText(text, progress, DEFAULT);
+const next = (
+  text: string,
+  progress: number | null,
+  failure: string | null = null,
+) => nextDownloadText(text, progress, DEFAULT, failure);
 
 describe("nextDownloadText", () => {
   test("does nothing until the server says it's downloading", () => {
@@ -51,9 +55,33 @@ describe("nextDownloadText", () => {
     });
   });
 
+  test("says why a download failed", () => {
+    for (const text of [DOWNLOADING, "Downloading -- 42.6%"]) {
+      assert.deepEqual(next(text, null, "Video unavailable"), {
+        text: `${FAILED}: Video unavailable`,
+        afterMs: 0,
+      });
+    }
+    assert.equal(FAILED, "Couldn't download");
+  });
+
+  test("ignores a failure it isn't waiting on", () => {
+    assert.equal(next(DEFAULT, null, "Video unavailable"), null);
+    assert.equal(next(WAITING_FOR_SERVER, null, "Video unavailable"), null);
+  });
+
   test("shows the result for a while, then the default text", () => {
-    for (const text of [FINISHED, "Error: e2e already has 1 song(s)"]) {
+    for (const text of [
+      FINISHED,
+      "Error: e2e already has 1 song(s)",
+      `${FAILED}: Video unavailable`,
+    ]) {
       assert.deepEqual(next(text, null), {
+        text: DEFAULT,
+        afterMs: RESULT_MS,
+      });
+      // A failure stays listed for a while; it doesn't hold the text.
+      assert.deepEqual(next(text, null, "Video unavailable"), {
         text: DEFAULT,
         afterMs: RESULT_MS,
       });
