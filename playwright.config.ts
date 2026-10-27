@@ -21,6 +21,9 @@ export default defineConfig({
   use: {
     // The remote runs in Chromium as a phone.
     ...devices["Pixel 7"],
+    // The remote picks its language from the browser's (src/remocon/i18n),
+    // and the tests read its English.
+    locale: "en-US",
     launchOptions: { args: ["--mute-audio"] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
