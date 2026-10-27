@@ -5,6 +5,7 @@ import { List } from "../List";
 import { withLoader } from "../Loader";
 import MoreButton from "../MoreButton";
 import SongHistoryItem, { historyKey } from "./SongHistoryItem";
+import { t } from "../../i18n";
 
 const History = () => {
   // The history grows as songs play, so coming back shows what was here at
@@ -16,7 +17,7 @@ const History = () => {
   return (
     <>
       {paged.items.length === 0 ? (
-        <span>No history</span>
+        <span>{t("history.empty")}</span>
       ) : (
         <List>
           {paged.items.map((song) => (

@@ -2,6 +2,7 @@ import React from "react";
 
 import useQueue from "../../../common/hooks/useQueue";
 import SongQueueItem from "./SongQueueItem";
+import { t } from "../../i18n";
 
 const SongQueue = () => {
   const queue = useQueue();
@@ -15,7 +16,7 @@ const SongQueue = () => {
           eta={eta}
         />
       ))}
-      {queue.length === 0 && <span>The queue is empty</span>}
+      {queue.length === 0 && <span>{t("queue.empty")}</span>}
     </div>
   );
 };

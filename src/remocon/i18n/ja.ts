@@ -8,6 +8,7 @@ export const ja: Messages = {
   "common.back": "戻る",
   "common.clear": "クリア",
   "common.tryAgain": "再試行",
+  "common.loadFailed": "読み込めませんでした：{reason}",
   "common.loading": "読み込み中",
   "common.more": "もっと見る",
   "common.cancel": "キャンセル",

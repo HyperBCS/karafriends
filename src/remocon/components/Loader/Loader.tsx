@@ -4,6 +4,7 @@ import React, { Suspense } from "react";
 import { BiLoaderAlt } from "../../icons";
 import Button from "../Button";
 import * as styles from "./Loader.module.scss";
+import { t } from "../../i18n";
 
 const Loader = () => (
   <div className={styles.loader}>
@@ -66,8 +67,12 @@ class LoadError extends React.Component<
     if (error === null) return this.props.children;
     return (
       <div className={styles.error} role="alert">
-        <p>Couldn't load this: {error.message || String(error)}</p>
-        <Button onClick={this.reset}>Try again</Button>
+        <p>
+          {t("common.loadFailed", {
+            reason: error.message || String(error),
+          })}
+        </p>
+        <Button onClick={this.reset}>{t("common.tryAgain")}</Button>
       </div>
     );
   }

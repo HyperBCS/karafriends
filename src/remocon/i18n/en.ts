@@ -9,6 +9,7 @@ export const en = {
   "common.back": "Back",
   "common.clear": "Clear",
   "common.tryAgain": "Try again",
+  "common.loadFailed": "Couldn't load this: {reason}",
   "common.loading": "Loading",
   "common.more": "More",
   "common.cancel": "Cancel",

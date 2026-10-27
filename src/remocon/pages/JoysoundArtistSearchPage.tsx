@@ -4,6 +4,7 @@ import { useParams } from "react-router";
 import DebouncedInput from "../components/DebouncedInput";
 import JoysoundArtistSearchResults from "../components/JoysoundArtistSearchResults";
 import SearchFormWrapper from "../components/SearchFormWrapper";
+import { t } from "../i18n";
 
 type JoysoundArtistSearchParams = {
   query: string;
@@ -15,10 +16,10 @@ const JoysoundArtistSearchPage = () => {
 
   return (
     <SearchFormWrapper>
-      <h2>Search by artist name</h2>
+      <h2>{t("search.byArtistName")}</h2>
       <DebouncedInput
         period={500}
-        placeholder="Start typing..."
+        placeholder={t("search.placeholder")}
         onChange={(e) => {
           setQuery(e.target.value === "" ? null : e.target.value);
           history.replaceState(
