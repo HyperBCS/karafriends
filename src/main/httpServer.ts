@@ -1,5 +1,5 @@
 // The HTTP server on the remocon port: the phone remote's pages and the API
-// (server.ts), for the phones and, until Phase 5f, the display.
+// (server.ts), for the phones. The display uses IPC instead (ipc.ts).
 import { createServer, type Server } from "http";
 
 import { app as electronApp, dialog } from "electron";

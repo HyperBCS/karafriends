@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { callerFromHeaders, deviceIdFromQuery, displayToken } from "./caller";
+import { callerFromHeaders, deviceIdFromQuery } from "./caller";
 
 describe("callerFromHeaders", () => {
   test("reads the percent-encoded identity headers", () => {
@@ -27,25 +27,6 @@ describe("callerFromHeaders", () => {
         "x-karafriends-nickname": "%E0%A4%A",
       }),
       { deviceId: null, nickname: null, isDisplay: false },
-    );
-  });
-
-  test("the display is whoever has the token", () => {
-    assert.equal(displayToken.length, 64);
-    assert.equal(
-      callerFromHeaders({ "x-karafriends-display-token": displayToken })
-        .isDisplay,
-      true,
-    );
-    assert.equal(
-      callerFromHeaders({ "x-karafriends-display-token": "guess" }).isDisplay,
-      false,
-    );
-    assert.equal(
-      callerFromHeaders({
-        "x-karafriends-display-token": displayToken.toUpperCase(),
-      }).isDisplay,
-      false,
     );
   });
 });

@@ -1,4 +1,3 @@
-import type { KarafriendsConfig } from "../common/config";
 import type { DisplayApi } from "../common/ipc";
 
 // What the preload (src/preload/index.ts) gives the display window. Phones
@@ -7,9 +6,9 @@ declare global {
   interface Window {
     karafriends: {
       ipAddresses(): string[];
+      // The phones' server port, for the remote's address.
+      remoconPort(): number;
       api: DisplayApi;
-      karafriendsConfig(): KarafriendsConfig;
-      displayToken(): string | null;
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

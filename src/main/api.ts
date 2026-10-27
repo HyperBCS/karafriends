@@ -1,5 +1,6 @@
 // The API's handlers: one function per method in src/common/api.ts. The
-// JSON RPC router (server.ts) calls these.
+// JSON RPC router (server.ts, for phones) and the display's IPC (ipc.ts)
+// call these, through dispatch.ts.
 //
 // The upstream clients, downloads and live-event sink come in as
 // dependencies, and nothing here imports Electron, so unit tests can load
@@ -28,8 +29,8 @@ import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { StateStore } from "./state";
 
-// Who is calling, from the request headers (see caller.ts). Null when the
-// header was missing.
+// Who is calling: a phone, from its request headers (see caller.ts), with
+// null for a missing header; or the display, over IPC (see ipc.ts).
 export interface Caller {
   deviceId: string | null;
   nickname: string | null;

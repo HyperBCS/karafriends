@@ -1,6 +1,6 @@
-// The live-state feed: what GET /api/events streams to phones (and, from
-// Phase 5f, what the display gets over IPC). Transport-agnostic: a listener
-// gets LiveEvent objects and serializes them itself, synchronously.
+// The live-state feed: what GET /api/events streams to phones, and what the
+// display gets over IPC (ipc.ts). Transport-agnostic: a listener gets
+// LiveEvent objects and serializes them itself, synchronously.
 //
 // No device IDs go out: a listener says which device it is, and sees which
 // songs and downloads are its own (isMine). Whatever a listener doesn't own

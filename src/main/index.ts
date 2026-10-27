@@ -39,7 +39,6 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
-  IpcMainEvent,
   protocol,
 } from "electron";
 import isDev from "electron-is-dev";
@@ -48,8 +47,7 @@ import express from "express";
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
-import { IPC_CHANNELS } from "../common/ipc";
-import { displayToken } from "./caller";
+import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
@@ -131,6 +129,11 @@ function createWindow() {
       nodeIntegrationInSubFrames: false,
       nodeIntegrationInWorker: false,
       preload: fileURLToPath(preloadUrl),
+      // The preload reads the port from its process.argv, for the remote's
+      // address in the QR code.
+      additionalArguments: [
+        `${REMOCON_PORT_ARG}${karafriendsConfig.remoconPort}`,
+      ],
       sandbox: false,
       webSecurity: true,
     },
@@ -147,14 +150,9 @@ function createWindow() {
   // (A reloaded page subscribes again, which replaces its old subscription.)
   rendererWindow.webContents.on("destroyed", displayIpc.endLive);
 
-  // Ignore CORS when fetching ipcasting HLS and when sending requests to remocon
+  // Ignore CORS when fetching ipcasting HLS (DAM's streams).
   const session = rendererWindow.webContents.session;
-  const ignoreCORSFilter = {
-    urls: [
-      "https://*.ipcasting.jp/*",
-      `http://localhost:${karafriendsConfig.remoconPort}/*`, // TODO: Set CORS headers on the Express side and remove this
-    ],
-  };
+  const ignoreCORSFilter = { urls: ["https://*.ipcasting.jp/*"] };
 
   session.webRequest.onBeforeSendHeaders(
     ignoreCORSFilter,
@@ -167,31 +165,10 @@ function createWindow() {
   session.webRequest.onHeadersReceived(
     ignoreCORSFilter,
     (details, callback) => {
-      // Chrome is not happy if ACAO is set twice, which is what happens
-      // when the Express static middleware is setting this one
+      // Replace any ACAO the server sent: Chrome refuses one set twice.
       if (details.responseHeaders) {
         delete details.responseHeaders["access-control-allow-origin"];
         details.responseHeaders["Access-Control-Allow-Origin"] = ["*"];
-      }
-      // In dev the display comes from the Parcel dev server, another origin,
-      // so its JSON POSTs to /api send a preflight first. The server answers
-      // it 404 (no CORS, on purpose: see server.ts), so pass it here, for the
-      // display only.
-      if (
-        details.method === "OPTIONS" &&
-        details.url.startsWith(
-          `http://localhost:${karafriendsConfig.remoconPort}/api/`,
-        )
-      ) {
-        callback({
-          responseHeaders: {
-            ...details.responseHeaders,
-            "Access-Control-Allow-Headers": ["*"],
-            "Access-Control-Allow-Methods": ["POST"],
-          },
-          statusLine: "HTTP/1.1 204 No Content",
-        });
-        return;
       }
       callback({ responseHeaders: details.responseHeaders });
     },
@@ -258,21 +235,7 @@ function createWindow() {
     );
     loadRenderer();
   }
-
-  ipcMain.on("config", (event: IpcMainEvent) => {
-    console.log("Sending config over ipc");
-    event.returnValue = karafriendsConfig;
-  });
 }
-
-// The display's API secret: it makes the display an admin (see caller.ts).
-// Only the display window gets it.
-ipcMain.on("displayToken", (event: IpcMainEvent) => {
-  event.returnValue =
-    rendererWindow && event.sender === rendererWindow.webContents
-      ? displayToken
-      : null;
-});
 
 app.on("ready", () => {
   // Start warming the external resource cache as soon as the app is ready so

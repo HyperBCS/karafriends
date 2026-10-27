@@ -1,9 +1,12 @@
 // The JSON RPC API shared by the main process, the phone remote and the
-// display: `POST /api/<method>` with a JSON body, plus one Server-Sent Events
-// stream, `GET /api/events`, that pushes the live state.
+// display. Phones use HTTP: `POST /api/<method>` with a JSON body, plus one
+// Server-Sent Events stream, `GET /api/events`, that pushes the live state.
+// The display window uses the same methods and events over Electron IPC
+// (src/common/ipc.ts), as an admin.
 //
 // Types only, so any process can import it. The handlers are in
-// src/main/api.ts and the Express wiring in src/main/server.ts.
+// src/main/api.ts, the Express wiring in src/main/server.ts and the IPC
+// wiring in src/main/ipc.ts.
 
 // Who is calling. The remote sends these as the X-Karafriends-Device-Id and
 // X-Karafriends-Nickname headers, each percent-encoded (encodeURIComponent),
@@ -16,9 +19,6 @@ export interface UserIdentity {
 export const IDENTITY_HEADERS = {
   deviceId: "X-Karafriends-Device-Id",
   nickname: "X-Karafriends-Nickname",
-  // The display window's secret (from the preload). It makes the caller an
-  // admin.
-  displayToken: "X-Karafriends-Display-Token",
 } as const;
 
 export type PlaybackState =

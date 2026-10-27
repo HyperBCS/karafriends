@@ -18,6 +18,11 @@ export const IPC_CHANNELS = {
   live: "live",
 } as const;
 
+// The display window's command-line switch (webPreferences
+// .additionalArguments) with the phones' server port, which the preload
+// reads: --karafriends-remocon-port=8080.
+export const REMOCON_PORT_ARG = "--karafriends-remocon-port=";
+
 // What the preload's call() resolves with. The status and error are what the
 // HTTP API answers with (403 and its message, say). Failures come back as
 // data because an Error's own properties don't survive the context bridge.

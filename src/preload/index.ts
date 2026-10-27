@@ -7,15 +7,18 @@ import { contextBridge, ipcRenderer } from "electron";
 import { memoize } from "lodash";
 
 import type { LiveEvent } from "../common/api";
-import { KarafriendsConfig } from "../common/config";
-import { IPC_CHANNELS, type DisplayApi } from "../common/ipc";
+import { IPC_CHANNELS, REMOCON_PORT_ARG, type DisplayApi } from "../common/ipc";
 import ipAddresses from "../common/ipAddresses";
 
 let inputDeviceCount = 0;
 const inputDevices: { [deviceId: number]: any } = {};
 
-let karafriendsConfig: KarafriendsConfig | null = null;
-let displayToken: string | null = null;
+// The phones' server port, from the main process (see index.ts).
+const remoconPort = Number(
+  process.argv
+    .find((arg) => arg.startsWith(REMOCON_PORT_ARG))
+    ?.slice(REMOCON_PORT_ARG.length),
+);
 
 // The live events, from the main process. This page asks for them once, as
 // it loads, and the live state comes first; the latest one is kept for
@@ -50,23 +53,8 @@ const api: DisplayApi = {
 
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
+  remoconPort: (): number => remoconPort,
   api,
-  karafriendsConfig: () => {
-    if (karafriendsConfig === null) {
-      console.log("Making sync request for configs");
-      karafriendsConfig = ipcRenderer.sendSync("config");
-    }
-
-    return karafriendsConfig;
-  },
-  // The secret the display sends with its API requests, which makes it an
-  // admin.
-  displayToken: (): string | null => {
-    if (displayToken === null) {
-      displayToken = ipcRenderer.sendSync("displayToken");
-    }
-    return displayToken;
-  },
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid
