@@ -807,12 +807,13 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
+      // A cursor is the number of items before the next page.
       return {
         edges: db.songHistory
-          .slice(afterInt, firstInt)
+          .slice(afterInt, afterInt + firstInt)
           .map((songHistoryItem, i) => ({
             node: songHistoryItem,
-            cursor: (firstInt + i).toString(),
+            cursor: (afterInt + i + 1).toString(),
           })),
         pageInfo: {
           hasPreviousPage: false,
