@@ -14,6 +14,7 @@ Download the zip for your computer from the [Releases page](https://github.com/H
 
 - The app opens full-screen on the main display. Plug in the TV before starting it, or move the window there.
 - The first start downloads ffmpeg and yt-dlp (for YouTube and Niconico songs), so be online and give it a minute.
+- To use your own copy of yt-dlp or ffmpeg (a newer yt-dlp when YouTube downloads keep failing, say), set `KARAFRIENDS_YTDLP_PATH` or `KARAFRIENDS_FFMPEG_PATH` to the program's full path before starting the app. karafriends then runs that file and never downloads that tool.
 - Windows asks whether to let karafriends through the firewall. Allow it on private networks, or phones can't connect.
 - Press `Q` to show or hide the sidebar: the QR code, the hostname and microphone settings, and the queue.
 
