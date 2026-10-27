@@ -55,13 +55,15 @@ export default function useDownloadButtonText(
   onReset?: () => void,
 ): [string, (text: string) => void] {
   const [text, setText] = useState(defaultText);
-  const progress =
-    useLiveState()?.downloads.find(
-      (entry) =>
-        entry.kind === download.kind &&
-        entry.songId === download.songId &&
-        entry.suffix === download.suffix,
-    )?.progress ?? null;
+  const progress = useLiveState(
+    (state) =>
+      state?.downloads.find(
+        (entry) =>
+          entry.kind === download.kind &&
+          entry.songId === download.songId &&
+          entry.suffix === download.suffix,
+      )?.progress ?? null,
+  );
 
   useEffect(() => {
     const next = nextDownloadText(text, progress, defaultText);

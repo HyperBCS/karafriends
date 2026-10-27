@@ -31,7 +31,9 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
     onError: (err) => console.error("Couldn't remove the song:", err),
   });
 
-  const supervisedMode = useLiveState()?.config.supervisedMode ?? false;
+  const supervisedMode = useLiveState(
+    (state) => state?.config.supervisedMode ?? false,
+  );
   const isAdmin = useIsAdmin();
 
   // What the server allows (removeSong in src/main/api.ts): in supervised

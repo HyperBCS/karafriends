@@ -14,6 +14,7 @@ import React, {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -174,7 +175,33 @@ interface LiveEvents {
   subscribe(listener: Listener): () => void;
 }
 
-const LiveStateContext = createContext<LiveState | null>(null);
+// The live state, outside React, so a component can follow just the part it
+// shows (useLiveState(select)): while a download runs, the state changes
+// about 4 times a second, and a context value would update every component
+// that reads any of it.
+export interface LiveStore {
+  get(): LiveState | null;
+  subscribe(listener: () => void): () => void;
+}
+
+export function liveStore(): LiveStore & { set(next: LiveState): void } {
+  let state: LiveState | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => state,
+    set(next) {
+      if (next === state) return;
+      state = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+const LiveStateContext = createContext<LiveStore>(liveStore());
 const LiveEventsContext = createContext<LiveEvents>({
   subscribe: () => () => {},
 });
@@ -243,7 +270,7 @@ export function LiveStateProvider({
   children?: React.ReactNode;
   checkAdmin?: boolean;
 }) {
-  const [state, setState] = useState<LiveState | null>(null);
+  const [store] = useState(liveStore);
   const [isAdmin, setIsAdmin] = useState<boolean | undefined>(undefined);
   const [listeners] = useState(() => new Set<Listener>());
   const [events] = useState<LiveEvents>(() => ({
@@ -264,7 +291,7 @@ export function LiveStateProvider({
       },
       (event) => {
         if (event.type === "state") {
-          setState((prev) => mergeLiveState(prev, event.state));
+          store.set(mergeLiveState(store.get(), event.state));
         }
         for (const listener of listeners) {
           try {
@@ -279,7 +306,7 @@ export function LiveStateProvider({
       stopped = true;
       close();
     };
-  }, [checkAdmin, listeners]);
+  }, [checkAdmin, listeners, store]);
 
   return React.createElement(
     LiveEventsContext.Provider,
@@ -289,16 +316,20 @@ export function LiveStateProvider({
       { value: isAdmin },
       React.createElement(
         LiveStateContext.Provider,
-        { value: state },
+        { value: store },
         children,
       ),
     ),
   );
 }
 
-// The live state, or null until the first one arrives.
-export function useLiveState(): LiveState | null {
-  return useContext(LiveStateContext);
+// The part of the live state that select picks (the state is null until the
+// first one arrives). The component updates only when that part changes, so
+// select must pick a part (mergeLiveState keeps each unchanged part the same
+// object) or a plain value, not build a new object.
+export function useLiveState<T>(select: (state: LiveState | null) => T): T {
+  const store = useContext(LiveStateContext);
+  return useSyncExternalStore(store.subscribe, () => select(store.get()));
 }
 
 // Calls callback with every event of a type ("emote", "queueAdded") from now

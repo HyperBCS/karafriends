@@ -9,6 +9,7 @@ import {
   ApiCallError,
   call,
   eventsUrl,
+  liveStore,
   mergeLiveState,
   openLiveStream,
   parseLiveEvent,
@@ -227,5 +228,38 @@ describe("mergeLiveState", () => {
     assert.notEqual(shorter.queue, first.queue);
     // From the new state, not the old.
     assert.equal(shorter.playbackState, "WAITING");
+  });
+});
+
+describe("liveStore", () => {
+  test("tells its listeners about a new state, and only a new one", () => {
+    const store = liveStore();
+    assert.equal(store.get(), null);
+    let calls = 0;
+    const stop = store.subscribe(() => calls++);
+
+    const first = state();
+    store.set(first);
+    assert.equal(store.get(), first);
+    // What mergeLiveState returns when nothing changed.
+    store.set(mergeLiveState(first, state()));
+    assert.equal(calls, 1);
+
+    // A download's progress changes the state, but a component that shows
+    // the queue picks the same queue as before, so React leaves it be.
+    const download = {
+      kind: "youtube" as const,
+      songId: "v",
+      suffix: null,
+      progress: 0.5,
+      isMine: false,
+    };
+    store.set(mergeLiveState(first, state({ downloads: [download] })));
+    assert.equal(calls, 2);
+    assert.equal(store.get()!.queue, first.queue);
+
+    stop();
+    store.set(state({ playbackState: "PAUSED" }));
+    assert.equal(calls, 2);
   });
 });

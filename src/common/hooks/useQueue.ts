@@ -25,8 +25,7 @@ const EMPTY: SharedQueueItem[] = [];
 // The songs after the current one, with ETAs; a new array only when they
 // change.
 export default function useQueue(): QueueEntry[] {
-  const live = useLiveState();
-  const currentSong = live?.currentSong ?? null;
-  const queue = live?.queue ?? EMPTY;
+  const currentSong = useLiveState((state) => state?.currentSong ?? null);
+  const queue = useLiveState((state) => state?.queue ?? EMPTY);
   return useMemo(() => withETAs(currentSong, queue), [currentSong, queue]);
 }

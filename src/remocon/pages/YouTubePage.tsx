@@ -43,7 +43,7 @@ type YouTubeParams = {
 
 const YouTubePage = () => {
   const navigate = useNavigate();
-  const currentSong = useLiveState()?.currentSong;
+  const currentSong = useLiveState((state) => state?.currentSong);
 
   const params = useParams<YouTubeParams>();
   const inputRef = useRef<HTMLInputElement>(null);

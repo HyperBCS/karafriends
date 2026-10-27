@@ -17,8 +17,9 @@ type Props = {
 function AdhocLyricsControls({ id }: Props) {
   const navigate = useNavigate();
   // Undefined until the live state arrives.
-  const live = useLiveState();
-  const currentSong = live === null ? undefined : live.currentSong;
+  const currentSong = useLiveState((state) =>
+    state === null ? undefined : state.currentSong,
+  );
 
   const [selectedIndex, _setSelectedIndex] = useState<number>(0);
   const indexRef = useRef(selectedIndex);

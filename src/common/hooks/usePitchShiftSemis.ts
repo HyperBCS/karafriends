@@ -4,7 +4,7 @@ import useOptimisticValue from "./useOptimisticValue";
 
 // The key change in semitones, live, and a setter for it.
 export default function usePitchShiftSemis() {
-  const live = useLiveState()?.pitchShiftSemis ?? 0;
+  const live = useLiveState((state) => state?.pitchShiftSemis ?? 0);
   const [pitchShiftSemis, setPending, clearPending] = useOptimisticValue(live);
   const { mutate } = useApiMutation("setPitchShiftSemis", {
     onError: (err) => {

@@ -26,12 +26,18 @@ async function showNotification(
 }
 
 // Whenever the queue changes, tells this phone about its songs due within
-// ten minutes.
+// ten minutes. It updates with the queue, so use it in a component of its
+// own (QueueNotifications), not one with the pages under it.
 export default function useQueueNotifications() {
   const queue = useQueue();
 
-  // Preemptively register the service worker
-  if ("serviceWorker" in navigator) registerServiceWorker();
+  // Preemptively register the service worker, once.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    registerServiceWorker().catch((err) =>
+      console.warn("Couldn't register the service worker:", err),
+    );
+  }, []);
 
   useEffect(() => {
     for (const [item, eta] of queue) {
@@ -44,4 +50,10 @@ export default function useQueueNotifications() {
       }
     }
   }, [queue]);
+}
+
+// Shows the queue notifications, and nothing else.
+export function QueueNotifications() {
+  useQueueNotifications();
+  return null;
 }

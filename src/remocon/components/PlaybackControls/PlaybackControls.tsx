@@ -11,16 +11,16 @@ const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const isPlaybackControllable = ["PLAYING", "PAUSED"].includes(playbackState);
 
-  const live = useLiveState();
+  const supervisedMode = useLiveState(
+    (state) => state?.config.supervisedMode ?? false,
+  );
+  const isMine = useLiveState((state) => state?.currentSong?.isMine === true);
   const isAdmin = useIsAdmin();
 
   // What the server allows (setPlaybackState in src/main/api.ts): in
   // supervised mode, an admin or the current singer, from the phone that
   // queued the song.
-  const isUserEntitled =
-    !live?.config.supervisedMode ||
-    isAdmin === true ||
-    live.currentSong?.isMine === true;
+  const isUserEntitled = !supervisedMode || isAdmin === true || isMine;
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
 
