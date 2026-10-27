@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/browser";
 import React from "react";
 
 interface Props {
@@ -11,7 +10,7 @@ interface State {
 
 // A render error anywhere in the tree would otherwise unmount the whole
 // karaoke display and leave a blank screen with no way to recover. Catch it,
-// report it, and show a minimal recovery UI instead so a host can get the
+// log it, and show a minimal recovery UI instead so a host can get the
 // display back without restarting the app.
 export default class ErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
@@ -22,7 +21,6 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("Renderer error boundary caught an error:", error, info);
-    Sentry.captureException(error);
   }
 
   render() {

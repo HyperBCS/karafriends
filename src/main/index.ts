@@ -4,17 +4,26 @@ import { fileURLToPath } from "url";
 import { default as nativeAudioUrl } from "url:../../native/index.node";
 const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-line:no-var-requires
 
-import * as Sentry from "@sentry/node";
+import fs from "fs";
+import util from "util";
 
-Sentry.init({
-  dsn: "https://80cbda8ca4af42d9b95c60eb1f00566f@sentry.io/6728669",
-  debug: true,
-});
-
-async function handleError(err: unknown) {
+// Any uncaught exception or unhandled rejection is fatal: log it and exit.
+// Fatal errors are also appended to fatal-errors.log in app.getPath("logs") so
+// a crash can be diagnosed after the console is gone. Nothing else goes in that
+// file, because regular console output can include DAM tokens and Joysound
+// cookies.
+function handleError(err: unknown) {
   console.error("Fatal error:", err);
-  Sentry.captureException(err);
-  await Sentry.close(10 * 1000);
+  try {
+    const logDir = app.getPath("logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(
+      path.join(logDir, "fatal-errors.log"),
+      `[${new Date().toISOString()}] ${util.inspect(err)}\n`,
+    );
+  } catch (logErr) {
+    console.error("Failed to write the fatal error log:", logErr);
+  }
   process.exit(1);
 }
 

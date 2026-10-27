@@ -23,7 +23,6 @@ import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
 import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
-import { Nicovideo } from "niconico";
 import nodeFetch from "node-fetch";
 import tunnel from "tunnel";
 import { Innertube } from "youtubei.js";
@@ -36,6 +35,7 @@ import {
   downloadJoysoundData,
   downloadNicoVideo,
   downloadYoutubeVideo,
+  getNicoVideoInfo,
   getVideoDownloadProgress,
   TEMP_FOLDER,
 } from "./../common/videoDownloader";
@@ -49,7 +49,6 @@ export interface IDataSources {
     minsei: MinseiAPI;
     joysound: JoysoundAPI;
     dkwebsys: DkwebsysAPI;
-    youtube: Innertube;
   };
 }
 
@@ -373,26 +372,6 @@ function loadDb(): NotARealDb {
 }
 
 const pubsub = new PubSub();
-
-const nicovideo = new Nicovideo();
-
-interface WatchData {
-  owner: {
-    id: number;
-    nickname: string;
-  };
-  video: {
-    count: {
-      view: number;
-    };
-    description: string;
-    duration: number;
-    title: string;
-    thumbnail: {
-      player: string;
-    };
-  };
-}
 
 function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
   // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
@@ -830,11 +809,10 @@ const resolvers = {
     youtubeVideoInfo: (
       _: any,
       args: { videoId: string },
-      { dataSources }: IDataSources,
     ): Promise<YoutubeVideoInfoResult> => {
       return (
-        dataSources.youtube
-          .getBasicInfo(args.videoId)
+        innertubeApiProvider()
+          .then((youtube) => youtube.getBasicInfo(args.videoId))
           // youtubei.js's response is loosely/partially typed and its shape
           // shifts between versions, so treat it as untyped here.
           .then((data: any) => {
@@ -878,19 +856,12 @@ const resolvers = {
       args: { videoId: string },
     ): Promise<NicoVideoInfoResult> => {
       try {
-        // @ts-ignore
-        const watchData: WatchData = await nicovideo.watch(args.videoId);
         return {
           __typename: "NicoVideoInfo",
-          author: watchData.owner.nickname,
-          channelId: watchData.owner.id.toString(10),
-          description: watchData.video.description,
-          lengthSeconds: watchData.video.duration,
-          title: watchData.video.title,
-          thumbnailUrl: watchData.video.thumbnail.player,
-          viewCount: watchData.video.count.view,
+          ...(await getNicoVideoInfo(args.videoId)),
         };
       } catch (e) {
+        console.error(`Failed getting Niconico info for ${args.videoId}:`, e);
         return {
           __typename: "NicoVideoInfoError",
           reason: "Failed getting video info. Maybe an invalid VideoID?",
@@ -1266,11 +1237,11 @@ function withTimeout<T>(
   ) as Promise<T>;
 }
 
-// Every GraphQL request awaits this to build its context, so if
-// Innertube.create() hangs (YouTube unreachable) it would stall the entire
-// API. memoize would also cache a rejected promise forever, permanently
-// killing the backend until restart. Use a manual singleton that times out and
-// clears itself on failure so the next request retries.
+// Only youtubeVideoInfo needs the YouTube client, so it is created on first
+// use there rather than awaited in every request's context: a YouTube outage
+// then only affects YouTube lookups. memoize would cache a rejected promise
+// forever, so use a manual singleton that times out and clears itself on
+// failure so the next lookup retries.
 let innertubePromise: Promise<Innertube> | null = null;
 function innertubeApiProvider(): Promise<Innertube> {
   if (!innertubePromise) {
@@ -1377,8 +1348,6 @@ export function applyGraphQLMiddleware(app: Application) {
         express.json(),
         expressMiddleware(server, {
           context: async () => {
-            const innertubeApiInstance = await innertubeApiProvider();
-
             return {
               dataSources: {
                 minsei: new MinseiAPI(minseiCredentialsProvider, {
@@ -1393,7 +1362,6 @@ export function applyGraphQLMiddleware(app: Application) {
                   cache: server.cache,
                   fetch: fetcher,
                 }),
-                youtube: innertubeApiInstance,
               },
             };
           },
