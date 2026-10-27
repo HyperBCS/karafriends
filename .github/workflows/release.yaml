@@ -3,6 +3,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+# Every job uploads its zip to the release. The repo's default token is
+# read-only.
+permissions:
+  contents: write
 
 jobs:
   release-macos-aarch64:
