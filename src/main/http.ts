@@ -67,6 +67,13 @@ export async function http<T>(url: string, req: HttpRequest = {}): Promise<T> {
   return parseBody(resp) as Promise<T>;
 }
 
+export type HttpResponse = Response;
+
+// Each Set-Cookie header of a response from httpFetch, unjoined.
+export function getSetCookies(resp: HttpResponse): string[] {
+  return resp.headers.raw()["set-cookie"] ?? [];
+}
+
 function parseBody(resp: Response): Promise<unknown> {
   const type = resp.headers.get("Content-Type") ?? "";
   if (type.startsWith("application/octet-stream")) return resp.arrayBuffer();

@@ -2,7 +2,7 @@
 
 import promiseRetry from "promise-retry";
 
-import { http } from "./http";
+import { http, httpFetch } from "./http";
 
 const BASE_MINSEI_REQUEST = {
   charset: "UTF-8",
@@ -83,8 +83,10 @@ export class MinseiAPI {
     return data;
   }
 
+  // The body is read whatever the HTTP status, so a rejected login reports
+  // DAM's own status code and message through checkError.
   static login(loginId: string, password: string) {
-    return fetch(
+    return httpFetch(
       `https://win10.clubdam.com/cwa/win/minsei/auth/LoginByDamtomoMemberId.api`,
       {
         method: "POST",
