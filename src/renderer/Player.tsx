@@ -5,7 +5,7 @@ import Hls from "hls.js";
 import React, { useEffect, useRef, useState } from "react";
 
 import type { PoppedSong } from "../common/api";
-import { call } from "../common/apiClient";
+import { call, useLiveState } from "../common/apiClient";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { KuroshiroSingleton } from "../common/joysoundParser";
@@ -40,7 +40,12 @@ function Player(props: {
     useState<boolean>(false);
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
+  // Set while waiting for the next poll; null while one is in flight or a
+  // song plays.
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Polls now instead of at the armed timeout, if one is armed.
+  const pollNowRef = useRef<(() => void) | null>(null);
+  const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
 
   const audioCtx = useRef<AudioContext | null>(null);
   const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
@@ -53,6 +58,7 @@ function Player(props: {
     // Takes the next song off the queue (popSong, which only the display may
     // call) and starts it. With none, or no answer, it asks again in a while.
     function pollQueue() {
+      pollTimeoutRef.current = null;
       call("popSong", {}).then(startSong, (err) => {
         console.error("Couldn't ask for the next song:", err);
         pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
@@ -253,7 +259,14 @@ function Player(props: {
       pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
     }
 
+    pollNowRef.current = () => {
+      if (pollTimeoutRef.current === null) return;
+      clearTimeout(pollTimeoutRef.current);
+      pollQueue();
+    };
+
     return () => {
+      pollNowRef.current = null;
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
 
@@ -261,6 +274,12 @@ function Player(props: {
       }
     };
   }, []);
+
+  // A song queued while nothing plays starts at once, not at the next poll
+  // (which stays as the fallback).
+  useEffect(() => {
+    if (playbackState === "WAITING" && hasQueue) pollNowRef.current?.();
+  }, [playbackState, hasQueue]);
 
   useEffect(() => {
     if (!videoRef.current) return;
