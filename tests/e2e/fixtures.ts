@@ -10,7 +10,8 @@
 //
 // The tests drive the UI the way a person would (the display window and the
 // remote's pages), not the server API, so they keep working when the API and
-// the bundler are replaced.
+// the bundler are replaced. The exception is api.spec.ts, which tests the
+// JSON RPC API itself.
 
 import fs from "fs";
 import net from "net";
@@ -48,6 +49,8 @@ type Options = {
   mediaTools: MediaTools;
   // Copy the DAM/Joysound logins from the installed app's config.yaml.
   realCredentials: boolean;
+  // More config.yaml settings, e.g. { supervisedMode: true }.
+  appConfig: Record<string, unknown>;
 };
 
 export type Karafriends = {
@@ -244,6 +247,7 @@ async function launchKarafriends(
     fs.writeFileSync(
       path.join(userDataDir, "config.yaml"),
       stringify({
+        ...options.appConfig,
         remoconPort: port,
         ...(options.realCredentials ? readRealCredentials() : {}),
       }),
@@ -355,14 +359,15 @@ export const test = base.extend<Options & Fixtures>({
   seedQueue: [null, { option: true }],
   mediaTools: ["stub", { option: true }],
   realCredentials: [false, { option: true }],
+  appConfig: [{}, { option: true }],
 
   karafriends: async (
-    { seedQueue, mediaTools, realCredentials },
+    { seedQueue, mediaTools, realCredentials, appConfig },
     use,
     testInfo,
   ) => {
     const { karafriends, close } = await launchKarafriends(
-      { seedQueue, mediaTools, realCredentials },
+      { seedQueue, mediaTools, realCredentials, appConfig },
       testInfo,
     );
     try {

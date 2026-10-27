@@ -1,6 +1,8 @@
-import fs from "fs";
+// The GraphQL API, kept while clients move to the JSON RPC API (Phase 5 of
+// notes/PLAN-hard-fork.md). Each resolver calls the matching handler in
+// api.ts and adapts its result to the schema: connections and cursors,
+// __typename, userIdentity.
 import { createServer } from "http";
-import path from "path";
 import { WebSocketServer } from "ws";
 
 import { ApolloServer } from "@apollo/server";
@@ -19,257 +21,53 @@ import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
 import { useServer } from "graphql-ws/use/ws";
-import { Innertube } from "youtubei.js";
 
 import rawSchema from "inline-string:../common/schema.graphql";
+import type {
+  AdhocLyricsEntry,
+  DamArtist,
+  DamSong,
+  Page,
+  PlaybackState,
+  QueueItem,
+  QueueSongInput,
+  QueueSongResult,
+  UserIdentity,
+} from "../common/api";
 import karafriendsConfig from "../common/config";
-import {
-  downloadDamVideo,
-  downloadJoysoundData,
-  downloadNicoVideo,
-  downloadYoutubeVideo,
-  getNicoVideoInfo,
-  getVideoDownloadProgress,
-  TEMP_FOLDER,
-} from "./../common/videoDownloader";
-import { DkwebsysAPI, MinseiAPI } from "./damApi";
-import { JoysoundAPI } from "./joysoundApi";
+import { getVideoDownloadProgress } from "./../common/videoDownloader";
+import type { Caller } from "./api";
+import { callerFromHeaders } from "./caller";
+import { api, hub, store, upstreamClients } from "./services";
+import type { State } from "./state";
 
 import "regenerator-runtime/runtime";
 
-export interface IDataSources {
-  dataSources: {
-    minsei: MinseiAPI;
-    joysound: JoysoundAPI;
-    dkwebsys: DkwebsysAPI;
+interface Context {
+  dataSources: typeof upstreamClients;
+  caller: Caller;
+}
+
+interface PageArgs {
+  first?: number | null;
+  after?: string | null;
+}
+
+type QueueSongArgs<T> = {
+  input: T & {
+    songId: string;
+    name: string;
+    artistName: string;
+    playtime?: number | null;
+    userIdentity: UserIdentity;
   };
-}
-
-interface JoysoundSongParent {
-  readonly id: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly lyricsPreview?: string | null;
-  readonly tieUp?: string | null;
-}
-
-interface JoysoundArtistParent {
-  readonly id: string;
-  readonly name: string;
-}
-
-interface SongParent {
-  readonly id: string;
-  readonly name: string;
-  readonly nameYomi: string;
-  readonly artistName: string;
-  readonly artistNameYomi: string;
-  readonly lyricsPreview?: string | null;
-  readonly vocalTypes?: string[];
-  readonly tieUp?: string | null;
-  readonly playtime?: number | null;
-}
-
-interface ArtistParent {
-  readonly id: string;
-  readonly name: string;
-  readonly nameYomi: string;
-  readonly songCount: number;
-}
-
-interface Connection<NodeType, CursorType> {
-  readonly edges: Edge<NodeType, CursorType>[];
-  readonly pageInfo: PageInfo<CursorType>;
-}
-
-interface Edge<NodeType, CursorType> {
-  readonly node: NodeType;
-  readonly cursor: CursorType;
-}
-
-interface PageInfo<CursorType> {
-  readonly hasPreviousPage: boolean;
-  readonly hasNextPage: boolean;
-  readonly startCursor: CursorType;
-  readonly endCursor: CursorType;
-}
-
-interface CaptionLanguage {
-  code: string;
-  name: string;
-}
-
-interface VideoInfo {
-  readonly author: string;
-  readonly channelId: string;
-  readonly lengthSeconds: number;
-  readonly description: string;
-  readonly title: string;
-  readonly viewCount: number;
-}
-
-interface YoutubeVideoInfo extends VideoInfo {
-  readonly __typename: "YoutubeVideoInfo";
-  readonly captionLanguages: CaptionLanguage[];
-  readonly keywords: string[];
-}
-
-interface YoutubeVideoInfoError {
-  readonly __typename: "YoutubeVideoInfoError";
-  readonly reason: string;
-}
-
-type YoutubeVideoInfoResult = YoutubeVideoInfo | YoutubeVideoInfoError;
-
-interface NicoVideoInfo extends VideoInfo {
-  readonly __typename: "NicoVideoInfo";
-  readonly thumbnailUrl: string;
-}
-
-interface NicoVideoInfoError {
-  readonly __typename: "NicoVideoInfoError";
-  readonly reason: string;
-}
-
-type NicoVideoInfoResult = NicoVideoInfo | NicoVideoInfoError;
-
-export interface UserIdentity {
-  readonly deviceId: string;
-  readonly nickname: string;
-}
-
-interface QueueItemInterface {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly timestamp: string;
-  readonly userIdentity: UserIdentity;
-}
-
-export interface JoysoundQueueItem extends QueueItemInterface {
-  readonly __typename: "JoysoundQueueItem";
-  readonly isRomaji: boolean;
-  readonly youtubeVideoId: string | null;
-}
-
-interface DamQueueItem extends QueueItemInterface {
-  readonly __typename: "DamQueueItem";
-  readonly streamingUrlIdx: string;
-}
-
-interface YoutubeQueueItem extends QueueItemInterface {
-  readonly __typename: "YoutubeQueueItem";
-  readonly hasAdhocLyrics: boolean;
-  readonly hasCaptions: boolean;
-  readonly gainValue: number;
-}
-
-interface NicoQueueItem extends QueueItemInterface {
-  readonly __typename: "NicoQueueItem";
-}
-
-type QueueItem =
-  DamQueueItem | JoysoundQueueItem | YoutubeQueueItem | NicoQueueItem;
-
-type QueueSongInfo = {
-  readonly __typename: "QueueSongInfo";
-  readonly eta: number;
+  tryHeadOfQueue: boolean;
 };
 
-interface QueueSongError {
-  readonly __typename: "QueueSongError";
-  readonly reason: string;
-}
-
-export type QueueSongResult = QueueSongInfo | QueueSongError;
-
-type Emote = {
-  readonly userIdentity: UserIdentity;
-  readonly emote: string;
-};
-
-type QueueDamSongInput = {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly streamingUrlIdx: string;
-  readonly userIdentity: UserIdentity;
-};
-
-type QueueJoysoundSongInput = {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly userIdentity: UserIdentity;
-  readonly isRomaji: boolean;
-  readonly youtubeVideoId: string | null;
-};
-
-type QueueYoutubeSongInput = {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly userIdentity: UserIdentity;
-  readonly adhocSongLyrics: string;
-  readonly captionCode: string | null;
-  readonly gainValue: number;
-};
-
-type QueueNicoSongInput = {
-  readonly songId: string;
-  readonly name: string;
-  readonly artistName: string;
-  readonly playtime?: number | null;
-  readonly userIdentity: UserIdentity;
-};
-
-interface SongHistoryItem {
-  readonly song: QueueItem;
-}
-
-enum PlaybackState {
-  PAUSED = "PAUSED",
-  PLAYING = "PLAYING",
-  RESTARTING = "RESTARTING",
-  SKIPPING = "SKIPPING",
-  WAITING = "WAITING",
-}
-
-type PushAdhocLyricsInput = {
-  readonly lyric: string;
-  readonly lyricIndex: number;
-};
-
-type AdhocLyricsEntry = {
-  readonly lyric: string;
-  readonly lyricIndex: number;
-};
-
-export interface DownloadQueueItem {
-  downloadType: number;
-  userIdentity: UserIdentity;
-  songId: string;
-  suffix: string | null;
-  progress: number;
-}
-
-interface VideoDownloadProgress {
-  progress: number;
-}
-
-type NotARealDb = {
-  currentSong: QueueItem | null;
-  currentSongAdhocLyrics: AdhocLyricsEntry[];
-  idToAdhocLyrics: Record<string, string[]>;
-  pitchShiftSemis: number;
-  playbackState: PlaybackState;
-  songQueue: QueueItem[];
-  downloadQueue: DownloadQueueItem[];
-  songHistory: SongHistoryItem[];
+// A DAM artist, maybe with the page of songs fetched along with it.
+type ArtistParent = DamArtist & {
+  songs?: Page<DamSong>;
+  songsArgs?: { offset: number; limit: number };
 };
 
 enum SubscriptionEvent {
@@ -282,481 +80,308 @@ enum SubscriptionEvent {
   QueueChanged = "QueueChanged",
 }
 
-// TODO: make this gql context instead of global
-let db: NotARealDb = {
-  currentSong: null,
-  currentSongAdhocLyrics: [],
-  idToAdhocLyrics: {},
-  pitchShiftSemis: 0,
-  playbackState: PlaybackState.WAITING,
-  songQueue: [],
-  downloadQueue: [],
-  songHistory: [],
-};
+// The state keeps queue items in the API's shape (src/common/api.ts); the
+// schema wants a __typename and userIdentity instead of kind and user.
+const TYPENAME_BY_KIND = {
+  dam: "DamQueueItem",
+  joysound: "JoysoundQueueItem",
+  youtube: "YoutubeQueueItem",
+  nico: "NicoQueueItem",
+} as const;
 
-const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
-
-// TODO: write a db interface and call these from within mutating methods instead of at their call sites
-function saveDb() {
-  try {
-    if (!fs.existsSync(TEMP_FOLDER)) {
-      fs.mkdirSync(TEMP_FOLDER, { recursive: true });
-    }
-    const serialized = JSON.stringify({
-      ...db,
-      pitchShiftSemis: 0,
-      currentSong: null,
-      currentSongAdhocLyrics: [],
-      songQueue: [db.currentSong, ...db.songQueue],
-      downloadQueue: [],
-    });
-    // Write to a temp file and rename into place so an interrupted write can
-    // never leave a half-written queue.json that fails to parse on next launch.
-    const tmpPath = `${DB_PATH}.tmp`;
-    fs.writeFileSync(tmpPath, serialized, "utf-8");
-    fs.renameSync(tmpPath, DB_PATH);
-  } catch (err) {
-    // A failed persist shouldn't take down the app; the in-memory queue is
-    // still intact and will be retried on the next mutation.
-    console.error(`Failed to persist queue to ${DB_PATH}:`, err);
-  }
+function toGqlItem(item: QueueItem) {
+  const { kind, user, ...fields } = item;
+  return { __typename: TYPENAME_BY_KIND[kind], ...fields, userIdentity: user };
 }
 
-function loadDb(): NotARealDb {
-  const defaults: NotARealDb = {
-    currentSong: null,
-    currentSongAdhocLyrics: [],
-    idToAdhocLyrics: {},
-    pitchShiftSemis: 0,
-    playbackState: PlaybackState.WAITING,
-    songQueue: [],
-    downloadQueue: [],
-    songHistory: [],
+function toGqlItemOrNull(item: QueueItem | null) {
+  return item ? toGqlItem(item) : null;
+}
+
+// Relay pages with `first` and an `after` cursor. A cursor is the offset of
+// the next item, counted from `base` (Joysound counts from 1).
+function pageArgs(args: PageArgs, base: 0 | 1, defaultLimit: number) {
+  const after = args.after ? parseInt(args.after, 10) : NaN;
+  return {
+    offset: Number.isInteger(after) && after >= base ? after - base : 0,
+    limit: args.first && args.first > 0 ? args.first : defaultLimit,
   };
-  if (!fs.existsSync(DB_PATH)) {
-    return defaults;
-  }
-  try {
-    return { ...defaults, ...JSON.parse(fs.readFileSync(DB_PATH, "utf-8")) };
-  } catch (err) {
-    // A corrupt or partially-written queue.json (e.g. an interrupted save or a
-    // power loss mid-party) previously threw here at startup, bricking every
-    // launch. Preserve the bad file for debugging and start from a clean state.
-    console.error(
-      `Failed to load saved queue from ${DB_PATH}; ignoring it:`,
-      err,
-    );
-    try {
-      fs.renameSync(DB_PATH, `${DB_PATH}.corrupt`);
-    } catch (renameErr) {
-      console.error("Failed to back up corrupt queue file:", renameErr);
-    }
-    return defaults;
-  }
+}
+
+function toConnection<T, N>(
+  page: Page<T>,
+  { offset, limit }: { offset: number; limit: number },
+  base: 0 | 1,
+  toNode: (item: T) => N,
+) {
+  return {
+    edges: page.items.map((item, i) => ({
+      node: toNode(item),
+      cursor: (base + offset + i + 1).toString(),
+    })),
+    pageInfo: {
+      hasPreviousPage: false,
+      hasNextPage: page.nextOffset !== null,
+      startCursor: base.toString(),
+      endCursor: (base + offset + limit).toString(),
+    },
+  };
+}
+
+function toQueueSongResult(result: QueueSongResult) {
+  return result.ok
+    ? { __typename: "QueueSongInfo", eta: result.eta }
+    : { __typename: "QueueSongError", reason: result.reason };
+}
+
+// The queue mutations carry the singer's identity in the input, as they
+// always have, rather than in the request headers.
+function queueSong<T>(
+  args: QueueSongArgs<T>,
+  context: Context,
+  toInput: (input: QueueSongArgs<T>["input"]) => QueueSongInput,
+) {
+  const { userIdentity } = args.input;
+  return api
+    .queueSong(
+      { ...toInput(args.input), tryHeadOfQueue: args.tryHeadOfQueue },
+      {
+        ...context.caller,
+        deviceId: userIdentity.deviceId,
+        nickname: userIdentity.nickname,
+      },
+    )
+    .then(toQueueSongResult);
+}
+
+function songFields(input: {
+  songId: string;
+  name: string;
+  artistName: string;
+  playtime?: number | null;
+}) {
+  return {
+    songId: input.songId,
+    name: input.name,
+    artistName: input.artistName,
+    playtime: input.playtime ?? null,
+  };
 }
 
 const pubsub = new PubSub();
 
-function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
-  // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
-  const songsQueuedByUser: number = db.songQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
-  ).length;
+// Publishes the subscription events for whatever an update changed.
+store.onChange(
+  (() => {
+    const snapshot = (state: Readonly<State>) => ({
+      queue: JSON.stringify(state.songQueue),
+      currentSong: JSON.stringify(state.currentSong),
+      playbackState: state.playbackState,
+      pitchShiftSemis: state.pitchShiftSemis,
+      adhocLyrics: JSON.stringify(state.currentSongAdhocLyrics),
+    });
+    let published = snapshot(store.getState());
+    return (state: Readonly<State>) => {
+      const next = snapshot(state);
+      if (
+        next.queue !== published.queue ||
+        next.currentSong !== published.currentSong
+      ) {
+        pubsub.publish(SubscriptionEvent.QueueChanged, {
+          queueChanged: {
+            currentSong: toGqlItemOrNull(state.currentSong),
+            newQueue: state.songQueue.map(toGqlItem),
+          },
+        });
+      }
+      if (next.currentSong !== published.currentSong) {
+        pubsub.publish(SubscriptionEvent.CurrentSongChanged, {
+          currentSongChanged: toGqlItemOrNull(state.currentSong),
+        });
+      }
+      if (next.playbackState !== published.playbackState) {
+        pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
+          playbackStateChanged: state.playbackState,
+        });
+      }
+      if (next.pitchShiftSemis !== published.pitchShiftSemis) {
+        pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
+          pitchShiftSemisChanged: state.pitchShiftSemis,
+        });
+      }
+      if (next.adhocLyrics !== published.adhocLyrics) {
+        pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
+          currentSongAdhocLyricsChanged: [...state.currentSongAdhocLyrics],
+        });
+      }
+      published = next;
+    };
+  })(),
+);
 
-  const songsDownloadingByUser: number = db.downloadQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
-  ).length;
-
-  console.log(
-    `hasMaxSongsInQueue: user ${userIdentity.nickname} has ${songsQueuedByUser}, ${songsDownloadingByUser} downloading`,
-  );
-  console.log(
-    `adminNicks=${karafriendsConfig.adminNicks}, adminDeviceIds=${karafriendsConfig.adminDeviceIds}`,
-  );
-
-  return (
-    !karafriendsConfig.adminNicks.includes(userIdentity.nickname) &&
-    !karafriendsConfig.adminDeviceIds.includes(userIdentity.deviceId) &&
-    karafriendsConfig.paxSongQueueLimit > 0 &&
-    songsQueuedByUser + songsDownloadingByUser >=
-      karafriendsConfig.paxSongQueueLimit
-  );
-}
-
-function canPushToHeadOfQueue(userIdentity: UserIdentity): boolean {
-  return (
-    karafriendsConfig.adminNicks.includes(userIdentity.nickname) ||
-    karafriendsConfig.adminDeviceIds.includes(userIdentity.deviceId)
-  );
-}
-
-function pushSongToQueue(
-  queueItem: QueueItem,
-  pushToHead: boolean = false,
-): QueueSongResult {
-  const eta =
-    (db.currentSong?.playtime || 0) +
-    db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
-
-  console.log(
-    `pushSongToQueue: pushing ${JSON.stringify(
-      queueItem,
-    )} with an eta of ${eta}; pushToHead=${pushToHead}`,
-  );
-
-  if (pushToHead === true) {
-    // To give things time to download, we don't actually push to the front, but the second.
-    // Due to :js:, this is OK regardless of the size of db.songQueue
-    db.songQueue.splice(1, 0, queueItem);
-  } else {
-    db.songQueue.push(queueItem);
+hub.onMessage((message) => {
+  switch (message.type) {
+    case "emote":
+      pubsub.publish(SubscriptionEvent.Emote, {
+        emote: { emote: message.emote, userIdentity: message.user },
+      });
+      break;
+    case "queueAdded":
+      pubsub.publish(SubscriptionEvent.QueueAdded, {
+        queueAdded: toGqlItem(message.item),
+      });
+      break;
   }
+});
 
-  pubsub.publish(SubscriptionEvent.QueueChanged, {
-    queueChanged: {
-      currentSong: db.currentSong,
-      newQueue: db.songQueue,
-    },
-  });
+const songsOfArtist = async (
+  parent: ArtistParent,
+  args: PageArgs,
+  { caller }: Context,
+) => {
+  const page = pageArgs(args, 0, 30);
+  // artistById already fetched this page with the artist.
+  const songs =
+    parent.songs &&
+    parent.songsArgs?.offset === page.offset &&
+    parent.songsArgs.limit === page.limit
+      ? parent.songs
+      : (await api.damArtist({ id: parent.id, ...page }, caller)).songs;
+  return toConnection(songs, page, 0, (song) => song);
+};
 
-  pubsub.publish(SubscriptionEvent.QueueAdded, {
-    queueAdded: queueItem,
-  });
-
-  saveDb();
-
-  return {
-    __typename: "QueueSongInfo",
-    eta,
-  };
+function fetchStreamingUrls(songId: string, { dataSources }: Context) {
+  return dataSources.minsei.getMusicStreamingUrls(songId).then((data) =>
+    data.list.map((info) => ({
+      url: karafriendsConfig.useLowBitrateUrl
+        ? info.lowBitrateUrl
+        : info.highBitrateUrl,
+    })),
+  );
 }
 
-function cleanupAdhocSongLyrics(lyrics: string): string[] {
-  return lyrics.split("\n").filter((entry) => entry.trim() !== "");
+function fetchScoringData(songId: string, { dataSources }: Context) {
+  return dataSources.minsei
+    .getScoringData(songId)
+    .then((data) => Array.from(new Uint8Array(data)));
 }
 
 const resolvers = {
-  JoysoundSong: {
-    id(parent: JoysoundSongParent) {
-      return parent.id;
-    },
-    name(parent: JoysoundSongParent) {
-      return parent.name;
-    },
-    artistName(parent: JoysoundSongParent) {
-      return parent.artistName;
-    },
-  },
-
-  Song: {
-    id(parent: SongParent) {
-      return parent.id;
-    },
-    name(parent: SongParent) {
-      return parent.name;
-    },
-    nameYomi(parent: SongParent) {
-      return parent.nameYomi;
-    },
-    artistName(parent: SongParent) {
-      return parent.artistName;
-    },
-    artistNameYomi(parent: SongParent) {
-      return parent.artistNameYomi;
-    },
-    lyricsPreview(parent: SongParent) {
-      return parent.lyricsPreview || null;
-    },
-    vocalTypes(parent: SongParent) {
-      return parent.vocalTypes || [];
-    },
-    tieUp(parent: SongParent) {
-      return parent.tieUp || null;
-    },
-    playtime(parent: SongParent) {
-      return parent.playtime || null;
-    },
-    streamingUrls(parent: SongParent, _: any, { dataSources }: IDataSources) {
-      return dataSources.minsei.getMusicStreamingUrls(parent.id).then((data) =>
-        data.list.map((info) => ({
-          url: karafriendsConfig.useLowBitrateUrl
-            ? info.lowBitrateUrl
-            : info.highBitrateUrl,
-        })),
-      );
-    },
-    scoringData(parent: SongParent, _: any, { dataSources }: IDataSources) {
-      return dataSources.minsei
-        .getScoringData(parent.id)
-        .then((data) => Array.from(new Uint8Array(data)));
-    },
-  },
   Artist: {
-    id(parent: ArtistParent) {
-      return parent.id;
-    },
-    name(parent: ArtistParent) {
-      return parent.name;
-    },
-    nameYomi(parent: ArtistParent) {
-      return parent.nameYomi;
-    },
-    songCount(parent: ArtistParent) {
-      return parent.songCount;
-    },
-    songs(
-      parent: ArtistParent,
-      args: { first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ) {
-      const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
-
-      return dataSources.dkwebsys
-        .getMusicListByArtist(parent.id, firstInt, afterInt)
-        .then((result) => ({
-          edges: result.list.map((song) => ({
-            node: {
-              id: song.requestNo,
-              name: song.title,
-              nameYomi: song.titleYomi,
-              artistName: song.artist,
-              artistNameYomi: song.artistYomi,
-            },
-            cursor: (firstInt + 1).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
-    },
+    songs: songsOfArtist,
   },
   DamQueueItem: {
-    streamingUrls(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
-      return dataSources.minsei
-        .getMusicStreamingUrls(parent.songId)
-        .then((data) =>
-          data.list.map((info) => ({
-            url: karafriendsConfig.useLowBitrateUrl
-              ? info.lowBitrateUrl
-              : info.highBitrateUrl,
-          })),
-        );
-    },
-    scoringData(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
-      return dataSources.minsei
-        .getScoringData(parent.songId)
-        .then((data) => Array.from(new Uint8Array(data)));
-    },
+    // popSong fetches these with the song; other queries fetch them here.
+    streamingUrls: (
+      parent: { songId: string; streamingUrls?: string[] },
+      _: unknown,
+      context: Context,
+    ) =>
+      parent.streamingUrls
+        ? parent.streamingUrls.map((url) => ({ url }))
+        : fetchStreamingUrls(parent.songId, context),
+    scoringData: (
+      parent: { songId: string; scoringData?: number[] },
+      _: unknown,
+      context: Context,
+    ) => parent.scoringData ?? fetchScoringData(parent.songId, context),
+  },
+  Song: {
+    lyricsPreview: (parent: { lyricsPreview?: string | null }) =>
+      parent.lyricsPreview || null,
+    vocalTypes: (parent: { vocalTypes?: string[] }) => parent.vocalTypes || [],
+    tieUp: (parent: { tieUp?: string | null }) => parent.tieUp || null,
+    playtime: (parent: { playtime?: number | null }) => parent.playtime || null,
+    // No client asks for these on a Song (only on a DamQueueItem).
+    streamingUrls: (parent: { id: string }, _: unknown, context: Context) =>
+      fetchStreamingUrls(parent.id, context),
+    scoringData: (parent: { id: string }, _: unknown, context: Context) =>
+      fetchScoringData(parent.id, context),
   },
   Query: {
-    adhocLyrics(_: any, args: { id: string }): string[] {
-      return db.idToAdhocLyrics[args.id];
-    },
+    adhocLyrics: (_: unknown, args: { id: string }, { caller }: Context) =>
+      api.adhocLyrics({ songId: args.id }, caller),
     joysoundSongDetail: (
-      _: any,
-      args: { id: string },
-      { dataSources }: IDataSources,
-    ): Promise<JoysoundSongParent> => {
-      return dataSources.joysound.getSongDetail(args.id).then((data) => ({
-        id: args.id,
-        ...data,
-      }));
+      _: unknown,
+      args: { id: string | null },
+      { caller }: Context,
+    ) => api.joysoundSong({ id: args.id ?? "" }, caller),
+    joysoundSongsByArtist: async (
+      _: unknown,
+      args: { artistId: string | null } & PageArgs,
+      { caller }: Context,
+    ) => {
+      const page = pageArgs(args, 1, 100);
+      const songs = await api.joysoundArtistSongs(
+        { id: args.artistId ?? "", ...page },
+        caller,
+      );
+      return toConnection(songs, page, 1, (song) => song);
     },
-    joysoundSongsByArtist: (
-      _: any,
-      args: { artistId: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ): Promise<Connection<JoysoundSongParent, string>> => {
-      const firstInt = args.first || 100;
-      const afterInt = args.after ? parseInt(args.after, 10) : 1;
-
-      return dataSources.joysound
-        .getSongListByArtist(args.artistId, afterInt, firstInt)
-        .then((result) => ({
-          edges: result.map((song, i) => ({
-            node: {
-              id: song.selSongNo,
-              name: song.songName,
-              artistName: song.artistName,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
+    joysoundSongsByKeyword: async (
+      _: unknown,
+      args: { keyword: string | null } & PageArgs,
+      { caller }: Context,
+    ) => {
+      const page = pageArgs(args, 1, 100);
+      const songs = await api.joysoundSearchSongs(
+        { query: args.keyword ?? "", ...page },
+        caller,
+      );
+      return toConnection(songs, page, 1, (song) => song);
     },
-    joysoundSongsByKeyword: (
-      _: any,
-      args: { keyword: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ): Promise<Connection<JoysoundSongParent, string>> => {
-      const firstInt = args.first || 100;
-      const afterInt = args.after ? parseInt(args.after, 10) : 1;
-
-      return dataSources.joysound
-        .getSongListByKeyword(args.keyword, afterInt, firstInt)
-        .then((result) => ({
-          edges: result.map((song, i) => ({
-            node: {
-              id: song.selSongNo,
-              name: song.songName,
-              artistName: song.artistName,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
+    joysoundArtistsByKeyword: async (
+      _: unknown,
+      args: { keyword: string | null } & PageArgs,
+      { caller }: Context,
+    ) => {
+      const page = pageArgs(args, 1, 100);
+      const artists = await api.joysoundSearchArtists(
+        { query: args.keyword ?? "", ...page },
+        caller,
+      );
+      return toConnection(artists, page, 1, (artist) => artist);
     },
-    joysoundArtistsByKeyword: (
-      _: any,
-      args: { keyword: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ): Promise<Connection<JoysoundArtistParent, string>> => {
-      const firstInt = args.first || 100;
-      const afterInt = args.after ? parseInt(args.after, 10) : 1;
-
-      return dataSources.joysound
-        .getArtistListByKeyword(args.keyword, afterInt, firstInt)
-        .then((result) => ({
-          edges: result.map((artist, i) => ({
-            node: {
-              id: artist.artistId_digi,
-              name: artist.artistName,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
+    songsByName: async (
+      _: unknown,
+      args: { name: string | null } & PageArgs,
+      { caller }: Context,
+    ) => {
+      const page = pageArgs(args, 0, 30);
+      const songs = await api.damSearchSongs(
+        { query: args.name ?? "", ...page },
+        caller,
+      );
+      return toConnection(songs, page, 0, (song) => song);
     },
-    songsByName: (
-      _: any,
-      args: { name: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ): Promise<Connection<SongParent, string>> => {
-      const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
-
-      return dataSources.dkwebsys
-        .getMusicByKeyword(args.name, firstInt, afterInt)
-        .then((result) => ({
-          edges: result.list.map((song, i) => ({
-            node: {
-              id: song.requestNo,
-              name: song.title,
-              nameYomi: song.titleYomi,
-              artistName: song.artist,
-              artistNameYomi: song.artistYomi,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false, // We can always do this because we don't support backward pagination
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
+    songById: (_: unknown, args: { id: string }, { caller }: Context) =>
+      api.damSong({ id: args.id }, caller),
+    artistsByName: async (
+      _: unknown,
+      args: { name: string | null } & PageArgs,
+      { caller }: Context,
+    ) => {
+      const page = pageArgs(args, 0, 30);
+      const artists = await api.damSearchArtists(
+        { query: args.name ?? "", ...page },
+        caller,
+      );
+      return toConnection(artists, page, 0, (artist) => artist);
     },
-    songById: (
-      _: any,
-      args: { id: string },
-      { dataSources }: IDataSources,
-    ): Promise<SongParent> =>
-      dataSources.dkwebsys.getMusicDetailsInfo(args.id).then((data) => ({
-        id: args.id,
-        name: data.data.title,
-        nameYomi: data.data.titleYomi_Kana,
-        artistName: data.data.artist,
-        artistNameYomi: "",
-        lyricsPreview: data.data.firstLine,
-        vocalTypes: data.list[0].mModelMusicInfoList[0].guideVocal
-          .split(",")
-          .map((vocalType) => {
-            switch (vocalType) {
-              case "0":
-                return "NORMAL";
-              case "1":
-                return "GUIDE_MALE";
-              case "2":
-                return "GUIDE_FEMALE";
-              default:
-                console.warn(`unknown vocal type ${vocalType}`);
-                return "UNKNOWN";
-            }
-          }),
-        tieUp: data.list[0].mModelMusicInfoList[0].highlightTieUp,
-        playtime: parseInt(data.list[0].mModelMusicInfoList[0].playtime, 10),
-      })),
-    artistsByName: (
-      _: any,
-      args: { name: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
-    ): Promise<Connection<ArtistParent, string>> => {
-      const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
-
-      return dataSources.dkwebsys
-        .getArtistByKeyword(args.name, firstInt, afterInt)
-        .then((result) => ({
-          edges: result.list.map((artist, i) => ({
-            node: {
-              id: artist.artistCode.toString(),
-              name: artist.artist,
-              nameYomi: artist.artistYomi,
-              songCount: artist.holdMusicCount,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false, // We can always do this because we don't support backward pagination
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
-          },
-        }));
-    },
-    artistById: (
-      _: any,
-      args: { id: string; first: number | null; after: string | null },
-      { dataSources }: IDataSources,
+    artistById: async (
+      _: unknown,
+      args: { id: string | null } & PageArgs,
+      { caller }: Context,
     ): Promise<ArtistParent> => {
-      const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
-
-      return dataSources.dkwebsys
-        .getMusicListByArtist(args.id, firstInt, afterInt)
-        .then((data) => ({
-          id: args.id,
-          name: data.data.artist,
-          nameYomi: data.data.artistYomi_Kana,
-          songCount: data.data.totalCount,
-        }));
+      const page = pageArgs(args, 0, 30);
+      const artist = await api.damArtist(
+        { id: args.id ?? "", ...page },
+        caller,
+      );
+      return { ...artist, songsArgs: page };
     },
-    currentSong: () => {
-      return db.currentSong;
-    },
-    queue: () => {
-      if (!db.songQueue.length) return [];
-      return db.songQueue;
-    },
+    currentSong: () => toGqlItemOrNull(store.getState().currentSong),
+    queue: () => store.getState().songQueue.map(toGqlItem),
     config: () => {
       // Every phone can read this, so return only what the schema exposes,
       // never the whole config with its DAM/Joysound/proxy credentials.
@@ -767,369 +392,150 @@ const resolvers = {
         __typename: "KarafriendsConfig",
       };
     },
-    songHistory: (
-      _: any,
-      args: { first: number | null; after: string | null },
-    ): Connection<SongHistoryItem, string> => {
-      const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
-
-      // A cursor is the number of items before the next page.
-      return {
-        edges: db.songHistory
-          .slice(afterInt, afterInt + firstInt)
-          .map((songHistoryItem, i) => ({
-            node: songHistoryItem,
-            cursor: (afterInt + i + 1).toString(),
-          })),
-        pageInfo: {
-          hasPreviousPage: false,
-          hasNextPage: firstInt + afterInt < db.songHistory.length,
-          startCursor: "0",
-          endCursor: (firstInt + afterInt).toString(),
-        },
-      };
+    songHistory: async (_: unknown, args: PageArgs, { caller }: Context) => {
+      const page = pageArgs(args, 0, 30);
+      const history = await api.history(page, caller);
+      return toConnection(history, page, 0, (song) => ({
+        song: toGqlItem(song),
+      }));
     },
-    youtubeVideoInfo: (
-      _: any,
-      args: { videoId: string },
-    ): Promise<YoutubeVideoInfoResult> => {
-      return (
-        innertubeApiProvider()
-          .then((youtube) => youtube.getBasicInfo(args.videoId))
-          // youtubei.js's response is loosely/partially typed and its shape
-          // shifts between versions, so treat it as untyped here.
-          .then((data: any) => {
-            if (data.playability_status?.status !== "OK") {
-              return {
-                __typename: "YoutubeVideoInfoError",
-                reason: data.playability_status?.reason ?? "Unknown",
-              };
-            }
-
-            const captionTracks = data.captions?.caption_tracks || [];
-            const captionLanguages: CaptionLanguage[] = captionTracks
-              .filter(
-                (captionTrack: any) => !captionTrack.vss_id.startsWith("a"),
-              )
-              .map((captionTrack: any) => ({
-                code: captionTrack.language_code,
-                name: captionTrack.name.text ?? "",
-              }));
-
-            const loudnessDb =
-              data.player_config?.audio_config?.loudness_db || 0.0;
-
-            return {
-              __typename: "YoutubeVideoInfo",
-              author: data.basic_info.author,
-              captionLanguages,
-              channelId: data.basic_info.channel_id,
-              keywords: data.basic_info.keywords,
-              lengthSeconds: data.basic_info.duration,
-              description: data.basic_info.short_description,
-              title: data.basic_info.title,
-              viewCount: data.basic_info.view_count,
-              gainValue: 10 ** ((-1 * loudnessDb) / 20),
-            };
-          })
+    youtubeVideoInfo: async (
+      _: unknown,
+      args: { videoId: string | null },
+      { caller }: Context,
+    ) => {
+      const result = await api.youtubeInfo(
+        { videoId: args.videoId ?? "" },
+        caller,
       );
+      return result.ok
+        ? { __typename: "YoutubeVideoInfo", ...result.info }
+        : { __typename: "YoutubeVideoInfoError", reason: result.reason };
     },
     nicoVideoInfo: async (
-      _: any,
-      args: { videoId: string },
-    ): Promise<NicoVideoInfoResult> => {
-      try {
-        return {
-          __typename: "NicoVideoInfo",
-          ...(await getNicoVideoInfo(args.videoId)),
-        };
-      } catch (e) {
-        console.error(`Failed getting Niconico info for ${args.videoId}:`, e);
-        return {
-          __typename: "NicoVideoInfoError",
-          reason: "Failed getting video info. Maybe an invalid VideoID?",
-        };
-      }
+      _: unknown,
+      args: { videoId: string | null },
+      { caller }: Context,
+    ) => {
+      const result = await api.nicoInfo(
+        { videoId: args.videoId ?? "" },
+        caller,
+      );
+      return result.ok
+        ? { __typename: "NicoVideoInfo", ...result.info }
+        : { __typename: "NicoVideoInfoError", reason: result.reason };
     },
-    pitchShiftSemis: () => db.pitchShiftSemis,
-    playbackState: () => db.playbackState,
+    pitchShiftSemis: () => store.getState().pitchShiftSemis,
+    playbackState: () => store.getState().playbackState,
     videoDownloadProgress: (
-      _: any,
+      _: unknown,
       args: {
         videoDownloadType: number;
         songId: string;
         suffix: string | null;
       },
-    ): VideoDownloadProgress => {
-      const progress = getVideoDownloadProgress(
-        db.downloadQueue,
+    ) => ({
+      progress: getVideoDownloadProgress(
+        store.getState().downloadQueue,
         args.videoDownloadType,
         args.songId,
         args.suffix,
-      );
-
-      return { progress };
-    },
+      ),
+    }),
   },
   Mutation: {
-    sendEmote: (_: any, args: { emote: Emote }): boolean => {
-      pubsub.publish(SubscriptionEvent.Emote, { emote: args.emote });
-      return true;
-    },
-    queueJoysoundSong: (
-      _: any,
-      args: { input: QueueJoysoundSongInput; tryHeadOfQueue: boolean },
-      { dataSources }: IDataSources,
-    ): QueueSongResult => {
-      const queueItem: JoysoundQueueItem = {
-        __typename: "JoysoundQueueItem",
-        timestamp: Date.now().toString(),
-        ...args.input,
-      };
-
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
-        return {
-          __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
-        };
-      }
-
-      const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
-      console.log(`queueJoysoundSong: pushToHead=${pushToHead}`);
-
-      downloadJoysoundData(
-        db.downloadQueue,
-        queueItem.userIdentity,
-        dataSources.joysound,
-        queueItem,
-        pushToHead,
-        pushSongToQueue,
-      );
-
-      return {
-        __typename: "QueueSongInfo",
-        eta: db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0),
-      };
-    },
+    sendEmote: (
+      _: unknown,
+      args: { emote: { emote: string; userIdentity: UserIdentity } },
+      { caller }: Context,
+    ) =>
+      api.sendEmote(
+        { emote: args.emote.emote },
+        {
+          ...caller,
+          deviceId: args.emote.userIdentity.deviceId,
+          nickname: args.emote.userIdentity.nickname,
+        },
+      ),
     queueDamSong: (
-      _: any,
-      args: { input: QueueDamSongInput; tryHeadOfQueue: boolean },
-      { dataSources }: IDataSources,
-    ): QueueSongResult => {
-      const queueItem: DamQueueItem = {
-        timestamp: Date.now().toString(),
-        ...args.input,
-        __typename: "DamQueueItem",
-      };
-
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
-        return {
-          __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
-        };
-      }
-
-      const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
-      console.log(`queueDamSong: pushToHead=${pushToHead}`);
-
-      console.log(`Starting offline download of ${queueItem.songId}`);
-      dataSources.minsei
-        .getMusicStreamingUrls(queueItem.songId)
-        .then((data) => {
-          // XXX: This should be already be a number but typescript tells me it is not
-          const selectedIndex = data.list[+queueItem.streamingUrlIdx];
-          const url = karafriendsConfig.useLowBitrateUrl
-            ? selectedIndex.lowBitrateUrl
-            : selectedIndex.highBitrateUrl;
-          downloadDamVideo(url, queueItem.songId, queueItem.streamingUrlIdx);
-        });
-
-      return pushSongToQueue(queueItem, pushToHead);
-    },
+      _: unknown,
+      args: QueueSongArgs<{ streamingUrlIdx: number }>,
+      context: Context,
+    ) =>
+      queueSong(args, context, (input) => ({
+        kind: "dam",
+        ...songFields(input),
+        streamingUrlIdx: input.streamingUrlIdx,
+      })),
+    queueJoysoundSong: (
+      _: unknown,
+      args: QueueSongArgs<{
+        isRomaji: boolean;
+        youtubeVideoId?: string | null;
+      }>,
+      context: Context,
+    ) =>
+      queueSong(args, context, (input) => ({
+        kind: "joysound",
+        ...songFields(input),
+        isRomaji: input.isRomaji,
+        youtubeVideoId: input.youtubeVideoId ?? null,
+      })),
     queueYoutubeSong: (
-      _: any,
-      args: { input: QueueYoutubeSongInput; tryHeadOfQueue: boolean },
-    ): QueueSongResult => {
-      const queueItem: YoutubeQueueItem = {
-        timestamp: Date.now().toString(),
-        ...args.input,
-        hasAdhocLyrics: args.input.adhocSongLyrics ? true : false,
-        hasCaptions: args.input.captionCode ? true : false,
-        gainValue: args.input.gainValue,
-        __typename: "YoutubeQueueItem",
-      };
-
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
-        return {
-          __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
-        };
-      }
-
-      const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
-      console.log(`queueDamSong: pushToHead=${pushToHead}`);
-
-      if (args.input.adhocSongLyrics) {
-        db.idToAdhocLyrics[args.input.songId] = cleanupAdhocSongLyrics(
-          args.input.adhocSongLyrics,
-        );
-      }
-
-      downloadYoutubeVideo(
-        db.downloadQueue,
-        queueItem.userIdentity,
-        args.input.songId,
-        args.input.captionCode,
-        pushSongToQueue.bind(null, queueItem, pushToHead),
-      );
-
-      // The song likely hasn't actually been added to the queue yet since it needs to download,
-      // but let's optimistically return the eta assuming it will successfully queue
-      return {
-        __typename: "QueueSongInfo",
-        eta:
-          db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0) +
-          (args.input.playtime || 0),
-      };
-    },
+      _: unknown,
+      args: QueueSongArgs<{
+        adhocSongLyrics?: string | null;
+        captionCode?: string | null;
+        gainValue: number;
+      }>,
+      context: Context,
+    ) =>
+      queueSong(args, context, (input) => ({
+        kind: "youtube",
+        ...songFields(input),
+        adhocLyrics: input.adhocSongLyrics ?? null,
+        captionCode: input.captionCode ?? null,
+        gainValue: input.gainValue,
+      })),
     queueNicoSong: (
-      _: any,
-      args: { input: QueueNicoSongInput; tryHeadOfQueue: boolean },
-    ): QueueSongResult => {
-      const queueItem: NicoQueueItem = {
-        timestamp: Date.now().toString(),
-        ...args.input,
-        __typename: "NicoQueueItem",
-      };
-
-      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
-        return {
-          __typename: "QueueSongError",
-          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
-        };
-      }
-
-      const pushToHead =
-        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
-      console.log(`queueDamSong: pushToHead=${pushToHead}`);
-
-      downloadNicoVideo(
-        db.downloadQueue,
-        queueItem.userIdentity,
-        args.input.songId,
-        pushSongToQueue.bind(null, queueItem, pushToHead),
-      );
-      // The song likely hasn't actually been added to the queue yet since it needs to download,
-      // but let's optimistically return the eta assuming it will successfully queue
-      return {
-        __typename: "QueueSongInfo",
-        eta:
-          db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0) +
-          (args.input.playtime || 0),
-      };
-    },
+      _: unknown,
+      args: QueueSongArgs<Record<never, never>>,
+      context: Context,
+    ) =>
+      queueSong(args, context, (input) => ({
+        kind: "nico",
+        ...songFields(input),
+      })),
     pushAdhocLyrics: (
-      _: any,
-      args: { input: PushAdhocLyricsInput },
-    ): boolean => {
-      db.currentSongAdhocLyrics.push({
-        lyric: args.input.lyric,
-        lyricIndex: args.input.lyricIndex,
-      });
-      pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
-        currentSongAdhocLyricsChanged: db.currentSongAdhocLyrics,
-      });
-      saveDb();
-      return true;
-    },
-    popSong: (): QueueItem | null => {
-      const newSong = db.songQueue.shift() || null;
-
-      db.currentSongAdhocLyrics = [];
-
-      if (
-        db.currentSong &&
-        db.currentSong.__typename === "YoutubeQueueItem" &&
-        db.currentSong.hasAdhocLyrics
-      ) {
-        delete db.idToAdhocLyrics[db.currentSong.songId];
-      }
-
-      pubsub.publish(SubscriptionEvent.CurrentSongAdhocLyricsChanged, {
-        currentSongAdhocLyricsChanged: db.currentSongAdhocLyrics,
-      });
-
-      db.currentSong = newSong;
-      pubsub.publish(SubscriptionEvent.CurrentSongChanged, {
-        currentSongChanged: db.currentSong,
-      });
-
-      pubsub.publish(SubscriptionEvent.QueueChanged, {
-        queueChanged: {
-          currentSong: db.currentSong,
-          newQueue: db.songQueue,
-        },
-      });
-
-      if (db.currentSong) {
-        const prevSong: QueueItem | null = db.songHistory[0]?.song || null;
-
-        if (
-          !prevSong ||
-          db.currentSong.__typename !== prevSong.__typename ||
-          db.currentSong.songId !== prevSong.songId ||
-          db.currentSong.timestamp !== prevSong.timestamp
-        ) {
-          db.songHistory.unshift({ song: db.currentSong });
-        }
-      }
-
-      saveDb();
-      return newSong;
-    },
+      _: unknown,
+      args: { input: AdhocLyricsEntry },
+      { caller }: Context,
+    ) =>
+      api.pushAdhocLyrics(
+        { lyric: args.input.lyric, lyricIndex: args.input.lyricIndex },
+        caller,
+      ),
+    popSong: async (_: unknown, __: unknown, { caller }: Context) =>
+      toGqlItemOrNull(await api.popSong({}, caller)),
     removeSong: (
-      _: any,
+      _: unknown,
       args: { songId: string; timestamp: string },
-    ): boolean => {
-      const songIdx = db.songQueue.findIndex(
-        (item) =>
-          item.songId === args.songId && item.timestamp === args.timestamp,
-      );
-      // The song may already be playing or removed by another phone; without
-      // this check, splice(-1, 1) would remove the last song in the queue.
-      if (songIdx === -1) return false;
-      db.songQueue.splice(songIdx, 1);
-      pubsub.publish(SubscriptionEvent.QueueChanged, {
-        queueChanged: {
-          currentSong: db.currentSong,
-          newQueue: db.songQueue,
-        },
-      });
-      saveDb();
-      return true;
-    },
-    setPitchShiftSemis: (_: any, args: { semis: number }): boolean => {
-      db.pitchShiftSemis = args.semis;
-      pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
-        pitchShiftSemisChanged: args.semis,
-      });
-      return true;
-    },
+      { caller }: Context,
+    ) =>
+      api.removeSong(
+        { songId: args.songId, timestamp: args.timestamp },
+        caller,
+      ),
+    setPitchShiftSemis: (
+      _: unknown,
+      args: { semis: number },
+      { caller }: Context,
+    ) => api.setPitchShiftSemis({ semis: args.semis }, caller),
     setPlaybackState: (
-      _: any,
+      _: unknown,
       args: { playbackState: PlaybackState },
-    ): boolean => {
-      db.playbackState = args.playbackState;
-      pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
-        playbackStateChanged: args.playbackState,
-      });
-      saveDb();
-      return true;
-    },
+      { caller }: Context,
+    ) => api.setPlaybackState({ playbackState: args.playbackState }, caller),
   },
   Subscription: {
     currentSongAdhocLyricsChanged: {
@@ -1171,83 +577,6 @@ const schema = makeExecutableSchema({
   resolvers,
 });
 
-// Like memoize, but forgets a rejected promise so a failed login (wrong
-// credentials, no Japanese IP, service down) is retried on the next request
-// instead of failing until restart.
-function memoizeSuccess<T>(fn: () => Promise<T>): () => Promise<T> {
-  let promise: Promise<T> | null = null;
-  return () => {
-    if (!promise) {
-      promise = fn().catch((err) => {
-        promise = null;
-        throw err;
-      });
-    }
-    return promise;
-  };
-}
-
-export const minseiCredentialsProvider = memoizeSuccess(async () => {
-  const { damUsername, damPassword } = karafriendsConfig;
-  const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
-  return {
-    userCode: damUsername,
-    authToken: minseiLoginResult.data.authToken,
-  };
-});
-
-export const joysoundCredentialsProvider = memoizeSuccess(async () => {
-  const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
-  const joysoundPassword = encodeURIComponent(
-    karafriendsConfig.joysoundPassword,
-  );
-  return JoysoundAPI.login(joysoundEmail, joysoundPassword);
-});
-
-// The clients keep no per-request state, so every request shares one of each.
-const upstreamClients: IDataSources["dataSources"] = {
-  minsei: new MinseiAPI(minseiCredentialsProvider),
-  joysound: new JoysoundAPI(joysoundCredentialsProvider),
-  dkwebsys: new DkwebsysAPI(),
-};
-
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() =>
-    clearTimeout(timer),
-  ) as Promise<T>;
-}
-
-// Only youtubeVideoInfo needs the YouTube client, so it is created on first
-// use there rather than awaited in every request's context: a YouTube outage
-// then only affects YouTube lookups. memoize would cache a rejected promise
-// forever, so use a manual singleton that times out and clears itself on
-// failure so the next lookup retries.
-let innertubePromise: Promise<Innertube> | null = null;
-function innertubeApiProvider(): Promise<Innertube> {
-  if (!innertubePromise) {
-    innertubePromise = withTimeout(
-      Innertube.create(),
-      30000,
-      "Innertube.create",
-    ).catch((err) => {
-      innertubePromise = null;
-      throw err;
-    });
-  }
-  return innertubePromise;
-}
-
 export function applyGraphQLMiddleware(app: Application) {
   const httpServer = createServer(app);
 
@@ -1278,9 +607,7 @@ export function applyGraphQLMiddleware(app: Application) {
 
   useServer({ schema }, wsServer);
 
-  db = loadDb();
-
-  const server = new ApolloServer<IDataSources>({
+  const server = new ApolloServer<Context>({
     schema,
     plugins: [
       ApolloServerPluginDrainHttpServer({ httpServer }),
@@ -1311,7 +638,10 @@ export function applyGraphQLMiddleware(app: Application) {
         "/graphql",
         express.json(),
         expressMiddleware(server, {
-          context: async () => ({ dataSources: upstreamClients }),
+          context: async ({ req }) => ({
+            dataSources: upstreamClients,
+            caller: callerFromHeaders(req.headers),
+          }),
         }),
       );
       httpServer.listen(karafriendsConfig.remoconPort, () => {

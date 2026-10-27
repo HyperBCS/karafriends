@@ -11,6 +11,33 @@ import {
   Variables,
 } from "relay-runtime";
 
+import { IDENTITY_HEADERS } from "./api";
+
+// Who is asking, for the server's admin checks: the display sends its secret,
+// a phone its device ID and nickname (percent-encoded, since a nickname may
+// not be ASCII).
+function identityHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (window.karafriends !== undefined) {
+    const token = window.karafriends.displayToken();
+    if (token) headers[IDENTITY_HEADERS.displayToken] = token;
+    return headers;
+  }
+  try {
+    const deviceId = localStorage.getItem("deviceId");
+    const nickname = localStorage.getItem("nickname");
+    if (deviceId) {
+      headers[IDENTITY_HEADERS.deviceId] = encodeURIComponent(deviceId);
+    }
+    if (nickname) {
+      headers[IDENTITY_HEADERS.nickname] = encodeURIComponent(nickname);
+    }
+  } catch {
+    // No localStorage (e.g. blocked): ask anonymously.
+  }
+  return headers;
+}
+
 function fetchQuery(request: RequestParameters, variables: Variables) {
   return fetch(
     window.karafriends !== undefined
@@ -22,6 +49,7 @@ function fetchQuery(request: RequestParameters, variables: Variables) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...identityHeaders(),
       },
       body: JSON.stringify({
         query: request.text,

@@ -1,6 +1,7 @@
 import promiseRetry from "promise-retry";
 
 import { http, httpFetch } from "./http";
+import { DAM_PAGE_SIZE, damPageWindow } from "./paging";
 
 const BASE_MINSEI_REQUEST = {
   charset: "UTF-8",
@@ -299,8 +300,7 @@ export class DkwebsysAPI {
     first: number,
     after: number,
   ): Promise<Pick<T, "data" | "list">> {
-    const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
+    const { firstPage, pageCount, start, end } = damPageWindow(after, first);
 
     return Promise.all(
       [...Array(pageCount).keys()].map((pageOffset) =>
@@ -308,14 +308,14 @@ export class DkwebsysAPI {
           ...params,
           sort: "2",
           pageNo: (firstPage + pageOffset).toString(),
-          dispCount: "30",
+          dispCount: DAM_PAGE_SIZE.toString(),
         }).then(this.checkError),
       ),
     ).then((results) => ({
       data: results[0].data,
       list: results
         .reduce<unknown[]>((acc, cur) => acc.concat(cur.list), [])
-        .slice(after % 30, first) as T["list"],
+        .slice(start, end) as T["list"],
     }));
   }
 }

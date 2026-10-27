@@ -48,10 +48,13 @@ import express from "express";
 import karafriendsConfig from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
+import { displayToken } from "./caller";
 import { applyGraphQLMiddleware } from "./graphql";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
+import { apiRouter, shouldCompress } from "./server";
+import { api, hub } from "./services";
 
 import { default as preloadUrl } from "url:../preload";
 
@@ -166,9 +169,11 @@ function createWindow() {
 
   const expressApp = express();
 
-  expressApp.use(compression());
+  expressApp.use(compression({ filter: shouldCompress }));
 
   applyGraphQLMiddleware(expressApp);
+
+  expressApp.use("/api", apiRouter(api, hub));
 
   expressApp.use(remoconServiceWorkerAllowed());
 
@@ -212,6 +217,15 @@ function createWindow() {
     event.returnValue = karafriendsConfig;
   });
 }
+
+// The display's API secret: it makes the display an admin (see caller.ts).
+// Only the display window gets it.
+ipcMain.on("displayToken", (event: IpcMainEvent) => {
+  event.returnValue =
+    rendererWindow && event.sender === rendererWindow.webContents
+      ? displayToken
+      : null;
+});
 
 app.on("ready", () => {
   // Start warming the external resource cache as soon as the app is ready so
