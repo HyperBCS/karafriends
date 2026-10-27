@@ -7,6 +7,7 @@ import { HOSTNAME } from "../common/constants";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import Effects from "./Effects";
+import escapeHtml from "./escapeHtml";
 import HostnameSetting from "./HostnameSetting";
 import MicrophoneSetting from "./MicrophoneSetting";
 import { InputDevice } from "./nativeAudio";
@@ -72,7 +73,7 @@ function App(props: {
 
   useLiveEvent("queueAdded", ({ item }) => {
     M.toast({
-      html: `<h3>${item.name} - ${item.artistName}</h3>`,
+      html: `<h3>${escapeHtml(item.name)} - ${escapeHtml(item.artistName)}</h3>`,
     });
   });
 

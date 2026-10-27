@@ -12,6 +12,7 @@ import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import AdhocLyrics from "./AdhocLyrics";
+import escapeHtml from "./escapeHtml";
 import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
@@ -138,7 +139,7 @@ function Player(props: {
                             "network error on playlist load, skipping to next song.",
                           );
                           M.toast({
-                            html: `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
+                            html: `Error loading song ${escapeHtml(popSong.artistName)} - ${escapeHtml(popSong.name)}! Skipping...`,
                           });
                           pollQueue();
                           break;
