@@ -55,7 +55,7 @@
     "wanakana": "5.3.1",
     "yaml": "2.9.0",
     "youtube-player": "5.6.0",
-    "youtubei.js": "patch:youtubei.js@npm%3A18.0.0#~/.yarn/patches/youtubei.js-npm-18.0.0-0d3f1af340.patch"
+    "youtubei.js": "18.0.0"
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",
