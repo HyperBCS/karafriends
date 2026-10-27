@@ -34,7 +34,7 @@ The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is
 
 ## How this plan is run
 
-- **Roles.** A Fable session coordinates (this file is its state). Each phase runs as an Opus session (`model: opus`) in its own worktree, branched from the latest `master`, with a brief that points at this file and names the phase. Phases in different lanes run at the same time; phases in one lane run one after another.
+- **Roles.** A Fable session coordinates (this file is its state). Each phase runs on Opus in its own worktree, branched from the latest `master`, with a brief that points at this file and names the phase. A1, B, E, A2, A3 and A4 ran as separate sessions; from A5 on, phases run as background subagents of the coordinator (`Agent` with `isolation: worktree`, `model: opus`), because the app only starts a session from a message typed in the desktop app and the user asked (2026-10-27) for the rest to run without their input. A subagent's worktree branch stays until merged; its report comes back to the coordinator, which reviews and merges as before. Phases in different lanes run at the same time; phases in one lane run one after another.
 - **Each phase session:**
   - Implements its section, one commit per change, with the commit hook passing.
   - Runs `yarn typecheck`, `yarn lint`, `yarn test:unit`, `yarn build-prod`, `yarn test:e2e:ci`, and a real app launch with `KARAFRIENDS_LOCAL_ONLY=1 KARAFRIENDS_HIDE_WINDOW=1`.
