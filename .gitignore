@@ -2,9 +2,11 @@
 
 # dependencies
 /node_modules
+/.yarn/cache
 /.yarn/install-state.gz
 /.yarn/unplugged
 /.yarn/sdks
+/.pnp.*
 
 
 # testing
