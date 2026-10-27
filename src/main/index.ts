@@ -49,7 +49,7 @@ import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { displayToken } from "./caller";
-import { applyGraphQLMiddleware } from "./graphql";
+import { startHttpServer } from "./httpServer";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
@@ -174,14 +174,14 @@ function createWindow() {
 
   expressApp.use(compression({ filter: shouldCompress }));
 
-  applyGraphQLMiddleware(expressApp);
-
   expressApp.use("/api", apiRouter(api, hub));
 
   expressApp.use(remoconServiceWorkerAllowed());
 
   // This middleware terminates the request/response cycle and should be applied last
   expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
+
+  startHttpServer(expressApp);
 
   if (rendererWindow) {
     const rendererUrl = isDev

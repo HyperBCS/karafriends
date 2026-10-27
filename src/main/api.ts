@@ -1,6 +1,5 @@
-// The API's handlers: one function per method in src/common/api.ts, holding
-// the logic the GraphQL resolvers used to. Both the JSON RPC router
-// (server.ts) and the GraphQL resolvers (graphql.ts) call these.
+// The API's handlers: one function per method in src/common/api.ts. The
+// JSON RPC router (server.ts) calls these.
 //
 // The upstream clients, downloads and live-event sink come in as
 // dependencies, and nothing here imports Electron, so unit tests can load

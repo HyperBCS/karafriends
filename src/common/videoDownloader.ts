@@ -151,26 +151,6 @@ function isVideoCurrentlyDownloading(
   return Boolean(prevDownloadQueueItem);
 }
 
-export function getVideoDownloadProgress(
-  downloadQueue: DownloadQueueItem[],
-  downloadType: number,
-  songId: string,
-  suffix: string | null = null,
-): number {
-  const downloadQueueItem = downloadQueue.find(
-    (item) =>
-      item.downloadType === downloadType &&
-      item.songId === songId &&
-      item.suffix === suffix,
-  );
-
-  if (downloadQueueItem) {
-    return downloadQueueItem.progress;
-  }
-
-  return -1.0;
-}
-
 function removeVideoDownloadFromQueue(
   downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
