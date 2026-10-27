@@ -1,1 +1,4 @@
 yarn.lock linguist-generated
+# Fake tools for tests: shell scripts must keep LF to run, batch files CRLF.
+tests/fixtures/bin/* text eol=lf
+tests/fixtures/bin/*.cmd text eol=crlf
