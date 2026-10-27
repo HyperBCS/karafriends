@@ -238,7 +238,7 @@ export function createLiveHub(
 
   store.onChange(scheduleFlush);
 
-  // videoDownloader updates downloads in place, without going through the
+  // src/main/downloads updates downloads in place, without going through the
   // store, so look at them while any are running or failed (or just went).
   let downloadsSent = 0;
   const watchDownloads = () => {

@@ -27,5 +27,5 @@ The hard fork: karafriends stops following emmaworley/karafriends and gets simpl
 - The saved queue (`queue.json`) has a new format. Queues saved by older versions still load.
 - A slow or silent DAM or Joysound server no longer holds up or drops the next song, and DAM results page correctly past the first page.
 - Song IDs from phones are checked, so a bad one can't touch files outside the app's temp folder.
-- Niconico lookups use yt-dlp, at most two YouTube or Niconico downloads run at once, and a YouTube song's typed-in lyrics stay with it while it's queued.
+- Niconico lookups use yt-dlp (at most two lookups run at once), and a YouTube song's typed-in lyrics stay with it while it's queued.
 - The phone remote works on older iPhones (Safari 15 and later), and the display and remote load faster with lighter styling.

@@ -3,7 +3,7 @@
 //
 // Everything that changes the state goes through update(), which saves it and
 // tells the listeners. The one exception is downloadQueue, which
-// videoDownloader changes in place (with the helpers below) as downloads
+// src/main/downloads changes in place (with the helpers below) as downloads
 // start, progress, finish and fail.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
@@ -44,7 +44,7 @@ export const FAILED_DOWNLOAD_KEPT_MS = 30_000;
 
 let lastDownloadId = 0;
 
-// The download queue's changes. videoDownloader makes them in place, outside
+// The download queue's changes. src/main/downloads makes them in place, outside
 // update(); the live hub looks at the queue while it isn't empty.
 
 // Adds a download of kind/songId/suffix to queue and returns it. A failure
