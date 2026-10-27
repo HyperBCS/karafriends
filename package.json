@@ -18,7 +18,7 @@
     "get-external-resources": "node scripts/getExternalResources.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --deny-warnings",
-    "test:unit": "cross-env NODE_OPTIONS= node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test:unit": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "test:native": "cargo clippy --manifest-path native/Cargo.toml && cargo +nightly careful test --manifest-path native/Cargo.toml",
     "postinstall": "husky && install-electron"
   },
