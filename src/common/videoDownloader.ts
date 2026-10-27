@@ -12,6 +12,7 @@ import type { DownloadQueueItem } from "../main/state";
 import type { JoysoundQueueItem, UserIdentity } from "./api";
 
 import { isCaptionCode } from "./captionCode";
+import { envWithoutHttpProxy } from "./childEnv";
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
 import {
@@ -409,10 +410,6 @@ function downloadJoysoundYoutubeVideoPromise(
     const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
     attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
 
-    const env = { ...process.env };
-    // Don't need a proxy to download from YouTube
-    delete process.env.http_proxy;
-
     const ytdlp = spawn(
       resourcePaths.ytdlp,
       [
@@ -432,7 +429,7 @@ function downloadJoysoundYoutubeVideoPromise(
         youtubeVideoId!,
       ],
       {
-        env,
+        env: envWithoutHttpProxy(),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -1073,7 +1070,7 @@ function downloadYoutubeVideoImpl(
       "--",
       videoId,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    { env: envWithoutHttpProxy(), stdio: ["ignore", "pipe", "pipe"] },
   );
 
   invariant(ytdlp.stdout);
@@ -1131,7 +1128,12 @@ export async function getNicoVideoInfo(
   const { stdout } = await execFileAsync(
     resourcePaths.ytdlp,
     ["--dump-single-json", "--skip-download", "--", nicoWatchUrl(videoId)],
-    { timeout: 30000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+    {
+      env: envWithoutHttpProxy(),
+      timeout: 30000,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    },
   );
   return parseNicoVideoInfo(stdout);
 }
@@ -1197,10 +1199,6 @@ function downloadNicoVideoImpl(
 
   attachLogStreamErrorHandler(ytdlpLogStream, "yt-dlp");
 
-  const env = { ...process.env };
-  // Don't need a proxy to download from Niconico
-  delete process.env.http_proxy;
-
   const ytdlp = spawn(
     resourcePaths.ytdlp,
     [
@@ -1212,7 +1210,7 @@ function downloadNicoVideoImpl(
       `https://www.nicovideo.jp/watch/${videoId}`,
     ],
     {
-      env,
+      env: envWithoutHttpProxy(),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
