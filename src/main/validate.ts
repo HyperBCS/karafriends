@@ -247,6 +247,14 @@ export const validators: {
       timestamp: string(input, "timestamp", 32),
     };
   },
+  moveSong: (raw) => {
+    const input = fields(raw, ["songId", "timestamp", "toIndex"]);
+    return {
+      songId: string(input, "songId", 64),
+      timestamp: string(input, "timestamp", 32),
+      toIndex: integer(input, "toIndex", 0, 1_000_000),
+    };
+  },
   setPlaybackState: (raw) => ({
     playbackState: oneOf<PlaybackState>(
       fields(raw, ["playbackState"]),
