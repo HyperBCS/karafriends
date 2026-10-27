@@ -101,7 +101,14 @@ function App(props: {
           sidebarVisible ? "s11" : "s12"
         } valign-wrapper`}
       >
-        <Player mics={mics} kuroshiro={props.kuroshiro} audio={props.audio} />
+        <Player
+          mics={mics}
+          kuroshiro={props.kuroshiro}
+          audio={props.audio}
+          announce={({ title, problem }) => {
+            if (problem) toast(`Error loading song ${title}! Skipping...`);
+          }}
+        />
         <Effects />
       </div>
       {sidebarVisible && (

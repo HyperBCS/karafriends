@@ -1,341 +1,43 @@
-import invariant from "ts-invariant";
+import React, { useRef } from "react";
 
-import Hls from "hls.js";
-
-import React, { useEffect, useRef, useState } from "react";
-
-import type { PoppedSong } from "../common/api";
-import { call, useLiveState } from "../common/apiClient";
-import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
-import usePlaybackState from "../common/hooks/usePlaybackState";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import AdhocLyrics from "./AdhocLyrics";
 import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
-import toast from "./toast";
+import useSongPlayer, { type Announcement } from "./useSongPlayer";
 import KarafriendsAudio from "./webAudio";
 
-const POLL_INTERVAL_MS = 5 * 1000;
-// XXX: Another idea is to add some gain to the DAM videos?
-const DAM_GAIN = 1.0;
-const NON_DAM_GAIN = 0.8;
-
+// The video, with the song's lyrics or piano roll over it.
 function Player(props: {
   mics: InputDevice[];
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
+  announce: (announcement: Announcement) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
-  const [scoringData, setScoringData] = useState<readonly number[]>([]);
-
-  const [joysoundTelop, setJoysoundTelop] = useState<ArrayBuffer | null>(null);
-  const [shouldShowJoysound, setShouldShowJoysound] = useState<boolean>(false);
-  const [joysoundIsRomaji, setJoysoundIsRomaji] = useState<boolean>(false);
-
-  const [shouldShowPianoRoll, setShouldShowPianoRoll] = useState<boolean>(true);
-  const [shouldShowAdhocLyrics, setShouldShowAdhocLyrics] =
-    useState<boolean>(false);
-  const { playbackState, setPlaybackState } = usePlaybackState();
-  const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
-  // Set while waiting for the next poll; null while one is in flight or a
-  // song plays.
-  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  // Polls now instead of at the armed timeout, if one is armed.
-  const pollNowRef = useRef<(() => void) | null>(null);
-  const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
-
-  const audioCtx = useRef<AudioContext | null>(null);
-  const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
-
-  let hls: Hls | null = null;
-
-  useEffect(() => {
-    if (!videoRef.current) return;
-
-    // Takes the next song off the queue (popSong, which only the display may
-    // call) and starts it. With none, or no answer, it asks again in a while.
-    function pollQueue() {
-      pollTimeoutRef.current = null;
-      call("popSong", {}).then(startSong, (err) => {
-        console.error("Couldn't ask for the next song:", err);
-        pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
-      });
-    }
-
-    function startSong(popSong: PoppedSong | null) {
-      if (!videoRef.current) return;
-
-      if (popSong) {
-        // Only reset caption/pitch state when we actually have a song to
-        // play; doing it on every empty poll would spam the pitch-shift
-        // mutation while idle.
-        if (trackRef?.current) {
-          trackRef.current.default = false;
-          trackRef.current.src = "";
-        }
-
-        setPitchShiftSemis(0);
-
-        if (hls) hls.destroy();
-
-        switch (popSong.kind) {
-          case "dam":
-            setShouldShowPianoRoll(true);
-            setShouldShowJoysound(false);
-            setShouldShowAdhocLyrics(false);
-            setScoringData(popSong.scoringData);
-
-            // If caching is on this means we'll be serving almost everything through /static
-            // which seems kind of stupid, but whatever
-            const fileUrl = `karafriends://local/${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
-
-            // Streams the song from DAM. False if it can't, and has moved on
-            // to the next song.
-            const loadRemote = (): boolean => {
-              if (!videoRef.current) return false;
-
-              const streamingUrl =
-                popSong.streamingUrls[popSong.streamingUrlIdx];
-              if (streamingUrl === undefined) {
-                // Not downloaded, and DAM didn't give popSong a URL.
-                toast(
-                  `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
-                );
-                pollQueue();
-                return false;
-              }
-
-              hls = new Hls({ maxBufferLength: 90 /* seconds */ });
-              hls.on(
-                Hls.Events.ERROR,
-                (event: typeof Hls.Events.ERROR, data: any) => {
-                  switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                      console.log(
-                        "network error on playlist load, skipping to next song.",
-                      );
-                      toast(
-                        `Error loading song ${popSong.artistName} - ${popSong.name}! Skipping...`,
-                      );
-                      pollQueue();
-                      break;
-                    // You can handle other error types here if needed
-                  }
-                },
-              );
-
-              hls.attachMedia(videoRef.current);
-              hls.loadSource(streamingUrl);
-              return true;
-            };
-
-            fetch(fileUrl, { method: "HEAD" })
-              .then((response) => {
-                // I can guarantee this does not happen
-                if (!videoRef.current) return;
-
-                if (response.ok) {
-                  console.log(`Using local file for ${popSong.songId}`);
-                  // This throws a random DOMException about load requests but it's probably fine
-                  videoRef.current.src = fileUrl;
-                } else {
-                  // Maybe it's not done downloading yet, or predownload is disabled
-                  console.log(
-                    `Local file for ${popSong.songId} doesn't seem available, using remote`,
-                  );
-                  if (!loadRemote()) return;
-                }
-                props.audio.gain(DAM_GAIN);
-
-                navigator.mediaSession.metadata = new MediaMetadata({
-                  title: popSong.name,
-                  artist: popSong.artistName,
-                });
-
-                videoRef.current.play();
-              })
-              .catch((error) => {
-                // This throws if the file doesn't exist (as karafriends:// is a file:// passthrough protocol)
-                console.log(
-                  `Local file for ${popSong.songId} doesn't seem available, using remote`,
-                );
-                console.error(error);
-
-                // I can guarantee this does not happen
-                if (!videoRef.current) return;
-
-                // Pretend nothing happened.
-                if (!loadRemote()) return;
-
-                props.audio.gain(DAM_GAIN);
-
-                navigator.mediaSession.metadata = new MediaMetadata({
-                  title: popSong.name,
-                  artist: popSong.artistName,
-                });
-
-                videoRef.current.play();
-              });
-            break;
-          case "joysound":
-            setShouldShowPianoRoll(false);
-            setShouldShowJoysound(true);
-            setShouldShowAdhocLyrics(false);
-
-            const filenameSuffix = popSong.youtubeVideoId
-              ? popSong.youtubeVideoId
-              : "default";
-
-            videoRef.current.src = `karafriends://local/joysound-${popSong.songId}-${filenameSuffix}.mp4`;
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-              title: popSong.name,
-              artist: popSong.artistName,
-            });
-
-            fetch(`karafriends://local/joysound-${popSong.songId}.joy_02`)
-              .then((resp) => resp.arrayBuffer())
-              .then((data) => {
-                setJoysoundTelop(data);
-                setJoysoundIsRomaji(popSong.isRomaji);
-
-                invariant(videoRef.current);
-                videoRef.current.play();
-              });
-
-            break;
-          case "youtube":
-            setShouldShowPianoRoll(false);
-            setShouldShowJoysound(false);
-            setShouldShowAdhocLyrics(popSong.hasAdhocLyrics);
-
-            videoRef.current.src = `karafriends://local/yt-${popSong.songId}.mp4`;
-
-            if (trackRef?.current && popSong?.hasCaptions) {
-              trackRef.current.default = true;
-              trackRef.current.src = `karafriends://local/yt-${popSong.songId}.vtt`;
-            }
-
-            console.log(
-              `Using ${popSong.gainValue} for gain on Youtube queue item`,
-            );
-            props.audio.gain(popSong.gainValue);
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-              title: popSong.name,
-            });
-
-            videoRef.current.play();
-            break;
-          case "nico":
-            setShouldShowPianoRoll(false);
-            setShouldShowJoysound(false);
-            setShouldShowAdhocLyrics(false);
-
-            videoRef.current.src = `karafriends://local/nico-${popSong.songId}.mp4`;
-
-            props.audio.gain(NON_DAM_GAIN);
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-              title: popSong.name,
-            });
-
-            videoRef.current.play();
-            break;
-        }
-        setPlaybackState("PLAYING");
-      } else {
-        setPlaybackState("WAITING");
-        pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
-      }
-    }
-
-    videoRef.current.onended = pollQueue;
-
-    if (playbackState === "WAITING" && pollTimeoutRef.current === null) {
-      pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
-    }
-
-    pollNowRef.current = () => {
-      if (pollTimeoutRef.current === null) return;
-      clearTimeout(pollTimeoutRef.current);
-      pollQueue();
-    };
-
-    return () => {
-      pollNowRef.current = null;
-      if (pollTimeoutRef.current) {
-        clearTimeout(pollTimeoutRef.current);
-
-        pollTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  // A song queued while nothing plays starts at once, not at the next poll
-  // (which stays as the fallback).
-  useEffect(() => {
-    if (playbackState === "WAITING" && hasQueue) pollNowRef.current?.();
-  }, [playbackState, hasQueue]);
-
-  useEffect(() => {
-    if (!videoRef.current) return;
-
-    switch (playbackState) {
-      case "PAUSED":
-        videoRef.current.pause();
-        break;
-      case "PLAYING":
-        videoRef.current.play();
-        break;
-      case "RESTARTING":
-        videoRef.current.currentTime = 0;
-        setPlaybackState("PLAYING");
-        break;
-      case "SKIPPING":
-        if (isFinite(videoRef.current.duration))
-          videoRef.current.currentTime = videoRef.current.duration;
-        videoRef.current.play();
-        break;
-    }
-  }, [playbackState]);
-
-  useEffect(() => {
-    props.audio.pitchShift(pitchShiftSemis);
-  }, [props.audio, pitchShiftSemis]);
-
-  useEffect(() => {
-    if (!videoRef.current) return;
-
-    if (audioCtx.current !== props.audio.audioContext) {
-      if (videoAudioSrc.current) {
-        videoAudioSrc.current.disconnect();
-      }
-
-      audioCtx.current = props.audio.audioContext;
-      videoAudioSrc.current = audioCtx.current.createMediaElementSource(
-        videoRef.current,
-      );
-      videoAudioSrc.current.connect(props.audio.sink());
-    }
-  }, [props.audio, videoRef.current]);
+  const { overlay, pitchShiftSemis } = useSongPlayer({
+    videoRef,
+    trackRef,
+    audio: props.audio,
+    announce: props.announce,
+  });
 
   return (
     <div className="karaVidContainer">
-      {shouldShowJoysound && joysoundTelop !== null ? (
+      {overlay?.kind === "joysound" && overlay.telop !== null ? (
         <JoysoundRenderer
-          telop={joysoundTelop}
-          isRomaji={joysoundIsRomaji}
+          telop={overlay.telop}
+          isRomaji={overlay.isRomaji}
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
         />
       ) : null}
-      {shouldShowPianoRoll ? (
+      {overlay?.kind === "dam" ? (
         <PianoRoll
-          scoringData={scoringData}
+          scoringData={overlay.scoringData}
           videoRef={videoRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
@@ -351,7 +53,9 @@ function Player(props: {
       >
         <track ref={trackRef} kind="subtitles" default />
       </video>
-      {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
+      {overlay?.kind === "youtube" && overlay.adhocLyrics ? (
+        <AdhocLyrics />
+      ) : null}
     </div>
   );
 }

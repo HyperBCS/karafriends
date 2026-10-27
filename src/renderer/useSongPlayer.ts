@@ -1,0 +1,296 @@
+import Hls from "hls.js";
+
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+
+import type { PoppedDamSong, PoppedSong } from "../common/api";
+import { call, useLiveState } from "../common/apiClient";
+import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
+import usePlaybackState from "../common/hooks/usePlaybackState";
+import type KarafriendsAudio from "./webAudio";
+
+const POLL_INTERVAL_MS = 5 * 1000;
+// XXX: Another idea is to add some gain to the DAM videos?
+const DAM_GAIN = 1.0;
+const NON_DAM_GAIN = 0.8;
+
+// What the player draws over the video for the song playing.
+export type Overlay =
+  | { kind: "dam"; scoringData: readonly number[] }
+  // telop: the song's .joy_02 lyrics, once loaded.
+  | { kind: "joysound"; telop: ArrayBuffer | null; isRomaji: boolean }
+  | { kind: "youtube"; adhocLyrics: boolean }
+  | { kind: "nico" }
+  | null;
+
+// A line for the corner overlay: a song starting, or one that can't play.
+export interface Announcement {
+  label: string;
+  title: string;
+  detail: string;
+  problem?: boolean;
+}
+
+// Plays the queue in the display's <video>: while nothing plays it asks for
+// the next song (popSong, which only the display may call) every 5 seconds,
+// and at once when the live queue stops being empty; it loads each song by
+// kind, follows the live playback state (pause, restart, skip) and the key,
+// and asks again when a song ends.
+export default function useSongPlayer({
+  videoRef,
+  trackRef,
+  audio,
+  announce,
+}: {
+  videoRef: RefObject<HTMLVideoElement | null>;
+  trackRef: RefObject<HTMLTrackElement | null>;
+  audio: KarafriendsAudio;
+  announce: (announcement: Announcement) => void;
+}) {
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const { playbackState, setPlaybackState } = usePlaybackState();
+  const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
+  const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
+  // Set while waiting for the next poll; null while one is in flight or a
+  // song plays.
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The DAM stream, while one plays.
+  const hlsRef = useRef<Hls | null>(null);
+
+  const schedulePoll = () => {
+    pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
+  };
+
+  // Takes the next song off the queue and starts it. With none, or no
+  // answer, it asks again in a while.
+  const pollQueue = useEffectEvent(() => {
+    pollTimeoutRef.current = null;
+    call("popSong", {}).then(startSong, (err) => {
+      console.error("Couldn't ask for the next song:", err);
+      schedulePoll();
+    });
+  });
+
+  const skipBroken = (song: PoppedSong) => {
+    announce({
+      label: "Couldn't play",
+      title: song.name,
+      detail: "Skipping to the next song",
+      problem: true,
+    });
+    pollQueue();
+  };
+
+  // Plays the video, once its source is set, at gain.
+  const play = (video: HTMLVideoElement, gain: number) => {
+    audio.gain(gain);
+    video.play();
+  };
+
+  // Streams a DAM song from DAM. False if it can't, and has moved on to the
+  // next song.
+  const streamDam = (video: HTMLVideoElement, song: PoppedDamSong): boolean => {
+    const streamingUrl = song.streamingUrls[song.streamingUrlIdx];
+    if (streamingUrl === undefined) {
+      // Not downloaded, and DAM didn't give popSong a URL.
+      skipBroken(song);
+      return false;
+    }
+    const hls = new Hls({ maxBufferLength: 90 /* seconds */ });
+    hlsRef.current = hls;
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        console.log("network error on playlist load, skipping to next song.");
+        skipBroken(song);
+      }
+    });
+    hls.attachMedia(video);
+    hls.loadSource(streamingUrl);
+    return true;
+  };
+
+  // The downloaded file if there is one (karafriends:// is a file://
+  // passthrough, so a missing file fails the fetch), else DAM's stream.
+  const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
+    setOverlay({ kind: "dam", scoringData: song.scoringData });
+    const fileUrl = `karafriends://local/${song.songId}-${song.streamingUrlIdx}.mp4`;
+    let downloaded = false;
+    try {
+      downloaded = (await fetch(fileUrl, { method: "HEAD" })).ok;
+    } catch (error) {
+      console.error(error);
+    }
+    if (downloaded) {
+      console.log(`Using local file for ${song.songId}`);
+      video.src = fileUrl;
+    } else {
+      // Not done downloading yet, or not downloaded at all.
+      console.log(
+        `Local file for ${song.songId} doesn't seem available, using remote`,
+      );
+      if (!streamDam(video, song)) return;
+    }
+    play(video, DAM_GAIN);
+  };
+
+  const loadJoysound = async (
+    video: HTMLVideoElement,
+    song: Extract<PoppedSong, { kind: "joysound" }>,
+  ) => {
+    setOverlay({ kind: "joysound", telop: null, isRomaji: song.isRomaji });
+    const background = song.youtubeVideoId ?? "default";
+    video.src = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const telop = await fetch(
+      `karafriends://local/joysound-${song.songId}.joy_02`,
+    ).then((resp) => resp.arrayBuffer());
+    setOverlay({ kind: "joysound", telop, isRomaji: song.isRomaji });
+    // At the gain the previous song left, as always.
+    video.play();
+  };
+
+  const loadYoutube = (
+    video: HTMLVideoElement,
+    song: Extract<PoppedSong, { kind: "youtube" }>,
+  ) => {
+    setOverlay({ kind: "youtube", adhocLyrics: song.hasAdhocLyrics });
+    video.src = `karafriends://local/yt-${song.songId}.mp4`;
+    if (trackRef.current && song.hasCaptions) {
+      trackRef.current.default = true;
+      trackRef.current.src = `karafriends://local/yt-${song.songId}.vtt`;
+    }
+    console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
+    play(video, song.gainValue);
+  };
+
+  const loadNico = (
+    video: HTMLVideoElement,
+    song: Extract<PoppedSong, { kind: "nico" }>,
+  ) => {
+    setOverlay({ kind: "nico" });
+    video.src = `karafriends://local/nico-${song.songId}.mp4`;
+    play(video, NON_DAM_GAIN);
+  };
+
+  const startSong = useEffectEvent((song: PoppedSong | null) => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!song) {
+      setPlaybackState("WAITING");
+      schedulePoll();
+      return;
+    }
+
+    // Reset the captions and the key only for a song to play; doing it on
+    // every empty poll would spam the pitch-shift mutation while idle.
+    if (trackRef.current) {
+      trackRef.current.default = false;
+      trackRef.current.src = "";
+    }
+    setPitchShiftSemis(0);
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song.name,
+      // A YouTube or Niconico song's artist is whatever the guest typed.
+      ...(song.kind === "dam" || song.kind === "joysound"
+        ? { artist: song.artistName }
+        : {}),
+    });
+    announce({
+      label: "Now playing",
+      title: song.name,
+      detail: [song.artistName, song.user.nickname].filter(Boolean).join(" · "),
+    });
+    switch (song.kind) {
+      case "dam":
+        void loadDam(video, song);
+        break;
+      case "joysound":
+        void loadJoysound(video, song);
+        break;
+      case "youtube":
+        loadYoutube(video, song);
+        break;
+      case "nico":
+        loadNico(video, song);
+        break;
+    }
+    setPlaybackState("PLAYING");
+  });
+
+  // Once: ask for a song now if the display is waiting, and whenever one
+  // ends.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.onended = () => pollQueue();
+    if (playbackState === "WAITING" && pollTimeoutRef.current === null) {
+      schedulePoll();
+    }
+    return () => {
+      video.onended = null;
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    };
+    // Only on mount: the poll keeps itself going from then on.
+  }, []);
+
+  // A song queued while nothing plays starts at once, not at the next poll
+  // (which stays as the fallback). Only while a poll is armed: with none,
+  // one is in flight or a song plays.
+  useEffect(() => {
+    if (playbackState !== "WAITING" || !hasQueue) return;
+    if (pollTimeoutRef.current === null) return;
+    clearTimeout(pollTimeoutRef.current);
+    pollQueue();
+  }, [playbackState, hasQueue]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    switch (playbackState) {
+      case "PAUSED":
+        video.pause();
+        break;
+      case "PLAYING":
+        video.play();
+        break;
+      case "RESTARTING":
+        video.currentTime = 0;
+        setPlaybackState("PLAYING");
+        break;
+      case "SKIPPING":
+        if (isFinite(video.duration)) video.currentTime = video.duration;
+        video.play();
+        break;
+    }
+  }, [playbackState]);
+
+  useEffect(() => {
+    audio.pitchShift(pitchShiftSemis);
+  }, [audio, pitchShiftSemis]);
+
+  // The video's sound goes through the audio graph (gain, key change). A
+  // media element gives an audio context one source, ever, so it's made once
+  // per context.
+  const audioCtx = useRef<AudioContext | null>(null);
+  const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || audioCtx.current === audio.audioContext) return;
+    videoAudioSrc.current?.disconnect();
+    audioCtx.current = audio.audioContext;
+    videoAudioSrc.current = audio.audioContext.createMediaElementSource(video);
+    videoAudioSrc.current.connect(audio.sink());
+  }, [audio, videoRef]);
+
+  return { overlay, pitchShiftSemis };
+}
