@@ -50,7 +50,6 @@
   height: 46px;
   padding: 0 $kf-space-3;
   border: none;
-  outline: none;
   background: none;
   color: $kf-text;
   font: inherit;
@@ -60,6 +59,12 @@
   &::placeholder {
     color: $kf-muted;
     opacity: 1;
+  }
+
+  // The box shows the focus, not the input inside it.
+  &,
+  &:focus-visible {
+    outline: none;
   }
 
   // The browser's own clear button; this field has its own.
