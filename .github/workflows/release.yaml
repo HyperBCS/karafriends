@@ -7,16 +7,22 @@ on:
 # read-only.
 permissions:
   contents: write
+# The Rust toolchain steps keep the old actions-rs/toolchain behaviour: no
+# cache (a release builds from scratch) and no RUSTFLAGS (setup-rust-toolchain
+# would otherwise set "-D warnings", and a new compiler warning shouldn't stop
+# a release; the Build workflow already fails on warnings).
 
 jobs:
   release-macos-aarch64:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: aarch64-apple-darwin
+          cache: false
+          rustflags: ""
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -56,10 +62,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-apple-darwin
+          cache: false
+          rustflags: ""
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -99,10 +107,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
+          cache: false
+          rustflags: ""
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -119,10 +129,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
+          cache: false
+          rustflags: ""
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
