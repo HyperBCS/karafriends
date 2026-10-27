@@ -4059,13 +4059,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/audioworklet@npm:0.0.100":
-  version: 0.0.100
-  resolution: "@types/audioworklet@npm:0.0.100"
-  checksum: 10/c876f026ab33d102f4f64597b55c9a45b3678ccd5fbb69e248f819f2ee9686948e8c2e76e3c19af508cc6abb1782dc35388192c3f3e68f164a6141aa94f424b5
-  languageName: node
-  linkType: hard
-
 "@types/babel__core@npm:^7.0.0, @types/babel__core@npm:^7.1.7":
   version: 7.20.5
   resolution: "@types/babel__core@npm:7.20.5"
@@ -4126,15 +4119,6 @@ __metadata:
     "@types/node": "npm:*"
     "@types/responselike": "npm:^1.0.0"
   checksum: 10/159f9fdb2a1b7175eef453ae2ced5ea04c0d2b9610cc9ccd9f9abb066d36dacb1f37acd879ace10ad7cbb649490723feb396fb7307004c9670be29636304b988
-  languageName: node
-  linkType: hard
-
-"@types/color-convert@npm:3.0.1":
-  version: 3.0.1
-  resolution: "@types/color-convert@npm:3.0.1"
-  dependencies:
-    color-convert: "npm:*"
-  checksum: 10/4e65b695af5f0f641de51d8acca898a7446cd9a1d607397879aad6da64b7f96f1984b1a3274713475f481e8661b64d56ed3e431058e14419a2e29dccccd9b71c
   languageName: node
   linkType: hard
 
@@ -4205,13 +4189,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/format-duration@npm:3.0.0":
-  version: 3.0.0
-  resolution: "@types/format-duration@npm:3.0.0"
-  checksum: 10/d782976a9bbc01aa4f86950c38c3557b0f628638ed1907bc52be18cce6459acb0ca6cd73c1c1006a31ae66d5bd006df74188af5070310bff557ca1a633a6d617
-  languageName: node
-  linkType: hard
-
 "@types/gl-vec2@npm:1.3.5":
   version: 1.3.5
   resolution: "@types/gl-vec2@npm:1.3.5"
@@ -4225,15 +4202,6 @@ __metadata:
   dependencies:
     "@types/node": "npm:*"
   checksum: 10/79d746a8f053954bba36bd3d94a90c78de995d126289d656fb3271dd9f1229d33f678da04d10bce6be440494a5a73438e2e363e92802d16b8315b051036c5256
-  languageName: node
-  linkType: hard
-
-"@types/hls.js@npm:1.0.0":
-  version: 1.0.0
-  resolution: "@types/hls.js@npm:1.0.0"
-  dependencies:
-    hls.js: "npm:*"
-  checksum: 10/23b5b08416355b3ba401753551d91d68f068989f20497be783b4bf04c0404fe7636af47b6f13481a7d6396b9742bef9efecb0743afd5ee5a46c4331187e9801d
   languageName: node
   linkType: hard
 
@@ -4329,16 +4297,6 @@ __metadata:
   version: 10.0.10
   resolution: "@types/mocha@npm:10.0.10"
   checksum: 10/4e3b61ed5112add86891a5dd3ebdd087714f5e1784a63d47a96424c0825058fd07074e85e43573462f751636c92808fc18a5f3862fe45e649ea98fdc5a3ee2ea
-  languageName: node
-  linkType: hard
-
-"@types/node-fetch@npm:2.6.13":
-  version: 2.6.13
-  resolution: "@types/node-fetch@npm:2.6.13"
-  dependencies:
-    "@types/node": "npm:*"
-    form-data: "npm:^4.0.4"
-  checksum: 10/944d52214791ebba482ca1393a4f0d62b0dbac5f7343ff42c128b75d5356d8bcefd4df77771b55c1acd19d118e16e9bd5d2792819c51bc13402d1c87c0975435
   languageName: node
   linkType: hard
 
@@ -4449,15 +4407,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react-fade-in@npm:2.0.2":
-  version: 2.0.2
-  resolution: "@types/react-fade-in@npm:2.0.2"
-  dependencies:
-    react-fade-in: "npm:*"
-  checksum: 10/f4b59a1f9fec69ef5918f4a6f23e6fa3bdda981fdf880198b5618768e77fb4358078afa4d208396c0b9a85435cd715dc9802c21ae04799fd494f36fd9caeda6c
-  languageName: node
-  linkType: hard
-
 "@types/react@npm:19.2.17":
   version: 19.2.17
   resolution: "@types/react@npm:19.2.17"
@@ -4558,26 +4507,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/uuid@npm:^11":
-  version: 11.0.0
-  resolution: "@types/uuid@npm:11.0.0"
-  dependencies:
-    uuid: "npm:*"
-  checksum: 10/9f94bd34e5d220c53cc58ea9f48a0061d3bc343e29bc33a17edc705f5e21fedda21553318151f2bc227c2b2b03727bbb536da2b82a61f84d2e1ca38abc5e5c3f
-  languageName: node
-  linkType: hard
-
 "@types/which@npm:^2.0.1":
   version: 2.0.2
   resolution: "@types/which@npm:2.0.2"
   checksum: 10/8626a3c2f6db676c449142e1082e33ea0c9d88b8a2bd796366b944891e6da0088b2aa83d3fa9c79e6696f7381a851fc76d43bd353eb6c4d98a7775b4ae0a96a5
-  languageName: node
-  linkType: hard
-
-"@types/wicg-mediasession@npm:1.1.8":
-  version: 1.1.8
-  resolution: "@types/wicg-mediasession@npm:1.1.8"
-  checksum: 10/90db25e99032a6ebc57a7bd8a9bd8899b6303180509db283d67a8f3dd27c33863a173940e1c46a5a101d391d66c93037f41311a0c9c8186a89b95666b0d005ab
   languageName: node
   linkType: hard
 
@@ -6505,7 +6438,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"color-convert@npm:*, color-convert@npm:3.1.3":
+"color-convert@npm:3.1.3":
   version: 3.1.3
   resolution: "color-convert@npm:3.1.3"
   dependencies:
@@ -8590,19 +8523,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"form-data@npm:^4.0.4":
-  version: 4.0.5
-  resolution: "form-data@npm:4.0.5"
-  dependencies:
-    asynckit: "npm:^0.4.0"
-    combined-stream: "npm:^1.0.8"
-    es-set-tostringtag: "npm:^2.1.0"
-    hasown: "npm:^2.0.2"
-    mime-types: "npm:^2.1.12"
-  checksum: 10/52ecd6e927c8c4e215e68a7ad5e0f7c1031397439672fd9741654b4a94722c4182e74cc815b225dcb5be3f4180f36428f67c6dd39eaa98af0dcfdd26c00c19cd
-  languageName: node
-  linkType: hard
-
 "form-data@npm:^4.0.6":
   version: 4.0.6
   resolution: "form-data@npm:4.0.6"
@@ -9371,13 +9291,6 @@ __metadata:
   bin:
     he: bin/he
   checksum: 10/d09b2243da4e23f53336e8de3093e5c43d2c39f8d0d18817abfa32ce3e9355391b2edb4bb5edc376aea5d4b0b59d6a0482aab4c52bc02ef95751e4b818e847f1
-  languageName: node
-  linkType: hard
-
-"hls.js@npm:*":
-  version: 1.6.13
-  resolution: "hls.js@npm:1.6.13"
-  checksum: 10/4de045fddbeb6edc3859021ff60b268a642aa87e83347a3a764e53299b616d57f36eecef0b91eab240ffde84f75d1ab5f7cc0916a929de265707d0f0b27d1c71
   languageName: node
   linkType: hard
 
@@ -11099,25 +11012,17 @@ __metadata:
     "@sentry/node": "npm:10.70.0"
     "@testing-library/dom": "npm:10.4.1"
     "@testing-library/webdriverio": "npm:3.2.1"
-    "@types/audioworklet": "npm:0.0.100"
-    "@types/color-convert": "npm:3.0.1"
     "@types/compression": "npm:1.8.1"
     "@types/express": "npm:5.0.6"
-    "@types/format-duration": "npm:3.0.0"
     "@types/gl-vec2": "npm:1.3.5"
-    "@types/hls.js": "npm:1.0.0"
     "@types/lodash": "npm:4.17.25"
     "@types/materialize-css": "npm:1.0.15"
     "@types/node": "npm:26.4.0"
-    "@types/node-fetch": "npm:2.6.13"
     "@types/promise-retry": "npm:1.1.6"
     "@types/qrcode": "npm:1.5.6"
     "@types/react": "npm:19.2.17"
     "@types/react-dom": "npm:19.2.3"
-    "@types/react-fade-in": "npm:2.0.2"
     "@types/tunnel": "npm:^0"
-    "@types/uuid": "npm:^11"
-    "@types/wicg-mediasession": "npm:1.1.8"
     "@types/ws": "npm:^8"
     "@types/youtube-player": "npm:5.5.11"
     "@wdio/cli": "npm:9.31.4"
@@ -11921,7 +11826,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mime-types@npm:^2.1.12, mime-types@npm:^2.1.35":
+"mime-types@npm:^2.1.35":
   version: 2.1.35
   resolution: "mime-types@npm:2.1.35"
   dependencies:
@@ -13626,7 +13531,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-fade-in@npm:*, react-fade-in@npm:2.0.1":
+"react-fade-in@npm:2.0.1":
   version: 2.0.1
   resolution: "react-fade-in@npm:2.0.1"
   peerDependencies:
@@ -15989,15 +15894,6 @@ __metadata:
   version: 3.11.0
   resolution: "utility-types@npm:3.11.0"
   checksum: 10/a3c51463fc807ed04ccc8b5d0fa6e31f3dcd7a4cbd30ab4bc6d760ce5319dd493d95bf04244693daf316f97e9ab2a37741edfed8748ad38572a595398ad0fdaf
-  languageName: node
-  linkType: hard
-
-"uuid@npm:*":
-  version: 13.0.0
-  resolution: "uuid@npm:13.0.0"
-  bin:
-    uuid: dist-node/bin/uuid
-  checksum: 10/2742b24d1e00257e60612572e4d28679423469998cafbaf1fe9f1482e3edf9c40754b31bfdb3d08d71b29239f227a304588f75210b3b48f2609f0673f1feccef
   languageName: node
   linkType: hard
 

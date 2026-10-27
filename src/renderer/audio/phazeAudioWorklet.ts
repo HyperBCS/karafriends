@@ -23,7 +23,7 @@ class OLAProcessor extends AudioWorkletProcessor {
   outputBuffersToRetrieve: Float32Array[][];
 
   constructor(options: any) {
-    // @ts-expect-error for some reason the method signature is wrong in @types/audioworklet...
+    // @ts-expect-error the constructor in audioworklet.d.ts (copied from @types/audioworklet) takes no arguments
     super(options);
 
     this.nbInputs = options.numberOfInputs;
@@ -57,7 +57,7 @@ class OLAProcessor extends AudioWorkletProcessor {
    */
   reallocateChannelsIfNeeded(
     inputs: Float32Array[][],
-    outputs: Float32Array[][]
+    outputs: Float32Array[][],
   ) {
     for (let i = 0; i < this.nbInputs; i++) {
       const nbChannels = inputs[i].length;
@@ -80,7 +80,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.inputBuffers[inputIndex] = new Array(nbChannels);
     for (let i = 0; i < nbChannels; i++) {
       this.inputBuffers[inputIndex][i] = new Float32Array(
-        this.blockSize + WEBAUDIO_BLOCK_SIZE
+        this.blockSize + WEBAUDIO_BLOCK_SIZE,
       );
       this.inputBuffers[inputIndex][i].fill(0);
     }
@@ -110,7 +110,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.outputBuffersToRetrieve[outputIndex] = new Array(nbChannels);
     for (let i = 0; i < nbChannels; i++) {
       this.outputBuffersToRetrieve[outputIndex][i] = new Float32Array(
-        this.blockSize
+        this.blockSize,
       );
       this.outputBuffersToRetrieve[outputIndex][i].fill(0);
     }
@@ -146,7 +146,7 @@ class OLAProcessor extends AudioWorkletProcessor {
       for (let j = 0; j < this.inputBuffers[i].length; j++) {
         const webAudioBlock = this.outputBuffers[i][j].subarray(
           0,
-          WEBAUDIO_BLOCK_SIZE
+          WEBAUDIO_BLOCK_SIZE,
         );
         outputs[i][j].set(webAudioBlock);
       }
@@ -210,7 +210,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.processOLA(
       this.inputBuffersToSend,
       this.outputBuffersToRetrieve,
-      params
+      params,
     );
     this.handleOutputBuffersToRetrieve();
     this.writeOutputs(outputs);
@@ -280,7 +280,7 @@ class PhaseVocoderProcessor extends OLAProcessor {
   processOLA(
     inputs: Float32Array[][],
     outputs: Float32Array[][],
-    parameters: any
+    parameters: any,
   ) {
     // no automation, take last value
     const pitchFactor =
@@ -303,7 +303,7 @@ class PhaseVocoderProcessor extends OLAProcessor {
         this.fft.completeSpectrum(this.freqComplexBufferShifted);
         this.fft.inverseTransform(
           this.timeComplexBuffer,
-          this.freqComplexBufferShifted
+          this.freqComplexBufferShifted,
         );
         this.fft.fromComplexArray(this.timeComplexBuffer, output);
 

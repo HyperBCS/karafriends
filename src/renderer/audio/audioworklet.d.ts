@@ -1,12 +1,10 @@
-// Ambient AudioWorklet globals.
+// Ambient AudioWorklet globals used by phazeAudioWorklet.ts.
 //
-// @types/audioworklet ships no TypeScript 6 typings: its `typesVersions` only
-// maps `<=5.9`, so under TS6 the package falls back to a stub and its worklet
-// globals are not picked up. This local shim restores the globals used by
-// phazeAudioWorklet.ts. It intentionally mirrors upstream's parameterless
-// AudioWorkletProcessor constructor, so the existing `@ts-expect-error` on the
-// `super(options)` call there stays valid. Remove this file once
-// @types/audioworklet supports TS6.
+// TypeScript 6 doesn't include @types packages automatically (`types` defaults
+// to []), so @types/audioworklet's globals were never picked up; this shim
+// declares the two the worklet needs instead. It mirrors that package's
+// parameterless AudioWorkletProcessor constructor, so the `@ts-expect-error` on
+// the `super(options)` call there stays valid.
 
 declare class AudioWorkletProcessor {
   readonly port: MessagePort;
