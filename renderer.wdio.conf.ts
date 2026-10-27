@@ -1,7 +1,10 @@
+import { createRequire } from "module";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
+// Outside Electron, the electron package exports the path to its binary.
+const electronBinary: string = createRequire(import.meta.url)("electron");
 
 console.log(
   `Dev port: ${process.env.KARAFRIENDS_DEV_PORT}, remocon port: ${process.env.KARAFRIENDS_REMOCON_PORT}`,
@@ -15,7 +18,7 @@ export const config = {
         enableChromeLogs: true,
       },
       "wdio:electronServiceOptions": {
-        appBinaryPath: resolve(repoRoot, "electron.js"),
+        appBinaryPath: electronBinary,
         appArgs: [
           `app=${resolve(repoRoot, "build", "dev", "main_", "index.js")}`,
         ],

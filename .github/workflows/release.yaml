@@ -16,6 +16,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: yarn
       - name: Setup code signing cert
         env:
           MACOS_NOTARIZATION_API_KEY_BASE64: ${{ secrets.MACOS_NOTARIZATION_API_KEY_BASE64 }}
@@ -58,6 +59,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: yarn
       - name: Setup code signing cert
         env:
           MACOS_NOTARIZATION_API_KEY_BASE64: ${{ secrets.MACOS_NOTARIZATION_API_KEY_BASE64 }}
@@ -100,6 +102,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: yarn
       - run: yarn install --immutable
       - run: yarn build-prod
         env:
@@ -119,6 +122,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: yarn
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: yarn install --immutable
       - run: yarn build-prod
