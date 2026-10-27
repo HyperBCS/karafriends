@@ -23,7 +23,6 @@ import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
 import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
-import { Nicovideo } from "niconico";
 import nodeFetch from "node-fetch";
 import tunnel from "tunnel";
 import { Innertube } from "youtubei.js";
@@ -36,6 +35,7 @@ import {
   downloadJoysoundData,
   downloadNicoVideo,
   downloadYoutubeVideo,
+  getNicoVideoInfo,
   getVideoDownloadProgress,
   TEMP_FOLDER,
 } from "./../common/videoDownloader";
@@ -372,26 +372,6 @@ function loadDb(): NotARealDb {
 }
 
 const pubsub = new PubSub();
-
-const nicovideo = new Nicovideo();
-
-interface WatchData {
-  owner: {
-    id: number;
-    nickname: string;
-  };
-  video: {
-    count: {
-      view: number;
-    };
-    description: string;
-    duration: number;
-    title: string;
-    thumbnail: {
-      player: string;
-    };
-  };
-}
 
 function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
   // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
@@ -871,19 +851,12 @@ const resolvers = {
       args: { videoId: string },
     ): Promise<NicoVideoInfoResult> => {
       try {
-        // @ts-ignore
-        const watchData: WatchData = await nicovideo.watch(args.videoId);
         return {
           __typename: "NicoVideoInfo",
-          author: watchData.owner.nickname,
-          channelId: watchData.owner.id.toString(10),
-          description: watchData.video.description,
-          lengthSeconds: watchData.video.duration,
-          title: watchData.video.title,
-          thumbnailUrl: watchData.video.thumbnail.player,
-          viewCount: watchData.video.count.view,
+          ...(await getNicoVideoInfo(args.videoId)),
         };
       } catch (e) {
+        console.error(`Failed getting Niconico info for ${args.videoId}:`, e);
         return {
           __typename: "NicoVideoInfoError",
           reason: "Failed getting video info. Maybe an invalid VideoID?",

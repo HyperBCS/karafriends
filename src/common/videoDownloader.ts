@@ -1,8 +1,9 @@
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, execFile, spawn } from "child_process";
 import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
 import path from "path";
 import process from "process";
+import { promisify } from "util";
 
 import invariant from "ts-invariant";
 
@@ -16,6 +17,14 @@ import { JoysoundAPI } from "../main/joysoundApi";
 
 import { ensureExternalResources, getResourcePaths } from "./externalResources";
 import { getSongDuration } from "./joysoundParser";
+import {
+  isNicoVideoId,
+  NicoVideoMetadata,
+  nicoWatchUrl,
+  parseNicoVideoInfo,
+} from "./nicoVideoInfo";
+
+const execFileAsync = promisify(execFile);
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
 const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
@@ -1139,6 +1148,23 @@ function downloadYoutubeVideoImpl(
 
     onComplete();
   });
+}
+
+// Look up a Niconico video's metadata with yt-dlp, which already downloads
+// these videos and keeps up with changes to Niconico's site.
+export async function getNicoVideoInfo(
+  videoId: string,
+): Promise<NicoVideoMetadata> {
+  if (!isNicoVideoId(videoId)) {
+    throw new Error(`Not a Niconico video ID: ${JSON.stringify(videoId)}`);
+  }
+  await ensureExternalResources();
+  const { stdout } = await execFileAsync(
+    resourcePaths.ytdlp,
+    ["--dump-single-json", "--skip-download", "--", nicoWatchUrl(videoId)],
+    { timeout: 30000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+  );
+  return parseNicoVideoInfo(stdout);
 }
 
 export function downloadNicoVideo(
