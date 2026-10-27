@@ -48,8 +48,10 @@ import express from "express";
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
+import { IPC_CHANNELS } from "../common/ipc";
 import { displayToken } from "./caller";
 import { startHttpServer } from "./httpServer";
+import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
@@ -92,6 +94,29 @@ protocol.registerSchemesAsPrivileged([
 
 let rendererWindow: BrowserWindow | null;
 
+// The display: the Parcel dev server's page in dev, the built one in prod.
+const rendererUrl = isDev
+  ? `http://localhost:${karafriendsConfig.devPort}/renderer/`
+  : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}`;
+
+// The display talks to this process over IPC, not HTTP (see ipc.ts).
+const displayIpc = createDisplayIpc({
+  handlers: api,
+  hub,
+  display: () =>
+    rendererWindow && !rendererWindow.isDestroyed()
+      ? rendererWindow.webContents
+      : null,
+  displayUrl: rendererUrl,
+});
+
+ipcMain.handle(IPC_CHANNELS.call, (event, method: unknown, input: unknown) =>
+  displayIpc.call(event, method, input),
+);
+ipcMain.on(IPC_CHANNELS.liveSubscribe, (event) =>
+  displayIpc.subscribeLive(event),
+);
+
 function createWindow() {
   rendererWindow = new BrowserWindow({
     frame: isDev,
@@ -119,6 +144,8 @@ function createWindow() {
       rendererWindow?.reload();
     }
   });
+  // (A reloaded page subscribes again, which replaces its old subscription.)
+  rendererWindow.webContents.on("destroyed", displayIpc.endLive);
 
   // Ignore CORS when fetching ipcasting HLS and when sending requests to remocon
   const session = rendererWindow.webContents.session;
@@ -204,9 +231,6 @@ function createWindow() {
   startHttpServer(expressApp);
 
   if (rendererWindow) {
-    const rendererUrl = isDev
-      ? `http://localhost:${karafriendsConfig.devPort}/renderer/`
-      : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}`;
     // A failed load (dev server not ready, a transient file/protocol error)
     // would leave the karaoke display blank, and the unhandled loadURL
     // rejection would reach the process-level handler. Catch it and retry a few
