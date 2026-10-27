@@ -9,7 +9,7 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { expect, forbidGraphql, test } from "./fixtures";
 
 const ALICE = { deviceId: "e2e-alice-device", nickname: "alice" };
 const BOB = { deviceId: "e2e-bob-device", nickname: "bob" };
@@ -44,8 +44,10 @@ async function openPhone(
   browser: Browser,
   remoconUrl: string,
   who: { deviceId: string; nickname: string },
+  graphqlRequests: string[],
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
+  await forbidGraphql(context, graphqlRequests);
   const page = await context.newPage();
   await page.addInitScript(
     ([deviceId, nickname]) => {
@@ -134,11 +136,12 @@ test.describe("live state", () => {
     karafriends,
     display,
     browser,
+    graphqlRequests,
   }) => {
     const { remoconUrl } = karafriends;
     const phones = [
-      await openPhone(browser, remoconUrl, ALICE),
-      await openPhone(browser, remoconUrl, BOB),
+      await openPhone(browser, remoconUrl, ALICE, graphqlRequests),
+      await openPhone(browser, remoconUrl, BOB, graphqlRequests),
     ];
     try {
       const [alice, bob] = phones.map((phone) => phone.page);

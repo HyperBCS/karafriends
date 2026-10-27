@@ -127,7 +127,13 @@ async function queueVideo(remote: Page) {
     }
   }).toPass({ intervals: [5_000, 10_000], timeout: 45_000 });
 
+  // The remote queues it with /api/queueSong (and never GraphQL: see
+  // forbidGraphql in fixtures.ts).
+  const answer = remote.waitForResponse((res) =>
+    res.url().endsWith("/api/queueSong"),
+  );
   await remote.getByRole("button", { name: "Queue video" }).click();
+  expect(await (await answer).json()).toMatchObject({ ok: true });
 }
 
 function skipButton(remote: Page) {
