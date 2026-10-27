@@ -10,7 +10,7 @@ import type { QueueItem } from "../common/api";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import type { HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
-import { createStateStore, type StateStore } from "./state";
+import { adhocLyricsKey, createStateStore, type StateStore } from "./state";
 import { validators } from "./validate";
 
 const ADMIN_DEVICE = "admin-device";
@@ -584,6 +584,126 @@ describe("queueSong", () => {
     assert.equal(store.getState().songQueue[0].kind, "youtube");
   });
 
+  describe("a YouTube song's adhoc lyrics", () => {
+    const VIDEO = "jNQXAC9IVRw";
+    // Downloads that finish when the test says.
+    let finishDownloads: (() => void)[];
+    let clock: number;
+    const api = (config: Partial<ApiDeps["config"]> = {}) =>
+      makeApi(config, {
+        downloads: {
+          youtube: (_item, _captions, onReady) => finishDownloads.push(onReady),
+        } as ApiDeps["downloads"],
+        now: () => ++clock,
+      });
+    const queue = (
+      handlers: ReturnType<typeof makeApi>,
+      caller: Caller,
+      adhocLyrics: string | null,
+    ) =>
+      handlers.queueSong(
+        {
+          kind: "youtube",
+          songId: VIDEO,
+          name: "Me at the zoo",
+          artistName: "",
+          adhocLyrics,
+          captionCode: null,
+          gainValue: 1,
+        },
+        caller,
+      );
+    const stored = () => store.getState().idToAdhocLyrics;
+
+    beforeEach(() => {
+      finishDownloads = [];
+      clock = 0;
+    });
+
+    test("are kept once the song is queued, not before", async () => {
+      const handlers = api();
+      await queue(handlers, alice, "la");
+      // Downloading, or failed: nothing kept.
+      assert.deepEqual(stored(), {});
+      assert.equal(await handlers.adhocLyrics({ songId: VIDEO }, bob), null);
+
+      finishDownloads[0]();
+      const [item] = store.getState().songQueue;
+      assert.deepEqual(stored(), { [adhocLyricsKey(item)]: ["la"] });
+    });
+
+    test("are each queueing's own, and go with it", async () => {
+      const handlers = api();
+      await queue(handlers, alice, "alice's line");
+      await queue(handlers, bob, "bob's line");
+      await queue(handlers, bob, null);
+      finishDownloads.forEach((finish) => finish());
+      const [alices, bobs, plain] = store.getState().songQueue;
+      assert.equal(plain.kind === "youtube" && plain.hasAdhocLyrics, false);
+      assert.equal(Object.keys(stored()).length, 2);
+      // The first queued, until it plays.
+      assert.deepEqual(await handlers.adhocLyrics({ songId: VIDEO }, bob), [
+        "alice's line",
+      ]);
+
+      // Taken off the queue: its lyrics go.
+      assert.equal(
+        await handlers.removeSong(
+          { songId: VIDEO, timestamp: alices.timestamp },
+          alice,
+        ),
+        true,
+      );
+      assert.deepEqual(stored(), { [adhocLyricsKey(bobs)]: ["bob's line"] });
+
+      // Played: they go when the next song starts.
+      await handlers.popSong({}, display);
+      assert.deepEqual(await handlers.adhocLyrics({ songId: VIDEO }, bob), [
+        "bob's line",
+      ]);
+      assert.equal(
+        await handlers.pushAdhocLyrics({ lyricIndex: 0 }, bob),
+        true,
+      );
+      assert.deepEqual(store.getState().currentSongAdhocLyrics, [
+        { lyric: "bob's line", lyricIndex: 0 },
+      ]);
+      await handlers.popSong({}, display);
+      assert.deepEqual(stored(), {});
+    });
+
+    test("stop at a million characters in all", async () => {
+      const handlers = api();
+      const big = "x".repeat(100_000);
+      for (let i = 0; i < 9; i++) {
+        assert.equal((await queue(handlers, alice, big)).ok, true);
+        finishDownloads[i]();
+      }
+      // Two more that fit now, but not together.
+      assert.equal((await queue(handlers, bob, "y".repeat(60_000))).ok, true);
+      assert.equal((await queue(handlers, bob, "z".repeat(60_000))).ok, true);
+      assert.deepEqual(await queue(handlers, bob, big + "!"), {
+        ok: false,
+        reason:
+          "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
+      });
+      finishDownloads[9]();
+      finishDownloads[10]();
+      // The second is queued without its lyrics.
+      const queued = store.getState().songQueue;
+      assert.equal(queued.length, 11);
+      assert.deepEqual(
+        queued
+          .slice(9)
+          .map((item) => item.kind === "youtube" && item.hasAdhocLyrics),
+        [true, false],
+      );
+      assert.equal(Object.keys(stored()).length, 10);
+      // Without lyrics, it still queues.
+      assert.equal((await queue(handlers, bob, null)).ok, true);
+    });
+  });
+
   test("needs the caller's identity", async () => {
     const api = makeApi();
     await rejectsWith(
@@ -665,7 +785,7 @@ describe("pushAdhocLyrics", () => {
   const play = (lyrics: string[]) =>
     store.update((state) => {
       state.currentSong = lyricsSong;
-      state.idToAdhocLyrics[VIDEO] = lyrics;
+      state.idToAdhocLyrics[adhocLyricsKey(lyricsSong)] = lyrics;
     });
   const shown = () => store.getState().currentSongAdhocLyrics;
 

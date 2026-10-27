@@ -27,7 +27,7 @@ import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
-import type { StateStore } from "./state";
+import { adhocLyricsKey, type StateStore } from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -129,6 +129,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 const MAX_ADHOC_LINES_SHOWN = 400;
 const MAX_ADHOC_CHARS_SHOWN = 30_000;
 
+// The most adhoc lyrics the queue holds, all songs together. They are saved
+// to queue.json on every change, and one song's may be 100,000 characters.
+const MAX_ADHOC_CHARS_QUEUED = 1_000_000;
+
+const totalLength = (lines: readonly string[]) =>
+  lines.reduce((sum, line) => sum + line.length, 0);
+
 // Song and video IDs end up in file names and yt-dlp arguments.
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -217,11 +224,31 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     );
   };
 
-  const pushSongToQueue = (item: QueueItem, pushToHead: boolean) => {
+  const queuedLyricsLength = () =>
+    Object.values(store.getState().idToAdhocLyrics).reduce(
+      (sum, lines) => sum + totalLength(lines),
+      0,
+    );
+
+  // A YouTube song's adhoc lyrics, if it has them.
+  const adhocLyricsOf = (item: QueueItem | null) =>
+    item?.kind === "youtube" && item.hasAdhocLyrics
+      ? store.getState().idToAdhocLyrics[adhocLyricsKey(item)]
+      : undefined;
+
+  // adhocLyrics: a YouTube song's, kept with it while it is queued.
+  const pushSongToQueue = (
+    item: QueueItem,
+    pushToHead: boolean,
+    adhocLyrics?: string[],
+  ) => {
     console.log(
       `pushSongToQueue: pushing ${JSON.stringify(item)}; pushToHead=${pushToHead}`,
     );
     store.update((state) => {
+      if (adhocLyrics) {
+        state.idToAdhocLyrics[adhocLyricsKey(item)] = adhocLyrics;
+      }
       if (pushToHead) {
         // To give things time to download, we don't actually push to the
         // front, but the second. splice handles an empty queue too.
@@ -442,7 +469,12 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async adhocLyrics({ songId }) {
-      return store.getState().idToAdhocLyrics[songId] ?? null;
+      // The video's that is playing, or else the next one's in the queue.
+      const { currentSong, songQueue } = store.getState();
+      const item = [currentSong, ...songQueue].find(
+        (item) => item?.songId === songId && adhocLyricsOf(item),
+      );
+      return adhocLyricsOf(item ?? null) ?? null;
     },
 
     async history({ offset = 0, limit = DEFAULT_LIMIT.history }, caller) {
@@ -528,24 +560,41 @@ export function createApi(deps: ApiDeps): ApiHandlers {
           );
           break;
         case "youtube": {
+          const lyrics = (input.adhocLyrics ?? "")
+            .split("\n")
+            .filter((line) => line.trim() !== "");
+          const fits = () =>
+            queuedLyricsLength() + totalLength(lyrics) <=
+            MAX_ADHOC_CHARS_QUEUED;
+          if (lyrics.length > 0 && !fits()) {
+            return {
+              ok: false,
+              reason:
+                "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
+            };
+          }
           const item: YoutubeQueueItem = {
             kind: "youtube",
             ...base,
-            hasAdhocLyrics: Boolean(input.adhocLyrics),
+            hasAdhocLyrics: lyrics.length > 0,
             hasCaptions: Boolean(input.captionCode),
             gainValue: input.gainValue,
           };
-          if (input.adhocLyrics) {
-            const lyrics = input.adhocLyrics
-              .split("\n")
-              .filter((line) => line.trim() !== "");
-            store.update((state) => {
-              state.idToAdhocLyrics[item.songId] = lyrics;
-            });
-          }
-          deps.downloads.youtube(item, input.captionCode, () =>
-            pushSongToQueue(item, pushToHead),
-          );
+          // The lyrics are kept only once the song is queued: a download
+          // that fails never is.
+          deps.downloads.youtube(item, input.captionCode, () => {
+            if (!item.hasAdhocLyrics) {
+              pushSongToQueue(item, pushToHead);
+            } else if (fits()) {
+              pushSongToQueue(item, pushToHead, lyrics);
+            } else {
+              // Others came in while it downloaded.
+              console.warn(
+                `Queueing ${item.songId} without its lyrics: the queue holds too many`,
+              );
+              pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
+            }
+          });
           break;
         }
         case "nico": {
@@ -575,6 +624,7 @@ export function createApi(deps: ApiDeps): ApiHandlers {
       }
       return store.update((state) => {
         state.songQueue.splice(state.songQueue.indexOf(item), 1);
+        delete state.idToAdhocLyrics[adhocLyricsKey(item)];
         return true;
       });
     },
@@ -596,16 +646,12 @@ export function createApi(deps: ApiDeps): ApiHandlers {
     },
 
     async pushAdhocLyrics({ lyricIndex }, caller) {
-      const { currentSong, currentSongAdhocLyrics, idToAdhocLyrics } =
-        store.getState();
+      const { currentSong, currentSongAdhocLyrics } = store.getState();
+      const lyrics = adhocLyricsOf(currentSong);
       // The song may just have ended.
-      if (currentSong?.kind !== "youtube" || !currentSong.hasAdhocLyrics) {
-        return false;
-      }
+      if (lyrics === undefined) return false;
       // Who may sing along is who may control the song.
       requirePlaybackControl(caller);
-      const lyrics = idToAdhocLyrics[currentSong.songId];
-      if (lyrics === undefined) return false;
       // The line comes from the lyrics queued with the song, never from the
       // phone.
       const lyric = lyrics[lyricIndex];
@@ -641,9 +687,7 @@ export function createApi(deps: ApiDeps): ApiHandlers {
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];
         const previous = state.currentSong;
-        if (previous?.kind === "youtube" && previous.hasAdhocLyrics) {
-          delete state.idToAdhocLyrics[previous.songId];
-        }
+        if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
         state.currentSong = next;
 
         if (next) {
