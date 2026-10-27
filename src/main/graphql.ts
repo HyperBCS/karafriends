@@ -774,8 +774,12 @@ const resolvers = {
       return db.songQueue;
     },
     config: () => {
+      // Every phone can read this, so return only what the schema exposes,
+      // never the whole config with its DAM/Joysound/proxy credentials.
       return {
-        ...karafriendsConfig,
+        adminNicks: karafriendsConfig.adminNicks,
+        adminDeviceIds: karafriendsConfig.adminDeviceIds,
+        supervisedMode: karafriendsConfig.supervisedMode,
         __typename: "KarafriendsConfig",
       };
     },
@@ -786,12 +790,13 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
+      // A cursor is the number of items before the next page.
       return {
         edges: db.songHistory
-          .slice(afterInt, firstInt)
+          .slice(afterInt, afterInt + firstInt)
           .map((songHistoryItem, i) => ({
             node: songHistoryItem,
-            cursor: (firstInt + i).toString(),
+            cursor: (afterInt + i + 1).toString(),
           })),
         pageInfo: {
           hasPreviousPage: false,
@@ -1110,6 +1115,9 @@ const resolvers = {
         (item) =>
           item.songId === args.songId && item.timestamp === args.timestamp,
       );
+      // The song may already be playing or removed by another phone; without
+      // this check, splice(-1, 1) would remove the last song in the queue.
+      if (songIdx === -1) return false;
       db.songQueue.splice(songIdx, 1);
       pubsub.publish(SubscriptionEvent.QueueChanged, {
         queueChanged: {
