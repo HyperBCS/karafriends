@@ -497,6 +497,59 @@ test.describe("supervised mode", () => {
     });
   });
 
+  test.describe("three songs", () => {
+    test.use({
+      seedQueue: {
+        ...seed(someoneElse),
+        songQueue: [1, 2, 3].map((n) => song(n, someoneElse)),
+      },
+    });
+
+    test("an admin moves one to the top, and a guest can't", async ({
+      karafriends,
+      display,
+    }) => {
+      const { remoconUrl } = karafriends;
+      await waitForSong1(remoconUrl);
+      const song3 = {
+        songId: "sm90003",
+        timestamp: song(3, someoneElse).timestamp,
+      };
+
+      expect(
+        await call(
+          remoconUrl,
+          "moveSong",
+          { ...song3, toIndex: 0 },
+          REMOTE_HEADERS,
+        ),
+      ).toMatchObject({ status: 403 });
+
+      const login = await call(
+        remoconUrl,
+        "adminLogin",
+        { password: ADMIN_PASSWORD },
+        REMOTE_HEADERS,
+      );
+      const admin = {
+        ...REMOTE_HEADERS,
+        "X-Karafriends-Admin-Token": login.body.token,
+      };
+      expect(
+        await call(remoconUrl, "moveSong", { ...song3, toIndex: 0 }, admin),
+      ).toEqual({ status: 200, body: { ok: true } });
+
+      // Another phone's live state, and the display's queue.
+      const { state } = await liveState(remoconUrl);
+      expect(
+        state.queue.map((item: { songId: string }) => item.songId),
+      ).toEqual(["sm90003", "sm90002"]);
+      await expect(
+        display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+      ).toHaveText([/E2E supervised song 3/, /E2E supervised song 2/]);
+    });
+  });
+
   test.describe("my own song", () => {
     test.use({ seedQueue: seed(me) });
 
