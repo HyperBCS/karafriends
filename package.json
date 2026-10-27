@@ -4,8 +4,8 @@
   "private": true,
   "main": "build/prod/main/index.js",
   "scripts": {
-    "build-native-dev": "cargo-cp-artifact --npm cdylib native/index.node -- cross-env-shell \"cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml ${CARGO_ARGS:-}\"",
-    "build-native-prod": "cargo-cp-artifact --npm cdylib native/index.node -- cross-env-shell \"cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml --release ${CARGO_ARGS:-}\"",
+    "build-native-dev": "cargo-cp-artifact --npm cdylib native/index.node -- cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml ${CARGO_ARGS:-}",
+    "build-native-prod": "cargo-cp-artifact --npm cdylib native/index.node -- cargo build --message-format json-render-diagnostics --manifest-path native/Cargo.toml --release ${CARGO_ARGS:-}",
     "build-dev": "yarn get-external-resources && yarn build-native-dev && electron-vite build --mode development",
     "build-prod": "yarn get-external-resources && yarn build-native-prod && electron-vite build",
     "dev": "yarn get-external-resources && yarn build-native-dev && electron-vite dev -w --entry build/dev/main/index.js",
@@ -40,9 +40,7 @@
     "materialize-css": "1.0.0",
     "multicast-dns": "7.2.5",
     "node-fetch": "3.3.2",
-    "parcel-reporter-static-files-copy": "1.5.3",
     "polyline-normals": "2.0.2",
-    "process": "0.11.10",
     "promise-retry": "2.0.1",
     "qrcode": "1.5.4",
     "react": "19.2.7",
@@ -62,11 +60,6 @@
   "devDependencies": {
     "7zip-bin": "5.2.0",
     "@electron/packager": "20.3.0",
-    "@parcel/config-default": "2.16.4",
-    "@parcel/core": "2.16.4",
-    "@parcel/transformer-glsl": "2.16.4",
-    "@parcel/transformer-sass": "2.16.4",
-    "@parcel/transformer-worklet": "2.16.4",
     "@playwright/test": "1.64.1",
     "@types/compression": "1.8.1",
     "@types/express": "5.0.6",
@@ -80,53 +73,17 @@
     "@types/react-dom": "19.2.3",
     "@types/tunnel": "^0",
     "@vitejs/plugin-react": "6.1.2",
-    "buffer": "^5.5.0||^6.0.0",
     "cargo-cp-artifact": "0.1.9",
-    "concurrently": "10.0.5",
-    "cross-env": "10.1.0",
     "electron": "43.4.1",
     "electron-vite": "6.0.0",
     "husky": "9.1.7",
     "lint-staged": "17.4.1",
     "oxlint": "1.90.0",
-    "parcel": "2.16.4",
-    "path-browserify": "^1.0.0",
     "prettier": "3.9.6",
     "sass": "1.106.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "vite": "8.3.5",
-    "wait-on": "9.1.0"
+    "vite": "8.3.5"
   },
-  "packageManager": "yarn@4.18.1",
-  "targets": {
-    "main_": {
-      "source": "src/main/index.ts",
-      "context": "electron-main",
-      "includeNodeModules": true
-    },
-    "preload": {
-      "source": "src/preload/index.ts",
-      "context": "electron-renderer",
-      "includeNodeModules": true,
-      "scopeHoist": true
-    },
-    "renderer": {
-      "source": "src/renderer/index.html",
-      "context": "browser"
-    },
-    "remocon": {
-      "source": "src/remocon/index.html",
-      "context": "browser"
-    }
-  },
-  "@parcel/bundler-default": {
-    "minBundles": 100
-  },
-  "alias": {
-    "@parcel/error-overlay": "./src/common/disableParcelErrorOverlay.ts"
-  },
-  "@parcel/resolver-default": {
-    "packageExports": true
-  }
+  "packageManager": "yarn@4.18.1"
 }

@@ -29,8 +29,8 @@ export function startHttpServer(
   });
 
   // Nothing here speaks WebSocket, so refuse upgrades, as graphql-ws did for
-  // any other path. Otherwise Node hands them to Express, and in dev the
-  // remote's proxy to Parcel fails on the HMR socket Parcel's client opens.
+  // any other path, instead of Node handing them to Express. (In dev, the
+  // remote's hot-reload socket goes to the Vite dev server, not here.)
   httpServer.on("upgrade", (_req, socket) => {
     socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
   });

@@ -36,10 +36,11 @@
 - **Windows/MSIX notes for every session:**
   - The Claude app here is the Microsoft Store build: writes under `%APPDATA%`/`%LOCALAPPDATA%` from Claude's shells land in a private copy. Keep tool caches inside the repo; leave global installs to the user.
   - DAM/Joysound need a Japanese IP (`curl -s https://ipinfo.io/country`).
-  - Don't stop processes you didn't start; another app instance may hold ports 3000/8080.
-  - Set `KARAFRIENDS_LOCAL_ONLY=1` for any app launch in checks (`run-dev`, packaged builds). The server then listens on 127.0.0.1 only and mDNS is skipped, so Windows Firewall doesn't prompt the user for each worktree's Electron copy. The e2e fixture sets it already.
+  - Don't stop processes you didn't start; another app instance may hold ports 5173/8080.
+  - Set `KARAFRIENDS_LOCAL_ONLY=1` for any app launch in checks (`yarn dev`, packaged builds). The server (and in dev, the Vite dev server) then listens on 127.0.0.1 only and mDNS is skipped, so Windows Firewall doesn't prompt the user for each worktree's Electron copy. The e2e fixture sets it already.
   - Also set `KARAFRIENDS_HIDE_WINDOW=1` for those launches. The display window is then created hidden, not full screen, so checks don't take over the user's screen. The e2e fixture sets it already.
-  - Parcel's `.parcel-cache` can go stale after big deletions: after 5e merged, it rebuilt the deleted GraphQL server into the main checkout's bundle. If a build contains code that no longer exists in `src`, delete `.parcel-cache` and `build/` and rebuild.
+  - `yarn dev` passes what follows `--` to Electron, so a check can run `yarn dev -- --mute-audio --user-data-dir=<tmp>` (with `TEMP`/`TMP` set to `<tmp>` too).
+  - Since Phase 6 the build keeps no cache: electron-vite empties `build/<mode>/{main,preload,web}` on every build. Parcel's leftovers (`.parcel-cache`, and `main_`, `renderer` and `remocon` under `build/dev` and `build/prod`) can be deleted.
 
 ## Context
 
