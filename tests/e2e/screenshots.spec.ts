@@ -79,6 +79,13 @@ test.describe("phase B", () => {
         .first(),
     ).toBeVisible();
     await shoot(remote, "b-home-queue");
+    // The display went dark too; its sidebar shows the same queue.
+    await expect(karafriends.display.getByText("紅蓮華").first()).toBeVisible();
+    await karafriends.display.setViewportSize({ width: 1920, height: 1080 });
+    await karafriends.display.screenshot({
+      path: path.join(OUT_DIR, "b-display.png"),
+      animations: "disabled",
+    });
 
     for (const language of ["en", "ja"]) {
       await remote.evaluate(
