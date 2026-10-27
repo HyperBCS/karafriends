@@ -3833,7 +3833,6 @@ __metadata:
     qrcode: "npm:1.5.4"
     react: "npm:19.2.7"
     react-dom: "npm:19.2.7"
-    react-fade-in: "npm:2.0.1"
     react-mobile-picker-scroll: "npm:0.2.14"
     react-router: "npm:8.3.0"
     ts-invariant: "npm:0.10.3"
@@ -5001,15 +5000,6 @@ __metadata:
   peerDependencies:
     react: ^19.2.7
   checksum: 10/9564f4b83843ca5518ed5f807c93cb1663706559cde52f3ef814b41e60b63b16e684d849926458f0ba436745d7eabf822cba1c528be370e7b2f35a4c91e35941
-  languageName: node
-  linkType: hard
-
-"react-fade-in@npm:2.0.1":
-  version: 2.0.1
-  resolution: "react-fade-in@npm:2.0.1"
-  peerDependencies:
-    react: ^16.8 || 17
-  checksum: 10/34e6ddf1641417e170a268b07b514d3207603b14a56bc9836372828b72782df16e51d3bd066a271e6f6c7e2bf2916b100b72b06dd20a5447d965b16f78160cd5
   languageName: node
   linkType: hard
 
