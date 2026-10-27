@@ -81,13 +81,10 @@ export function runTool(run: ToolRun): Promise<void> {
       settled = true;
       clearTimeout(timer);
       if (stop) run.signal?.removeEventListener("abort", stop);
-      if (failure) {
-        log.write(`\nkarafriends: ${failure.detail}\n`);
-        reject(failure);
-      } else {
-        resolve();
-      }
-      log.end();
+      if (failure) log.write(`\nkarafriends: ${failure.detail}\n`);
+      // Settles once the log is written, so it says why. The callback
+      // comes even when the log can't be written (with its error).
+      log.end(() => (failure ? reject(failure) : resolve()));
     };
     const failedToStart = (err: unknown) =>
       settle(
