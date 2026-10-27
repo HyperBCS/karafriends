@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import http, { type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { after, before, describe, test } from "node:test";
+import { after, before, describe, mock, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { getSetCookies, http as httpGet, httpFetch } from "./http";
@@ -32,6 +32,10 @@ const routes: Record<string, (res: ServerResponse) => Promise<void> | void> = {
   },
   // Never answers.
   "/no-headers": () => {},
+  "/error-page": (res) => {
+    res.writeHead(500, { "Content-Type": "text/html" });
+    res.end("<html>Internal details of the upstream server</html>");
+  },
   "/cookies": (res) => {
     res.writeHead(302, {
       Location: "/elsewhere",
@@ -55,6 +59,24 @@ before(async () => {
 after(() => {
   server.closeAllConnections();
   server.close();
+});
+
+describe("http", () => {
+  test("keeps an error page out of the error's message", async () => {
+    const logged = mock.method(console, "error", () => {});
+    try {
+      const err: Error = await httpGet(`${base}/error-page`).then(
+        () => assert.fail("should have thrown"),
+        (e) => e,
+      );
+      assert.match(err.message, /^500 Internal Server Error from http:/);
+      assert.doesNotMatch(err.message, /details/);
+      // It's still logged.
+      assert.match(String(logged.mock.calls[0].arguments[0]), /details/);
+    } finally {
+      logged.mock.restore();
+    }
+  });
 });
 
 describe("httpFetch's timeout", () => {

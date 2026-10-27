@@ -146,16 +146,16 @@ export async function httpFetch(
 }
 
 // The parsed body: JSON, an ArrayBuffer for application/octet-stream, or text.
-// Throws on a non-2xx status.
+// Throws on a non-2xx status. The error page's start is only logged: the
+// error's message can reach the phone that asked.
 export async function http<T>(url: string, req: HttpRequest = {}): Promise<T> {
   const resp = await httpFetch(url, req);
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(
-      `${resp.status} ${resp.statusText} from ${url}: ${text
-        .replace(/\s+/g, " ")
-        .slice(0, 200)}`,
+    console.error(
+      `${resp.status} from ${url}: ${text.replace(/\s+/g, " ").slice(0, 200)}`,
     );
+    throw new Error(`${resp.status} ${resp.statusText} from ${url}`);
   }
   return parseBody(resp) as Promise<T>;
 }

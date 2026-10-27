@@ -5,12 +5,21 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, mock, test } from "node:test";
 
+import { ApiError } from "./api";
 import { MinseiAPI } from "./damApi";
 import { formBody } from "./http";
 import { JoysoundAPI } from "./joysoundApi";
 
 // What a phone might type, and what a config.yaml password might hold.
 const AWKWARD = "C&K 1+1=2 100% 米津玄師 a%2Fb";
+
+// The parts of a sound-cafe.jp song page that getSongDetail reads.
+const SONG_PAGE = `
+  <div class="flex items-center w-full border-b border-gray">Lemon</div>
+  <div class="flex items-center w-full border-b border-gray">米津玄師</div>
+  <div class="flex items-center w-full border-b border-gray">ドラマ「アンナチュラル」主題歌</div>
+  <div class="flex items-center w-full border-b select-none border-gray">夢ならばどれほどよかったでしょう</div>
+`;
 
 let server: http.Server;
 let base: string;
@@ -25,6 +34,11 @@ before(async () => {
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       received.push({ url: req.url ?? "", body });
+      if (req.url?.startsWith("/songdetail/")) {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(SONG_PAGE);
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         req.url?.startsWith("/cwa/")
@@ -86,6 +100,36 @@ describe("JoysoundAPI", () => {
       );
     }
   });
+
+  test("fetches a song's page by its number", async () => {
+    const detail = await joysound.getSongDetail("425691");
+    assert.equal(detail.name, "Lemon");
+    assert.equal(detail.artistName, "米津玄師");
+    assert.deepEqual(
+      received.map(({ url }) => url),
+      ["/songdetail/425691"],
+    );
+  });
+
+  test("lists an artist's songs by its ID", async () => {
+    await joysound.getSongListByArtist("232873", 0, 20);
+    assert.equal(
+      new URLSearchParams(received[0].body).get("artistId"),
+      "232873",
+    );
+  });
+
+  for (const id of ["../mypage/whatever", "425691?x=1", "1&count=999", ""]) {
+    test(`refuses ${JSON.stringify(id)} as an ID, sending nothing`, async () => {
+      const isBadInput = (err: unknown) =>
+        err instanceof ApiError && err.status === 400;
+      await assert.rejects(joysound.getSongDetail(id), isBadInput);
+      await assert.rejects(joysound.getSongListByArtist(id, 0, 20), isBadInput);
+      await assert.rejects(joysound.getSongRawData(id), isBadInput);
+      await assert.rejects(joysound.getMovieUrls(id), isBadInput);
+      assert.deepEqual(received, []);
+    });
+  }
 });
 
 describe("MinseiAPI", () => {
