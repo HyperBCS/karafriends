@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { MdEdit } from "react-icons/md";
 
 import { useApiMutation } from "../../../common/apiQueries";
+import { MdEdit } from "../../icons";
 import * as styles from "./EmoteButtons.module.scss";
 
 const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];

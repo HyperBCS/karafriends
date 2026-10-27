@@ -1,8 +1,5 @@
 import formatDuration from "format-duration";
 import React, { useState } from "react";
-import { FaYoutube } from "react-icons/fa";
-import { MdClose, MdMusicVideo } from "react-icons/md";
-import { SiNiconico } from "react-icons/si";
 import { useNavigate } from "react-router";
 
 import type { SharedQueueItem } from "../../../common/api";
@@ -10,6 +7,7 @@ import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
 import { cyrb53 } from "../../../common/hash";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import { FaYoutube, MdClose, MdMusicVideo, SiNiconico } from "../../icons";
 import isOwnSong from "../../isOwnSong";
 import songLink from "../../songLink";
 import Marquee from "../Marquee";

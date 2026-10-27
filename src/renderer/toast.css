@@ -1,0 +1,55 @@
+/* Toasts as Materialize CSS drew them, in the display's top right corner. */
+#toast-container {
+  position: fixed;
+  top: 0;
+  right: 10px;
+  z-index: 10000;
+  max-width: 86%;
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  margin-top: 10px;
+  padding: 10px 25px;
+  border-radius: 2px;
+  background-color: #323232;
+  box-shadow:
+    0 2px 2px 0 rgba(0, 0, 0, 0.14),
+    0 3px 1px -2px rgba(0, 0, 0, 0.12),
+    0 1px 5px 0 rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 300;
+  line-height: 1.5em;
+  cursor: default;
+  animation: toast-in 300ms cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.toast h3 {
+  margin: 1.9466666667rem 0 1.168rem;
+  font-size: 2.92rem;
+  font-weight: 400;
+  line-height: 110%;
+}
+
+.toast.toast-leaving {
+  animation: toast-out 375ms cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    top: 35px;
+    opacity: 0;
+  }
+}
+
+@keyframes toast-out {
+  to {
+    margin-top: -40px;
+    opacity: 0;
+  }
+}

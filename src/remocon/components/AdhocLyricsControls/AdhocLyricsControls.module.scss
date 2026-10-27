@@ -17,6 +17,78 @@
   align-items: center;
 }
 
+// LyricsPicker: a wheel of lines that snaps each line to the middle band.
+$line-height: 36px;
+$wheel-height: 6 * $line-height;
+
+.lyricsPicker {
+  position: relative;
+  width: 100%;
+  font-size: 1.2em;
+  user-select: none;
+  -webkit-user-select: none;
+
+  // The middle band's hairlines.
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: #d9d9d9;
+    transform: scaleY(0.5);
+    pointer-events: none;
+  }
+
+  &::before {
+    top: calc(50% - #{$line-height * 0.5});
+  }
+
+  &::after {
+    top: calc(50% + #{$line-height * 0.5} - 1px);
+  }
+}
+
+.lyricsList {
+  height: $wheel-height;
+  padding: ($wheel-height - $line-height) * 0.5 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  text-align: center;
+  mask-image: linear-gradient(
+    to top,
+    transparent,
+    transparent 5%,
+    white 20%,
+    white 80%,
+    transparent 95%,
+    transparent
+  );
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.lyric {
+  height: $line-height;
+  padding: 0 10px;
+  overflow: hidden;
+  color: #999;
+  line-height: $line-height;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  scroll-snap-align: center;
+  cursor: pointer;
+
+  &.selected {
+    color: #222;
+  }
+}
+
 .controller {
   flex: 1;
   border: 2px dashed #1cb3ff;
