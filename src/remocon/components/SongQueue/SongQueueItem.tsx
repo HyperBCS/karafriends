@@ -11,6 +11,7 @@ import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { cyrb53 } from "../../../common/hash";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import isOwnSong from "../../isOwnSong";
+import songLink from "../../songLink";
 import Marquee from "../Marquee";
 import * as styles from "./SongQueue.module.scss";
 
@@ -22,13 +23,6 @@ const removeSongMutation = graphql`
     removeSong(songId: $songId, timestamp: $timestamp)
   }
 `;
-
-const SONG_PAGES = {
-  dam: "/song/",
-  joysound: "/joysoundSong/",
-  youtube: "/search/youtube/",
-  nico: "/search/niconico/",
-};
 
 const ICONS = {
   dam: <MdMusicVideo />,
@@ -60,7 +54,7 @@ const SongQueueItem = ({ item, eta, isCurrent }: Props) => {
   const nicknameHash = cyrb53(nickname);
   const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 50%, 50%)`;
 
-  const onClick = () => navigate(`${SONG_PAGES[item.kind]}${item.songId}`);
+  const onClick = () => navigate(songLink(item));
 
   const onRemove = () => {
     commit({ variables: { songId: item.songId, timestamp: item.timestamp } });
