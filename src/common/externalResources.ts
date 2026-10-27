@@ -270,9 +270,15 @@ async function ensureAsset(
   return true;
 }
 
-// What bin says its version is, or null if it can't say.
-async function toolVersion(bin: string): Promise<string | null> {
-  const command = toolCommand(bin, ["--version"]);
+// What tool id at bin says its version is, or null if it can't say. ffmpeg
+// takes -version; it refuses --version.
+async function toolVersion(
+  id: AssetPlan["id"],
+  bin: string,
+): Promise<string | null> {
+  const command = toolCommand(bin, [
+    id === "ffmpeg" ? "-version" : "--version",
+  ]);
   try {
     const { stdout } = await execFileAsync(command.file, command.args, {
       timeout: 30000,
@@ -304,22 +310,24 @@ async function doEnsure(force: boolean): Promise<void> {
   );
 
   // Record the version of each tool just downloaded, or cached before
-  // versions were recorded. (A failed --version is tried again next launch.)
+  // versions were recorded (their file's time stands in for the download's).
+  // A tool that can't say is asked again next launch.
   await Promise.all([
     ...plans.map(async (plan) => {
       if (versions[plan.id]?.version || !fs.existsSync(plan.dest)) return;
-      const version = await toolVersion(plan.dest);
+      const version = await toolVersion(plan.id, plan.dest);
       if (version === null) return;
       versions[plan.id] = {
         ...versions[plan.id],
         version,
-        updatedAt: versions[plan.id]?.updatedAt ?? mtimeMs(plan.dest),
+        updatedAt:
+          versions[plan.id]?.updatedAt ?? Math.round(mtimeMs(plan.dest)),
       };
       changed = true;
     }),
     ...(Object.entries(overrides) as [AssetPlan["id"], string][]).map(
       async ([id, file]) => {
-        overrideVersions[id] = await toolVersion(file);
+        overrideVersions[id] = await toolVersion(id, file);
       },
     ),
   ]);

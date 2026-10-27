@@ -24,7 +24,7 @@ export interface Validator {
 }
 
 // versions.json: each downloaded tool's validator, the version it reports
-// (--version) and when it was downloaded (ms since the epoch).
+// and when it was downloaded (ms since the epoch).
 export type Versions = Record<
   string,
   Validator & { version?: string; updatedAt?: number }
@@ -78,8 +78,8 @@ export function toolOverrides(
   return overrides;
 }
 
-// The version in a tool's --version output: yt-dlp prints "2026.10.01",
-// ffmpeg "ffmpeg version 7.1-full_build-www.gyan.dev Copyright (c) ...".
+// The version a tool prints: yt-dlp --version "2026.10.01", ffmpeg -version
+// "ffmpeg version 7.1-full_build-www.gyan.dev Copyright (c) ...".
 // Null if it printed nothing.
 export function parseToolVersion(output: string): string | null {
   const firstLine = output.trim().split(/\r?\n/)[0].trim();

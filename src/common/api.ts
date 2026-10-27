@@ -309,8 +309,9 @@ export type LoginService = "dam" | "joysound";
 // this usually means no Japanese IP address").
 export type TestLoginResult = { ok: true } | { ok: false; reason: string };
 
-// ffmpeg's or yt-dlp's status. version: what it printed for --version, or
-// null (not run yet, or it said nothing). updatedAt: when karafriends
+// ffmpeg's or yt-dlp's status. version: what it gave as its version
+// (ffmpeg -version, yt-dlp --version), or null (not asked yet, or it
+// couldn't say). updatedAt: when karafriends
 // downloaded it, in ms since the epoch. overridden: KARAFRIENDS_FFMPEG_PATH
 // or KARAFRIENDS_YTDLP_PATH names the copy in use, which karafriends never
 // downloads (updatedAt is null).
