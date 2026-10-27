@@ -301,6 +301,11 @@ async function launchKarafriends(
       TMP: tempDir,
       TMPDIR: tempDir,
       KARAFRIENDS_REMOCON_PORT: String(port),
+      // Listen on 127.0.0.1 only and skip mDNS, so Windows Firewall doesn't
+      // prompt for each worktree's Electron copy.
+      KARAFRIENDS_LOCAL_ONLY: "1",
+      // Keep the full-screen display window off the user's screen.
+      KARAFRIENDS_HIDE_WINDOW: "1",
     });
 
     app = await electron.launch({

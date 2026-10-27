@@ -45,7 +45,7 @@ import {
 import isDev from "electron-is-dev";
 import express from "express";
 
-import karafriendsConfig from "../common/config";
+import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { displayToken } from "./caller";
@@ -69,7 +69,7 @@ try {
   console.error(e);
 }
 
-setupMdns();
+if (!LOCAL_ONLY) setupMdns();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -95,8 +95,11 @@ let rendererWindow: BrowserWindow | null;
 function createWindow() {
   rendererWindow = new BrowserWindow({
     frame: isDev,
-    fullscreen: !isDev,
+    fullscreen: !isDev && !HIDE_WINDOW,
+    show: !HIDE_WINDOW,
     webPreferences: {
+      // A hidden window would otherwise have its timers throttled.
+      backgroundThrottling: !HIDE_WINDOW,
       allowRunningInsecureContent: false,
       contextIsolation: true,
       nodeIntegration: false,
