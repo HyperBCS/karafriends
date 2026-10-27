@@ -122,4 +122,8 @@ const karafriendsConfig: KarafriendsConfig = getConfig();
 // raise a Windows Firewall prompt.
 export const LOCAL_ONLY = process.env.KARAFRIENDS_LOCAL_ONLY === "1";
 
+// KARAFRIENDS_HIDE_WINDOW=1 creates the display window hidden (and not full
+// screen), so tests and automated checks don't take over the user's screen.
+export const HIDE_WINDOW = process.env.KARAFRIENDS_HIDE_WINDOW === "1";
+
 export default karafriendsConfig;

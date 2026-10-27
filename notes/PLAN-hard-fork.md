@@ -38,6 +38,7 @@
   - DAM/Joysound need a Japanese IP (`curl -s https://ipinfo.io/country`).
   - Don't stop processes you didn't start; another app instance may hold ports 3000/8080.
   - Set `KARAFRIENDS_LOCAL_ONLY=1` for any app launch in checks (`run-dev`, packaged builds). The server then listens on 127.0.0.1 only and mDNS is skipped, so Windows Firewall doesn't prompt the user for each worktree's Electron copy. The e2e fixture sets it already.
+  - Also set `KARAFRIENDS_HIDE_WINDOW=1` for those launches. The display window is then created hidden, not full screen, so checks don't take over the user's screen. The e2e fixture sets it already.
 
 ## Context
 
