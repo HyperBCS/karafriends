@@ -1,517 +1,50 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+// The settings screen: the header, the tabs and the open tab's panel. Each
+// tab is a file in settings/, with the parts they share in
+// settings/controls.tsx and what the fields do in settings/actions.ts.
+import React, { useEffect, useId, useState } from "react";
 
-import {
-  type ApiOutput,
-  type LoginService,
-  type Settings as SavedSettings,
-  type SettingsChanges,
-  type ToolStatus,
-  type ToolsStatus,
-} from "../common/api";
 import { call } from "../common/apiClient";
 import "./global";
-import HostnameSetting from "./HostnameSetting";
-import {
-  AddMicrophone,
-  MicModeSetting,
-  MicOutputSetting,
-  MicrophoneSetting,
-  type MicLevels,
-  useTick,
-} from "./MicrophoneSetting";
 import {
   asioStatus,
-  InputDevice,
   linuxAudio,
-  type MicMode,
-  type MicOutput,
   outputDevices,
   refreshInputDevices,
 } from "./nativeAudio";
-import { AV_OFFSETS, UI_SCALES } from "./playback";
-import type { OutputPlace } from "./songOutput";
-import type { SongOutput } from "./webAudio";
+import AccountsTab from "./settings/AccountsTab";
+import {
+  createSettingsActions,
+  errorText,
+  type Loaded,
+  type Message,
+  type Section,
+  SECTION_TABS,
+} from "./settings/actions";
+import AdvancedTab, { useTools } from "./settings/AdvancedTab";
+import DisplayTab, { type DisplayProps } from "./settings/DisplayTab";
+import PartyTab from "./settings/PartyTab";
+import SoundTab, { type SoundProps } from "./settings/SoundTab";
+import { type SettingsTab, SettingsTabs } from "./settings/tabs";
 import "./Settings.css";
 
-type Loaded = ApiOutput<"getSettings">;
-
-type Section =
-  | LoginService
-  | "admin"
-  | "queue"
-  | "network"
-  | "sound"
-  | "mics"
-  | "tools"
-  | "config";
-
-// The tabs down the left, in order.
-export const SETTINGS_TABS = [
-  "accounts",
-  "party",
-  "sound",
-  "display",
-  "advanced",
-] as const;
-export type SettingsTab = (typeof SETTINGS_TABS)[number];
-
-const TAB_NAMES: Record<SettingsTab, string> = {
-  accounts: "Accounts",
-  party: "Party",
-  sound: "Sound",
-  display: "Display",
-  advanced: "Advanced",
-};
-
-// The tab each section's messages show on.
-const SECTION_TABS: Record<Section, SettingsTab> = {
-  dam: "accounts",
-  joysound: "accounts",
-  admin: "party",
-  queue: "party",
-  network: "party",
-  sound: "sound",
-  mics: "sound",
-  tools: "advanced",
-  config: "advanced",
-};
-
-// The tab each setting is on, to mark the ones an import changed.
-const SETTING_TABS: Record<keyof SavedSettings, SettingsTab> = {
-  damUsername: "accounts",
-  damPassword: "accounts",
-  useLowBitrateUrl: "accounts",
-  joysoundEmail: "accounts",
-  joysoundPassword: "accounts",
-  adminPasswordSet: "party",
-  supervisedMode: "party",
-  everyoneIsAdmin: "party",
-  paxSongQueueLimit: "party",
-  remoconPort: "party",
-};
-
-// The place each key moves to, from the open tab's.
-const TAB_KEYS: Record<string, (at: number) => number> = {
-  ArrowUp: (at) => at - 1,
-  ArrowDown: (at) => at + 1,
-  Home: () => 0,
-  End: () => SETTINGS_TABS.length - 1,
-};
-
-// The tabs down the left. Up and Down (Home and End too) open the one
-// before or after, round the ends; only the open one is in the Tab order. A
-// dot marks one with something to look at. Focused when it appears, so the
-// keys work as soon as Settings opens.
-function SettingsTabs(props: {
-  tab: SettingsTab;
-  onChange: (tab: SettingsTab) => void;
-  needsLook: (tab: SettingsTab) => boolean;
-  tabId: (tab: SettingsTab) => string;
-  panelId: string;
-}) {
-  const buttons = useRef(new Map<SettingsTab, HTMLButtonElement>());
-  const open = useRef(props.tab);
-  useEffect(() => buttons.current.get(open.current)?.focus(), []);
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    const move = TAB_KEYS[event.key];
-    if (!move || event.altKey || event.ctrlKey || event.metaKey) return;
-    event.preventDefault();
-    const count = SETTINGS_TABS.length;
-    const at = move(SETTINGS_TABS.indexOf(props.tab));
-    const tab = SETTINGS_TABS[(at + count) % count];
-    props.onChange(tab);
-    buttons.current.get(tab)?.focus();
-  };
-  return (
-    <div
-      className="settingsTabs"
-      role="tablist"
-      aria-label="Sections"
-      aria-orientation="vertical"
-      onKeyDown={onKeyDown}
-    >
-      {SETTINGS_TABS.map((tab) => {
-        const selected = tab === props.tab;
-        const needsLook = !selected && props.needsLook(tab);
-        return (
-          <button
-            key={tab}
-            ref={(button) => {
-              if (button) buttons.current.set(tab, button);
-              else buttons.current.delete(tab);
-            }}
-            type="button"
-            role="tab"
-            id={props.tabId(tab)}
-            className="settingsTab"
-            aria-selected={selected}
-            aria-controls={selected ? props.panelId : undefined}
-            aria-description={needsLook ? "Needs a look" : undefined}
-            tabIndex={selected ? 0 : -1}
-            onClick={() => props.onChange(tab)}
-          >
-            {TAB_NAMES[tab]}
-            {needsLook ? (
-              <span className="settingsTabDot" aria-hidden="true" />
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// What happened in a section, under it.
-interface Message {
-  text: string;
-  list?: string[];
-  tone?: "busy" | "problem";
-}
-
-// A short line under a field or a group, in the muted color.
-function Hint(props: { id?: string; children: React.ReactNode }) {
-  return (
-    <p id={props.id} className="settingsHint">
-      {props.children}
-    </p>
-  );
-}
-
-// A text or number field that saves when the host leaves it or presses
-// Enter, if it changed; with a hint under it, if it needs one.
-function TextSetting(props: {
-  label: string;
-  value: string;
-  onCommit: (value: string) => void;
-  type?: "text" | "password" | "number";
-  hint?: string;
-}) {
-  const hintId = useId();
-  const [draft, setDraft] = useState(props.value);
-  const [value, setValue] = useState(props.value);
-  // A new saved value replaces the draft, unless the host is typing one.
-  if (props.value !== value) {
-    setValue(props.value);
-    if (draft === value) setDraft(props.value);
-  }
-  const commit = () => {
-    if (draft !== props.value) props.onCommit(draft);
-  };
-  const field = (
-    <label className="kfLabel">
-      {props.label}
-      <input
-        className="kfField"
-        type={props.type ?? "text"}
-        value={draft}
-        autoComplete="off"
-        spellCheck={false}
-        aria-describedby={props.hint ? hintId : undefined}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") commit();
-        }}
-        // A masked password is replaced, not added to.
-        onFocus={
-          props.type === "password"
-            ? (event) => event.target.select()
-            : undefined
-        }
-      />
-    </label>
-  );
-  if (!props.hint) return field;
-  return (
-    <div className="settingsField">
-      {field}
-      <Hint id={hintId}>{props.hint}</Hint>
-    </div>
-  );
-}
-
-// A checkbox that saves at once, and shows the new state while it does.
-// onChange says whether it saved; if not, the box goes back.
-function Checkbox(props: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => Promise<boolean>;
-  hint?: string;
-}) {
-  const hintId = useId();
-  const [checked, setChecked] = useState(props.checked);
-  const [saved, setSaved] = useState(props.checked);
-  if (props.checked !== saved) {
-    setSaved(props.checked);
-    setChecked(props.checked);
-  }
-  return (
-    <div className="settingsField">
-      <label className="kfCheckbox">
-        <input
-          type="checkbox"
-          checked={checked}
-          aria-describedby={props.hint ? hintId : undefined}
-          onChange={(event) => {
-            setChecked(event.target.checked);
-            void props.onChange(event.target.checked).then((ok) => {
-              if (!ok) setChecked(props.checked);
-            });
-          }}
-        />
-        {props.label}
-      </label>
-      {props.hint ? (
-        <p id={hintId} className="settingsHint settingsCheckboxHint">
-          {props.hint}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function SettingsSection(props: {
-  title: string;
-  message?: Message;
-  children: React.ReactNode;
-}) {
-  const { message } = props;
-  return (
-    <section className="settingsSection" aria-label={props.title}>
-      <h2>{props.title}</h2>
-      {props.children}
-      {message ? (
-        <div className={`settingsMessage ${message.tone ?? ""}`} role="status">
-          <p>{message.text}</p>
-          {message.list && message.list.length > 0 ? (
-            <ul>
-              {message.list.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function toolLine(tool: ToolStatus): string {
-  const version = tool.version ?? "Version not known yet";
-  if (tool.overridden) return `${version} · your own copy`;
-  if (tool.updatedAt === null) return version;
-  const date = new Date(tool.updatedAt).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-  return `${version} · downloaded ${date}`;
-}
-
-const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
-
-// The downloaded songs, kept so they start at once the next time: how much
-// they take, and a button that deletes them, but the files in use.
-function DownloadsSection() {
-  const [info, setInfo] = useState<ApiOutput<"downloadsInfo"> | null>(null);
-  const [message, setMessage] = useState<Message | undefined>();
-  const [clearing, setClearing] = useState(false);
-  const problem = (err: unknown): Message => ({
-    text: String((err as Error)?.message ?? err),
-    tone: "problem",
-  });
-
-  const refresh = () =>
-    call("downloadsInfo", {}).then(setInfo, (err) => setMessage(problem(err)));
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  const clear = async () => {
-    setClearing(true);
-    try {
-      const { bytes, kept } = await call("clearDownloads", {});
-      setMessage({
-        text: `Freed ${megabytes(bytes)}${kept > 0 ? `. ${kept} kept: playing, queued or downloading` : ""}.`,
-      });
-      await refresh();
-    } catch (err) {
-      setMessage(problem(err));
-    } finally {
-      setClearing(false);
-    }
-  };
-
-  return (
-    <SettingsSection title="Downloads" message={message}>
-      <div className="settingsActions">
-        <p className="settingsValue">
-          {info
-            ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
-            : "…"}
-        </p>
-        <button
-          type="button"
-          className="kfButton"
-          disabled={clearing}
-          onClick={clear}
-        >
-          Clear downloads
-        </button>
-      </div>
-    </SettingsSection>
-  );
-}
-
-// Where the songs play: the system default, or an output as Chromium lists
-// it, listed again as devices come and go. A saved one that isn't
-// connected shows as such.
-function SongOutputSetting(props: {
-  output: SongOutput | null;
-  onChange: (output: SongOutput | null) => void;
-}) {
-  const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
-  useEffect(() => {
-    const list = () =>
-      navigator.mediaDevices.enumerateDevices().then(
-        (devices) =>
-          setOutputs(
-            devices
-              // "default" and "communications" are the system's choices:
-              // System default stands for them.
-              .filter(
-                ({ kind, deviceId }) =>
-                  kind === "audiooutput" &&
-                  deviceId !== "default" &&
-                  deviceId !== "communications",
-              )
-              .map(({ deviceId, label }) => ({
-                id: deviceId,
-                label: label || "Unnamed output",
-              })),
-          ),
-        () => setOutputs([]),
-      );
-    list();
-    navigator.mediaDevices.addEventListener("devicechange", list);
-    return () =>
-      navigator.mediaDevices.removeEventListener("devicechange", list);
-  }, []);
-  const { output } = props;
-  const missing =
-    output !== null &&
-    outputs !== null &&
-    !outputs.some(({ id }) => id === output.id);
-  return (
-    <label className="kfLabel">
-      Song output
-      <select
-        className="kfField"
-        value={output?.id ?? ""}
-        onChange={(event) =>
-          props.onChange(
-            outputs?.find(({ id }) => id === event.target.value) ?? null,
-          )
-        }
-      >
-        <option value="">System default</option>
-        {output !== null && (outputs === null || missing) ? (
-          <option value={output.id} disabled={missing}>
-            {missing ? `${output.label} (not connected)` : output.label}
-          </option>
-        ) : null}
-        {(outputs ?? []).map(({ id, label }) => (
-          <option key={id} value={id}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-// Where the songs play while it isn't the chosen output: looked at again
-// every tick, as the output can go and come back while Settings is open.
-function SongOutputPlace(props: {
-  output: SongOutput | null;
-  place: () => OutputPlace;
-}) {
-  useTick();
-  const place = props.place();
-  const name = props.output?.label ?? "System default";
-  if (place === "chosen" || (place === "default" && !props.output)) {
-    return null;
-  }
-  return (
-    <p className="settingsHint" role="status">
-      {place === "silent"
-        ? `${name} went away: the songs play silently until it's back.`
-        : `The songs play on System default until ${name} is connected.`}
-    </p>
-  );
-}
-
-// "Output latency: 20 ms", looked at again every tick: the context measures
-// a new output only once it has played on it a while.
-function OutputLatency(props: { latencyMs: () => number }) {
-  useTick();
-  return <>Output latency: {props.latencyMs()} ms.</>;
-}
-
-const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
-
-// The app names a setting by its config.yaml key when it refuses a value;
-// this screen, by its label.
-const LABELS: Record<string, string> = {
-  paxSongQueueLimit: "Songs per phone",
-  remoconPort: "Port",
-};
-
-const labelled = (problem: string) =>
-  problem.replace(/^\w+/, (key) => LABELS[key] ?? key);
-
-// The port phones use, when it isn't the Port field's: under yarn dev, they
-// load the remote from the Vite dev server, which passes /api on to the
-// app's server (README, "yarn dev"). Never in a build.
-const devServerPort = (savedPort: number): number | null => {
-  const port = window.karafriends.remoconPort();
-  return import.meta.env.DEV && port !== savedPort ? port : null;
-};
+export { SETTINGS_TABS, type SettingsTab } from "./settings/tabs";
 
 // The settings screen, over everything, in tabs. Every field saves as the
 // host leaves it; each section says under it what happened.
-export default function Settings(props: {
-  tab: SettingsTab;
-  onTabChange: (tab: SettingsTab) => void;
-  onClose: () => void;
-  hostname: string;
-  onHostnameChange: (hostname: string) => void;
-  mics: InputDevice[];
-  micLevels: (mic: InputDevice) => MicLevels;
-  // index is mics.length for a new mic. These three return why the device
-  // didn't open, if it didn't.
-  onChangeMic: (index: number, name: string, channel: number) => string | null;
-  onChangeLevels: (mic: InputDevice, levels: MicLevels) => void;
-  onRemoveMic: (index: number) => void;
-  micOutput: MicOutput;
-  onMicOutputChange: (output: MicOutput) => string | null;
-  micMode: MicMode;
-  onMicModeChange: (mode: MicMode) => void;
-  songOutput: SongOutput | null;
-  onSongOutputChange: (output: SongOutput | null) => Promise<string | null>;
-  // Where the songs play now (see songOutput.ts).
-  songOutputPlace: () => OutputPlace;
-  avOffsetMs: number;
-  onAvOffsetChange: (offsetMs: number) => void;
-  uiScale: number;
-  onUiScaleChange: (scale: number) => void;
-  pitchBars: boolean;
-  onPitchBarsChange: (on: boolean) => void;
-  // What the song output adds, in ms, as the context says now.
-  audioLatencyMs: () => number;
-}) {
+export default function Settings(
+  props: {
+    tab: SettingsTab;
+    onTabChange: (tab: SettingsTab) => void;
+    onClose: () => void;
+    hostname: string;
+    onHostnameChange: (hostname: string) => void;
+  } & SoundProps &
+    DisplayProps,
+) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  // Why getSettings failed, if it did (loaded.loadProblem is why
+  // config.yaml didn't load, with the settings the app runs on).
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [messages, setMessages] = useState<
     Partial<Record<Section, Message | null>>
   >({});
@@ -521,8 +54,6 @@ export default function Settings(props: {
   const tabId = (tab: SettingsTab) => `${tabIds}-${tab}`;
   const panelId = `${tabIds}-panel`;
   const [adminDraft, setAdminDraft] = useState("");
-  const [tools, setTools] = useState<ToolsStatus | null>(null);
-  const [updatingTools, setUpdatingTools] = useState(false);
   // Listed each time Settings opens: the outputs, and on Linux the inputs
   // too, so a mic plugged in since can be picked.
   const [outputs] = useState(() => {
@@ -536,13 +67,6 @@ export default function Settings(props: {
   });
   // On Linux, the sound system and the mics' buffer sizes; null elsewhere.
   const [linux] = useState(linuxAudio);
-  // What the native side says about the output while the mics work ("ok:
-  // <note>"): that the chosen one is missing or won't open, say.
-  const micStatus = props.mics[0]?.status();
-  const outputNote = micStatus?.startsWith("ok: ") ? micStatus.slice(4) : null;
-  // Saves, tests and imports run one after another, so a Test login
-  // clicked right after typing tests what was just saved.
-  const chain = useRef<Promise<void>>(Promise.resolve());
 
   const say = (section: Section, message: Message | null) =>
     setMessages((previous) => ({ ...previous, [section]: message }));
@@ -551,146 +75,21 @@ export default function Settings(props: {
   const report = (section: Section, problem: string | null) =>
     say(section, problem === null ? null : { text: problem, tone: "problem" });
 
-  const reload = async () => {
-    const settings = await call("getSettings", {});
-    setLoaded(settings);
-    return settings;
-  };
+  const [actions] = useState(() =>
+    createSettingsActions({
+      call,
+      files: window.karafriends,
+      say,
+      setLoaded,
+      onImported: (changed) =>
+        setUnseen((tabs) => new Set([...tabs, ...changed])),
+    }),
+  );
+  const tools = useTools(say);
 
   useEffect(() => {
-    reload().catch((err) => setLoadProblem(String(err?.message ?? err)));
-    call("getToolsStatus", {}).then(setTools, (err) =>
-      say("tools", { text: String(err?.message ?? err), tone: "problem" }),
-    );
+    actions.reload().catch((err) => setLoadError(errorText(err)));
   }, []);
-
-  // Runs task after the ones before it, and shows what it says (or its
-  // error) under the section. Settles when it has.
-  const act = (section: Section, task: () => Promise<Message | null>) =>
-    (chain.current = chain.current.then(async () => {
-      try {
-        say(section, await task());
-      } catch (err) {
-        say(section, {
-          text: String((err as Error)?.message ?? err),
-          tone: "problem",
-        });
-      }
-    }));
-
-  // Whether it saved.
-  const save = (section: Section, changes: SettingsChanges) => {
-    let saved = false;
-    return act(section, async () => {
-      const result = await call("setSettings", { settings: changes });
-      if (!result.ok) {
-        return {
-          text: result.problems.map(labelled).join(" "),
-          tone: "problem",
-        };
-      }
-      saved = true;
-      await reload();
-      return { text: "Saved." };
-    }).then(() => saved);
-  };
-
-  // A whole number, or a message saying it isn't one.
-  const saveNumber = (
-    section: Section,
-    key: "paxSongQueueLimit" | "remoconPort",
-    label: string,
-    value: string,
-  ) => {
-    if (!/^\d+$/.test(value.trim())) {
-      say(section, {
-        text: `${label}: enter a whole number.`,
-        tone: "problem",
-      });
-      return;
-    }
-    save(section, { [key]: Number(value) });
-  };
-
-  const testLogin = (service: LoginService) => {
-    say(service, { text: "Signing in…", tone: "busy" });
-    act(service, async () => {
-      const result = await call("testLogin", { service });
-      return result.ok
-        ? { text: `Signed in to ${SERVICE_NAMES[service]}.` }
-        : { text: result.reason, tone: "problem" };
-    });
-  };
-
-  const setAdminPassword = (password: string) =>
-    act("admin", async () => {
-      await call("setAdminPassword", { password });
-      setAdminDraft("");
-      await reload();
-      return {
-        text: password
-          ? "Saved. Phones signed in as admins must sign in again."
-          : "Cleared. No phone can be an admin now.",
-      };
-    });
-
-  // Not in the chain: it can take minutes.
-  const updateTools = async () => {
-    setUpdatingTools(true);
-    say("tools", {
-      text: "Downloading ffmpeg and yt-dlp. This can take about 5 minutes.",
-      tone: "busy",
-    });
-    try {
-      const result = await call("updateTools", {});
-      say(
-        "tools",
-        result.ok
-          ? { text: "Tools updated." }
-          : { text: result.reason, tone: "problem" },
-      );
-      setTools(await call("getToolsStatus", {}));
-    } catch (err) {
-      say("tools", {
-        text: String((err as Error)?.message ?? err),
-        tone: "problem",
-      });
-    } finally {
-      setUpdatingTools(false);
-    }
-  };
-
-  const exportConfig = () =>
-    act("config", async () => {
-      const { yaml } = await call("exportConfig", {});
-      const saved = await window.karafriends.saveTextFile(
-        "karafriends-config.yaml",
-        yaml,
-      );
-      return saved ? { text: "Exported." } : null;
-    });
-
-  // The tabs whose settings it changed get a dot. Passwords show masked,
-  // so a new one alone doesn't count.
-  const importConfig = () =>
-    act("config", async () => {
-      const yaml = await window.karafriends.openTextFile();
-      if (yaml === null) return null;
-      const before = (await call("getSettings", {})).settings;
-      const result = await call("importConfig", { yaml });
-      const after = (await reload()).settings;
-      const changed = (Object.keys(SETTING_TABS) as (keyof SavedSettings)[])
-        .filter((key) => before[key] !== after[key])
-        .map((key) => SETTING_TABS[key]);
-      setUnseen((tabs) => new Set([...tabs, ...changed]));
-      return result.ok
-        ? { text: "Imported.", list: result.problems }
-        : {
-            text: "Not imported: nothing changed.",
-            list: result.problems,
-            tone: "problem",
-          };
-    });
 
   const header = (
     <header className="settingsHeader">
@@ -706,58 +105,13 @@ export default function Settings(props: {
       <div className="settings" role="dialog" aria-label="Settings">
         {header}
         <p className="settingsLoading">
-          {loadProblem
-            ? `Couldn't load the settings: ${loadProblem}`
+          {loadError
+            ? `Couldn't load the settings: ${loadError}`
             : "Loading settings…"}
         </p>
       </div>
     );
   }
-
-  const { settings } = loaded;
-
-  const loginSection = (service: LoginService) => {
-    const [userKey, passKey, userLabel] =
-      service === "dam"
-        ? (["damUsername", "damPassword", "Username"] as const)
-        : (["joysoundEmail", "joysoundPassword", "Email"] as const);
-    return (
-      <SettingsSection
-        title={`${SERVICE_NAMES[service]} login`}
-        message={messages[service] ?? undefined}
-      >
-        <div className="settingsFields">
-          <TextSetting
-            label={userLabel}
-            value={settings[userKey]}
-            onCommit={(value) => save(service, { [userKey]: value })}
-          />
-          <TextSetting
-            label="Password"
-            type="password"
-            value={settings[passKey]}
-            onCommit={(value) => save(service, { [passKey]: value })}
-          />
-        </div>
-        {service === "dam" ? (
-          <Checkbox
-            label="Stream at a low bitrate"
-            checked={settings.useLowBitrateUrl}
-            onChange={(checked) => save("dam", { useLowBitrateUrl: checked })}
-          />
-        ) : null}
-        <div className="settingsActions">
-          <button
-            type="button"
-            className="kfButton"
-            onClick={() => testLogin(service)}
-          >
-            Test login
-          </button>
-        </div>
-      </SettingsSection>
-    );
-  };
 
   // A problem under one of its sections, a restart to do, or what an import
   // changed.
@@ -773,8 +127,6 @@ export default function Settings(props: {
     props.onTabChange(tab);
     setUnseen((tabs) => new Set([...tabs].filter((seen) => seen !== tab)));
   };
-
-  const devPort = devServerPort(settings.remoconPort);
 
   return (
     <div className="settings" role="dialog" aria-label="Settings">
@@ -801,322 +153,36 @@ export default function Settings(props: {
             </p>
           ) : null}
           {props.tab === "accounts" ? (
-            <>
-              {loaded.isFirstRun ? (
-                <p className="settingsBanner">
-                  Add your DAM or Joysound login to search their catalogs.
-                  YouTube works without one.
-                </p>
-              ) : null}
-              {loginSection("dam")}
-              {loginSection("joysound")}
-            </>
+            <AccountsTab
+              loaded={loaded}
+              messages={messages}
+              actions={actions}
+            />
           ) : null}
-
           {props.tab === "party" ? (
-            <>
-              <SettingsSection
-                title="Admin password"
-                message={messages.admin ?? undefined}
-              >
-                <form
-                  className="settingsInline"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (adminDraft) setAdminPassword(adminDraft);
-                  }}
-                >
-                  <label className="kfLabel">
-                    {settings.adminPasswordSet ? "New password" : "Password"}
-                    <input
-                      className="kfField"
-                      type="password"
-                      autoComplete="new-password"
-                      value={adminDraft}
-                      onChange={(event) => setAdminDraft(event.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    className="kfButton primary"
-                    disabled={adminDraft === ""}
-                  >
-                    {settings.adminPasswordSet
-                      ? "Change password"
-                      : "Set password"}
-                  </button>
-                  {settings.adminPasswordSet ? (
-                    <button
-                      type="button"
-                      className="kfButton"
-                      onClick={() => setAdminPassword("")}
-                    >
-                      Clear
-                    </button>
-                  ) : null}
-                </form>
-                <Hint>
-                  {settings.adminPasswordSet
-                    ? "Admins can reorder, skip and remove any song."
-                    : "Set one to let phones sign in as admins."}
-                </Hint>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Queue"
-                message={messages.queue ?? undefined}
-              >
-                <Checkbox
-                  label="Supervised mode"
-                  hint="Only the singer or an admin can pause, skip or remove a song."
-                  checked={settings.supervisedMode}
-                  onChange={(checked) =>
-                    save("queue", { supervisedMode: checked })
-                  }
-                />
-                <Checkbox
-                  label="Everyone is an admin"
-                  hint="Every phone gets the admin controls, no password needed."
-                  checked={settings.everyoneIsAdmin}
-                  onChange={(checked) =>
-                    save("queue", { everyoneIsAdmin: checked })
-                  }
-                />
-                <div className="settingsFields">
-                  <TextSetting
-                    label="Songs per phone"
-                    hint="Queued at once. 0 means no limit."
-                    type="number"
-                    value={String(settings.paxSongQueueLimit)}
-                    onCommit={(value) =>
-                      saveNumber(
-                        "queue",
-                        "paxSongQueueLimit",
-                        "Songs per phone",
-                        value,
-                      )
-                    }
-                  />
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Phones"
-                message={messages.network ?? undefined}
-              >
-                <div className="settingsFields">
-                  <HostnameSetting
-                    hostname={props.hostname}
-                    onChange={props.onHostnameChange}
-                  />
-                  <TextSetting
-                    label="Port"
-                    type="number"
-                    value={String(settings.remoconPort)}
-                    hint={
-                      devPort === null
-                        ? undefined
-                        : `Running with yarn dev: phones use the dev server's port, ${devPort}.`
-                    }
-                    onCommit={(value) =>
-                      saveNumber("network", "remoconPort", "Port", value)
-                    }
-                  />
-                </div>
-                <Hint>The QR code sends phones to this address.</Hint>
-                {loaded.needsRestart ? (
-                  <div className="settingsRestart">
-                    <p>Restart karafriends to use the new port.</p>
-                    <button
-                      type="button"
-                      className="kfButton primary"
-                      onClick={() =>
-                        act("network", async () => {
-                          await call("restartApp", {});
-                          return { text: "Restarting…", tone: "busy" };
-                        })
-                      }
-                    >
-                      Restart
-                    </button>
-                  </div>
-                ) : null}
-              </SettingsSection>
-            </>
+            <PartyTab
+              loaded={loaded}
+              messages={messages}
+              actions={actions}
+              adminDraft={adminDraft}
+              onAdminDraftChange={setAdminDraft}
+              hostname={props.hostname}
+              onHostnameChange={props.onHostnameChange}
+            />
           ) : null}
-
           {props.tab === "sound" ? (
-            <>
-              <SettingsSection
-                title="Sound"
-                message={messages.sound ?? undefined}
-              >
-                <div className="settingsFields">
-                  <SongOutputSetting
-                    output={props.songOutput}
-                    onChange={(output) =>
-                      props
-                        .onSongOutputChange(output)
-                        .then((problem) => report("sound", problem))
-                    }
-                  />
-                  <label className="kfLabel">
-                    Audio/video offset
-                    <select
-                      className="kfField"
-                      value={props.avOffsetMs}
-                      onChange={(event) =>
-                        props.onAvOffsetChange(Number(event.target.value))
-                      }
-                    >
-                      {AV_OFFSETS.map((ms) => (
-                        <option key={ms} value={ms}>
-                          {ms > 0 ? `+${ms}` : ms} ms
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <SongOutputPlace
-                  output={props.songOutput}
-                  place={props.songOutputPlace}
-                />
-                <Hint>
-                  Plus delays the sound, minus delays the lyrics.{" "}
-                  <OutputLatency latencyMs={props.audioLatencyMs} />
-                </Hint>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Microphones"
-                message={messages.mics ?? undefined}
-              >
-                <MicOutputSetting
-                  outputs={outputs}
-                  output={props.micOutput}
-                  onChange={(output) =>
-                    report("mics", props.onMicOutputChange(output))
-                  }
-                />
-                {outputNote ? (
-                  <p className="settingsHint" role="status">
-                    {outputNote}
-                  </p>
-                ) : null}
-                {linux ? <Hint>{linux.status}</Hint> : null}
-                {asioProblem ? <Hint>{asioProblem}</Hint> : null}
-                <MicModeSetting
-                  mode={props.micMode}
-                  linux={linux}
-                  onChange={props.onMicModeChange}
-                />
-                {props.mics.map((mic, i) => (
-                  <MicrophoneSetting
-                    key={mic.key}
-                    mic={mic}
-                    levels={props.micLevels(mic)}
-                    onChange={(name, channel) =>
-                      report("mics", props.onChangeMic(i, name, channel))
-                    }
-                    onLevelsChange={(levels) =>
-                      props.onChangeLevels(mic, levels)
-                    }
-                    onRemove={() => props.onRemoveMic(i)}
-                  />
-                ))}
-                <AddMicrophone
-                  onAdd={(name, channel) =>
-                    report(
-                      "mics",
-                      props.onChangeMic(props.mics.length, name, channel),
-                    )
-                  }
-                />
-              </SettingsSection>
-            </>
+            <SoundTab
+              {...props}
+              messages={messages}
+              report={report}
+              outputs={outputs}
+              asioProblem={asioProblem}
+              linux={linux}
+            />
           ) : null}
-
-          {props.tab === "display" ? (
-            <SettingsSection title="Display">
-              <div className="settingsFields">
-                <label className="kfLabel">
-                  UI scale
-                  <select
-                    className="kfField"
-                    value={props.uiScale}
-                    onChange={(event) =>
-                      props.onUiScaleChange(Number(event.target.value))
-                    }
-                  >
-                    {UI_SCALES.map((percent) => (
-                      <option key={percent} value={percent}>
-                        {percent}%
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <Checkbox
-                label="Pitch bars"
-                hint="On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them."
-                checked={props.pitchBars}
-                onChange={async (on) => {
-                  props.onPitchBarsChange(on);
-                  return true;
-                }}
-              />
-            </SettingsSection>
-          ) : null}
-
+          {props.tab === "display" ? <DisplayTab {...props} /> : null}
           {props.tab === "advanced" ? (
-            <>
-              <DownloadsSection />
-
-              <SettingsSection
-                title="Tools"
-                message={messages.tools ?? undefined}
-              >
-                <dl className="settingsTools">
-                  <dt>yt-dlp</dt>
-                  <dd>{tools ? toolLine(tools.ytdlp) : "…"}</dd>
-                  <dt>ffmpeg</dt>
-                  <dd>{tools ? toolLine(tools.ffmpeg) : "…"}</dd>
-                </dl>
-                <div className="settingsActions">
-                  <button
-                    type="button"
-                    className="kfButton"
-                    disabled={updatingTools}
-                    onClick={updateTools}
-                  >
-                    {updatingTools ? "Updating tools…" : "Update tools"}
-                  </button>
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Config file"
-                message={messages.config ?? undefined}
-              >
-                <div className="settingsActions">
-                  <button
-                    type="button"
-                    className="kfButton"
-                    onClick={exportConfig}
-                  >
-                    Export config
-                  </button>
-                  <button
-                    type="button"
-                    className="kfButton"
-                    onClick={importConfig}
-                  >
-                    Import config
-                  </button>
-                </div>
-                <Hint>Includes the logins and passwords.</Hint>
-              </SettingsSection>
-            </>
+            <AdvancedTab messages={messages} actions={actions} tools={tools} />
           ) : null}
         </div>
       </div>
