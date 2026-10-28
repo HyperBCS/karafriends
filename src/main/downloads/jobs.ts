@@ -1,5 +1,5 @@
 // One download job per kind of song: the yt-dlp and ffmpeg runs that make
-// its files in the temp folder, and the progress they report.
+// its files in the downloads folder, and the progress they report.
 //
 // No Electron imports, so unit tests can load this file under plain Node:
 // the folder and the tools come in as JobPaths.
@@ -22,7 +22,7 @@ import type { DownloadQueueItem } from "../state";
 import { withDamSlot, withYtdlpSlot } from "./queue";
 import { parseDuration, probeDuration, runTool, type ToolRun } from "./run";
 
-// Where the jobs write (TEMP_FOLDER, in the app) and the tools they run.
+// Where the jobs write (DOWNLOADS_FOLDER, in the app) and the tools they run.
 export interface JobPaths {
   folder: string;
   ffmpeg: string;

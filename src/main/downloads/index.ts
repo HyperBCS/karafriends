@@ -1,8 +1,9 @@
-// Downloads songs into TEMP_FOLDER before they join the queue (DAM songs
+// Downloads songs into DOWNLOADS_FOLDER before they join the queue (DAM songs
 // join at once and stream meanwhile), and looks up Niconico videos. The
 // display plays the files from there through karafriends://local/.
 import { execFile } from "child_process";
 import { app } from "electron";
+import path from "path";
 import { promisify } from "util";
 
 import type {
@@ -46,7 +47,16 @@ export { stopAllTools } from "./run";
 
 const execFileAsync = promisify(execFile);
 
-export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
+// The downloads, in the user data folder. Older versions kept them in the
+// temp folder, which on many Linux systems is RAM, and is cleared at boot
+// (and by Windows' Storage Sense).
+export const DOWNLOADS_FOLDER = path.join(app.getPath("userData"), "downloads");
+
+// Where older versions kept the downloads and the saved queue.
+export const OLD_DOWNLOADS_FOLDER = path.join(
+  app.getPath("temp"),
+  "karafriends_tmp",
+);
 
 // The folder and the tools, once the tools are there. A failure to get
 // them is a DownloadFailure, for guests.
@@ -59,7 +69,7 @@ async function jobPaths(): Promise<JobPaths> {
       `couldn't get ffmpeg and yt-dlp: ${err}`,
     );
   }
-  return { folder: TEMP_FOLDER, ...getResourcePaths() };
+  return { folder: DOWNLOADS_FOLDER, ...getResourcePaths() };
 }
 
 // What a Joysound download says when the same song and background is
@@ -123,18 +133,18 @@ export function createDownloads(
     },
 
     // How many files the downloads folder holds, and their bytes.
-    info: () => folderInfo(TEMP_FOLDER),
+    info: () => folderInfo(DOWNLOADS_FOLDER),
 
     // Deletes the downloads but inUse's songs' files and the DAM videos
     // downloading now (see clearFolder).
     clear: (inUse) =>
-      clearFolder(TEMP_FOLDER, [...inUse, ...damDownloads.values()]),
+      clearFolder(DOWNLOADS_FOLDER, [...inUse, ...damDownloads.values()]),
 
     // Deletes a DAM song's downloaded video, unless it's downloading now.
     // Whether there was one.
     clearDam(songId, suffix) {
       if (damDownloads.has(`${songId}-${suffix}`)) return false;
-      return deleteDamVideo(TEMP_FOLDER, songId, suffix);
+      return deleteDamVideo(DOWNLOADS_FOLDER, songId, suffix);
     },
 
     // Downloads a Joysound song and its video, then queues it with onReady;
@@ -154,7 +164,8 @@ export function createDownloads(
       }
       const queue = (item: JoysoundQueueItem) => onReady(item, pushToHead);
       // Downloaded before: queue it at once.
-      if (queueDownloadedJoysoundSong(TEMP_FOLDER, queueItem, queue)) return;
+      if (queueDownloadedJoysoundSong(DOWNLOADS_FOLDER, queueItem, queue))
+        return;
 
       runDownload(
         downloadQueue(),
@@ -164,7 +175,7 @@ export function createDownloads(
           job: async (item) =>
             joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
           onReady: queue,
-          cleanUp: () => deleteJoysoundTempFiles(TEMP_FOLDER, queueItem),
+          cleanUp: () => deleteJoysoundTempFiles(DOWNLOADS_FOLDER, queueItem),
           onFailed,
         },
       );
