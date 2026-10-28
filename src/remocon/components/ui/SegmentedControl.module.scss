@@ -24,7 +24,7 @@
   border: none;
   border-radius: $kf-tap;
   background: none;
-  color: $kf-text;
+  color: $kf-muted;
   font: inherit;
   font-size: $kf-text-body;
   font-weight: 600;
@@ -38,31 +38,34 @@
   // picked, and focus on the picked one.
   &:active:not([aria-checked="true"]),
   [data-demo="pressed"] &:not([aria-checked="true"]) {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   &:focus-visible,
   [data-demo="focus"] &[aria-checked="true"] {
     @include kf-focus-ring;
   }
-
-  &[aria-checked="true"] {
-    background-color: $kf-accent-fill;
-    color: $kf-on-accent;
-    cursor: default;
-  }
 }
 
-// The settings' choices: one pill-shaped row, each choice an equal share.
+// The settings' choices: one pill-shaped row sunk into the card, each
+// choice an equal share, the picked one raised out of it: filled in the
+// accent, with a tick.
 .row {
   display: flex;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid $kf-border-strong;
+  padding: 3px;
   border-radius: $kf-tap;
+  @include kf-sunken;
 
   .choice {
     flex: 1 1 0;
+
+    &[aria-checked="true"] {
+      background-color: $kf-accent-fill;
+      color: $kf-on-accent;
+      box-shadow: $kf-shadow-raise;
+      cursor: default;
+    }
   }
 }
 
@@ -73,7 +76,7 @@
 }
 
 // Small chips side by side, lighter than the row: outlined, and the picked
-// one filled in the text color rather than the accent.
+// one tinted with the accent, in the text's color.
 .chips {
   display: flex;
   gap: $kf-space-2;
@@ -92,9 +95,10 @@
     }
 
     &[aria-checked="true"] {
-      border-color: $kf-text;
-      background-color: $kf-text;
-      color: $kf-bg;
+      border-color: $kf-tint-edge;
+      background-color: $kf-tint;
+      color: $kf-text;
+      cursor: default;
     }
   }
 }

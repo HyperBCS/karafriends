@@ -4,7 +4,8 @@
   display: flex;
   flex-direction: column;
   gap: $kf-space-2;
-  padding: $kf-space-3 $kf-space-4 0;
+  // In line with the cards of results below.
+  padding: $kf-space-3 $kf-card-inset 0;
 }
 
 // One short row under the search box: Title or Artist, and the source's

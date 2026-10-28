@@ -1,19 +1,34 @@
 @use "../../tokens" as *;
 
+// A card (level 1), inset from the screen's sides, its corners clipping
+// the rows.
 .list {
-  margin: 0;
+  @include kf-card;
+  margin: $kf-space-3 $kf-card-inset 0;
   padding: 0;
+  overflow: hidden;
   list-style: none;
-  border-top: 1px solid $kf-border;
 }
 
+// On a layer of its own (the sheet's queue): just the rows.
+.plain {
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+// Rows have no fill of their own; a hairline parts each from the last.
 .row {
   position: relative;
   display: flex;
   align-items: center;
   min-height: 72px;
-  border-bottom: 1px solid $kf-border;
-  background-color: $kf-surface;
+
+  & + & {
+    border-top: 1px solid $kf-line;
+  }
 }
 
 // The current item (the song playing): an accent edge and title. The edge
@@ -58,7 +73,7 @@ a.main {
   cursor: pointer;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   @include kf-focus-visible {

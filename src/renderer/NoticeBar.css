@@ -1,12 +1,16 @@
+/* A card across the top, over the screen, with the danger color down its
+   left edge. */
 .noticeBar {
+  position: relative;
+  z-index: 30;
   display: flex;
   flex: none;
   align-items: center;
   gap: var(--kf-space-6);
   padding: var(--kf-space-4) var(--kf-space-6);
-  border-bottom: 1px solid var(--kf-border);
   border-left: 0.5rem solid var(--kf-danger);
   background-color: var(--kf-surface);
+  box-shadow: var(--kf-shadow-float);
   font-size: var(--kf-text-label);
 }
 

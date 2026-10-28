@@ -10,7 +10,7 @@
   min-height: $kf-tap;
   margin: 0;
   border: 1px solid transparent;
-  border-radius: $kf-radius;
+  border-radius: $kf-radius-control;
   background: none;
   color: inherit;
   font: inherit;
@@ -32,6 +32,8 @@
   }
 }
 
+// A text button stands up from what it's on (raised), and goes down flat
+// while pressed.
 .button {
   @extend %base;
   padding: 0 $kf-space-4;
@@ -39,6 +41,10 @@
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
+
+  @include kf-pressed {
+    box-shadow: none;
+  }
 }
 
 .full {
@@ -48,36 +54,41 @@
 .primary {
   background-color: $kf-accent-fill;
   color: $kf-on-accent;
+  box-shadow: $kf-shadow-raise;
 
   @include kf-pressed {
     background-color: $kf-accent-pressed;
   }
 }
 
+// A step above the surface it's on, with a light top edge.
 .secondary {
-  border-color: $kf-border-strong;
-  background-color: transparent;
+  background-color: $kf-raised;
   color: $kf-text;
+  box-shadow: $kf-shadow-button;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 }
 
 .danger {
   background-color: $kf-danger;
   color: $kf-on-accent;
+  box-shadow: $kf-shadow-raise;
 
   @include kf-pressed {
     background-color: $kf-danger-pressed;
   }
 }
 
-// Every variant looks the same when it can't be pressed.
+// Every variant looks the same when it can't be pressed: flat, outlined,
+// in muted text.
 .button:disabled {
-  border-color: transparent;
-  background-color: $kf-surface;
+  border-color: $kf-border-strong;
+  background-color: transparent;
   color: $kf-muted;
+  box-shadow: none;
 }
 
 .iconButton {
@@ -87,14 +98,14 @@
   color: $kf-text;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   // aria-disabled: a control the server would refuse (supervised mode).
   // It stays focusable, and a tap does nothing.
   &:disabled,
   &[aria-disabled="true"] {
-    color: $kf-border-strong;
+    color: $kf-disabled;
   }
 
   &[aria-disabled="true"] {
@@ -102,13 +113,38 @@
   }
 }
 
-// The action that matters most in a row of icons (play), or a toggle that
-// is on.
+// The action that matters most in a row of icons, or a toggle that is on.
 .accent,
 .iconButton[aria-pressed="true"] {
   color: $kf-accent;
 }
 
+// Beside a filled one, quieter: restart and skip beside play.
+.mutedIcon {
+  color: $kf-muted;
+}
+
 .dangerIcon {
   color: $kf-danger;
+}
+
+// The main control, raised: an accent circle (play and pause). The caller
+// sets its size.
+.filled {
+  border-radius: 50%;
+  background-color: $kf-accent-fill;
+  color: $kf-on-accent;
+  box-shadow: $kf-shadow-raise;
+
+  @include kf-pressed {
+    background-color: $kf-accent-pressed;
+    box-shadow: none;
+  }
+
+  &:disabled,
+  &[aria-disabled="true"] {
+    background-color: $kf-pressed;
+    color: $kf-disabled;
+    box-shadow: none;
+  }
 }

@@ -8,13 +8,19 @@ import { Marquee } from "./Marquee";
 interface ListProps {
   // Names the list for screen readers: "Queue", "Search results".
   label?: string;
+  // Just the rows, for a list on a layer of its own (the sheet's queue),
+  // rather than a card on the page.
+  plain?: boolean;
   className?: string;
   children: React.ReactNode;
 }
 
-// A list of ListRows: a <ul>.
-export const List = ({ label, className, children }: ListProps) => (
-  <ul aria-label={label} className={classnames(styles.list, className)}>
+// A list of ListRows: a <ul>, as a card inset from the screen's sides.
+export const List = ({ label, plain, className, children }: ListProps) => (
+  <ul
+    aria-label={label}
+    className={classnames(styles.list, { [styles.plain]: plain }, className)}
+  >
     {children}
   </ul>
 );

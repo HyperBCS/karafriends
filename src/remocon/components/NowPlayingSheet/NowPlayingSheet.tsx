@@ -5,7 +5,7 @@ import { useLiveState } from "../../../common/apiClient";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
 import songLink from "../../songLink";
-import { IconButton, Marquee, Sheet } from "../ui";
+import { Marquee, Sheet } from "../ui";
 import WithReading from "../WithReading";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
@@ -85,8 +85,42 @@ const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
   );
 };
 
+// Switches the sheet's toolbar between the playback controls and the
+// emotes: one button, both icons side by side in a pill, the one showing
+// raised.
+export const ModeSwitch = ({
+  showEmotes,
+  onToggle,
+}: {
+  showEmotes: boolean;
+  onToggle: () => void;
+}) => (
+  <button
+    type="button"
+    className={styles.mode}
+    aria-label={showEmotes ? t("sheet.showControls") : t("sheet.showEmotes")}
+    onClick={onToggle}
+  >
+    <span
+      className={styles.modeOption}
+      data-on={showEmotes ? undefined : ""}
+      aria-hidden="true"
+    >
+      <BsMusicPlayerFill />
+    </span>
+    <span
+      className={styles.modeOption}
+      data-on={showEmotes ? "" : undefined}
+      aria-hidden="true"
+    >
+      <FaSmile />
+    </span>
+  </button>
+);
+
 // The now-playing sheet at the bottom of every screen. Expanded, it shows
-// the queue, then the playback controls or the emotes.
+// three blocks: the bar, the queue under "Up next" in a well, and a toolbar
+// with the playback controls or the emotes.
 const NowPlayingSheet = () => {
   const [expanded, setExpanded] = useStoredFlag("expanded");
   const [showEmotes, setShowEmotes] = useStoredFlag("showEmotes");
@@ -100,14 +134,17 @@ const NowPlayingSheet = () => {
       expanded={expanded}
       onExpandedChange={setExpanded}
     >
+      <h2 className={styles.heading}>{t("queue.upNext")}</h2>
       <section aria-label={t("queue.label")} className={styles.queue}>
         <QueueList />
       </section>
-      <div className={styles.controls}>
-        <IconButton
-          label={showEmotes ? t("sheet.showControls") : t("sheet.showEmotes")}
-          icon={showEmotes ? <BsMusicPlayerFill /> : <FaSmile />}
-          onClick={() => setShowEmotes(!showEmotes)}
+      <div
+        className={styles.controls}
+        data-showing={showEmotes ? "emotes" : "playback"}
+      >
+        <ModeSwitch
+          showEmotes={showEmotes}
+          onToggle={() => setShowEmotes(!showEmotes)}
         />
         {showEmotes ? <EmoteButtons /> : <PlaybackControls />}
       </div>

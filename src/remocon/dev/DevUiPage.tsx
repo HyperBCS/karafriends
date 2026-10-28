@@ -16,6 +16,12 @@ import {
   TextField,
   TopBar,
 } from "../components/ui";
+import { ModeSwitch } from "../components/NowPlayingSheet/NowPlayingSheet";
+import * as sheetStyles from "../components/NowPlayingSheet/NowPlayingSheet.module.scss";
+import {
+  KeyStepper,
+  Transport,
+} from "../components/NowPlayingSheet/PlaybackControls";
 import { SingerBadge } from "../components/NowPlayingSheet/QueueList";
 import { t, useLanguage, type Language } from "../i18n";
 import {
@@ -168,13 +174,15 @@ const DevUiPage = () => {
       </span>
     </span>
   );
-  // The queue as the open sheet shows it.
+  // The queue as the open sheet shows it: under "Up next", in its well.
   const upNext = (
     <>
-      <h3 className={styles.upNext}>{t("queue.upNext")}</h3>
-      <List label={t("queue.upNext")}>
-        <QueueRows />
-      </List>
+      <h3 className={sheetStyles.heading}>{t("queue.upNext")}</h3>
+      <div className={sheetStyles.queue}>
+        <List label={t("queue.upNext")} plain>
+          <QueueRows />
+        </List>
+      </div>
     </>
   );
 
@@ -285,6 +293,20 @@ const DevUiPage = () => {
               label={t("playback.play")}
               icon={<MdPlayArrow />}
               tone="accent"
+            />
+          </Demo>
+          <Demo state="filled">
+            <IconButton
+              label={t("playback.play")}
+              icon={<MdPlayArrow />}
+              tone="filled"
+            />
+          </Demo>
+          <Demo state="muted">
+            <IconButton
+              label={t("playback.restart")}
+              icon={<MdReplay />}
+              tone="muted"
             />
           </Demo>
           <Demo state="danger">
@@ -552,16 +574,34 @@ const DevUiPage = () => {
               onExpandedChange={setSheetOpen}
             >
               {upNext}
-              <div className={styles.controls}>
-                <IconButton label={t("playback.restart")} icon={<MdReplay />} />
-                <IconButton
-                  label={t("playback.pause")}
-                  icon={<MdPause />}
-                  tone="accent"
+              <div className={sheetStyles.controls} data-showing="playback">
+                <ModeSwitch showEmotes={false} onToggle={noop} />
+                <Transport
+                  playing
+                  disabled={false}
+                  onRestart={noop}
+                  onPlayPause={noop}
+                  onSkip={noop}
                 />
-                <IconButton label={t("playback.skip")} icon={<MdSkipNext />} />
+                <KeyStepper semis={2} disabled={false} onChange={noop} />
               </div>
             </Sheet>
+          </Demo>
+        </div>
+        <div className={styles.bleed}>
+          <Demo state="toolbar: supervised, not this phone's song">
+            <div className={sheetStyles.controls} data-showing="playback">
+              <ModeSwitch showEmotes={false} onToggle={noop} />
+              <Transport
+                playing={false}
+                disabled
+                onRestart={noop}
+                onPlayPause={noop}
+                onSkip={noop}
+              />
+              <KeyStepper semis={-1} disabled onChange={noop} />
+              <p className={sheetStyles.note}>{t("playback.singerOnly")}</p>
+            </div>
           </Demo>
         </div>
       </Section>

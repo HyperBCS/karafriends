@@ -10,7 +10,7 @@
    zone. */
 .joinCode {
   width: 45vh;
-  border-radius: var(--kf-radius);
+  border-radius: var(--kf-radius-control);
   overflow: hidden;
   line-height: 0;
 }
@@ -31,18 +31,19 @@
   font-size: var(--kf-text-heading);
 }
 
-/* While a song plays: top-left over the video, on a panel, clear of the
-   lyrics, which karaoke puts at the bottom (DAM's in the video, Joysound's
-   and ad-hoc ones drawn over it). Announcements take the top-right. */
+/* While a song plays: top-left over the video, on a card with a shadow
+   over the video, clear of the lyrics, which karaoke puts at the bottom
+   (DAM's in the video, Joysound's and ad-hoc ones drawn over it).
+   Announcements take the top-right. */
 .joinCorner {
   position: absolute;
   top: var(--kf-space-6);
   left: var(--kf-space-6);
   z-index: 5;
   padding: var(--kf-space-4);
-  border: 1px solid var(--kf-border);
-  border-radius: var(--kf-radius);
+  border-radius: var(--kf-radius-card);
   background-color: var(--kf-surface);
+  box-shadow: var(--kf-shadow-float);
   pointer-events: none;
 }
 

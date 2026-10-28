@@ -92,8 +92,9 @@ $wheel-height: 6 * $line-height;
   min-height: 160px;
   margin: 0;
   border: 2px solid $kf-accent;
-  border-radius: $kf-radius;
-  background-color: $kf-surface;
+  border-radius: $kf-radius-card;
+  background-color: $kf-raised;
+  box-shadow: $kf-shadow-button;
   color: $kf-text;
   font: inherit;
   font-size: $kf-text-control;
@@ -102,7 +103,8 @@ $wheel-height: 6 * $line-height;
   touch-action: manipulation;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
+    box-shadow: none;
   }
 
   @include kf-focus-visible;

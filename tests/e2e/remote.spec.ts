@@ -318,8 +318,8 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
 }) => {
   const html = remote.locator("html");
   const body = remote.locator("body");
-  const LIGHT = "rgb(235, 235, 235)";
-  const DARK = "rgb(18, 18, 18)";
+  const LIGHT = "rgb(237, 239, 242)";
+  const DARK = "rgb(12, 13, 15)";
   const theme = remote.getByRole("radiogroup", { name: "Theme" });
   const choice = (name: string) =>
     theme.getByRole("radio", { name, exact: true });
@@ -707,37 +707,70 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
   await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
 });
 
-test("the playback controls fit on a narrow phone", async ({ remote }) => {
+test("the sheet's toolbar: the switch, the transport and the key, in that order", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.setViewportSize({ width: 412, height: 800 });
   await remote.getByRole("button", { name: "Show queue" }).click();
   const sheetBody = await remote
     .getByRole("button", { name: "Hide queue" })
     .getAttribute("aria-controls");
-  const first = remote.getByRole("button", { name: "Show emotes" });
-  const last = remote.getByRole("button", { name: "Raise the key" });
-  // Every control in the row, the key included, is one 44px square with
-  // one 28px icon size.
-  const row = [
-    "Show emotes",
+  const button = (name: string) =>
+    remote.getByRole("button", { name, exact: true });
+  const mode = button("Show emotes");
+  const [restart, play, skip, lower, raise] = [
     "Restart",
     "Play",
     "Skip",
     "Lower the key",
     "Raise the key",
-  ].map((name) => remote.getByRole("button", { name, exact: true }));
-  for (const control of [...row, remote.getByRole("status", { name: "Key" })]) {
-    const box = (await control.boundingBox())!;
-    expect([box.width, box.height]).toEqual([44, 44]);
+  ].map(button);
+  const key = remote.getByRole("status", { name: "Key" });
+  const box = async (el: Locator) => (await el.boundingBox())!;
+  const middle = (b: { y: number; height: number }) => b.y + b.height / 2;
+
+  // Every control is a full tap target; play is the big one, in the middle
+  // of the row.
+  for (const control of [mode, restart, play, skip, lower, raise]) {
+    const b = await box(control);
+    expect(b.width).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(44);
   }
-  for (const control of row) {
-    await expect(control).toHaveCSS("font-size", "28px");
-  }
-  for (const width of [360, 320]) {
+  const big = await box(play);
+  expect(big.width).toBeGreaterThan((await box(restart)).width);
+  expect(Math.abs(big.x + big.width / 2 - 206)).toBeLessThan(2);
+
+  for (const width of [412, 360, 320]) {
     await remote.setViewportSize({ width, height: 700 });
-    // One row, inside the screen, and nothing to scroll sideways.
-    const [a, b] = [await first.boundingBox(), await last.boundingBox()];
-    expect(a!.x, `${width}px`).toBeGreaterThanOrEqual(0);
-    expect(b!.x + b!.width, `${width}px`).toBeLessThanOrEqual(width);
-    expect(Math.abs(a!.y - b!.y), `${width}px`).toBeLessThan(1);
+    const [m, r, p, s, l, k, ra] = await Promise.all(
+      [mode, restart, play, skip, lower, key, raise].map(box),
+    );
+    // Restart, play and skip side by side; ♭, the key and ♯ too.
+    for (const [a, b] of [
+      [r, p],
+      [p, s],
+      [l, k],
+      [k, ra],
+    ]) {
+      expect(a.x + a.width, `${width}px`).toBeLessThanOrEqual(b.x);
+    }
+    if (width >= 360) {
+      // One row: the switch, then the transport, then the key.
+      expect(m.x + m.width, `${width}px`).toBeLessThanOrEqual(r.x);
+      expect(s.x + s.width, `${width}px`).toBeLessThanOrEqual(l.x);
+      for (const b of [m, r, s, l, ra]) {
+        expect(Math.abs(middle(b) - middle(p)), `${width}px`).toBeLessThan(1);
+      }
+    } else {
+      // Two rows: the transport first, then the switch and the key.
+      expect(m.y, `${width}px`).toBeGreaterThanOrEqual(p.y + p.height);
+      expect(l.y, `${width}px`).toBeGreaterThanOrEqual(p.y + p.height);
+      expect(m.x + m.width, `${width}px`).toBeLessThanOrEqual(l.x);
+    }
+    // Inside the screen, and nothing to scroll sideways.
+    expect(m.x, `${width}px`).toBeGreaterThanOrEqual(0);
+    expect(ra.x + ra.width, `${width}px`).toBeLessThanOrEqual(width);
     expect(
       await remote.evaluate((id) => {
         const scrolls = (el: Element) => el.scrollWidth > el.clientWidth;
@@ -748,6 +781,40 @@ test("the playback controls fit on a narrow phone", async ({ remote }) => {
       `${width}px`,
     ).toBe(false);
   }
+
+  // The key shows its sign (below zero, a minus sign, U+2212).
+  await expect(key).toHaveText("0");
+  for (const [semis, shown] of [
+    [2, "+2"],
+    [-1, "−1"],
+    [0, "0"],
+  ] as const) {
+    const res = await fetch(
+      new URL("api/setPitchShiftSemis", karafriends.remoconUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semis }),
+      },
+    );
+    expect(res.status).toBe(200);
+    await expect(key).toHaveText(shown);
+  }
+
+  // Showing the emotes, the switch stays where it is, and the emotes and
+  // the button to change them take the rest of the row.
+  await remote.setViewportSize({ width: 360, height: 700 });
+  const before = await box(mode);
+  await mode.click();
+  const back = button("Show playback controls");
+  expect(await box(back)).toEqual(before);
+  const fire = await box(remote.getByRole("button", { name: "🔥" }));
+  const edit = await box(button("Change emotes"));
+  expect(fire.x).toBeGreaterThanOrEqual(before.x + before.width);
+  expect(edit.x).toBeGreaterThan(fire.x + fire.width);
+  expect(edit.x + edit.width).toBeLessThanOrEqual(360);
+  await back.click();
+  await expect(play).toBeVisible();
 });
 
 test.describe("the now-playing bar", () => {
@@ -835,7 +902,7 @@ test.describe("the now-playing bar", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     // Open, the queue holds only the songs waiting, under "Up next": none.
-    await expect(queue.getByRole("heading", { name: "Up next" })).toBeVisible();
+    await expect(sheet.getByRole("heading", { name: "Up next" })).toBeVisible();
     await expect(queue.getByText("The queue is empty")).toBeVisible();
     await expect(queue).not.toContainText("E2E playing song");
 
@@ -1241,20 +1308,21 @@ test.describe("a long queue", () => {
   }) => {
     const queue = await openQueue(remote);
 
-    // The rows sit on the sheet with no fill of their own, and the sheet
-    // isn't the color of the lists on the screen.
+    // The rows have no fill of their own: they sit in the queue's well,
+    // which is sunk into the sheet, a color of its own.
     const sheet = remote.getByRole("region", { name: "Now playing" });
     const fill = (el: Locator) =>
       el.evaluate((node) => getComputedStyle(node).backgroundColor);
-    const surface = await remote.evaluate(() =>
+    const well = await remote.evaluate(() =>
       getComputedStyle(document.documentElement)
-        .getPropertyValue("--kf-surface")
+        .getPropertyValue("--kf-well")
         .trim(),
     );
     expect(await fill(queue.getByRole("listitem").first())).toBe(
-      await fill(sheet),
+      "rgba(0, 0, 0, 0)",
     );
-    expect(await fill(sheet)).not.toBe(rgb(surface));
+    expect(await fill(queue)).toBe(rgb(well));
+    expect(await fill(sheet)).not.toBe(rgb(well));
 
     const topBar = remote.getByRole("banner");
     const main = remote.getByRole("main");

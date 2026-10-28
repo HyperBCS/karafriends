@@ -56,7 +56,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: $kf-surface-pressed;
+  background-color: $kf-pressed;
   font-weight: 600;
 }
 
@@ -67,17 +67,8 @@
   min-width: 0;
 }
 
-.nowLabel,
-.upNext {
-  color: $kf-muted;
-  font-size: $kf-text-label;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .nowLabel {
+  @include kf-caps-label;
   margin-bottom: $kf-space-1;
 }
 
@@ -94,10 +85,6 @@
   min-width: 0;
 }
 
-.upNext {
-  padding: $kf-space-3 $kf-space-4 $kf-space-2;
-}
-
 .nowTitle {
   overflow: hidden;
   font-size: $kf-text-title;
@@ -111,12 +98,4 @@
   color: $kf-muted;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.controls {
-  display: flex;
-  justify-content: center;
-  gap: $kf-space-2;
-  padding: $kf-space-2;
-  border-top: 1px solid $kf-border;
 }

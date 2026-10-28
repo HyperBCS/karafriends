@@ -50,23 +50,26 @@ const EmoteButtons = () => {
 
   return (
     <div className={styles.emotes}>
-      {emotes.map((emote) => (
-        <button
-          key={emote}
-          type="button"
-          className={styles.emote}
-          onPointerDown={() => startEmotes(emote)}
-          onPointerUp={endEmotes}
-          onPointerLeave={endEmotes}
-          onPointerCancel={endEmotes}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          {emote}
-        </button>
-      ))}
+      <div className={styles.emoteChips}>
+        {emotes.map((emote) => (
+          <button
+            key={emote}
+            type="button"
+            className={styles.emote}
+            onPointerDown={() => startEmotes(emote)}
+            onPointerUp={endEmotes}
+            onPointerLeave={endEmotes}
+            onPointerCancel={endEmotes}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {emote}
+          </button>
+        ))}
+      </div>
       <IconButton
         label={t("emotes.edit")}
         icon={<MdEdit />}
+        tone="muted"
         onClick={editEmotes}
       />
     </div>

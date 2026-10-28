@@ -29,7 +29,7 @@ body,
 }
 
 body {
-  background-color: var(--kf-bg);
+  background-color: var(--kf-black);
   color: var(--kf-text);
   font-family: var(--kf-font);
   -webkit-font-smoothing: antialiased;
