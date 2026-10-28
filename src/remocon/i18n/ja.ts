@@ -41,6 +41,7 @@ export const ja: Messages = {
   "search.sourceAll": "すべて",
   "search.sourceButton": "機種：{source}",
   "search.results": "検索結果",
+  "search.videoById": "このIDの動画を開く",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
   "search.failed": "{source}を検索できませんでした：{reason}",

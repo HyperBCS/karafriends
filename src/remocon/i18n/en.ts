@@ -46,6 +46,9 @@ export const en = {
   // The source's button, which names the source.
   "search.sourceButton": "Source: {source}",
   "search.results": "Results",
+  // A query that could be a video's ID: a row to open it, above the
+  // results, since a title can look like one ("OneLastKiss").
+  "search.videoById": "Open the video with this ID",
   "search.noResults": "No results found",
   "search.songCount": "{count} songs",
   "search.failed": "Couldn't search {source}: {reason}",

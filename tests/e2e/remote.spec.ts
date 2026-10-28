@@ -685,25 +685,51 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
     "Couldn't get this video: E2E offline",
   );
 
-  // A bare ID could be half typed ("sm1" of "sm12345"): the pause in typing
-  // searches for it, and Enter or leaving the field opens it.
+  // A bare ID could be half typed ("sm1" of "sm12345"), or a title that
+  // only looks like one ("OneLastKiss"): it's searched for, Enter and
+  // leaving the field stay on the results, and a row above them opens the
+  // video.
   for (const method of ["damSearchSongs", "joysoundSearchSongs"]) {
     await remote.route(`**/api/${method}`, (route) =>
       route.fulfill({ json: { items: [], nextOffset: null } }),
     );
   }
+  const byId = remote.getByRole("list", {
+    name: "Open the video with this ID",
+  });
   await remote.getByRole("button", { name: "Back" }).click();
   await search.fill("sm9");
   await expect(remote).toHaveURL(/q=sm9/);
   await search.press("Enter");
+  await expect(remote.getByText("No results found")).toBeVisible();
+  await expect(remote).toHaveURL(/q=sm9/);
+  await expect(byId.getByRole("link")).toContainText("sm9");
+  await expect(byId.getByRole("link")).toContainText("Niconico");
+  await byId.getByRole("link").click();
   await expect(remote).toHaveURL(/#\/search\/niconico\/sm9$/);
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
 
   await remote.getByRole("button", { name: "Back" }).click();
-  await search.fill("jNQXAC9IVRw");
-  await expect(remote).toHaveURL(/q=jNQXAC9IVRw/);
-  await search.blur();
+  for (const title of ["OneLastKiss", "jNQXAC9IVRw"]) {
+    await search.fill(title);
+    await expect(remote).toHaveURL(new RegExp(`q=${title}`));
+    await search.press("Enter");
+    await search.focus();
+    await search.blur();
+    await expect(remote.getByText("No results found")).toBeVisible();
+    await expect(remote).toHaveURL(new RegExp(`q=${title}`));
+    await expect(byId.getByRole("link")).toContainText(title);
+    await expect(byId.getByRole("link")).toContainText("YouTube");
+  }
+  await byId.getByRole("link").click();
   await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
+
+  // A title is just searched for, with no row.
+  await remote.getByRole("button", { name: "Back" }).click();
+  await search.fill("Butterflies");
+  await expect(remote).toHaveURL(/q=Butterflies/);
+  await expect(remote.getByText("No results found")).toBeVisible();
+  await expect(byId).toHaveCount(0);
 });
 
 test("the sheet's toolbar: the switch, the transport and the key, in that order", async ({
