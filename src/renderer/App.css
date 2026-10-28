@@ -18,12 +18,13 @@
 }
 
 /* The video as large as fits, centered (Player.css sizes it from this
-   box). */
+   box), and the QR code's corner over it. */
 .appStage {
   display: flex;
   flex: 1;
   align-items: center;
   justify-content: center;
+  position: relative;
   min-height: 0;
   container-type: size;
 }
