@@ -254,7 +254,9 @@ $kf-card-inset: $kf-space-3;
 // Tap targets.
 $kf-tap: 44px;
 
-// Type. The system stack covers Japanese on iOS and Android.
+// Type. The phone's own fonts, with no web fonts to wait for: the system
+// stack covers Japanese on iOS and Android, and the phone's CJK font fills
+// in where system-ui has no kanji.
 $kf-font:
   system-ui,
   -apple-system,
