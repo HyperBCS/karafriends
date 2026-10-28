@@ -412,7 +412,7 @@ export interface Api {
   // Whether the caller is an admin: the display, or a phone that sent a
   // live session's token in ADMIN_TOKEN_HEADER.
   whoami: { input: Record<string, never>; output: { isAdmin: boolean } };
-  // Signs a phone in as an admin. 403 for a wrong password, or when the host
+  // Signs a phone in as an admin. 403 for a wrong password, 409 when the host
   // has set none; 429 after 5 tries in a minute from one address. The phone
   // sends the token in ADMIN_TOKEN_HEADER from then on. The display never
   // signs in: it is always an admin.

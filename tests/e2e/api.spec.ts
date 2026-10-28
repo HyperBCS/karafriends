@@ -208,7 +208,10 @@ test.describe("without an admin password", () => {
         { password: "anything" },
         REMOTE_HEADERS,
       ),
-    ).toMatchObject({ status: 403 });
+    ).toEqual({
+      status: 409,
+      body: { error: "The host hasn't set an admin password" },
+    });
   });
 });
 

@@ -102,7 +102,7 @@ function storeAdminToken(token: string | null) {
 }
 
 // Signs the phone in as an admin. Throws an ApiCallError: 403 for a wrong
-// password, 429 after too many tries.
+// password, 409 when the host has set none, 429 after too many tries.
 export async function adminSignIn(password: string): Promise<void> {
   const { token } = await call("adminLogin", { password });
   storeAdminToken(token);

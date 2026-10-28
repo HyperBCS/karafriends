@@ -485,7 +485,7 @@ describe("admin sign-in", () => {
     );
   });
 
-  test("a wrong password, or none set, is refused", async () => {
+  test("a wrong password (403), or none set (409), is refused", async () => {
     const api = makeApi();
     for (const password of ["Sing-it-loud", "sing-it-loud ", "x"]) {
       await rejectsWith(api.adminLogin({ password }, bob), 403);
@@ -495,7 +495,7 @@ describe("admin sign-in", () => {
         { password: ADMIN_PASSWORD },
         bob,
       ),
-      403,
+      409,
     );
     // A hash that isn't one.
     await rejectsWith(
