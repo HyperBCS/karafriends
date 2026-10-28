@@ -22,6 +22,7 @@ import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SongPage from "./pages/SongPage";
 import YouTubePage from "./pages/YouTubePage";
+import { ARTIST_PAGES, SONG_PAGES, sourceName } from "./songLink";
 
 import * as styles from "./App.module.scss";
 
@@ -179,28 +180,26 @@ const Shell = () => {
           }
         />
         <Route
-          path="/song/:id"
+          path={`${SONG_PAGES.dam}/:id`}
           element={
-            <Screen title={t("source.dam")}>
+            <Screen title={sourceName("dam")}>
               <SongPage kind="dam" />
             </Screen>
           }
         />
-        {["/joysoundSong/:id", "/joysoundSong/:id/:youtubeVideoId"].map(
-          (path) => (
-            <Route
-              key={path}
-              path={path}
-              element={
-                <Screen title={t("source.joysound")}>
-                  <SongPage kind="joysound" />
-                </Screen>
-              }
-            />
-          ),
-        )}
+        {[":id", ":id/:youtubeVideoId"].map((path) => (
+          <Route
+            key={path}
+            path={`${SONG_PAGES.joysound}/${path}`}
+            element={
+              <Screen title={sourceName("joysound")}>
+                <SongPage kind="joysound" />
+              </Screen>
+            }
+          />
+        ))}
         <Route
-          path="/artist/:id"
+          path={`${ARTIST_PAGES.dam}/:id`}
           element={
             <Screen title={t("search.artist")}>
               <ArtistPage key="dam" kind="dam" />
@@ -208,7 +207,7 @@ const Shell = () => {
           }
         />
         <Route
-          path="/joysoundArtist/:id"
+          path={`${ARTIST_PAGES.joysound}/:id`}
           element={
             <Screen title={t("search.artist")}>
               <ArtistPage key="joysound" kind="joysound" />
@@ -216,17 +215,17 @@ const Shell = () => {
           }
         />
         <Route
-          path="/search/youtube/:videoId"
+          path={`${SONG_PAGES.youtube}/:videoId`}
           element={
-            <Screen title={t("source.youtube")}>
+            <Screen title={sourceName("youtube")}>
               <YouTubePage />
             </Screen>
           }
         />
         <Route
-          path="/search/niconico/:videoId"
+          path={`${SONG_PAGES.nico}/:videoId`}
           element={
-            <Screen title={t("source.niconico")}>
+            <Screen title={sourceName("nico")}>
               <NiconicoPage />
             </Screen>
           }
