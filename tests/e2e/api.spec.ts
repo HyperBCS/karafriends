@@ -678,8 +678,8 @@ test.describe("supervised mode", () => {
       ],
       songHistory: [],
       playbackState: "WAITING",
-      // As older versions saved them: by video ID.
-      idToAdhocLyrics: { [VIDEO]: LYRICS },
+      // By the queue item's songKey.
+      idToAdhocLyrics: { [`${VIDEO}@${Date.UTC(2026, 0, 1)}`]: LYRICS },
     });
 
     const LYRICS_SONG = `${VIDEO}@${Date.UTC(2026, 0, 1)}`;
