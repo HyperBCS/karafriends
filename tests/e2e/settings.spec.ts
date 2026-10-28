@@ -651,6 +651,20 @@ function fakeAudioCalls(display: Page): Promise<unknown[][]> {
   );
 }
 
+// The fake inputs and outputs that won't open from now on, by id; kept
+// through a reload.
+function failOpen(display: Page, names: string[]) {
+  return display.evaluate(
+    (names) =>
+      (
+        window as unknown as {
+          karafriendsFakeAudio: { failOpen(names: string[]): void };
+        }
+      ).karafriendsFakeAudio.failOpen(names),
+    names,
+  );
+}
+
 test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
@@ -1080,6 +1094,52 @@ test.describe("the microphones", () => {
       .getByRole("group", { name: MIC.label });
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
     await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+  });
+
+  test("a saved mic that won't open at launch starts down and opens by itself; it and one not plugged in stay saved", async ({
+    display,
+  }) => {
+    const GONE = { name: "{0.0.1.00000000}.{e2e-gone} (USB)", channel: 0 };
+    await failOpen(display, [MIC_DEVICE]);
+    await display.evaluate(
+      (mics) => localStorage.setItem("mics", JSON.stringify(mics)),
+      [
+        { name: MIC_DEVICE, channel: 0, gain: 150, echo: 40 },
+        { ...GONE, gain: 70, echo: 10 },
+      ],
+    );
+    await display.reload();
+    await openTab(display, "Sound");
+    const mic = display
+      .getByRole("region", { name: "Microphones" })
+      .getByRole("group", { name: MIC.label });
+    await expect(
+      mic.getByText("Error: The device is busy (fake)"),
+    ).toBeVisible();
+
+    // A level change saves every mic, the one down and the one not
+    // plugged in too.
+    await mic.getByLabel("Gain 150%").fill("120");
+    await expect
+      .poll(() =>
+        display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
+      )
+      .toEqual([
+        { name: MIC_DEVICE, channel: 0, gain: 120, echo: 40 },
+        { ...GONE, gain: 70, echo: 10 },
+      ]);
+
+    // The watchdog opens it once it can, at its levels.
+    await failOpen(display, []);
+    await expect(
+      mic.getByText("Reopened after: Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await expect(mic.getByText(/device is busy/)).toHaveCount(1);
+    expect(
+      (await fakeAudioCalls(display)).filter(
+        ([call]) => call === "inputDevice_setGain",
+      ),
+    ).toContainEqual(["inputDevice_setGain", expect.any(Number), 1.2]);
   });
 });
 

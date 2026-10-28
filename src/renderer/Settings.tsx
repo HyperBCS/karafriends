@@ -973,7 +973,7 @@ export default function Settings(props: {
                 />
                 {props.mics.map((mic, i) => (
                   <MicrophoneSetting
-                    key={mic.deviceId}
+                    key={mic.key}
                     mic={mic}
                     levels={props.micLevels(mic)}
                     onChange={(name, channel) =>
