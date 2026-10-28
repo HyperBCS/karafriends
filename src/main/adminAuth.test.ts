@@ -115,19 +115,19 @@ describe("setAdminPassword", () => {
     return { sessions, saved, setAdminPassword };
   };
 
-  test("makes a salt the first time, then keeps it", () => {
+  test("makes a salt the first time, then keeps it", async () => {
     const config = { adminPasswordHash: "", adminPasswordSalt: "" };
     const { saved, setAdminPassword } = setup(config);
     setAdminPassword("first");
     const salt = config.adminPasswordSalt;
     assert.match(salt, /^[0-9a-f]{32}$/);
     assert.equal(config.adminPasswordHash, hashAdminPassword("first", salt));
-    assert.equal(isAdminPassword("first", config), true);
+    assert.equal(await isAdminPassword("first", config), true);
 
     setAdminPassword("second");
     assert.equal(config.adminPasswordSalt, salt);
-    assert.equal(isAdminPassword("first", config), false);
-    assert.equal(isAdminPassword("second", config), true);
+    assert.equal(await isAdminPassword("first", config), false);
+    assert.equal(await isAdminPassword("second", config), true);
     assert.equal(saved.length, 2);
   });
 
@@ -142,13 +142,13 @@ describe("setAdminPassword", () => {
     assert.deepEqual(tokens.map(createAdminSessions(file).has), [false, false]);
   });
 
-  test("an empty password means none", () => {
+  test("an empty password means none", async () => {
     const config = { adminPasswordHash: "", adminPasswordSalt: "" };
     const { setAdminPassword } = setup(config);
     setAdminPassword("first");
     setAdminPassword("");
     assert.equal(config.adminPasswordHash, "");
-    assert.equal(isAdminPassword("first", config), false);
-    assert.equal(isAdminPassword("", config), false);
+    assert.equal(await isAdminPassword("first", config), false);
+    assert.equal(await isAdminPassword("", config), false);
   });
 });

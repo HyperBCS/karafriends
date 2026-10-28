@@ -5,7 +5,8 @@
 //                       an unknown method, 400 for bad input, 403 when the
 //                       caller may not do it (always, for the settings:
 //                       DISPLAY_ONLY_METHODS). adminLogin answers 429 after
-//                       ADMIN_LOGIN_LIMIT tries from one address.
+//                       ADMIN_LOGIN_LIMIT tries from one address, or
+//                       ADMIN_LOGIN_TOTAL_LIMIT from all.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
 //                       every change, plus emote and queueAdded events. A
 //                       phone adds ?deviceId=<its ID> to see which songs are
@@ -169,6 +170,13 @@ export interface RateLimit {
 
 export const ADMIN_LOGIN_LIMIT: RateLimit = { tries: 5, windowMs: 60_000 };
 
+// And how many all addresses get together: a phone can take as many IPv6
+// addresses as it likes.
+export const ADMIN_LOGIN_TOTAL_LIMIT: RateLimit = {
+  tries: 30,
+  windowMs: 60_000,
+};
+
 // Counts tries by key (a remote address) over a sliding window.
 export function rateLimiter(
   { tries, windowMs }: RateLimit,
@@ -215,6 +223,7 @@ export function apiRouter(
   const router = express.Router();
   const streams = streamCounter(streamLimits);
   const logins = rateLimiter(loginLimit);
+  const allLogins = rateLimiter(ADMIN_LOGIN_TOTAL_LIMIT);
 
   router.get("/events", (req, res) => {
     const address = req.socket.remoteAddress ?? "";
@@ -273,9 +282,11 @@ export function apiRouter(
         });
         return;
       }
+      // An address past its own limit doesn't use up everyone's.
       if (
         req.params.method === "adminLogin" &&
-        !logins.tryHit(req.socket.remoteAddress ?? "")
+        (!logins.tryHit(req.socket.remoteAddress ?? "") ||
+          !allLogins.tryHit("all"))
       ) {
         res
           .status(429)

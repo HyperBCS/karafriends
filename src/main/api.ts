@@ -807,7 +807,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           "The host hasn't set an admin password, so no phone can be an admin",
         );
       }
-      if (!isAdminPassword(password, config)) {
+      if (!(await isAdminPassword(password, config))) {
         throw new ApiError(403, "Wrong admin password");
       }
       console.log(`adminLogin: ${caller.nickname ?? "a phone"} signed in`);
