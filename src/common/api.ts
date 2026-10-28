@@ -189,6 +189,10 @@ export interface LiveState {
   queue: SharedQueueItem[];
   playbackState: PlaybackState;
   pitchShiftSemis: number;
+  // How loud Joysound's guide melody (the ogg's centre channel) plays, from
+  // 0 (muted, as it always was) to 1. A party setting: it stays from song
+  // to song and across restarts.
+  guideMelodyLevel: number;
   // The current song's adhoc lyrics pushed so far.
   adhocLyrics: AdhocLyricsEntry[];
   downloads: DownloadProgress[];
@@ -399,6 +403,8 @@ export interface Api {
     output: boolean;
   };
   setPitchShiftSemis: { input: { semis: number }; output: boolean };
+  // For admins only, in supervised mode or not.
+  setGuideMelodyLevel: { input: { level: number }; output: boolean };
   // Shows line lyricIndex of the current song's adhoc lyrics. In supervised
   // mode, for its owner or an admin. False if no song with adhoc lyrics is
   // playing (any more).

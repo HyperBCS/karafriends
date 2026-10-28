@@ -119,6 +119,15 @@ describe("createStateStore", () => {
     assert.equal(createStateStore(file).getState().toolsProblem, null);
   });
 
+  test("keeps the guide melody level across a restart", () => {
+    const store = createStateStore(file);
+    store.update((state) => {
+      state.guideMelodyLevel = 0.6;
+    });
+    assert.equal(saved().guideMelodyLevel, 0.6);
+    assert.equal(createStateStore(file).getState().guideMelodyLevel, 0.6);
+  });
+
   test("doesn't save a null current song into the queue", () => {
     const store = createStateStore(file);
     store.update((state) => state.songQueue.push(song(1)));
@@ -242,12 +251,14 @@ describe("loadState", () => {
       songHistory: [{ song: null }, { song: song(2) }],
       playbackState: "DANCING",
       pitchShiftSemis: "high",
+      guideMelodyLevel: 7,
     });
     const state: State = loadState(file);
     assert.deepEqual(state.songQueue, [song(1)]);
     assert.deepEqual(state.songHistory, [{ song: song(2) }]);
     assert.equal(state.playbackState, "WAITING");
     assert.equal(state.pitchShiftSemis, 0);
+    assert.equal(state.guideMelodyLevel, 0);
   });
 
   test("keeps only the adhoc lyrics of queued songs, and moves older ones' to their song", () => {

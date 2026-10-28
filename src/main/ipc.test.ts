@@ -19,6 +19,7 @@ const liveState: LiveState = {
   queue: [],
   playbackState: "WAITING",
   pitchShiftSemis: 0,
+  guideMelodyLevel: 0,
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },

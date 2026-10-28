@@ -146,6 +146,8 @@ export interface State {
   // adhocLyricsKey. Nothing else: they go when the song does.
   idToAdhocLyrics: Record<string, string[]>;
   pitchShiftSemis: number;
+  // 0 to 1. Saved, unlike the pitch.
+  guideMelodyLevel: number;
   playbackState: PlaybackState;
   // The songs after currentSong.
   songQueue: QueueItem[];
@@ -183,6 +185,7 @@ export function emptyState(): State {
     currentSongAdhocLyrics: [],
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,
+    guideMelodyLevel: 0,
     playbackState: "WAITING",
     songQueue: [],
     downloadQueue: [],
@@ -242,7 +245,8 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json. The current song is saved at the head of the queue,
 // so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics and the tools problem start over.
+// pushed adhoc lyrics and the tools problem start over. The guide melody
+// level is kept.
 export function serializeState(state: Readonly<State>): string {
   const { toolsProblem: _, ...saved } = state;
   return JSON.stringify({
@@ -320,6 +324,10 @@ export function parseState(raw: Record<string, unknown>): State {
   }
   if (typeof raw.pitchShiftSemis === "number") {
     state.pitchShiftSemis = raw.pitchShiftSemis;
+  }
+  const level = raw.guideMelodyLevel;
+  if (typeof level === "number" && level >= 0 && level <= 1) {
+    state.guideMelodyLevel = level;
   }
   if (PLAYBACK_STATES.includes(raw.playbackState as PlaybackState)) {
     state.playbackState = raw.playbackState as PlaybackState;
