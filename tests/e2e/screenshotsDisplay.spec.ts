@@ -217,6 +217,17 @@ test.describe("P3, four queued with readings", () => {
       path: path.join(OUT_DIR, "p-display-playing.png"),
       animations: "disabled",
     });
+
+    // Settings' Display section.
+    await display.keyboard.press("s");
+    await display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Display" })
+      .evaluate((element) => element.scrollIntoView({ block: "start" }));
+    await display.screenshot({
+      path: path.join(OUT_DIR, "p-display-settings.png"),
+      animations: "disabled",
+    });
   });
 });
 
