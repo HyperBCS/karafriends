@@ -27,7 +27,10 @@ const ARTIST = [40, 30, 20, 10];
 function queryForms(query: string): Query[] {
   const typed = query.normalize("NFKC").split(/\s+/).map(normalize);
   const forms = [typed];
-  if (isRomaji(query)) forms.push(typed.map((word) => toHiragana(word)));
+  // Tested folded, so full-width letters and an IME's full-width space
+  // count as romaji too.
+  if (isRomaji(typed.join("")))
+    forms.push(typed.map((word) => toHiragana(word)));
   else if (isKana(typed.join(""))) {
     forms.push(typed.map((word) => toRomaji(word)));
   }
