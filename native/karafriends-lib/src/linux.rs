@@ -131,10 +131,10 @@ fn pick_host() -> Result<(cpal::Host, Option<String>)> {
     }
     #[cfg(not(feature = "pipewire"))]
     why.get_or_insert("this build has no PipeWire".to_string());
-    if available.contains(&cpal::HostId::PulseAudio) {
-        if let Ok(host) = cpal::host_from_id(cpal::HostId::PulseAudio) {
-            return Ok((host, why));
-        }
+    if available.contains(&cpal::HostId::PulseAudio)
+        && let Ok(host) = cpal::host_from_id(cpal::HostId::PulseAudio)
+    {
+        return Ok((host, why));
     }
     Ok((cpal::host_from_id(cpal::HostId::Alsa)?, why))
 }
@@ -688,8 +688,8 @@ mod tests {
 
     #[test]
     fn test_pipewire_mics_and_outputs_without_the_registry() {
-        use cpal::DeviceDirection::{Duplex, Input, Output as Out};
         use Wanted::{Mic, Output};
+        use cpal::DeviceDirection::{Duplex, Input, Output as Out};
         // (wanted, node, cpal's direction, has a driver, kept). cpal lists
         // sources as Input and sinks as Duplex (to record what they play).
         let table = [

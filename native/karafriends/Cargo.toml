@@ -2,7 +2,7 @@
 name = "karafriends"
 version = "0.1.0"
 authors = ["Connor Worley <connorbworley@gmail.com>"]
-edition = "2018"
+edition = "2024"
 exclude = ["index.node"]
 
 [lib]
