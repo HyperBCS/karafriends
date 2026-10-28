@@ -439,6 +439,9 @@ export default function PianoRoll(props: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
+  // Read by draw() and pollPitch(), so an offset change keeps the trace.
+  const avOffsetMsRef = useRef(props.avOffsetMs);
+  avOffsetMsRef.current = props.avOffsetMs;
 
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
@@ -542,7 +545,7 @@ export default function PianoRoll(props: {
       ) {
         const time = pitchTime(
           props.videoRef.current.currentTime,
-          props.avOffsetMs,
+          avOffsetMsRef.current,
         );
         while (
           notes[currentNoteIndex].endTime < time &&
@@ -586,7 +589,7 @@ export default function PianoRoll(props: {
 
       const time = drawTime(
         props.videoRef.current.currentTime,
-        props.avOffsetMs,
+        avOffsetMsRef.current,
       );
       const canvasWidth = canvasRef.current.width;
 
@@ -651,7 +654,7 @@ export default function PianoRoll(props: {
         );
       }
     };
-  }, [props]);
+  }, [props.scoringData, props.mics, props.pitchShiftSemis, props.videoRef]);
 
   return <canvas className="pianoRollRoll" ref={canvasRef}></canvas>;
 }
