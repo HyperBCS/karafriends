@@ -993,6 +993,41 @@ test.describe("dragging the queue", () => {
     await remote.mouse.up();
     await expect(queue.locator("[data-dragging]")).toHaveCount(0);
   });
+
+  test.describe("with twelve songs", () => {
+    test.use({
+      seedQueue: {
+        currentSong: null,
+        songQueue: Array.from({ length: 12 }, (_, i) => song(i + 1)),
+        songHistory: [],
+        playbackState: "WAITING",
+      },
+    });
+
+    test("a row held at the top of the queue scrolls it up", async ({
+      remote,
+      karafriends,
+    }) => {
+      const { queue, queued, handle, expectOrder } = await openQueue(
+        remote,
+        karafriends,
+      );
+      await expect(queued).toHaveCount(11);
+      // Song 12, scrolled into view at the bottom, held and taken to the
+      // top edge, where the queue scrolls until song 2 is back in view.
+      await handle(12).scrollIntoViewIfNeeded();
+      expect(await scrollTop(queue)).toBeGreaterThan(100);
+      const grip = (await handle(12).boundingBox())!;
+      const region = (await queue.boundingBox())!;
+      const x = grip.x + grip.width / 2;
+      await remote.mouse.move(x, grip.y + grip.height / 2);
+      await remote.mouse.down();
+      await remote.mouse.move(x, region.y + 5, { steps: 8 });
+      await expect.poll(() => scrollTop(queue)).toBe(0);
+      await remote.mouse.up();
+      await expectOrder(12, ...Array.from({ length: 10 }, (_, i) => i + 2));
+    });
+  });
 });
 
 // Joysound songs, offline: each looks downloaded before (its lyrics and

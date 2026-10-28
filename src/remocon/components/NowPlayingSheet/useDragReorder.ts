@@ -45,7 +45,14 @@ interface Drag {
   // The pointer's clientY, and how far below the row's top it took hold.
   y: number;
   grip: number;
+  // What scrolls the list (the queue region), and the frame that next
+  // scrolls it.
+  scroller: HTMLElement | null;
+  frame: number;
 }
+
+// Within this far of the scroller's top or bottom, a held row scrolls it.
+const EDGE = 40;
 
 // The rows with a handle, top to bottom, and a row's top in the list as
 // laid out: offsetTop leaves out the transforms set here.
@@ -57,8 +64,17 @@ const rowsOf = (list: HTMLElement) =>
 const topOf = (list: HTMLElement, row: HTMLElement) =>
   row.offsetTop - (row.offsetParent === list ? 0 : list.offsetTop);
 
-// Puts the held row under the pointer and slides the others out of its way,
-// from where the rows are now (a song may have ended or gone meanwhile).
+function scrollerOf(list: HTMLElement): HTMLElement | null {
+  let el = list.parentElement;
+  while (el && !/auto|scroll/.test(getComputedStyle(el).overflowY)) {
+    el = el.parentElement;
+  }
+  return el;
+}
+
+// Puts the held row under the pointer (but no further than the first and
+// last rows) and slides the others out of its way, from where the rows are
+// now: the list may have scrolled, or a song ended or gone, meanwhile.
 // Returns where the row is, and where it would land.
 function place(d: Drag): [from: number, to: number] {
   const rows = rowsOf(d.list);
@@ -66,7 +82,11 @@ function place(d: Drag): [from: number, to: number] {
   const tops = rows.map((row) => topOf(d.list, row));
   const middles = rows.map((row, i) => tops[i] + row.offsetHeight / 2);
   const height = d.row.offsetHeight;
-  const top = d.y - d.list.getBoundingClientRect().top - d.grip;
+  const last = rows.length - 1;
+  const top = Math.min(
+    Math.max(d.y - d.list.getBoundingClientRect().top - d.grip, tops[0]),
+    tops[last] + rows[last].offsetHeight - height,
+  );
   const to = dropIndex(top + height / 2, height, middles, from);
   rows.forEach((row, i) => {
     const y = i === from ? top - tops[i] : slideOf(i, from, to, height);
@@ -75,9 +95,25 @@ function place(d: Drag): [from: number, to: number] {
   return [from, to];
 }
 
+// Every frame while a row is held: with the pointer near the scroller's top
+// or bottom (or past it), scrolls toward that end, faster the nearer, and
+// the held row along.
+function autoScroll(d: Drag) {
+  d.frame = requestAnimationFrame(() => autoScroll(d));
+  if (!d.scroller) return;
+  const { top, bottom } = d.scroller.getBoundingClientRect();
+  const up = Math.min(EDGE, top + EDGE - d.y);
+  const down = Math.min(EDGE, d.y - bottom + EDGE);
+  const before = d.scroller.scrollTop;
+  if (up > 0) d.scroller.scrollTop -= Math.ceil(up / 4);
+  else if (down > 0) d.scroller.scrollTop += Math.ceil(down / 4);
+  if (d.scroller.scrollTop !== before) place(d);
+}
+
 // Back to the rows' own places, at once (no transition), so the reordered
 // list that a move renders doesn't slide in from the old places.
 function settle(d: Drag) {
+  cancelAnimationFrame(d.frame);
   delete d.list.dataset.reordering;
   delete d.row.dataset.dragging;
   for (const row of d.list.children) (row as HTMLElement).style.transform = "";
@@ -133,16 +169,20 @@ export default function useDragReorder(
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
         const top = list.getBoundingClientRect().top + topOf(list, row);
-        drag.current = {
+        const d: Drag = {
           pointerId: e.pointerId,
           handle: e.currentTarget,
           row,
           list,
           y: e.clientY,
           grip: e.clientY - top,
+          scroller: scrollerOf(list),
+          frame: 0,
         };
+        drag.current = d;
         list.dataset.reordering = "";
         row.dataset.dragging = "";
+        autoScroll(d);
       },
       onPointerMove(e: React.PointerEvent) {
         const d = ownDrag(e);
