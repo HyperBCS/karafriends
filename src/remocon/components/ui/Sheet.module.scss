@@ -4,10 +4,13 @@
 .sheet {
   display: flex;
   flex-direction: column;
+  // Of the screen as it shows now: on iOS, vh is the screen with Safari's
+  // bars hidden (dvh needs Safari 15.4; older ones keep 80vh).
   max-height: 80vh;
+  max-height: 80dvh;
   border-top: 1px solid $kf-border;
   border-radius: $kf-radius $kf-radius 0 0;
-  background-color: $kf-surface;
+  background-color: $kf-panel;
   box-shadow: $kf-shadow-sheet;
 }
 
@@ -25,11 +28,13 @@
   min-width: 0;
 }
 
+// A column the sheet's height limits: what scrolls inside it (the queue)
+// is the caller's.
 .body {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   border-top: 1px solid $kf-border;
 
   &[hidden] {

@@ -25,6 +25,7 @@ export const ja: Messages = {
   "language.en": "English",
   "language.ja": "日本語",
 
+  "nav.home": "ホーム",
   "nav.history": "履歴",
   "nav.profile": "プロフィール",
 

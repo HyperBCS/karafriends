@@ -1,18 +1,26 @@
 @use "./tokens" as *;
 
-// The top bar, the screen, and the now-playing sheet: only the screen
-// scrolls.
+// The top bar, the screen, and the now-playing sheet, filling the screen.
+// Only the screen scrolls, and its scrolling stops at its ends instead of
+// reaching the page (see index.scss), so the bars never move.
 .app {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
+
+  > header,
+  > footer {
+    flex: none;
+  }
 }
 
 .main {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: $kf-space-4;
 }
 

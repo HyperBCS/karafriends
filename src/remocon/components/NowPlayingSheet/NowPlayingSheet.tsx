@@ -54,7 +54,7 @@ const NowPlayingSheet = () => {
       expanded={expanded}
       onExpandedChange={setExpanded}
     >
-      <section aria-label={t("queue.label")}>
+      <section aria-label={t("queue.label")} className={styles.queue}>
         <QueueList />
       </section>
       <div className={styles.controls}>

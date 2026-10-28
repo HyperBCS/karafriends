@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import {
   HashRouter,
   Link,
@@ -13,7 +13,7 @@ import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
-import { MdPerson } from "./icons";
+import { MdHome, MdPerson } from "./icons";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -42,9 +42,14 @@ const App = () => (
         <Route
           path="/dev/ui"
           element={
-            <Suspense fallback={null}>
-              <DevUiPage />
-            </Suspense>
+            // The page doesn't scroll (index.scss), so this does.
+            <div className={styles.app}>
+              <div className={styles.main}>
+                <Suspense fallback={null}>
+                  <DevUiPage />
+                </Suspense>
+              </div>
+            </div>
           }
         />
       )}
@@ -64,8 +69,8 @@ interface ScreenProps {
   children: React.ReactNode;
 }
 
-// One screen: the top bar (back, the title, the profile button) and the
-// screen's content below it.
+// One screen: the top bar (back, the title, the home and profile buttons)
+// and the screen's content below it.
 const Screen = ({
   title,
   home,
@@ -74,10 +79,13 @@ const Screen = ({
   children,
 }: ScreenProps) => {
   const navigate = useNavigate();
+  // Away from the search screen, with somewhere to go back to: Back and
+  // Home.
+  const away = !home && !firstVisit;
   // react-router counts the entries it pushed: back stays in the remote.
   const canGoBack = (window.history.state?.idx ?? 0) > 0;
   let back: string | (() => void) | undefined;
-  if (!home && !firstVisit) back = canGoBack ? () => navigate(-1) : "/";
+  if (away) back = canGoBack ? () => navigate(-1) : "/";
 
   return (
     <>
@@ -86,14 +94,27 @@ const Screen = ({
           title={title}
           back={back}
           trailing={
-            !profile && (
-              <Link
-                to="/profile"
-                className={styles.iconLink}
-                aria-label={t("nav.profile")}
-              >
-                <MdPerson />
-              </Link>
+            (away || !profile) && (
+              <>
+                {away && (
+                  <Link
+                    to="/"
+                    className={styles.iconLink}
+                    aria-label={t("nav.home")}
+                  >
+                    <MdHome />
+                  </Link>
+                )}
+                {!profile && (
+                  <Link
+                    to="/profile"
+                    className={styles.iconLink}
+                    aria-label={t("nav.profile")}
+                  >
+                    <MdPerson />
+                  </Link>
+                )}
+              </>
             )
           }
         />
@@ -108,6 +129,14 @@ const Screen = ({
 const Shell = () => {
   const { nickname } = useUserIdentity();
   const { pathname } = useLocation();
+
+  // iOS scrolls the page to show a field above the keyboard, and can leave
+  // it scrolled once the keyboard closes, with the top bar cut off.
+  useEffect(() => {
+    const unscroll = () => window.scrollTo(0, 0);
+    window.addEventListener("focusout", unscroll);
+    return () => window.removeEventListener("focusout", unscroll);
+  }, []);
 
   if (!nickname) {
     if (pathname !== "/profile") return <Navigate replace to="/profile" />;

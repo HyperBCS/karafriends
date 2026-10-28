@@ -9,6 +9,9 @@
 //
 // then build again without it before anything else. Phase C's screens need
 // no flag: KARAFRIENDS_SCREENSHOTS=1 yarn test:e2e screenshots -g "phase C".
+// Phase M2's, in Chromium and WebKit:
+//
+//   KARAFRIENDS_SCREENSHOTS=1 KARAFRIENDS_E2E_WEBKIT=1 yarn test:e2e screenshots -g "phase M2"
 import path from "path";
 
 import { devices, type Page } from "@playwright/test";
@@ -53,7 +56,12 @@ const song = (
   user: { deviceId: `e2e-screenshot-${nickname}`, nickname },
 });
 
+// Phases B and C took their shots as a Pixel 7; with
+// KARAFRIENDS_E2E_WEBKIT=1, the iPhone leaves them as they are.
+const CHROMIUM_ONLY = "Phases B and C are shot in Chromium only";
+
 test.describe("phase B", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", CHROMIUM_ONLY);
   test.use({
     seedQueue: {
       currentSong: null,
@@ -103,69 +111,124 @@ test.describe("phase B", () => {
   });
 });
 
-// Phase C: each screen of the remote, in English and Japanese, with real
-// songs. DAM's and Joysound's answers are made up here (they only answer
-// Japanese IPs); the queue and history are seeded.
-test.describe("phase C", () => {
-  const ADMIN_PASSWORD = "screenshots";
-  const at = (minute: number) => String(Date.UTC(2026, 9, 24, 11, minute));
-  const user = (nickname: string) => ({
-    deviceId: `e2e-screenshot-${nickname}`,
-    nickname,
-  });
-  const queued = {
-    nico: (songId: string, name: string, artistName: string, who: string) => ({
-      kind: "nico",
-      songId,
-      name,
-      artistName,
-      playtime: 240,
-      timestamp: at(55),
-      user: user(who),
+// Real songs for phases C and M2. DAM's and Joysound's answers are made up
+// (they only answer Japanese IPs); the queue is seeded.
+const at = (minute: number) => String(Date.UTC(2026, 9, 24, 11, minute));
+const user = (nickname: string) => ({
+  deviceId: `e2e-screenshot-${nickname}`,
+  nickname,
+});
+const queued = {
+  nico: (songId: string, name: string, artistName: string, who: string) => ({
+    kind: "nico",
+    songId,
+    name,
+    artistName,
+    playtime: 240,
+    timestamp: at(55),
+    user: user(who),
+  }),
+};
+const QUEUE = [
+  queued.nico(
+    "sm15630734",
+    "【初音ミク】千本桜【オリジナル曲PV】",
+    "黒うさP",
+    "Ken",
+  ),
+  {
+    kind: "dam",
+    songId: "dam-gurenge",
+    name: "紅蓮華",
+    artistName: "LiSA",
+    playtime: 239,
+    timestamp: at(56),
+    user: user("あやか"),
+    streamingUrlIdx: 0,
+  },
+  {
+    kind: "joysound",
+    songId: "joysound-marigold",
+    name: "マリーゴールド",
+    artistName: "あいみょん",
+    playtime: 304,
+    timestamp: at(57),
+    user: user("Mio"),
+    isRomaji: false,
+    youtubeVideoId: null,
+  },
+  {
+    kind: "youtube",
+    songId: "TQ8WlA2GXbk",
+    name: "Official髭男dism - Pretender［Official Video］",
+    artistName: "Official髭男dism",
+    playtime: 327,
+    timestamp: at(58),
+    user: user("Taro"),
+    hasAdhocLyrics: false,
+    hasCaptions: false,
+    gainValue: 1,
+  },
+  queued.nico("sm2057168", "残酷な天使のテーゼ", "高橋洋子", "Ken"),
+];
+
+const SEARCH = {
+  dam: [
+    ["恋", "星野源"],
+    ["恋愛サーキュレーション", "千石撫子(花澤香菜)"],
+    ["恋するフォーチュンクッキー", "AKB48"],
+    ["恋人がサンタクロース", "松任谷由実"],
+    ["恋におちて -Fall in love-", "小林明子"],
+  ],
+  joysound: [
+    ["恋", "星野源"],
+    ["恋人よ", "五輪真弓"],
+    ["恋のバカンス", "ザ・ピーナッツ"],
+    ["恋愛裁判", "40mP"],
+    ["恋は渾沌の隷也", "後ろから這いより隊G"],
+  ],
+};
+
+// Answers every search with SEARCH, and every DAM song page with 恋.
+async function fakeCatalogs(page: Page) {
+  for (const catalog of ["dam", "joysound"] as const) {
+    await page.route(`**/api/${catalog}SearchSongs`, (route) =>
+      route.fulfill({
+        json: {
+          items: SEARCH[catalog].map(([name, artistName], i) => ({
+            id: `${catalog}-${i}`,
+            name,
+            nameYomi: "",
+            artistName,
+            artistNameYomi: "",
+          })),
+          nextOffset: null,
+        },
+      }),
+    );
+  }
+  await page.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        id: "dam-0",
+        name: "恋",
+        nameYomi: "こい",
+        artistName: "星野源",
+        artistNameYomi: "ほしのげん",
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL", "GUIDE_MALE"],
+        tieUp: "TBS系 火曜ドラマ「逃げるは恥だが役に立つ」主題歌",
+        playtime: 252,
+      },
     }),
-  };
-  const QUEUE = [
-    queued.nico(
-      "sm15630734",
-      "【初音ミク】千本桜【オリジナル曲PV】",
-      "黒うさP",
-      "Ken",
-    ),
-    {
-      kind: "dam",
-      songId: "dam-gurenge",
-      name: "紅蓮華",
-      artistName: "LiSA",
-      playtime: 239,
-      timestamp: at(56),
-      user: user("あやか"),
-      streamingUrlIdx: 0,
-    },
-    {
-      kind: "joysound",
-      songId: "joysound-marigold",
-      name: "マリーゴールド",
-      artistName: "あいみょん",
-      playtime: 304,
-      timestamp: at(57),
-      user: user("Mio"),
-      isRomaji: false,
-      youtubeVideoId: null,
-    },
-    {
-      kind: "youtube",
-      songId: "TQ8WlA2GXbk",
-      name: "Official髭男dism - Pretender［Official Video］",
-      artistName: "Official髭男dism",
-      playtime: 327,
-      timestamp: at(58),
-      user: user("Taro"),
-      hasAdhocLyrics: false,
-      hasCaptions: false,
-      gainValue: 1,
-    },
-    queued.nico("sm2057168", "残酷な天使のテーゼ", "高橋洋子", "Ken"),
-  ];
+  );
+}
+
+// Phase C: each screen of the remote, in English and Japanese. The history
+// is seeded too.
+test.describe("phase C", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", CHROMIUM_ONLY);
+  const ADMIN_PASSWORD = "screenshots";
   const HISTORY = [
     ["夜に駆ける", "YOASOBI", "Mio", "dam", 50],
     ["Lemon", "米津玄師", "Ken", "joysound", 44],
@@ -187,23 +250,6 @@ test.describe("phase C", () => {
     },
   }));
 
-  const SEARCH = {
-    dam: [
-      ["恋", "星野源"],
-      ["恋愛サーキュレーション", "千石撫子(花澤香菜)"],
-      ["恋するフォーチュンクッキー", "AKB48"],
-      ["恋人がサンタクロース", "松任谷由実"],
-      ["恋におちて -Fall in love-", "小林明子"],
-    ],
-    joysound: [
-      ["恋", "星野源"],
-      ["恋人よ", "五輪真弓"],
-      ["恋のバカンス", "ザ・ピーナッツ"],
-      ["恋愛裁判", "40mP"],
-      ["恋は渾沌の隷也", "後ろから這いより隊G"],
-    ],
-  };
-
   test.use({
     appConfig: adminPasswordConfig(ADMIN_PASSWORD),
     seedQueue: {
@@ -222,37 +268,7 @@ test.describe("phase C", () => {
     const { remoconUrl } = karafriends;
     // A real-looking nickname, not the fixture's (this runs after its).
     await remote.addInitScript(() => localStorage.setItem("nickname", "Ken"));
-    for (const catalog of ["dam", "joysound"] as const) {
-      await remote.route(`**/api/${catalog}SearchSongs`, (route) =>
-        route.fulfill({
-          json: {
-            items: SEARCH[catalog].map(([name, artistName], i) => ({
-              id: `${catalog}-${i}`,
-              name,
-              nameYomi: "",
-              artistName,
-              artistNameYomi: "",
-            })),
-            nextOffset: null,
-          },
-        }),
-      );
-    }
-    await remote.route("**/api/damSong", (route) =>
-      route.fulfill({
-        json: {
-          id: "dam-0",
-          name: "恋",
-          nameYomi: "こい",
-          artistName: "星野源",
-          artistNameYomi: "ほしのげん",
-          lyricsPreview: null,
-          vocalTypes: ["NORMAL", "GUIDE_MALE"],
-          tieUp: "TBS系 火曜ドラマ「逃げるは恥だが役に立つ」主題歌",
-          playtime: 252,
-        },
-      }),
-    );
+    await fakeCatalogs(remote);
     // Signed in as an admin, for the queue's controls.
     await remote.evaluate(async (password) => {
       const res = await fetch("api/adminLogin", {
@@ -330,5 +346,59 @@ test.describe("phase C", () => {
       ).toBeEnabled();
       await shoot(remote, `c-queue-${language}`);
     }
+  });
+});
+
+// Phase M2 (the mobile round's locked shell, Home button and contrast):
+// m-<screen>-<browser>.png, as a Pixel 7 in Chromium and, with
+// KARAFRIENDS_E2E_WEBKIT=1, as an iPhone in WebKit.
+test.describe("phase M2", () => {
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        ...QUEUE,
+        queued.nico("sm1715919", "メルト", "ryo", "あやか"),
+        queued.nico("sm3504435", "ワールドイズマイン", "ryo", "Mio"),
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("search, the open sheet and a song page", async ({
+    remote,
+    browserName,
+  }) => {
+    // (No reloads here: after one, WebKit's searches got past these.)
+    await fakeCatalogs(remote);
+    // The display starts the first song within 5 seconds; six wait.
+    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const search = remote.getByRole("searchbox", { name: "Search" });
+    await search.fill("恋");
+    await search.blur();
+    await expect(remote.getByRole("link", { name: /恋愛裁判/ })).toBeVisible();
+    await shoot(remote, `m-search-${browserName}`);
+
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    await expect(
+      remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
+    ).toHaveCount(7);
+    await shoot(remote, `m-queue-${browserName}`);
+    await remote.getByRole("button", { name: "Hide queue" }).click();
+
+    // DAM's 恋, the first result.
+    await remote
+      .getByRole("main")
+      .getByRole("link", { name: /星野源/ })
+      .first()
+      .click();
+    await expect(
+      remote.getByRole("heading", { name: "恋", exact: true }),
+    ).toBeVisible();
+    await shoot(remote, `m-song-${browserName}`);
   });
 });

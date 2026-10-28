@@ -13,12 +13,12 @@ interface Props {
   // A back button: a path in the remote (a link), or what to do (a button).
   // None on the home screen.
   back?: string | (() => void);
-  // The profile or language control.
+  // The home and profile buttons, or the language control.
   trailing?: React.ReactNode;
   className?: string;
 }
 
-// The remote's one header bar: back, title, and a trailing control.
+// The remote's one header bar: back, title, and trailing controls.
 export const TopBar = ({ title, back, trailing, className }: Props) => (
   <div className={classnames(styles.topBar, className)}>
     {typeof back === "string" && (

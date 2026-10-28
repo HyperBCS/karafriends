@@ -18,6 +18,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Remote fixes: Back keeps working after picking a Joysound background video, Back from the lyrics screen no longer returns to it while the song plays, a hand-typed YouTube or Niconico ID opens on Enter instead of mid-typing, the playback controls fit 320px phones, and the profile screen says when the host set no admin password.
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 - Settings has "Everyone is an admin" (`everyoneIsAdmin` in `config.yaml`) for parties: every phone gets the admin controls at once, with no password, and the per-phone song limit still applies.
+- The phone remote holds still on iPhones: only the list in the middle and the queue in the now-playing sheet scroll, and the top bar, the sheet and the page no longer move or bounce. A Home button next to the profile button goes back to the search from any screen, and lists, the queue and the sheet now stand out from the background, with visible lines and more room between rows.
 
 ## 0.1.0
 
