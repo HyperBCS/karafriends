@@ -9,6 +9,7 @@ import { promisify } from "util";
 import type {
   JoysoundQueueItem,
   NicoQueueItem,
+  NicoVideoInfo,
   YoutubeQueueItem,
 } from "../../common/api";
 import {
@@ -24,7 +25,6 @@ import {
 import {
   isNicoVideoId,
   limitLookups,
-  NicoVideoMetadata,
   nicoWatchUrl,
   parseNicoVideoInfo,
 } from "../../common/nicoVideoInfo";
@@ -188,9 +188,7 @@ export function createDownloads(
 
 // Look up a Niconico video's metadata with yt-dlp, which already downloads
 // these videos and keeps up with changes to Niconico's site.
-async function lookUpNicoVideoInfo(
-  videoId: string,
-): Promise<NicoVideoMetadata> {
+async function lookUpNicoVideoInfo(videoId: string): Promise<NicoVideoInfo> {
   await ensureExternalResources();
   const command = toolCommand(getResourcePaths().ytdlp, [
     "--dump-single-json",
@@ -221,7 +219,7 @@ const limitedNicoVideoInfo = limitLookups(lookUpNicoVideoInfo, {
 
 export async function getNicoVideoInfo(
   videoId: string,
-): Promise<NicoVideoMetadata> {
+): Promise<NicoVideoInfo> {
   if (!isNicoVideoId(videoId)) {
     throw new Error(`Not a Niconico video ID: ${JSON.stringify(videoId)}`);
   }
