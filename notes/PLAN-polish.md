@@ -31,6 +31,7 @@ The mobile round ([`PLAN-mobile.md`](PLAN-mobile.md)) is merged and its review f
 - Lanes: P1 (server) and P2 (remote) run alongside each other. P3 (display) starts after P1 merges, since the low-bitrate fallback needs the second URL P1 adds. Then P4, then the user's check.
 - Checks for every phase as in `PLAN-mobile.md`: `yarn typecheck`, `yarn lint`, `yarn prettier --check .`, `yarn test:unit`, `yarn build-prod`, `yarn test:e2e:ci`, the WebKit run for remote phases (`KARAFRIENDS_E2E_WEBKIT=1 yarn test:e2e remote`), a real launch with `KARAFRIENDS_LOCAL_ONLY=1 KARAFRIENDS_HIDE_WINDOW=1`, and screenshots into `notes/ui-refresh-screenshots/p-*.png` for anything visual, reviewed against the design brief (which gains a light-theme clause in P2).
 - The Windows/MSIX notes from `PLAN-product.md` apply unchanged.
+- **Unattended (the user is asleep):** every app launch is hidden (`KARAFRIENDS_HIDE_WINDOW=1`), local-only (`KARAFRIENDS_LOCAL_ONLY=1`) and muted (`--mute-audio`, which the e2e fixture already passes); no phase measures audio by playing it aloud, opens a visible window, or asks the user anything. Questions go in the report; the coordinator decides.
 
 ## Phases
 
