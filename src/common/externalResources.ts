@@ -359,17 +359,28 @@ let ensurePromise: Promise<void> | null = null;
 let updatePromise: Promise<void> | null = null;
 
 // Runs a check once any check in flight is done, and makes it the one
-// downloads wait for. A failed check is cleared so a later call can retry.
+// downloads wait for. A failed check is cleared so a later call can retry,
+// except a forced one that leaves both tools in place: downloads go on with the
+// old copies, and only updateTools' caller sees the failure.
 function check(force: boolean): Promise<void> {
   const previous = ensurePromise?.catch(() => {}) ?? Promise.resolve();
-  const promise: Promise<void> = previous
-    .then(() => doEnsure(force))
-    .catch((err) => {
-      if (ensurePromise === promise) ensurePromise = null;
-      throw err;
-    });
+  const run = previous.then(() => doEnsure(force));
+  const promise: Promise<void> = run.catch((err) => {
+    if (
+      force &&
+      fs.existsSync(resourcePaths.ffmpeg) &&
+      fs.existsSync(resourcePaths.ytdlp)
+    ) {
+      return;
+    }
+    if (ensurePromise === promise) ensurePromise = null;
+    throw err;
+  });
   ensurePromise = promise;
-  return promise;
+  if (!force) return promise;
+  // The forced failure reaches updateTools' caller through run.
+  promise.catch(() => {});
+  return run;
 }
 
 // Make sure the external runtime binaries are present and up to date, fetching
