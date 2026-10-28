@@ -462,12 +462,15 @@ export interface Api {
     input: { songId: string; timestamp: string };
     output: boolean;
   };
-  // Moves a queued song to position toIndex in the queue (after the current
-  // song): 0 is "move to top", and past the end is the end. For admins only,
-  // in supervised mode or not. ok is false if the song isn't in the queue
-  // (any more).
+  // Moves a queued song (song: its songKey, songId@timestamp) in front of
+  // the song before names (its songKey), or to the end for null: where the
+  // phone put it, even if songs above have started or gone since its view.
+  // If before isn't queued any more, to position toIndex in the queue
+  // (after the current song; past the end is the end). For admins only, in
+  // supervised mode or not. ok is false if the song isn't in the queue (any
+  // more).
   moveSong: {
-    input: { songId: string; timestamp: string; toIndex: number };
+    input: { song: string; before: string | null; toIndex: number };
     output: { ok: boolean };
   };
   // The commands that act on the current song (setPlaybackState,

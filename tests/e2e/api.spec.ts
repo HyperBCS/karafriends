@@ -525,9 +525,10 @@ test.describe("supervised mode", () => {
     }) => {
       const { remoconUrl } = karafriends;
       await waitForSong1(remoconUrl);
+      // Song 3 to the top: before song 2.
       const song3 = {
-        songId: "sm90003",
-        timestamp: song(3, someoneElse).timestamp,
+        song: `sm90003@${song(3, someoneElse).timestamp}`,
+        before: `sm90002@${song(2, someoneElse).timestamp}`,
       };
 
       expect(
@@ -570,9 +571,10 @@ test.describe("supervised mode", () => {
     }) => {
       const { remoconUrl } = karafriends;
       await waitForSong1(remoconUrl);
+      // Song 3 to the top: before song 2.
       const song3 = {
-        songId: "sm90003",
-        timestamp: song(3, someoneElse).timestamp,
+        song: `sm90003@${song(3, someoneElse).timestamp}`,
+        before: `sm90002@${song(2, someoneElse).timestamp}`,
       };
       const move = () =>
         call(remoconUrl, "moveSong", { ...song3, toIndex: 0 }, REMOTE_HEADERS);

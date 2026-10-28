@@ -106,8 +106,8 @@ function oneOf<T extends string>(
 }
 
 // The song a command acts on: its songKey, a song ID (64) @ a timestamp (32).
-function songKeyOf(input: Fields): string {
-  return string(input, "song", 64 + 1 + 32);
+function songKeyOf(input: Fields, key = "song"): string {
+  return string(input, key, 64 + 1 + 32);
 }
 
 // The display's mic list: more than any party plugs in.
@@ -285,10 +285,10 @@ export const validators: {
     };
   },
   moveSong: (raw) => {
-    const input = fields(raw, ["songId", "timestamp", "toIndex"]);
+    const input = fields(raw, ["song", "before", "toIndex"]);
     return {
-      songId: string(input, "songId", 64),
-      timestamp: string(input, "timestamp", 32),
+      song: songKeyOf(input),
+      before: input.before === null ? null : songKeyOf(input, "before"),
       toIndex: integer(input, "toIndex", 0, 1_000_000),
     };
   },

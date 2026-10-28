@@ -380,7 +380,7 @@ describe("admin checks", () => {
       const api = makeApi({ supervisedMode: true, everyoneIsAdmin: true });
       assert.deepEqual(await api.whoami({}, bob), { isAdmin: true });
       assert.deepEqual(
-        await api.moveSong({ songId: "sm3", timestamp: "3", toIndex: 0 }, bob),
+        await api.moveSong({ song: "sm3@3", before: "sm2@2", toIndex: 0 }, bob),
         { ok: true },
       );
       assert.deepEqual(
@@ -908,13 +908,23 @@ describe("moveSong", () => {
     });
   });
 
+  // Song n moved to toIndex, as a phone that sees the queue as it is now
+  // sends it: with the song it then goes before.
   const move = (
     api: ReturnType<typeof makeApi>,
     n: number,
     toIndex: number,
     caller: Caller = admin("x"),
-  ) =>
-    api.moveSong({ songId: `sm${n}`, timestamp: String(n), toIndex }, caller);
+  ) => {
+    const keys = store.getState().songQueue.map(songKey);
+    const song = `sm${n}@${n}`;
+    const moved = keys.filter((key) => key !== song);
+    moved.splice(toIndex, 0, song);
+    return api.moveSong(
+      { song, before: moved[toIndex + 1] ?? null, toIndex },
+      caller,
+    );
+  };
   const order = () => store.getState().songQueue.map((item) => item.songId);
 
   test("moves a song to the top, down, or past the end to the end", async () => {
@@ -940,6 +950,51 @@ describe("moveSong", () => {
     // Onto its own place: nothing moves.
     assert.deepEqual(await move(api, 3, 1), { ok: true });
     assert.deepEqual(order(), ["sm4", "sm3", "sm2"]);
+  });
+
+  test("lands before the song it was put before, though the queue changed meanwhile", async () => {
+    const api = makeApi();
+    // The phone sees [sm2, sm3, sm4] and drops sm4 just above sm3; sm2
+    // starts playing meanwhile: still before sm3, not at index 1.
+    store.update((state) => {
+      state.currentSong = state.songQueue.shift()!;
+    });
+    assert.deepEqual(
+      await api.moveSong(
+        { song: "sm4@4", before: "sm3@3", toIndex: 1 },
+        admin("x"),
+      ),
+      { ok: true },
+    );
+    assert.deepEqual(order(), ["sm4", "sm3"]);
+    // A song put at the head meanwhile: still before sm4.
+    store.update((state) => state.songQueue.unshift(song(5, bob)));
+    assert.deepEqual(
+      await api.moveSong(
+        { song: "sm3@3", before: "sm4@4", toIndex: 0 },
+        admin("x"),
+      ),
+      { ok: true },
+    );
+    assert.deepEqual(order(), ["sm5", "sm3", "sm4"]);
+    // To the end.
+    assert.deepEqual(
+      await api.moveSong(
+        { song: "sm5@5", before: null, toIndex: 2 },
+        admin("x"),
+      ),
+      { ok: true },
+    );
+    assert.deepEqual(order(), ["sm3", "sm4", "sm5"]);
+    // The song it went before has gone too: at toIndex.
+    assert.deepEqual(
+      await api.moveSong(
+        { song: "sm5@5", before: "sm9@9", toIndex: 0 },
+        admin("x"),
+      ),
+      { ok: true },
+    );
+    assert.deepEqual(order(), ["sm5", "sm3", "sm4"]);
   });
 
   test("a song not in the queue is not an error", async () => {
@@ -2673,14 +2728,20 @@ describe("validators", () => {
     invalid("damSearchSongs", { name: "a" });
     invalid("removeSong", { songId: "sm9" });
     assert.deepEqual(
-      validators.moveSong({ songId: "sm9", timestamp: "9", toIndex: 0 }),
-      { songId: "sm9", timestamp: "9", toIndex: 0 },
+      validators.moveSong({ song: "sm9@9", before: "sm1@1", toIndex: 0 }),
+      { song: "sm9@9", before: "sm1@1", toIndex: 0 },
     );
-    invalid("moveSong", { songId: "sm9", timestamp: "9" });
-    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: -1 });
-    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: 1.5 });
-    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: "0" });
-    invalid("moveSong", { songId: 9, timestamp: "9", toIndex: 0 });
+    assert.deepEqual(
+      validators.moveSong({ song: "sm9@9", before: null, toIndex: 3 }),
+      { song: "sm9@9", before: null, toIndex: 3 },
+    );
+    invalid("moveSong", { song: "sm9@9", toIndex: 0 });
+    invalid("moveSong", { song: "sm9@9", before: null });
+    invalid("moveSong", { song: "sm9@9", before: null, toIndex: -1 });
+    invalid("moveSong", { song: "sm9@9", before: null, toIndex: 1.5 });
+    invalid("moveSong", { song: "sm9@9", before: 1, toIndex: 0 });
+    invalid("moveSong", { song: 9, before: null, toIndex: 0 });
+    invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: 0 });
     invalid("sendEmote", { emote: "" });
     assert.deepEqual(
       validators.pushAdhocLyrics({ lyricIndex: 3, song: "sm1@1" }),

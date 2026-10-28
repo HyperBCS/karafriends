@@ -3,6 +3,7 @@ import React, { memo, useCallback, useState } from "react";
 
 import type { ApiInput, SharedQueueItem } from "../../../common/api";
 import { call, useIsAdmin, useLiveState } from "../../../common/apiClient";
+import { songKey } from "../../../common/currentSong";
 import { useApiMutation } from "../../../common/apiQueries";
 import useLiveSetter from "../../../common/hooks/useLiveSetter";
 import useQueue, {
@@ -175,9 +176,12 @@ const QueueList = () => {
       const [item] = items.splice(from, 1);
       items.splice(to, 0, item);
       setMoveError(null);
+      // The song it now goes before, not just the index: this phone's view
+      // may be a moment behind the server's queue.
+      const before = items[to + 1];
       setQueue(withETAs(currentSong, items), {
-        songId: item.songId,
-        timestamp: item.timestamp,
+        song: songKey(item),
+        before: before ? songKey(before) : null,
         toIndex: to,
       });
     },

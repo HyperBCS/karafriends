@@ -884,19 +884,26 @@ export function createApi(
       });
     },
 
-    async moveSong({ songId, timestamp, toIndex }, caller) {
+    async moveSong({ song, before, toIndex }, caller) {
       if (!isAdmin(caller)) {
         throw new ApiError(403, "Only an admin can reorder the queue");
       }
       return store.update((state) => {
         const from = state.songQueue.findIndex(
-          (item) => item.songId === songId && item.timestamp === timestamp,
+          (item) => songKey(item) === song,
         );
         // The song may already be playing or removed by another phone.
         if (from === -1) return { ok: false };
         const [item] = state.songQueue.splice(from, 1);
+        // In front of the song the phone put it before, wherever that is
+        // now: songs above may have started or gone since the phone's
+        // view. At toIndex if that one has gone too.
+        const at =
+          before === null
+            ? state.songQueue.length
+            : state.songQueue.findIndex((other) => songKey(other) === before);
         // splice puts it at the end if toIndex is past it.
-        state.songQueue.splice(toIndex, 0, item);
+        state.songQueue.splice(at === -1 ? toIndex : at, 0, item);
         return { ok: true };
       });
     },
