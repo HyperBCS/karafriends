@@ -19,6 +19,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
 - Settings has "Everyone is an admin" (`everyoneIsAdmin` in `config.yaml`) for parties: every phone gets the admin controls at once, with no password, and the per-phone song limit still applies.
 - The phone remote holds still on iPhones: only the list in the middle and the queue in the now-playing sheet scroll, and the top bar, the sheet and the page no longer move or bounce. A Home button next to the profile button goes back to the search from any screen, and lists, the queue and the sheet now stand out from the background, with visible lines and more room between rows.
+- Admins reorder the queue on the phone by dragging a song's grip (or with the arrow keys on it) instead of the up and down buttons; Move to top stays.
 
 ## 0.1.0
 
