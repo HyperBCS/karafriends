@@ -96,28 +96,37 @@ impl Mixer {
         }
     }
 
+    // The chosen device, or the default one with a note saying why when the
+    // chosen one is missing or won't open.
     fn build(&mut self) -> Result<(Stream, cpal::SampleRate, Option<String>)> {
         let mut note = None;
-        let mut device = None;
-        if let Some(name) = &self.choice {
-            device = _output_devices()?
+        if let Some(name) = self.choice.clone() {
+            let device = _output_devices()?
                 .find(|(device, device_type)| {
-                    _output_name(device, device_type).is_ok_and(|n| &n == name)
+                    _output_name(device, device_type).is_ok_and(|n| n == name)
                 })
                 .map(|(device, _)| device);
-            if device.is_none() {
-                note = Some(format!(
-                    "ok: {name} isn't connected; the mics play through the default output"
-                ));
-            }
+            note = Some(match device.map(|device| self.build_on(&device)) {
+                Some(Ok((stream, rate))) => return Ok((stream, rate, None)),
+                Some(Err(e)) => {
+                    eprintln!("The mic output {name} couldn't open: {e}");
+                    format!(
+                        "ok: {name} couldn't open ({e}); the mics play through the default output"
+                    )
+                }
+                None => {
+                    format!("ok: {name} isn't connected; the mics play through the default output")
+                }
+            });
         }
-        let device = match device {
-            Some(device) => device,
-            None => cpal::default_host()
-                .default_output_device()
-                .ok_or("No default output device")?,
-        };
+        let device = cpal::default_host()
+            .default_output_device()
+            .ok_or("No default output device")?;
+        let (stream, rate) = self.build_on(&device)?;
+        Ok((stream, rate, note))
+    }
 
+    fn build_on(&mut self, device: &cpal::Device) -> Result<(Stream, cpal::SampleRate)> {
         // The device's own format, at the mics' rate if it has it.
         let default_config = device.default_output_config()?;
         let mut config = default_config.config();
@@ -150,7 +159,7 @@ impl Mixer {
             default_config.sample_format(),
         );
         self.output_error = output_error;
-        Ok((Stream(stream), config.sample_rate, note))
+        Ok((Stream(stream), config.sample_rate))
     }
 
     // "ok", the note, or why the output stopped.
