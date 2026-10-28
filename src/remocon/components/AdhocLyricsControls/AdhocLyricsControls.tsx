@@ -3,11 +3,10 @@ import { Navigate } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
 import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
+import { t } from "../../i18n";
 import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
-
 import { withLoader } from "../Loader";
 import * as styles from "./AdhocLyricsControls.module.scss";
-import LyricsController from "./LyricsController";
 import LyricsPicker from "./LyricsPicker";
 
 type Props = {
@@ -20,6 +19,9 @@ function AdhocLyricsControls({ id }: Props) {
     state === null ? undefined : state.currentSong,
   );
 
+  // The line Send shows next. Also in a ref: the picker's settle timer
+  // picks a line outside a click, and a Send right after it must send that
+  // line even before the render.
   const [selectedIndex, _setSelectedIndex] = useState<number>(0);
   const indexRef = useRef(selectedIndex);
   const setSelectedIndex = (index: number) => {
@@ -63,7 +65,10 @@ function AdhocLyricsControls({ id }: Props) {
           onSelectLine={setSelectedIndex}
         />
       </div>
-      <LyricsController onSendLine={onSendLine} />
+      {/* The big target that shows the next line on the display. */}
+      <button type="button" className={styles.controller} onClick={onSendLine}>
+        {t("lyrics.sendLine")}
+      </button>
     </div>
   );
 }
