@@ -231,6 +231,62 @@ test.describe("P3, four queued with readings", () => {
   });
 });
 
+// The mic round's D1: the QR code in the corner while a song plays, and
+// the Microphones section with the fixture's fake mics.
+test.describe("D1, four queued", () => {
+  test.use({
+    appConfig: LOGIN,
+    seedQueue: {
+      currentSong: null,
+      songQueue: SONGS,
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("the QR corner, then the mics", async ({ display }) => {
+    await expect(
+      display.getByRole("status").filter({ hasText: "Now playing" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((video: HTMLVideoElement) => video.currentTime > 0.5),
+      )
+      .toBe(true);
+    // After the corner announcement has gone.
+    await expect(
+      display.getByRole("status").filter({ hasText: "Now playing" }),
+    ).toHaveCount(0, { timeout: 10_000 });
+    await display.screenshot({
+      path: path.join(OUT_DIR, "n-display-qr.png"),
+      animations: "disabled",
+    });
+
+    await display.keyboard.press("s");
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Microphones" });
+    await section
+      .getByLabel("Add a microphone")
+      .selectOption("E2E Mic (Windows), channel 1");
+    await section
+      .getByLabel("Add a microphone")
+      .selectOption("E2E Interface (Windows), channel 2");
+    await section.getByLabel("Gain 100%").first().fill("140");
+    await section.getByLabel("Gain 140%").blur();
+    await section.getByLabel("Mic output").selectOption("E2E Interface (ASIO)");
+    await section.evaluate((element) =>
+      element.scrollIntoView({ block: "start" }),
+    );
+    await display.screenshot({
+      path: path.join(OUT_DIR, "n-display-mics.png"),
+      animations: "disabled",
+    });
+  });
+});
+
 test("the first-launch banner", async ({ display }) => {
   await expect(
     display.getByText("Add your DAM or Joysound login", { exact: false }),
