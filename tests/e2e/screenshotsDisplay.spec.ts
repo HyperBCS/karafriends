@@ -128,10 +128,11 @@ test.describe("phase D, with a login", () => {
     // The rest of the screen, as it scrolls.
     for (const [section, name] of [
       ["Admin password", "settings-queue"],
+      ["Phones", "settings-sound"],
       ["Config file", "settings-more"],
     ]) {
       await settings
-        .getByRole("region", { name: section })
+        .getByRole("region", { name: section, exact: true })
         .evaluate((element) => element.scrollIntoView({ block: "start" }));
       await shoot(display, name);
     }

@@ -124,6 +124,8 @@ function fakeNativeAudio(calls: FakeAudioCall[]) {
       exclusive = on;
     }),
     exclusiveAvailable: fake("exclusiveAvailable", () => true),
+    // Not kept with the calls: Settings asks for it every frame.
+    inputDevice_level: () => 0.25,
     inputDevice_format: fake("inputDevice_format", () =>
       exclusive
         ? "Exclusive, 48 kHz, 144 samples (3.0 ms)"
@@ -212,6 +214,9 @@ contextBridge.exposeInMainWorld("karafriends", {
         },
         inputDevice_format(deviceId: number) {
           return nativeAudio.inputDevice_format(inputDevices[deviceId]);
+        },
+        inputDevice_level(deviceId: number) {
+          return nativeAudio.inputDevice_level(inputDevices[deviceId]);
         },
         inputDevice_getPitch(deviceId: number) {
           return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);

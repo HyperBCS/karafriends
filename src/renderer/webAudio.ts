@@ -15,6 +15,13 @@ const CENTRE_TO_SIDE = 0.7;
 // song by 8.5 dB, and a loud YouTube gain could clip.
 const VOCODER_LEVEL = 0.375;
 
+// An output the songs can play through: its device id (from
+// enumerateDevices) and its name.
+export interface SongOutput {
+  id: string;
+  label: string;
+}
+
 // The display's sound: input → [Joysound routing] → delay (the audio/video
 // offset) → gain (the song's own loudness) → songVolume (the party's
 // volume) → vocoder (once its worklet loads, and only while the key is
@@ -142,6 +149,16 @@ export default class KarafriendsAudio {
     return Math.round(
       (context.outputLatency || context.baseLatency || 0) * 1000,
     );
+  }
+
+  // Where the songs play: an output's device id (from
+  // enumerateDevices), or "" for the system default. Chromium has
+  // setSinkId on AudioContext; TypeScript's DOM types don't yet.
+  setOutput(deviceId: string): Promise<void> {
+    const context = this.audioContext as AudioContext & {
+      setSinkId(sinkId: string): Promise<void>;
+    };
+    return context.setSinkId(deviceId);
   }
 
   // How loud the Joysound guide melody plays, 0 to 1.

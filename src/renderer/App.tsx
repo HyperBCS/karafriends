@@ -30,7 +30,7 @@ import QRCode from "./QRCode";
 import Settings from "./Settings";
 import UpNext from "./UpNext";
 import type { Announcement } from "./useSongPlayer";
-import KarafriendsAudio from "./webAudio";
+import KarafriendsAudio, { type SongOutput } from "./webAudio";
 
 // How long an announcement stays in the corner.
 const ANNOUNCE_MS = 4000;
@@ -73,6 +73,22 @@ function saveMicOutput({ name, rate, bufferSize }: MicOutput) {
   save(MIC_OUTPUT_KEY, name);
   save(MIC_OUTPUT_RATE_KEY, rate);
   save(MIC_OUTPUT_BUFFER_KEY, bufferSize);
+}
+
+// The output the songs play through (an id from enumerateDevices, and
+// its name, to show while it isn't connected); not set for the system
+// default.
+const SONG_OUTPUT_KEY = "songOutput";
+
+function savedSongOutput(): SongOutput | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SONG_OUTPUT_KEY) ?? "null");
+    return typeof saved?.id === "string" && typeof saved?.label === "string"
+      ? saved
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 // Windows mics: "exclusive" (not set for shared), and the buffer size an
@@ -161,6 +177,7 @@ function App(props: {
   const [levels, setLevels] = useState(savedLevels);
   const [micOutput, setMicOutput] = useState(savedMicOutput);
   const [micMode, setMicModeState] = useState(savedMicMode);
+  const [songOutput, setSongOutput] = useState(savedSongOutput);
   // The mic lists this display sent with setMics lately, as levelsKey.
   const sentMics = useRef<string[]>([]);
   const seenLiveMics = useRef<MicInfo[] | undefined>(undefined);
@@ -280,6 +297,30 @@ function App(props: {
     for (const mic of mics) mic.check();
     saveMicOutput(output);
     setMicOutput(output);
+  };
+
+  // The saved song output, once: one that isn't connected leaves the
+  // songs on the system default.
+  useEffect(() => {
+    const saved = savedSongOutput();
+    if (saved) {
+      props.audio.setOutput(saved.id).catch((err) => {
+        console.warn(`The song output ${saved.label} isn't there:`, err);
+      });
+    }
+  }, [props.audio]);
+
+  // Kept only once the songs play there.
+  const changeSongOutput = async (output: SongOutput | null) => {
+    try {
+      await props.audio.setOutput(output?.id ?? "");
+    } catch (err) {
+      console.error(`Couldn't switch the songs to ${output?.label}:`, err);
+      return;
+    }
+    if (output) localStorage.setItem(SONG_OUTPUT_KEY, JSON.stringify(output));
+    else localStorage.removeItem(SONG_OUTPUT_KEY);
+    setSongOutput(output);
   };
 
   // Every mic reopens in the new mode.
@@ -410,6 +451,8 @@ function App(props: {
             onMicOutputChange={changeMicOutput}
             micMode={micMode}
             onMicModeChange={changeMicMode}
+            songOutput={songOutput}
+            onSongOutputChange={changeSongOutput}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}

@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from "react";
 import "./QRCode.css";
 
 // The remote's QR code with its address under it: big, with "Scan to
-// join", on the idle screen; small in the bottom-left corner while a song
+// join", on the idle screen; small in the top-left corner while a song
 // plays.
 function QRCode(props: { hostname: string; corner?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

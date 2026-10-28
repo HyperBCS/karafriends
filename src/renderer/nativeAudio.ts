@@ -144,6 +144,12 @@ export class InputDevice {
     return this.error ?? "stopped";
   }
 
+  // The loudest sample, 0 to 1, since the last time it was asked; 0 while
+  // it's down.
+  level(): number {
+    return this.open ? native.inputDevice_level(this.deviceId) : 0;
+  }
+
   // How it is open ("Shared, 48 kHz, 480 samples (10.0 ms)"); null while
   // it's down.
   format(): string | null {

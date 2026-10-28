@@ -59,18 +59,41 @@
   font-weight: 700;
 }
 
-.settingsNote,
+/* A short line under a field or a group. */
+.settingsHint,
 .settingsRestart p {
   margin: 0;
   color: var(--kf-muted);
   font-size: var(--kf-text-label);
 }
 
-/* Fields side by side, two to a row. */
+/* A field or a checkbox with its hint under it. */
+.settingsField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kf-space-2);
+}
+
+/* Under the checkbox's label, past the box (ui.css: 2.5rem, then the gap). */
+.settingsCheckboxHint {
+  padding-left: calc(2.5rem + var(--kf-space-4));
+}
+
+/* A value read out, beside its button. */
+.settingsValue {
+  margin: 0;
+  font-size: var(--kf-text-body);
+}
+
+/* Fields side by side, two to a row (three for an ASIO mic output). */
 .settingsFields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--kf-space-4) var(--kf-space-6);
+}
+
+.settingsFields.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .settingsActions,
@@ -80,6 +103,10 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--kf-space-4);
+}
+
+.settingsActions {
+  align-items: center;
 }
 
 .settingsInline .kfLabel {
@@ -145,4 +172,22 @@
 
 .settingsMicRow .kfButton {
   min-height: 4.5rem;
+}
+
+/* A mic's level: a bar filling from the left, red near the top. */
+.settingsMeter {
+  height: 0.75rem;
+  border-radius: var(--kf-radius);
+  background-color: var(--kf-bg);
+  overflow: hidden;
+}
+
+.settingsMeterBar {
+  width: 0;
+  height: 100%;
+  background-color: var(--kf-accent);
+}
+
+.settingsMeterBar.hot {
+  background-color: var(--kf-danger);
 }

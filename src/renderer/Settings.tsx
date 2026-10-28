@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 import {
   type ApiOutput,
@@ -25,6 +25,7 @@ import {
   outputDevices,
 } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
+import type { SongOutput } from "./webAudio";
 import "./Settings.css";
 
 type Loaded = ApiOutput<"getSettings">;
@@ -39,14 +40,25 @@ interface Message {
   tone?: "busy" | "problem";
 }
 
+// A short line under a field or a group, in the muted color.
+function Hint(props: { id?: string; children: React.ReactNode }) {
+  return (
+    <p id={props.id} className="settingsHint">
+      {props.children}
+    </p>
+  );
+}
+
 // A text or number field that saves when the host leaves it or presses
-// Enter, if it changed.
+// Enter, if it changed; with a hint under it, if it needs one.
 function TextSetting(props: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
   type?: "text" | "password" | "number";
+  hint?: string;
 }) {
+  const hintId = useId();
   const [draft, setDraft] = useState(props.value);
   const [value, setValue] = useState(props.value);
   // A new saved value replaces the draft, unless the host is typing one.
@@ -57,7 +69,7 @@ function TextSetting(props: {
   const commit = () => {
     if (draft !== props.value) props.onCommit(draft);
   };
-  return (
+  const field = (
     <label className="kfLabel">
       {props.label}
       <input
@@ -66,6 +78,7 @@ function TextSetting(props: {
         value={draft}
         autoComplete="off"
         spellCheck={false}
+        aria-describedby={props.hint ? hintId : undefined}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -80,6 +93,13 @@ function TextSetting(props: {
       />
     </label>
   );
+  if (!props.hint) return field;
+  return (
+    <div className="settingsField">
+      {field}
+      <Hint id={hintId}>{props.hint}</Hint>
+    </div>
+  );
 }
 
 // A checkbox that saves at once, and shows the new state while it does.
@@ -88,7 +108,9 @@ function Checkbox(props: {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => Promise<boolean>;
+  hint?: string;
 }) {
+  const hintId = useId();
   const [checked, setChecked] = useState(props.checked);
   const [saved, setSaved] = useState(props.checked);
   if (props.checked !== saved) {
@@ -96,19 +118,27 @@ function Checkbox(props: {
     setChecked(props.checked);
   }
   return (
-    <label className="kfCheckbox">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => {
-          setChecked(event.target.checked);
-          void props.onChange(event.target.checked).then((ok) => {
-            if (!ok) setChecked(props.checked);
-          });
-        }}
-      />
-      {props.label}
-    </label>
+    <div className="settingsField">
+      <label className="kfCheckbox">
+        <input
+          type="checkbox"
+          checked={checked}
+          aria-describedby={props.hint ? hintId : undefined}
+          onChange={(event) => {
+            setChecked(event.target.checked);
+            void props.onChange(event.target.checked).then((ok) => {
+              if (!ok) setChecked(props.checked);
+            });
+          }}
+        />
+        {props.label}
+      </label>
+      {props.hint ? (
+        <p id={hintId} className="settingsHint settingsCheckboxHint">
+          {props.hint}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -186,12 +216,12 @@ function DownloadsSection() {
 
   return (
     <SettingsSection title="Downloads" message={message}>
-      <p className="settingsNote">
-        {info
-          ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
-          : "…"}
-      </p>
       <div className="settingsActions">
+        <p className="settingsValue">
+          {info
+            ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
+            : "…"}
+        </p>
         <button
           type="button"
           className="kfButton"
@@ -205,7 +235,78 @@ function DownloadsSection() {
   );
 }
 
+// Where the songs play: the system default, or an output as Chromium lists
+// it. A saved one that isn't connected shows as such.
+function SongOutputSetting(props: {
+  output: SongOutput | null;
+  onChange: (output: SongOutput | null) => void;
+}) {
+  const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(
+      (devices) =>
+        setOutputs(
+          devices
+            // "default" and "communications" are the system's choices:
+            // System default stands for them.
+            .filter(
+              ({ kind, deviceId }) =>
+                kind === "audiooutput" &&
+                deviceId !== "default" &&
+                deviceId !== "communications",
+            )
+            .map(({ deviceId, label }) => ({
+              id: deviceId,
+              label: label || "Unnamed output",
+            })),
+        ),
+      () => setOutputs([]),
+    );
+  }, []);
+  const { output } = props;
+  const missing =
+    output !== null &&
+    outputs !== null &&
+    !outputs.some(({ id }) => id === output.id);
+  return (
+    <label className="kfLabel">
+      Song output
+      <select
+        className="kfField"
+        value={output?.id ?? ""}
+        onChange={(event) =>
+          props.onChange(
+            outputs?.find(({ id }) => id === event.target.value) ?? null,
+          )
+        }
+      >
+        <option value="">System default</option>
+        {output !== null && (outputs === null || missing) ? (
+          <option value={output.id} disabled={missing}>
+            {missing ? `${output.label} (not connected)` : output.label}
+          </option>
+        ) : null}
+        {(outputs ?? []).map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
+
+// The app names a setting by its config.yaml key when it refuses a value;
+// this screen, by its label.
+const LABELS: Record<string, string> = {
+  paxSongQueueLimit: "Songs per phone",
+  remoconPort: "Port",
+};
+
+const labelled = (problem: string) =>
+  problem.replace(/^\w+/, (key) => LABELS[key] ?? key);
 
 // The settings screen, over everything. Every field saves as the host
 // leaves it; each section says under it what happened.
@@ -223,6 +324,8 @@ export default function Settings(props: {
   onMicOutputChange: (output: MicOutput) => void;
   micMode: MicMode;
   onMicModeChange: (mode: MicMode) => void;
+  songOutput: SongOutput | null;
+  onSongOutputChange: (output: SongOutput | null) => void;
   avOffsetMs: number;
   onAvOffsetChange: (offsetMs: number) => void;
   uiScale: number;
@@ -239,7 +342,11 @@ export default function Settings(props: {
   const [updatingTools, setUpdatingTools] = useState(false);
   // Listed each time Settings opens.
   const [outputs] = useState(outputDevices);
-  const [asio] = useState(asioStatus);
+  // Shown only when a driver won't load or ASIO didn't start.
+  const [asioProblem] = useState(() => {
+    const status = asioStatus();
+    return /won't load|didn't start/.test(status) ? status : null;
+  });
   // What the native side says about the output while the mics work ("ok:
   // <note>"): that the chosen one is missing or won't open, say.
   const micStatus = props.mics[0]?.status();
@@ -280,7 +387,10 @@ export default function Settings(props: {
     return act(section, async () => {
       const result = await call("setSettings", { settings: changes });
       if (!result.ok) {
-        return { text: result.problems.join(" "), tone: "problem" };
+        return {
+          text: result.problems.map(labelled).join(" "),
+          tone: "problem",
+        };
       }
       saved = true;
       await reload();
@@ -425,6 +535,13 @@ export default function Settings(props: {
             onCommit={(value) => save(service, { [passKey]: value })}
           />
         </div>
+        {service === "dam" ? (
+          <Checkbox
+            label="Stream at a low bitrate"
+            checked={settings.useLowBitrateUrl}
+            onChange={(checked) => save("dam", { useLowBitrateUrl: checked })}
+          />
+        ) : null}
         <div className="settingsActions">
           <button
             type="button"
@@ -456,11 +573,6 @@ export default function Settings(props: {
           title="Admin password"
           message={messages.admin ?? undefined}
         >
-          <p className="settingsNote">
-            {settings.adminPasswordSet
-              ? "Phones that sign in with it can reorder, skip and remove any song."
-              : "None set: no phone can be an admin."}
-          </p>
           <form
             className="settingsInline"
             onSubmit={(event) => {
@@ -495,58 +607,60 @@ export default function Settings(props: {
               </button>
             ) : null}
           </form>
+          <Hint>
+            {settings.adminPasswordSet
+              ? "Admins can reorder, skip and remove any song."
+              : "Set one to let phones sign in as admins."}
+          </Hint>
         </SettingsSection>
 
         <SettingsSection title="Queue" message={messages.queue ?? undefined}>
           <Checkbox
-            label="Supervised mode: only a song's singer or an admin can pause, skip or remove it"
+            label="Supervised mode"
+            hint="Only the singer or an admin can pause, skip or remove a song."
             checked={settings.supervisedMode}
             onChange={(checked) => save("queue", { supervisedMode: checked })}
           />
           <Checkbox
-            label="Everyone is an admin: any phone can change the queue and playback, no password needed."
+            label="Everyone is an admin"
+            hint="Every phone gets the admin controls, no password needed."
             checked={settings.everyoneIsAdmin}
             onChange={(checked) => save("queue", { everyoneIsAdmin: checked })}
           />
           <div className="settingsFields">
             <TextSetting
-              label="Songs each phone may queue at once (0: no limit)"
+              label="Songs per phone"
+              hint="Queued at once. 0 means no limit."
               type="number"
               value={String(settings.paxSongQueueLimit)}
               onCommit={(value) =>
                 saveNumber(
                   "queue",
                   "paxSongQueueLimit",
-                  "Songs each phone",
+                  "Songs per phone",
                   value,
                 )
               }
             />
           </div>
-          <Checkbox
-            label="Stream DAM songs at a low bitrate"
-            checked={settings.useLowBitrateUrl}
-            onChange={(checked) => save("queue", { useLowBitrateUrl: checked })}
-          />
         </SettingsSection>
 
-        <SettingsSection
-          title="Remote port"
-          message={messages.network ?? undefined}
-        >
-          <p className="settingsNote">
-            A new port takes effect when karafriends restarts.
-          </p>
+        <SettingsSection title="Phones" message={messages.network ?? undefined}>
           <div className="settingsFields">
+            <HostnameSetting
+              hostname={props.hostname}
+              onChange={props.onHostnameChange}
+            />
             <TextSetting
-              label="Port for phones"
+              label="Port"
               type="number"
               value={String(settings.remoconPort)}
               onCommit={(value) =>
-                saveNumber("network", "remoconPort", "Port for phones", value)
+                saveNumber("network", "remoconPort", "Port", value)
               }
             />
           </div>
+          <Hint>The QR code sends phones to this address.</Hint>
           {loaded.needsRestart ? (
             <div className="settingsRestart">
               <p>Restart karafriends to use the new port.</p>
@@ -566,34 +680,8 @@ export default function Settings(props: {
           ) : null}
         </SettingsSection>
 
-        <SettingsSection title="QR code address">
-          <p className="settingsNote">
-            Pick the address phones on this network can reach.
-          </p>
-          <HostnameSetting
-            hostname={props.hostname}
-            onChange={props.onHostnameChange}
-          />
-        </SettingsSection>
-
         <SettingsSection title="Display">
           <div className="settingsFields">
-            <label className="kfLabel">
-              Audio/video offset
-              <select
-                className="kfField"
-                value={props.avOffsetMs}
-                onChange={(event) =>
-                  props.onAvOffsetChange(Number(event.target.value))
-                }
-              >
-                {AV_OFFSETS.map((ms) => (
-                  <option key={ms} value={ms}>
-                    {ms > 0 ? `+${ms}` : ms} ms
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="kfLabel">
               UI scale
               <select
@@ -611,17 +699,36 @@ export default function Settings(props: {
               </select>
             </label>
           </div>
-          <p className="settingsNote">
-            A plus offset delays the sound, a minus one the Joysound lyrics and
-            the piano roll. DAM's lyrics are in the video, and YouTube captions
-            and ad-hoc lyrics don't move.
-          </p>
-          <p className="settingsNote">
-            Measured audio output latency: {props.audioLatencyMs} ms
-          </p>
         </SettingsSection>
 
-        <DownloadsSection />
+        <SettingsSection title="Sound">
+          <div className="settingsFields">
+            <SongOutputSetting
+              output={props.songOutput}
+              onChange={props.onSongOutputChange}
+            />
+            <label className="kfLabel">
+              Audio/video offset
+              <select
+                className="kfField"
+                value={props.avOffsetMs}
+                onChange={(event) =>
+                  props.onAvOffsetChange(Number(event.target.value))
+                }
+              >
+                {AV_OFFSETS.map((ms) => (
+                  <option key={ms} value={ms}>
+                    {ms > 0 ? `+${ms}` : ms} ms
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <Hint>
+            Plus delays the sound, minus delays the lyrics. Output latency:{" "}
+            {props.audioLatencyMs} ms.
+          </Hint>
+        </SettingsSection>
 
         <SettingsSection title="Microphones">
           <MicOutputSetting
@@ -629,18 +736,12 @@ export default function Settings(props: {
             output={props.micOutput}
             onChange={props.onMicOutputChange}
           />
-          <p className="settingsNote">{asio}</p>
           {outputNote ? (
-            <p className="settingsNote" role="status">
+            <p className="settingsHint" role="status">
               {outputNote}
             </p>
           ) : null}
-          <p className="settingsNote">
-            Every mic plays through this output; songs keep playing through the
-            system default. An ASIO interface whose driver allows one program at
-            a time can't play the songs and the mics at once (FlexASIO,
-            ASIO4ALL, RME and MOTU drivers share; many others don't).
-          </p>
+          {asioProblem ? <Hint>{asioProblem}</Hint> : null}
           <MicModeSetting
             mode={props.micMode}
             onChange={props.onMicModeChange}
@@ -661,6 +762,8 @@ export default function Settings(props: {
             }
           />
         </SettingsSection>
+
+        <DownloadsSection />
 
         <SettingsSection title="Tools" message={messages.tools ?? undefined}>
           <dl className="settingsTools">
@@ -685,9 +788,6 @@ export default function Settings(props: {
           title="Config file"
           message={messages.config ?? undefined}
         >
-          <p className="settingsNote">
-            Everything on this screen, logins and passwords included.
-          </p>
           <div className="settingsActions">
             <button type="button" className="kfButton" onClick={exportConfig}>
               Export config
@@ -696,6 +796,7 @@ export default function Settings(props: {
               Import config
             </button>
           </div>
+          <Hint>Includes the logins and passwords.</Hint>
         </SettingsSection>
       </div>
     </div>

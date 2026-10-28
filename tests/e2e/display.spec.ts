@@ -117,7 +117,7 @@ test.describe("while a song plays", () => {
     await expect(qrCode).toBeVisible();
     await expect(address).toBeVisible();
     await expect(display.getByText("Scan to join")).toHaveCount(0);
-    // Small, bottom-left, above the strip.
+    // Small and top-left, clear of the lyrics along the bottom.
     const box = (await qrCode.boundingBox())!;
     const strip = (await display
       .getByRole("region", { name: "Up next" })
@@ -127,8 +127,7 @@ test.describe("while a song plays", () => {
       parseFloat(getComputedStyle(document.documentElement).fontSize),
     ]);
     expect(box.x + box.width).toBeLessThan(width / 2);
-    expect(box.y).toBeGreaterThan(strip.y / 2);
-    expect(box.y + box.height).toBeLessThan(strip.y);
+    expect(box.y + box.height).toBeLessThan(strip.y / 2);
     expect(box.width).toBeCloseTo(8 * rem, 0);
 
     await display.keyboard.press("s");
@@ -156,7 +155,8 @@ test.describe("while a song plays", () => {
       )!;
       return Number(minutes) * 60 + Number(seconds);
     };
-    // Song 1 (60 s) has started.
+    // Song 1 (60 s) has started: until then, it is up next too.
+    await expect(next).toHaveText([/E2E strip song 2/]);
     await expect.poll(wait, { timeout: 15_000 }).toBeLessThan(60);
 
     const before = await wait();

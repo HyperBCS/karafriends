@@ -31,11 +31,12 @@
   font-size: var(--kf-text-heading);
 }
 
-/* While a song plays: bottom-left over the video, above the up-next strip
-   (App.css), on a panel. */
+/* While a song plays: top-left over the video, on a panel, clear of the
+   lyrics, which karaoke puts at the bottom (DAM's in the video, Joysound's
+   and ad-hoc ones drawn over it). Announcements take the top-right. */
 .joinCorner {
   position: absolute;
-  bottom: var(--kf-space-6);
+  top: var(--kf-space-6);
   left: var(--kf-space-6);
   z-index: 5;
   padding: var(--kf-space-4);

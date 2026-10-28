@@ -179,6 +179,12 @@ fn input_device__status(mut cx: FunctionContext) -> JsResult<JsString> {
     Ok(cx.string(status))
 }
 
+fn input_device__level(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let level = device.borrow().level();
+    Ok(cx.number(level))
+}
+
 fn input_device__format(mut cx: FunctionContext) -> JsResult<JsString> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     let format = device.borrow().format();
@@ -207,6 +213,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("inputDevice_setEcho", input_device__set_echo)?;
     cx.export_function("inputDevice_status", input_device__status)?;
     cx.export_function("inputDevice_format", input_device__format)?;
+    cx.export_function("inputDevice_level", input_device__level)?;
     cx.export_function("inputDevice_getPitch", input_device__get_pitch)?;
     cx.export_function("inputDevice_stop", input_device__stop)?;
 

@@ -181,11 +181,11 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   });
 
   // A field saves when the host leaves it; a refused value says why.
-  const limit = queue.getByLabel("Songs each phone", { exact: false });
+  const limit = queue.getByLabel("Songs per phone");
   await limit.fill("1001");
   await limit.press("Enter");
   await expect(queue.getByRole("status")).toHaveText(
-    "paxSongQueueLimit must be a whole number from 0 to 1000",
+    "Songs per phone must be a whole number from 0 to 1000",
   );
   await limit.fill("3");
   await limit.blur();
@@ -195,28 +195,55 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   ).toBe(3);
 
   // The port takes a restart, which the screen offers.
-  const network = settings.getByRole("region", { name: "Remote port" });
+  const network = settings.getByRole("region", { name: "Phones", exact: true });
   await expect(network.getByLabel(/proxy/i)).toHaveCount(0);
   await expect(network.getByRole("button", { name: "Restart" })).toHaveCount(0);
   // Not listened on until a restart, so any free-looking port will do.
-  await network.getByLabel("Port for phones").fill("18765");
-  await network.getByLabel("Port for phones").press("Enter");
+  await network.getByLabel("Port").fill("18765");
+  await network.getByLabel("Port").press("Enter");
   await expect(network.getByRole("button", { name: "Restart" })).toBeVisible();
 
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
 });
 
+test("the songs' output can be picked; a saved one that isn't connected says so", async ({
+  display,
+}) => {
+  await display.evaluate(() =>
+    localStorage.setItem(
+      "songOutput",
+      JSON.stringify({ id: "e2e-gone", label: "E2E Gone" }),
+    ),
+  );
+  await display.reload();
+  const output = display
+    .getByRole("region", { name: "Sound", exact: true })
+    .getByLabel("Song output");
+  await expect(output).toHaveValue("e2e-gone");
+  await expect(output.locator("option").first()).toHaveText("System default");
+  await expect(output.locator("option:checked")).toHaveText(
+    "E2E Gone (not connected)",
+  );
+  await output.selectOption("System default");
+  await expect(output).toHaveValue("");
+  await expect
+    .poll(() => display.evaluate(() => localStorage.getItem("songOutput")))
+    .toBeNull();
+});
+
 test("the display's offset and UI scale save on the display, and the scale sizes its text", async ({
   display,
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
-  const section = settings.getByRole("region", { name: "Display" });
-  const offset = section.getByLabel("Audio/video offset");
-  const scale = section.getByLabel("UI scale");
+  const sound = settings.getByRole("region", { name: "Sound", exact: true });
+  const offset = sound.getByLabel("Audio/video offset");
+  const scale = settings
+    .getByRole("region", { name: "Display" })
+    .getByLabel("UI scale");
   await expect(offset).toHaveValue("0");
   await expect(scale).toHaveValue("100");
-  await expect(section).toContainText(/Measured audio output latency: \d+ ms/);
+  await expect(sound).toContainText(/Output latency: \d+ ms/);
   const rootFontSize = () =>
     display.evaluate(() =>
       parseFloat(getComputedStyle(document.documentElement).fontSize),
@@ -305,8 +332,8 @@ test.describe("the microphones", () => {
     ).toHaveCount(0);
     expect(await phoneMics()).toEqual([]);
 
-    // Every channel shows by its device's name, and the ASIO line says
-    // what ASIO has.
+    // Every channel shows by its device's name. The ASIO line shows only a
+    // driver that won't load.
     const add = section.getByLabel("Add a microphone");
     await expect(add.locator("option")).toHaveText([
       "Select a microphone",
@@ -314,11 +341,16 @@ test.describe("the microphones", () => {
       "E2E Interface (USB), channel 1",
       "E2E Interface (USB), channel 2",
     ]);
-    await expect(section.getByText("ASIO: E2E Interface")).toBeVisible();
+    await expect(section.getByText("ASIO: E2E Interface")).toHaveCount(0);
 
-    // Add the first, and turn it up.
+    // Add the first, and turn it up. Its meter shows its level (the fake's
+    // 0.25 is -12 dB: 0.8 of the meter's 60 dB).
     await add.selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
+    await expect(mic.getByRole("meter", { name: "Level" })).toHaveAttribute(
+      "aria-valuenow",
+      "0.80",
+    );
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
     await expect(mic.getByLabel("Echo 40%")).toBeVisible();
     await mic.getByLabel("Gain 100%").fill("150");
@@ -516,14 +548,14 @@ test.describe("the microphones", () => {
     const rate = section.getByLabel("Sample rate");
     await expect(buffer).toHaveValue("");
     await expect(buffer.locator("option")).toHaveText([
-      "Driver's setting",
+      "Default",
       "64 samples",
       "128 samples",
       "256 samples",
       "512 samples",
     ]);
     await expect(rate.locator("option")).toHaveText([
-      "Driver's setting",
+      "Default",
       "44.1 kHz",
       "48 kHz",
       "96 kHz",
@@ -578,7 +610,7 @@ test.describe("the microphones", () => {
     const section = display.getByRole("region", { name: "Microphones" });
     await section.getByLabel("Add a microphone").selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
-    const mode = section.getByLabel("Windows mics");
+    const mode = section.getByLabel("Mic mode");
     await expect(mode).toHaveValue("shared");
     await expect(section.getByLabel("Mic buffer")).toHaveCount(0);
     await expect(
