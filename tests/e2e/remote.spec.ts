@@ -454,6 +454,23 @@ test("the playback controls fit on a narrow phone", async ({ remote }) => {
     .getAttribute("aria-controls");
   const first = remote.getByRole("button", { name: "Show emotes" });
   const last = remote.getByRole("button", { name: "Raise the key" });
+  // Every control in the row, the key included, is one 44px square with
+  // one 28px icon size.
+  const row = [
+    "Show emotes",
+    "Restart",
+    "Play",
+    "Skip",
+    "Lower the key",
+    "Raise the key",
+  ].map((name) => remote.getByRole("button", { name, exact: true }));
+  for (const control of [...row, remote.getByRole("status", { name: "Key" })]) {
+    const box = (await control.boundingBox())!;
+    expect([box.width, box.height]).toEqual([44, 44]);
+  }
+  for (const control of row) {
+    await expect(control).toHaveCSS("font-size", "28px");
+  }
   for (const width of [360, 320]) {
     await remote.setViewportSize({ width, height: 700 });
     // One row, inside the screen, and nothing to scroll sideways.

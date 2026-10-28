@@ -26,8 +26,11 @@ export const BiLoaderAlt = () => (
   </Svg>
 );
 
+// This one and FaSmile fill their whole square, where a Material icon
+// leaves a margin of 2 in 24: their viewBoxes add that margin, so every
+// icon in a row of 28px buttons draws at the same size.
 export const BsMusicPlayerFill = () => (
-  <Svg viewBox="0 0 16 16">
+  <Svg viewBox="-1.6 -1.6 19.2 19.2">
     <path d="M8 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2" />
     <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm1 2h6a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1m3 12a3 3 0 1 1 0-6 3 3 0 0 1 0 6" />
   </Svg>
@@ -46,7 +49,7 @@ export const FaAngleUp = () => (
 );
 
 export const FaSmile = () => (
-  <Svg viewBox="0 0 496 512">
+  <Svg viewBox="-49.6 -41.6 595.2 595.2">
     <path d="M248 8C111 8 0 119 0 256s111 248 248 248 248-111 248-248S385 8 248 8zm80 168c17.7 0 32 14.3 32 32s-14.3 32-32 32-32-14.3-32-32 14.3-32 32-32zm-160 0c17.7 0 32 14.3 32 32s-14.3 32-32 32-32-14.3-32-32 14.3-32 32-32zm194.8 170.2C334.3 380.4 292.5 400 248 400s-86.3-19.6-114.8-53.8c-13.6-16.3 11-36.7 24.6-20.5 22.4 26.9 55.2 42.2 90.2 42.2s67.8-15.4 90.2-42.2c13.4-16.2 38.1 4.2 24.6 20.5z" />
   </Svg>
 );
