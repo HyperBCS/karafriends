@@ -10,6 +10,7 @@ import {
 
 import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
+import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { lowBitrateFallback } from "./playback";
@@ -163,7 +164,10 @@ export default function useSongPlayer({
   };
 
   // The downloaded file if there is one (karafriends:// is a file://
-  // passthrough, so a missing file fails the fetch), else DAM's stream.
+  // passthrough, so a missing file fails the fetch), else DAM's stream. A
+  // file much shorter than the song is a sample DAM sent instead of it
+  // (one downloaded before the server checked): it goes, and the song
+  // streams.
   const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
     setOverlay({ kind: "dam", scoringData: song.scoringData });
     const fileUrl = `karafriends://local/${song.songId}-${song.streamingUrlIdx}.mp4`;
@@ -177,7 +181,30 @@ export default function useSongPlayer({
     if (songRef.current !== song) return;
     if (downloaded) {
       console.log(`Using local file for ${song.songId}`);
+      // Its length, once known (NaN if it fails: then onerror skips it).
+      const duration = new Promise<number>((resolve) => {
+        const known = () => resolve(video.duration);
+        video.addEventListener("loadedmetadata", known, { once: true });
+        video.addEventListener("error", known, { once: true });
+      });
       video.src = fileUrl;
+      if (song.playtime) {
+        const seconds = await duration;
+        if (songRef.current !== song) return;
+        if (isDamSample(seconds, song.playtime)) {
+          console.warn(
+            `${fileUrl} is ${seconds} s long, the song ${song.playtime} s: a sample; streaming instead`,
+          );
+          // Off the file first: Windows can't delete a file in use.
+          video.removeAttribute("src");
+          video.load();
+          call("clearDownload", {
+            songId: song.songId,
+            suffix: song.streamingUrlIdx.toString(),
+          }).catch((err) => console.error(`Couldn't delete ${fileUrl}:`, err));
+          if (!streamDam(video, song)) return;
+        }
+      }
     } else {
       // Not done downloading yet, or not downloaded at all.
       console.log(

@@ -6,8 +6,10 @@
 // yt-dlp is a fake (tests/fixtures/bin/yt-dlp-fails, or yt-dlp-broken) that
 // fails the way the real one does for a removed video (or at YouTube's bot
 // check), and the remote's video lookup is answered here, so this runs
-// offline.
+// offline. And a downloaded DAM video that is only DAM's sample of the song
+// is refused when it comes to play.
 
+import fs from "fs";
 import path from "path";
 
 import type { Page } from "@playwright/test";
@@ -180,4 +182,50 @@ test.describe("at YouTube's bot check", () => {
       expect(res.status, method).toBe(403);
     }
   });
+});
+
+test("a downloaded DAM video much shorter than the song is deleted, and the song streams instead", async ({
+  karafriends,
+  display,
+}) => {
+  // DAM's sample: the minute of black video, of a five-minute song.
+  const folder = path.join(
+    await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+    "karafriends_tmp",
+  );
+  const sample = path.join(folder, "1234-56-0.mp4");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.copyFileSync(
+    path.resolve(__dirname, "..", "fixtures", "black.mp4"),
+    sample,
+  );
+
+  // Queued from a phone. Without a DAM login the download never starts,
+  // and popSong gets no streaming URL.
+  const res = await fetch(new URL("api/queueSong", karafriends.remoconUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Karafriends-Device-Id": "e2e-remote-device",
+      "X-Karafriends-Nickname": NICKNAME,
+    },
+    body: JSON.stringify({
+      kind: "dam",
+      songId: "1234-56",
+      name: "A DAM song",
+      artistName: "Artist",
+      playtime: 300,
+      streamingUrlIdx: 0,
+    }),
+  });
+  expect(await res.json()).toMatchObject({ ok: true });
+
+  // The display drops the file and goes to DAM's stream, which it can't
+  // get here, so it moves on.
+  await expect
+    .poll(() => fs.existsSync(sample), { timeout: 30_000 })
+    .toBe(false);
+  await expect(
+    display.getByText(/Couldn't play.*A DAM song/).first(),
+  ).toBeVisible();
 });
