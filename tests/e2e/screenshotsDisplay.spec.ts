@@ -168,6 +168,58 @@ test.describe("M9, four queued", () => {
   }
 });
 
+// The polish round's P3: the strip, the idle list and the corner show the
+// title, the artist and the singer apart, and each song the way its queuer
+// reads it (千本桜 from a phone that reads romaji, 夜に駆ける from one that
+// reads kana).
+test.describe("P3, four queued with readings", () => {
+  const withReadings = [
+    {
+      ...SONGS[0],
+      nameYomi: "せんぼんざくら",
+      artistNameYomi: "くろうさぴー",
+      readingsMode: "romaji",
+    },
+    SONGS[1],
+    SONGS[2],
+    { ...SONGS[3], nameYomi: "よるにかける", readingsMode: "kana" },
+  ];
+  test.use({
+    appConfig: LOGIN,
+    seedQueue: {
+      currentSong: null,
+      songQueue: withReadings,
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("idle, then the first playing", async ({ display }) => {
+    await expect(
+      display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+    ).toHaveCount(4);
+    await display.screenshot({
+      path: path.join(OUT_DIR, "p-display-idle.png"),
+      animations: "disabled",
+    });
+
+    await expect(
+      display.getByRole("status").filter({ hasText: "Now playing" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((video: HTMLVideoElement) => video.currentTime > 0.5),
+      )
+      .toBe(true);
+    await display.screenshot({
+      path: path.join(OUT_DIR, "p-display-playing.png"),
+      animations: "disabled",
+    });
+  });
+});
+
 test("the first-launch banner", async ({ display }) => {
   await expect(
     display.getByText("Add your DAM or Joysound login", { exact: false }),
