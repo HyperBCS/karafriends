@@ -4,17 +4,22 @@ import React, { useState } from "react";
 import type { SharedQueueItem } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
-import useQueue from "../../../common/hooks/useQueue";
+import useOptimisticValue from "../../../common/hooks/useOptimisticValue";
+import useQueue, { withETAs } from "../../../common/hooks/useQueue";
 import { t } from "../../i18n";
-import {
-  MdArrowDownward,
-  MdArrowUpward,
-  MdClose,
-  MdVerticalAlignTop,
-} from "../../icons";
+import { MdClose, MdVerticalAlignTop } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
-import { EmptyState, IconButton, List, ListRow } from "../ui";
+import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
 import * as styles from "./NowPlayingSheet.module.scss";
+import useDragReorder from "./useDragReorder";
+
+// The grip a queued row is dragged by: Material Design's drag indicator,
+// copied from react-icons 5.7.0 as the icons in ../../icons are.
+const MdDragIndicator = () => (
+  <svg fill="currentColor" height="1em" width="1em" viewBox="0 0 24 24">
+    <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+  </svg>
+);
 
 // The singer's initial, before each row.
 const Initial = ({ nickname }: { nickname: string }) => (
@@ -30,23 +35,30 @@ interface RowProps {
   item: SharedQueueItem;
   eta: number;
   index: number;
-  isLast: boolean;
+  isAdmin: boolean;
+  onMoveToTop: () => void;
+  // The drag handle's props (useDragReorder), shown to an admin.
+  handleProps: ReturnType<ReturnType<typeof useDragReorder>>;
 }
 
 // A queued song. Tapping it shows who queued it and what this phone may do
 // with it: remove it (its singer, or an admin; anyone outside supervised
-// mode), and for an admin, move it.
-const QueueRow = ({ item, eta, index, isLast }: RowProps) => {
+// mode), and for an admin, move it to the top. An admin also drags it by
+// its handle.
+const QueueRow = ({
+  item,
+  eta,
+  index,
+  isAdmin,
+  onMoveToTop,
+  handleProps,
+}: RowProps) => {
   const [expanded, setExpanded] = useState(false);
   const supervisedMode = useLiveState(
     (state) => state?.config.supervisedMode ?? false,
   );
-  const isAdmin = useIsAdmin() === true;
   const removeSong = useApiMutation("removeSong", {
     onError: (err) => console.error("Couldn't remove the song:", err),
-  });
-  const moveSong = useApiMutation("moveSong", {
-    onError: (err) => console.error("Couldn't move the song:", err),
   });
 
   // What the server allows (removeSong in src/main/api.ts).
@@ -54,31 +66,16 @@ const QueueRow = ({ item, eta, index, isLast }: RowProps) => {
   const nickname = nicknameOf(item);
   const queuedBy = t("queue.queuedBy", { nickname });
   const song = { songId: item.songId, timestamp: item.timestamp };
-  const move = (toIndex: number) => moveSong.mutate({ ...song, toIndex });
 
   const actions = (
     <>
       {isAdmin && (
-        <>
-          <IconButton
-            label={t("queue.moveToTop")}
-            icon={<MdVerticalAlignTop />}
-            disabled={index === 0}
-            onClick={() => move(0)}
-          />
-          <IconButton
-            label={t("queue.moveUp")}
-            icon={<MdArrowUpward />}
-            disabled={index === 0}
-            onClick={() => move(index - 1)}
-          />
-          <IconButton
-            label={t("queue.moveDown")}
-            icon={<MdArrowDownward />}
-            disabled={isLast}
-            onClick={() => move(index + 1)}
-          />
-        </>
+        <IconButton
+          label={t("queue.moveToTop")}
+          icon={<MdVerticalAlignTop />}
+          disabled={index === 0}
+          onClick={onMoveToTop}
+        />
       )}
       {canRemove && (
         <IconButton
@@ -100,19 +97,64 @@ const QueueRow = ({ item, eta, index, isLast }: RowProps) => {
       onPress={() => setExpanded(!expanded)}
       expanded={expanded}
       aria-label={`${item.name}, ${queuedBy}`}
-      trailing={expanded ? actions : `+${formatDuration(eta * 1000)}`}
+      trailing={
+        <>
+          {expanded ? actions : `+${formatDuration(eta * 1000)}`}
+          {isAdmin && (
+            <IconButton
+              label={t("queue.dragToReorder")}
+              icon={<MdDragIndicator />}
+              className={styles.handle}
+              {...handleProps}
+            />
+          )}
+        </>
+      }
     />
   );
 };
 
 // The current song (accented, a link to its page: for adhoc lyrics, its
-// singer's controls), then the queue with each song's wait.
+// singer's controls), then the queue with each song's wait. An admin's
+// moves show at once, until the live state has them (or the server says
+// why not, and the queue goes back).
 const QueueList = () => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
-  const queue = useQueue();
+  const [queue, setPending, clearPending] = useOptimisticValue(useQueue());
+  const isAdmin = useIsAdmin() === true;
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const moveSong = useApiMutation("moveSong", {
+    onSuccess: ({ ok }) => {
+      // Gone from the queue meanwhile: nothing moved.
+      if (!ok) clearPending();
+    },
+    onError: (err) => {
+      clearPending();
+      setMoveError(err.message);
+    },
+  });
+
+  const move = (from: number, to: number) => {
+    const items = queue.map(([item]) => item);
+    const [item] = items.splice(from, 1);
+    items.splice(to, 0, item);
+    setPending(withETAs(currentSong, items));
+    setMoveError(null);
+    moveSong.mutate({
+      songId: item.songId,
+      timestamp: item.timestamp,
+      toIndex: to,
+    });
+  };
+  const handleProps = useDragReorder(queue.length, move);
 
   return (
     <>
+      {moveError && (
+        <InlineError>
+          {t("queue.moveFailed", { reason: moveError })}
+        </InlineError>
+      )}
       {(currentSong || queue.length > 0) && (
         <List label={t("queue.label")}>
           {currentSong && (
@@ -132,7 +174,9 @@ const QueueList = () => {
               item={item}
               eta={eta}
               index={index}
-              isLast={index === queue.length - 1}
+              isAdmin={isAdmin}
+              onMoveToTop={() => move(index, 0)}
+              handleProps={handleProps(index)}
             />
           ))}
         </List>

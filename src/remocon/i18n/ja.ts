@@ -129,4 +129,7 @@ export const ja: Messages = {
   "profile.tooManyTries":
     "試行回数が多すぎます。1分待ってから再試行してください。",
   "profile.signInFailed": "ログインできませんでした：{reason}",
+
+  "queue.dragToReorder": "ドラッグで並べ替え",
+  "queue.moveFailed": "曲を移動できませんでした：{reason}",
 };

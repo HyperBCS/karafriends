@@ -141,4 +141,8 @@ export const en = {
   "profile.noPassword": "The host hasn't set an admin password.",
   "profile.tooManyTries": "Too many tries. Wait a minute, then try again.",
   "profile.signInFailed": "Couldn't sign in: {reason}",
+
+  // Reordering the queue by drag.
+  "queue.dragToReorder": "Drag to reorder",
+  "queue.moveFailed": "Couldn't move the song: {reason}",
 } as const;
