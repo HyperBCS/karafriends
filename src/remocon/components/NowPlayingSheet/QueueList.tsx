@@ -27,6 +27,13 @@ const Initial = ({ nickname }: { nickname: string }) => (
 const nicknameOf = (item: SharedQueueItem) =>
   item.user.nickname || t("common.unknownUser");
 
+// The small label: where the song comes from, and for Joysound, how its
+// lyrics show on the TV.
+const sourceOf = (item: SharedQueueItem) =>
+  item.kind === "joysound"
+    ? `${sourceName(item.kind)} · ${t(`lyricsMode.${item.lyricsMode}`)}`
+    : sourceName(item.kind);
+
 // A queued song's wait (from useQueue(false)), counting down while the
 // current song plays: the only part of a row that changes every second.
 const Wait = ({ eta }: { eta: number }) => (
@@ -101,7 +108,7 @@ const QueueRow = memo(function QueueRow({
           <WithReading text={item.artistName} yomi={item.artistNameYomi} />
         )
       }
-      source={sourceName(item.kind)}
+      source={sourceOf(item)}
       onPress={() => setExpanded(!expanded)}
       expanded={expanded}
       aria-label={`${item.name}, ${queuedBy}`}
@@ -186,7 +193,7 @@ const QueueList = () => {
                   yomi={currentSong.artistNameYomi}
                 />
               }
-              source={sourceName(currentSong.kind)}
+              source={sourceOf(currentSong)}
               to={songLink(currentSong)}
               trailing={t("sheet.nowPlaying")}
             />

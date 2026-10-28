@@ -1195,6 +1195,16 @@ test.describe("the lyrics mode", () => {
         "e2e-kana": "kana",
         "e2e-both": "both",
       });
+    // The queue shows each one's mode by its source.
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const rows = remote
+      .getByRole("region", { name: "Queue" })
+      .getByRole("listitem");
+    for (const [mode, label] of Object.entries(LABELS)) {
+      await expect(rows.filter({ hasText: `e2e-${mode}` })).toContainText(
+        `Joysound · ${label}`,
+      );
+    }
   });
 });
 
