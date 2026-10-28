@@ -150,11 +150,26 @@ fn system_host() -> Result<std::rc::Rc<cpal::Host>> {
     Ok(std::rc::Rc::new(cpal::default_host()))
 }
 
-pub fn exclusive_available() -> bool {
-    cfg!(windows)
-}
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+// A console window for the module's prints, on Windows. A process that has
+// one (started from a terminal) is refused with "Access is denied (os
+// error 5)", which the main process lets pass.
+pub fn alloc_console() -> Result<()> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Console::{AllocConsole, SetConsoleTitleW};
+        // As the system's own code ("os error 5"): a failed call's HRESULT
+        // holds it in its low 16 bits.
+        let os_error =
+            |e: windows::core::Error| std::io::Error::from_raw_os_error(e.code().0 & 0xFFFF);
+        unsafe {
+            AllocConsole().map_err(os_error)?;
+            SetConsoleTitleW(windows::core::w!("karafriends native console")).map_err(os_error)?;
+        }
+    }
+    Ok(())
+}
 
 // Rubato is fed whole chunks of this many frames, whatever size the mic's
 // callbacks are; the remainder waits for the next callback. Small, since a

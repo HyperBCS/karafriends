@@ -13,9 +13,6 @@ crate-type = ["cdylib"]
 karafriends-lib = { version = "0.1.0", path = "../karafriends-lib", default-features = false }
 neon = { version = "1.0.0", default-features = false, features = ["napi-8"] }
 
-[target.'cfg(windows)'.dependencies]
-win32console = "0.1.5"
-
 [features]
 # `CARGO_ARGS=--no-default-features yarn build-prod` builds without ASIO, and
 # on Linux without PipeWire (the mics then use PulseAudio or ALSA).

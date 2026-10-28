@@ -1,17 +1,20 @@
+import type { LinuxAudio, OutputOptions } from "./global";
+
+export type { LinuxAudio, OutputOptions };
+
+// The mics and their output; each function is described in global.ts.
 const native = window.karafriends.nativeAudio;
 
 // How often the watchdog asks each mic, and tries again to reopen one that
 // is down.
 const WATCH_MS = 2000;
 
-// Every output device the mics can play through, with the host in
-// parentheses.
 export function outputDevices(): string[] {
   return native.outputDevices();
 }
 
 // Where every mic plays: the device (null for the default output), and for
-// an ASIO one its rate in Hz and buffer size in samples (null for the
+// an ASIO one its rate in Hz and buffer size in frames (null for the
 // driver's own).
 export interface MicOutput {
   name: string | null;
@@ -25,7 +28,7 @@ export function setOutputDevice(output: MicOutput) {
 
 // How the mics open on Windows: shared with other programs (Windows
 // mixes, in 10 ms buffers), or exclusive, for less delay, with a buffer
-// size in samples (null for the smallest the mic takes). On Linux only the
+// size in frames (null for the smallest the mic takes). On Linux only the
 // buffer size counts, for the mics and their output alike (null for
 // linuxAudio's default). Mics opened after it is set use it.
 export interface MicMode {
@@ -37,44 +40,32 @@ export function setMicMode(mode: MicMode) {
   native.setMicMode(mode.exclusive, mode.bufferSize);
 }
 
-// Whether there is an exclusive mode (Windows only).
 export function exclusiveAvailable(): boolean {
   return native.exclusiveAvailable();
-}
-
-// On Linux: the sound system the mics use ("Sound system: PipeWire
-// 1.6.2"), the buffer sizes in samples it takes for the mics and their
-// output, and the one used until one is picked. Null elsewhere.
-export interface LinuxAudio {
-  status: string;
-  bufferSizes: number[];
-  defaultBufferSize: number;
 }
 
 export function linuxAudio(): LinuxAudio | null {
   return native.linuxAudio();
 }
 
-// On Linux, the inputs are listed again when next asked for, so a mic
-// plugged in since shows. Elsewhere they're listed once.
 export function refreshInputDevices() {
   native.refreshInputDevices();
 }
 
-// The rates and buffer sizes an ASIO output takes; null for other outputs.
-export function outputOptions(
-  name: string,
-): { rates: number[]; bufferSizes: number[] } | null {
+export function outputOptions(name: string): OutputOptions | null {
   return native.outputOptions(name);
 }
 
-// What the mic output runs at; null while no mic is open.
-export function outputFormat(): string | null {
+export function outputFormat(): string | undefined {
   return native.outputFormat();
 }
 
-// "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO isn't in
-// this build".
+// Where the mics play, whichever mics are up ("ok", "ok: <a note>", or why
+// the output stopped); undefined while no mic is open.
+export function outputStatus(): string | undefined {
+  return native.outputStatus();
+}
+
 export function asioStatus(): string {
   return native.asioStatus();
 }
