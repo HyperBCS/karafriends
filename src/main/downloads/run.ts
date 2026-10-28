@@ -2,7 +2,7 @@
 // file, a timeout, and the reason for guests when it fails.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, execFile, spawn } from "child_process";
 import fs from "fs";
 import process from "process";
 
@@ -23,6 +23,29 @@ function attachLogStreamErrorHandler(
   stream.on("error", (err) => {
     console.error(`${label} log stream error:`, err);
   });
+}
+
+// Stops a tool and what it started: on Windows the yt-dlp a .cmd wrapper
+// runs, and yt-dlp's own ffmpeg. (On POSIX, runTool starts each tool as its
+// own process group.)
+function killTree(proc: ChildProcess, label: string): void {
+  if (proc.pid === undefined) return;
+  if (process.platform === "win32") {
+    execFile(
+      "taskkill",
+      ["/T", "/F", "/PID", String(proc.pid)],
+      { windowsHide: true },
+      (err) => {
+        if (err) console.error(`Couldn't stop ${label}:`, err);
+      },
+    );
+  } else {
+    try {
+      process.kill(-proc.pid, "SIGKILL");
+    } catch (err) {
+      console.error(`Couldn't stop ${label}:`, err);
+    }
+  }
 }
 
 // The longest one yt-dlp or ffmpeg run may take before it's stopped. A song
@@ -55,9 +78,10 @@ export interface ToolRun {
 
 // Runs a tool to the end, its output going to the console and the log.
 // Resolves when it exits 0. Rejects with a DownloadFailure when it can't
-// start, exits non-zero, or runs longer than its timeout (then it's
-// stopped), or when signal aborts it (once it has exited, so its files can
-// go). Never throws: a throw in a spawn callback would crash the app.
+// start, exits non-zero, or runs longer than its timeout or signal aborts
+// it (then it and what it started are stopped, and it fails once it has
+// exited, so its files can go). Never throws: a throw in a spawn callback
+// would crash the app.
 export function runTool(run: ToolRun): Promise<void> {
   const timeoutMs = run.timeoutMs ?? TOOL_TIMEOUT_MS;
   const stopped = () =>
@@ -100,6 +124,9 @@ export function runTool(run: ToolRun): Promise<void> {
       proc = spawn(command.file, command.args, {
         env: run.env,
         stdio: [run.stdin ? "pipe" : "ignore", "pipe", "pipe"],
+        // Its own process group, for killTree. (On Windows it would open a
+        // console.)
+        detached: process.platform !== "win32",
         windowsHide: true,
         windowsVerbatimArguments: command.windowsVerbatimArguments,
       });
@@ -129,15 +156,17 @@ export function runTool(run: ToolRun): Promise<void> {
     // Emitted when the tool can't be launched (missing, not executable).
     // Unhandled, an "error" event crashes the app.
     proc.on("error", failedToStart);
-    let stopping = false;
+    // Why it was stopped, if it was: it fails with this once it has exited,
+    // so its files can go.
+    let stoppedFor: DownloadFailure | null = null;
     stop = () => {
-      stopping = true;
-      proc.kill();
+      stoppedFor ??= stopped();
+      killTree(proc, run.label);
     };
     run.signal?.addEventListener("abort", stop, { once: true });
     proc.on("close", (code, signal) => {
-      if (stopping) {
-        settle(stopped());
+      if (stoppedFor) {
+        settle(stoppedFor);
       } else if (code === 0) {
         settle(null);
       } else {
@@ -150,16 +179,11 @@ export function runTool(run: ToolRun): Promise<void> {
       }
     });
     timer = setTimeout(() => {
-      // Its last words would come after the log is closed.
-      proc.stdout?.unpipe(log);
-      proc.stderr?.unpipe(log);
-      settle(
-        new DownloadFailure(
-          REASONS.timedOut,
-          `${run.label} took longer than ${timeoutMs / 1000} s; stopped it`,
-        ),
+      stoppedFor = new DownloadFailure(
+        REASONS.timedOut,
+        `${run.label} took longer than ${timeoutMs / 1000} s; stopped it`,
       );
-      proc.kill();
+      stop?.();
     }, timeoutMs);
 
     if (run.stdin && proc.stdin) {

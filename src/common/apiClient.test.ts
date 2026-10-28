@@ -197,14 +197,6 @@ describe("eventsUrl", () => {
     assert.equal(eventsUrl(null), "/api/events");
     assert.equal(eventsUrl("a b&c"), "/api/events?deviceId=a%20b%26c");
   });
-
-  test("and its admin token, once signed in", () => {
-    assert.equal(
-      eventsUrl("d", "ab12"),
-      "/api/events?deviceId=d&adminToken=ab12",
-    );
-    assert.equal(eventsUrl(null, "ab12"), "/api/events?adminToken=ab12");
-  });
 });
 
 // A localStorage for one test.

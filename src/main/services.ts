@@ -18,7 +18,11 @@ import {
   getNicoVideoInfo,
   TEMP_FOLDER,
 } from "./downloads";
-import { createAdminSessions, createSetAdminPassword } from "./adminAuth";
+import {
+  createAdminSessions,
+  createSetAdminPassword,
+  endSessionsOnPasswordChange,
+} from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
@@ -44,8 +48,11 @@ export const adminSessions = createAdminSessions(
 export const setAdminPassword = createSetAdminPassword({
   config: karafriendsConfig,
   saveConfig: (values) => configStore.update(values),
-  sessions: adminSessions,
 });
+
+// A new password (from setAdminPassword or importConfig) signs every phone
+// out.
+endSessionsOnPasswordChange(configStore, adminSessions);
 
 // The clients' shared logins, forgotten when the settings change them.
 const credentials = createCredentialProviders({
@@ -69,14 +76,6 @@ configStore.onChange(({ keys }) => {
   // For DAM and Joysound requests from now on. (The display's own proxy,
   // for DAM streams, changes on restart.)
   if (keys.some((key) => PROXY_KEYS.includes(key))) setProxy(karafriendsConfig);
-  // A new password (from importConfig, say) signs every phone out, as
-  // setAdminPassword does.
-  if (
-    keys.includes("adminPasswordHash") ||
-    keys.includes("adminPasswordSalt")
-  ) {
-    adminSessions.clear();
-  }
 });
 
 // The clients keep no per-request state, so every request shares one of each.

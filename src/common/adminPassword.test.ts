@@ -35,29 +35,32 @@ describe("the admin password", () => {
     assert.notEqual(newAdminSalt(), a);
   });
 
-  test("isAdminPassword: only the password, and never while none is set", () => {
+  test("isAdminPassword: only the password, and never while none is set", async () => {
     const config = {
       adminPasswordSalt: salt,
       adminPasswordHash: hashAdminPassword("パスワード", salt),
     };
-    assert.equal(isAdminPassword("パスワード", config), true);
-    assert.equal(isAdminPassword("パスワード ", config), false);
-    assert.equal(isAdminPassword("", config), false);
+    assert.equal(await isAdminPassword("パスワード", config), true);
+    assert.equal(await isAdminPassword("パスワード ", config), false);
+    assert.equal(await isAdminPassword("", config), false);
     assert.equal(
-      isAdminPassword("パスワード", { ...config, adminPasswordHash: "" }),
+      await isAdminPassword("パスワード", { ...config, adminPasswordHash: "" }),
       false,
     );
     assert.equal(
-      isAdminPassword("パスワード", { ...config, adminPasswordSalt: "" }),
+      await isAdminPassword("パスワード", { ...config, adminPasswordSalt: "" }),
       false,
     );
     // A hand-edited hash that isn't one.
     assert.equal(
-      isAdminPassword("パスワード", { ...config, adminPasswordHash: "zz" }),
+      await isAdminPassword("パスワード", {
+        ...config,
+        adminPasswordHash: "zz",
+      }),
       false,
     );
     assert.equal(
-      isAdminPassword("パスワード", {
+      await isAdminPassword("パスワード", {
         ...config,
         adminPasswordHash: config.adminPasswordHash.slice(2),
       }),

@@ -54,18 +54,27 @@ async function jobPaths(): Promise<JobPaths> {
   return { folder: TEMP_FOLDER, ...getResourcePaths() };
 }
 
+// The DAM videos downloading now, as <songId>-<suffix>. They aren't in the
+// download queue, as their songs are queued at once.
+const damDownloads = new Set<string>();
+
 // DAM songs join the queue at once and stream until their download is
-// done, so a failure here is only logged.
+// done, so a failure here is only logged. A second request while one runs
+// returns at once: both would write the same .tmp.
 export function downloadDamVideo(
   m3u8Url: string,
   songId: string,
   suffix: string,
 ): void {
+  const key = `${songId}-${suffix}`;
+  if (damDownloads.has(key)) return;
+  damDownloads.add(key);
   jobPaths()
     .then((paths) => damJob(paths, m3u8Url, songId, suffix))
     .catch((err) =>
       console.error(`Error downloading DAM video with ID ${songId}:`, err),
-    );
+    )
+    .finally(() => damDownloads.delete(key));
 }
 
 // Downloads a Joysound song and its video, then queues it with
@@ -104,7 +113,7 @@ export function downloadJoysoundData(
     description,
     async (item) => joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
     (item) => pushSongToQueue(item, pushToHead),
-    () => deleteJoysoundTempFiles(TEMP_FOLDER, songId),
+    () => deleteJoysoundTempFiles(TEMP_FOLDER, queueItem),
     onFailed,
   );
 }

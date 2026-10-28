@@ -2,11 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import {
-  adminTokenFromQuery,
-  callerFromHeaders,
-  deviceIdFromQuery,
-} from "./caller";
+import { callerFromHeaders, deviceIdFromQuery } from "./caller";
 
 describe("callerFromHeaders", () => {
   test("reads the percent-encoded identity headers", () => {
@@ -67,20 +63,5 @@ describe("deviceIdFromQuery", () => {
     assert.equal(deviceIdFromQuery(""), null);
     assert.equal(deviceIdFromQuery(["a", "b"]), null);
     assert.equal(deviceIdFromQuery("x".repeat(201)), null);
-  });
-});
-
-describe("adminTokenFromQuery", () => {
-  test("takes one non-empty token", () => {
-    const token = "0123abcd".repeat(8);
-    assert.equal(adminTokenFromQuery(token), token);
-    assert.equal(adminTokenFromQuery(` ${token} `), token);
-  });
-
-  test("ignores a missing, empty, repeated or oversized one", () => {
-    assert.equal(adminTokenFromQuery(undefined), null);
-    assert.equal(adminTokenFromQuery(""), null);
-    assert.equal(adminTokenFromQuery(["a", "b"]), null);
-    assert.equal(adminTokenFromQuery("x".repeat(201)), null);
   });
 });

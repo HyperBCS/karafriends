@@ -57,6 +57,31 @@ test("a tool that runs too long fails its download as timed out", async () => {
   );
 });
 
+test("a timeout stops what the tool started too", async () => {
+  // A script that waits in a process it started, as a .cmd wrapper waits
+  // in yt-dlp. That process holds the output open, so the run can't end
+  // until it's stopped as well; it would wait 60 s.
+  const started = Date.now();
+  const run = runTool({
+    ...hangs(),
+    label: "hangs",
+    bin: path.resolve(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "tests",
+      "fixtures",
+      "bin",
+      process.platform === "win32" ? "hangs.cmd" : "hangs",
+    ),
+    args: [],
+    timeoutMs: 500,
+  });
+  await assert.rejects(run, /took longer than 0.5 s/);
+  assert.ok(Date.now() - started < 20_000);
+});
+
 test("an aborted tool is stopped, and fails once it has exited", async () => {
   const stop = new AbortController();
   const run = runTool({ ...hangs(), signal: stop.signal });

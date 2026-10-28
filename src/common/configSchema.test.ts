@@ -68,14 +68,6 @@ describe("configFromFile", () => {
     assert.equal(config.adminPasswordSalt, "");
     assert.match(problems[0], /adminPasswordSalt .* must be text in quotes/);
   });
-
-  test("uses the defaults for a file that isn't a mapping", () => {
-    for (const parsed of [["a"], "text", 5]) {
-      const { config, problems } = configFromFile(parsed);
-      assert.deepEqual(config, DEFAULT_CONFIG);
-      assert.equal(problems.length, 1);
-    }
-  });
 });
 
 describe("configProblems", () => {
@@ -117,11 +109,10 @@ describe("configProblems", () => {
 });
 
 describe("hasLogin", () => {
-  test("needs both fields, neither the placeholder", () => {
+  test("needs both fields", () => {
     const dam = (damUsername: string, damPassword: string) =>
       hasLogin({ ...DEFAULT_CONFIG, damUsername, damPassword }, "dam");
     assert.equal(hasLogin(DEFAULT_CONFIG, "dam"), false);
-    assert.equal(dam("me", DEFAULT_CONFIG.damPassword), false);
     assert.equal(dam("me", ""), false);
     assert.equal(dam("me", "pw"), true);
     assert.equal(

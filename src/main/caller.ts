@@ -22,17 +22,9 @@ export function callerFromHeaders(headers: IncomingHttpHeaders): Caller {
   };
 }
 
-// GET /api/events?deviceId=...&adminToken=...: the phone watching, so it can
-// tell its own songs. Express has already percent-decoded them.
+// GET /api/events?deviceId=...: the phone watching, so it can tell its own
+// songs. Express has already percent-decoded it.
 export function deviceIdFromQuery(value: unknown): string | null {
-  return queryValue(value);
-}
-
-export function adminTokenFromQuery(value: unknown): string | null {
-  return queryValue(value);
-}
-
-function queryValue(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed !== "" && trimmed.length <= 200 ? trimmed : null;

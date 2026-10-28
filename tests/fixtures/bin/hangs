@@ -1,0 +1,7 @@
+#!/bin/sh
+# A stand-in for a tool that hangs in a process it started, as yt-dlp does
+# under its .cmd wrapper. src/main/downloads/run.test.ts runs it: the
+# sleep keeps the output open, so the run only ends once the sleep is
+# stopped too.
+sleep 60
+echo "still running"

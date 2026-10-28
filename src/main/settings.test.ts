@@ -246,25 +246,17 @@ describe("setAdminPassword", () => {
 });
 
 describe("testLogin", () => {
-  test("uses the saved login, or the given one", async () => {
+  test("uses the saved login", async () => {
     const { api, store, tried } = setup();
     store.update(LOGINS);
     assert.deepEqual(await api.testLogin({ service: "dam" }, display), {
       ok: true,
     });
-    await api.testLogin(
-      {
-        service: "joysound",
-        credentials: { username: "new@example.com", password: "new-pw" },
-      },
-      display,
-    );
+    await api.testLogin({ service: "joysound" }, display);
     assert.deepEqual(tried, [
       "dam dam-user:dam-pw",
-      "joysound new@example.com:new-pw",
+      "joysound joy@example.com:joy-pw",
     ]);
-    // A test doesn't change the saved login.
-    assert.equal(store.get().joysoundEmail, "joy@example.com");
   });
 
   test("says when no login is set, without asking", async () => {
@@ -336,7 +328,11 @@ describe("exportConfig and importConfig", () => {
     const second = setup({ name: "second.yaml" });
     assert.deepEqual(await second.api.importConfig({ yaml }, display), {
       ok: true,
-      problems: ["DAM login works.", "Joysound login works."],
+      problems: [
+        "Phones signed in as admins must sign in again.",
+        "DAM login works.",
+        "Joysound login works.",
+      ],
     });
     assert.deepEqual(second.store.saved(), first.store.saved());
     assert.deepEqual(second.onDisk(), first.onDisk());
@@ -349,6 +345,11 @@ describe("exportConfig and importConfig", () => {
       (await second.api.getSettings({}, display)).needsRestart,
       true,
     );
+    // The same admin password again signs nobody out.
+    assert.deepEqual(await second.api.importConfig({ yaml }, display), {
+      ok: true,
+      problems: ["DAM login works.", "Joysound login works."],
+    });
   });
 
   test("an old config.yaml: no version line, admin lists dropped and listed", async () => {
@@ -374,6 +375,43 @@ describe("exportConfig and importConfig", () => {
     assert.equal(store.get().supervisedMode, true);
     // What the file leaves out stays as it was.
     assert.equal(store.get().remoconPort, DEFAULT_CONFIG.remoconPort);
+  });
+
+  test("a 0.1.0 config.yaml's placeholders are imported as empty", async () => {
+    const { api, store } = setup();
+    const result = await api.importConfig(
+      {
+        yaml:
+          "damUsername: YOUR_USERNAME_HERE\ndamPassword: YOUR_PASSWORD_HERE\n" +
+          "joysoundEmail: YOUR_EMAIL_HERE\njoysoundPassword: YOUR_PASSWORD_HERE\n" +
+          "proxyHost: PROXY_HOST_HERE\nproxyUser: PROXY_USER_HERE\n" +
+          "proxyPass: PROXY_PASS_HERE\nsupervisedMode: true\n",
+      },
+      display,
+    );
+    assert.deepEqual(result, {
+      ok: true,
+      problems: [
+        "No DAM login is set: enter the username and password first.",
+        "No Joysound login is set: enter the email and password first.",
+      ],
+    });
+    const saved = store.saved();
+    for (const key of [
+      "damUsername",
+      "damPassword",
+      "joysoundEmail",
+      "joysoundPassword",
+      "proxyHost",
+      "proxyUser",
+      "proxyPass",
+    ] as const) {
+      assert.equal(saved[key], "", key);
+    }
+    assert.equal(saved.supervisedMode, true);
+    const { settings, isFirstRun } = await api.getSettings({}, display);
+    assert.equal(settings.damPassword, "");
+    assert.equal(isFirstRun, true);
   });
 
   test("unknown keys are dropped and listed", async () => {
@@ -436,6 +474,13 @@ describe("exportConfig and importConfig", () => {
     );
     assert.equal(result.ok, false);
     assert.doesNotMatch(result.problems.join(" "), /secret-pw/);
+  });
+
+  test("a YAML warning isn't printed: it would quote the line", async (t) => {
+    const warned = t.mock.method(process, "emitWarning", () => {});
+    const { api } = setup();
+    await api.importConfig({ yaml: "damPassword: !foo secret-pw\n" }, display);
+    assert.equal(warned.mock.callCount(), 0);
   });
 });
 

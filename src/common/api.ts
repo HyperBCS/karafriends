@@ -212,10 +212,9 @@ export type LiveEvent =
 
 export type LiveEventType = LiveEvent["type"];
 
-// The query parameters GET /api/events takes the phone's device ID and
-// admin token in. (EventSource can't send headers.)
+// The query parameter GET /api/events takes the phone's device ID in.
+// (EventSource can't send headers.)
 export const EVENTS_DEVICE_ID_PARAM = "deviceId";
-export const EVENTS_ADMIN_TOKEN_PARAM = "adminToken";
 
 // Lookups
 
@@ -412,7 +411,7 @@ export interface Api {
   // Whether the caller is an admin: the display, or a phone that sent a
   // live session's token in ADMIN_TOKEN_HEADER.
   whoami: { input: Record<string, never>; output: { isAdmin: boolean } };
-  // Signs a phone in as an admin. 403 for a wrong password, or when the host
+  // Signs a phone in as an admin. 403 for a wrong password, 409 when the host
   // has set none; 429 after 5 tries in a minute from one address. The phone
   // sends the token in ADMIN_TOKEN_HEADER from then on. The display never
   // signs in: it is always an admin.
@@ -447,14 +446,10 @@ export interface Api {
     input: { password: string };
     output: Record<string, never>;
   };
-  // Signs in to DAM or Joysound with the given login, or the saved one,
-  // without keeping the session. Gives up after 15 seconds.
+  // Signs in to DAM or Joysound with the saved login, without keeping the
+  // session. Gives up after 15 seconds.
   testLogin: {
-    input: {
-      service: LoginService;
-      // Joysound: username is the email.
-      credentials?: { username: string; password: string };
-    };
+    input: { service: LoginService };
     output: TestLoginResult;
   };
   // config.yaml, logins and admin password hash included, with a

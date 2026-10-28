@@ -5,13 +5,13 @@
 //                       an unknown method, 400 for bad input, 403 when the
 //                       caller may not do it (always, for the settings:
 //                       DISPLAY_ONLY_METHODS). adminLogin answers 429 after
-//                       ADMIN_LOGIN_LIMIT tries from one address.
+//                       ADMIN_LOGIN_LIMIT tries from one address, or
+//                       ADMIN_LOGIN_TOTAL_LIMIT from all.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
 //                       every change, plus emote and queueAdded events. A
 //                       phone adds ?deviceId=<its ID> to see which songs are
-//                       its own (and &adminToken=<its token> once signed in
-//                       as an admin); no device IDs are sent. 503 when too
-//                       many are open (STREAM_LIMITS).
+//                       its own; no device IDs are sent. 503 when too many
+//                       are open (STREAM_LIMITS).
 //
 // No CORS headers: requiring a JSON content type then keeps other web pages
 // from driving the queue (a cross-site form can't send it, and fetch() would
@@ -20,17 +20,12 @@ import compression from "compression";
 import express, { NextFunction, Request, Response, Router } from "express";
 
 import {
-  EVENTS_ADMIN_TOKEN_PARAM,
   EVENTS_DEVICE_ID_PARAM,
   type ApiMethod,
   type LiveEvent,
 } from "../common/api";
 import type { ApiHandlers } from "./api";
-import {
-  adminTokenFromQuery,
-  callerFromHeaders,
-  deviceIdFromQuery,
-} from "./caller";
+import { callerFromHeaders, deviceIdFromQuery } from "./caller";
 import { errorAnswer, isMethod, runMethod } from "./dispatch";
 import type { LiveHub } from "./live";
 import { SETTINGS_METHODS } from "./settings";
@@ -39,7 +34,7 @@ export const EVENTS_PATH = "/api/events";
 
 // Methods only the display may call, over IPC: the settings. A phone gets
 // 403 before its body is read, whoever it is signed in as. (popSong is the
-// display's too, but admin phones may call it; api.ts checks.)
+// display's too; api.ts checks.)
 export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>(
   SETTINGS_METHODS,
 );
@@ -169,6 +164,13 @@ export interface RateLimit {
 
 export const ADMIN_LOGIN_LIMIT: RateLimit = { tries: 5, windowMs: 60_000 };
 
+// And how many all addresses get together: a phone can take as many IPv6
+// addresses as it likes.
+export const ADMIN_LOGIN_TOTAL_LIMIT: RateLimit = {
+  tries: 30,
+  windowMs: 60_000,
+};
+
 // Counts tries by key (a remote address) over a sliding window.
 export function rateLimiter(
   { tries, windowMs }: RateLimit,
@@ -210,11 +212,11 @@ export function apiRouter(
   handlers: ApiHandlers,
   hub: LiveHub,
   streamLimits: StreamLimits = STREAM_LIMITS,
-  loginLimit: RateLimit = ADMIN_LOGIN_LIMIT,
 ): Router {
   const router = express.Router();
   const streams = streamCounter(streamLimits);
-  const logins = rateLimiter(loginLimit);
+  const logins = rateLimiter(ADMIN_LOGIN_LIMIT);
+  const allLogins = rateLimiter(ADMIN_LOGIN_TOTAL_LIMIT);
 
   router.get("/events", (req, res) => {
     const address = req.socket.remoteAddress ?? "";
@@ -228,7 +230,6 @@ export function apiRouter(
     }
     const viewer = {
       deviceId: deviceIdFromQuery(req.query[EVENTS_DEVICE_ID_PARAM]),
-      adminToken: adminTokenFromQuery(req.query[EVENTS_ADMIN_TOKEN_PARAM]),
     };
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -273,13 +274,15 @@ export function apiRouter(
         });
         return;
       }
+      // An address past its own limit doesn't use up everyone's.
       if (
         req.params.method === "adminLogin" &&
-        !logins.tryHit(req.socket.remoteAddress ?? "")
+        (!logins.tryHit(req.socket.remoteAddress ?? "") ||
+          !allLogins.tryHit("all"))
       ) {
         res
           .status(429)
-          .set("Retry-After", String(Math.ceil(loginLimit.windowMs / 1000)))
+          .set("Retry-After", String(ADMIN_LOGIN_LIMIT.windowMs / 1000))
           .json({
             error: "Too many sign-in tries. Wait a minute, then try again.",
           });

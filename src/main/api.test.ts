@@ -298,10 +298,12 @@ describe("admin checks", () => {
     });
   });
 
-  test("only the display (or an admin) may start the next song", async () => {
+  test("only the display may start the next song", async () => {
     const api = makeApi();
     store.update((state) => state.songQueue.push(song(1, alice)));
     await rejectsWith(api.popSong({}, alice), 403);
+    // Not an admin's phone: the song would never play.
+    await rejectsWith(api.popSong({}, admin("host")), 403);
     assert.equal(store.getState().songQueue.length, 1);
 
     const popped = await api.popSong({}, display);
@@ -485,7 +487,7 @@ describe("admin sign-in", () => {
     );
   });
 
-  test("a wrong password, or none set, is refused", async () => {
+  test("a wrong password (403), or none set (409), is refused", async () => {
     const api = makeApi();
     for (const password of ["Sing-it-loud", "sing-it-loud ", "x"]) {
       await rejectsWith(api.adminLogin({ password }, bob), 403);
@@ -495,7 +497,7 @@ describe("admin sign-in", () => {
         { password: ADMIN_PASSWORD },
         bob,
       ),
-      403,
+      409,
     );
     // A hash that isn't one.
     await rejectsWith(
@@ -955,6 +957,54 @@ describe("a failed download", () => {
     assert.equal((await queueVideo(api, alice)).ok, false);
     failDownload(downloadQueue, download, "Video unavailable");
     assert.equal((await queueVideo(api, alice)).ok, true);
+  });
+
+  test("one already downloading for someone else is refused, not dropped", async () => {
+    const asked: string[] = [];
+    const api = makeApi(
+      {},
+      {
+        downloads: {
+          youtube: () => asked.push("youtube"),
+          joysound: () => asked.push("joysound"),
+        } as unknown as ApiDeps["downloads"],
+      },
+    );
+    const { downloadQueue } = store.getState();
+    startDownload(downloadQueue, {
+      kind: "youtube",
+      userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      songId: "jNQXAC9IVRw",
+      suffix: null,
+    });
+    startDownload(downloadQueue, {
+      kind: "joysound",
+      userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      songId: "123456",
+      suffix: "bgVideo0001",
+    });
+    const queueJoysound = (youtubeVideoId: string | null) =>
+      api.queueSong(
+        {
+          kind: "joysound",
+          songId: "123456",
+          name: "j",
+          artistName: "",
+          playtime: 1,
+          isRomaji: false,
+          youtubeVideoId,
+        },
+        bob,
+      );
+    const refused = {
+      ok: false,
+      reason: "Someone is already adding this song",
+    };
+    assert.deepEqual(await queueVideo(api, bob), refused);
+    assert.deepEqual(await queueJoysound("bgVideo0001"), refused);
+    // Another background is another download.
+    assert.equal((await queueJoysound(null)).ok, true);
+    assert.deepEqual(asked, ["joysound"]);
   });
 
   test("of YouTube or Niconico, because of yt-dlp, sets the tools problem until one works", async () => {

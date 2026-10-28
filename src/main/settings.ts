@@ -14,9 +14,9 @@ import {
   type ToolsStatus,
 } from "../common/api";
 import {
+  clearPlaceholders,
   CONFIG_KEYS,
   configProblems,
-  DEFAULT_CONFIG,
   hasLogin,
   isConfigKey,
   OBSOLETE_KEYS,
@@ -127,21 +127,13 @@ export function createSettingsHandlers(
     }
   };
 
-  const testLogin = async (
-    service: LoginService,
-    credentials?: { username: string; password: string },
-  ): Promise<TestLoginResult> => {
+  const testLogin = async (service: LoginService): Promise<TestLoginResult> => {
     const saved = store.saved();
     const { username, password } =
-      credentials ??
-      (service === "dam"
-        ? { username: saved.damUsername, password: saved.damPassword }
-        : { username: saved.joysoundEmail, password: saved.joysoundPassword });
-    const login =
       service === "dam"
-        ? { damUsername: username, damPassword: password }
-        : { joysoundEmail: username, joysoundPassword: password };
-    if (!hasLogin({ ...DEFAULT_CONFIG, ...login }, service)) {
+        ? { username: saved.damUsername, password: saved.damPassword }
+        : { username: saved.joysoundEmail, password: saved.joysoundPassword };
+    if (!hasLogin(saved, service)) {
       const what = service === "dam" ? "username" : "email";
       return {
         ok: false,
@@ -205,9 +197,9 @@ export function createSettingsHandlers(
       return {};
     },
 
-    async testLogin({ service, credentials }, caller) {
+    async testLogin({ service }, caller) {
       requireDisplay(caller);
-      return testLogin(service, credentials);
+      return testLogin(service);
     },
 
     async exportConfig(_input, caller) {
@@ -221,7 +213,8 @@ export function createSettingsHandlers(
       requireDisplay(caller);
       let parsed: unknown;
       try {
-        parsed = parse(yaml);
+        // No warnings: the parser prints them with the line, as below.
+        parsed = parse(yaml, { logLevel: "error" });
       } catch (err) {
         // Not the parser's message: it quotes the line, which may hold a
         // password.
@@ -250,6 +243,8 @@ export function createSettingsHandlers(
 
       const values: Record<string, unknown> = { ...parsed };
       delete values.karafriendsConfigVersion;
+      // An old config.yaml's YOUR_PASSWORD_HERE and the like mean nothing set.
+      clearPlaceholders(values);
       const notes: string[] = [];
       for (const key of Object.keys(values)) {
         if ((OBSOLETE_KEYS as readonly string[]).includes(key)) {
@@ -264,8 +259,17 @@ export function createSettingsHandlers(
         }
       }
 
+      const before = store.saved();
       const problems = save(values);
       if (problems.length > 0) return { ok: false, problems };
+      const after = store.saved();
+      if (
+        after.adminPasswordHash !== before.adminPasswordHash ||
+        after.adminPasswordSalt !== before.adminPasswordSalt
+      ) {
+        // services.ts ends their sessions.
+        notes.push("Phones signed in as admins must sign in again.");
+      }
 
       const results = await Promise.all(
         (["dam", "joysound"] as const).map(async (service) => {

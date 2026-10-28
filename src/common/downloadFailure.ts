@@ -9,6 +9,7 @@ export const REASONS = {
   private: "Private video",
   ageRestricted: "Age-restricted video",
   membersOnly: "Members-only video",
+  liveOrPaid: "Live, upcoming or paid video",
   geoBlocked: "Not available in this country",
   botCheck: "YouTube blocked the download",
   timedOut: "Download timed out",
@@ -25,6 +26,7 @@ const VIDEO_REASONS: readonly string[] = [
   REASONS.private,
   REASONS.ageRestricted,
   REASONS.membersOnly,
+  REASONS.liveOrPaid,
   REASONS.geoBlocked,
 ];
 
@@ -67,6 +69,10 @@ const YTDLP_ERRORS: [RegExp, string][] = [
     REASONS.ageRestricted,
   ],
   [/members.?only|join this channel/i, REASONS.membersOnly],
+  [
+    /live event|premieres? in|will begin in|requires payment/i,
+    REASONS.liveOrPaid,
+  ],
   [
     /available in your country|geo.?restrict|blocked it in your country/i,
     REASONS.geoBlocked,

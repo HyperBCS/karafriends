@@ -56,8 +56,8 @@ export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
 };
 
 // What older versions wrote into a fresh config.yaml where nothing was set.
-// Read as empty, so the settings screen shows an empty field, not a fake
-// password.
+// Read (and imported) as empty, so the settings screen shows an empty field,
+// not a fake password.
 const PLACEHOLDERS: Partial<Record<keyof KarafriendsConfig, string>> = {
   damUsername: "YOUR_USERNAME_HERE",
   damPassword: "YOUR_PASSWORD_HERE",
@@ -68,31 +68,30 @@ const PLACEHOLDERS: Partial<Record<keyof KarafriendsConfig, string>> = {
   proxyPass: "PROXY_PASS_HERE",
 };
 
+// Empties, in place, each value that is its placeholder.
+export function clearPlaceholders(values: Record<string, unknown>): void {
+  for (const [key, placeholder] of Object.entries(PLACEHOLDERS)) {
+    if (values[key] === placeholder) values[key] = "";
+  }
+}
+
 // Keys older versions read, which no longer do anything. The admin password
 // replaced both: anyone can take a nickname, and device IDs were awkward to
 // collect.
 export const OBSOLETE_KEYS = ["adminDeviceIds", "adminNicks"] as const;
 
-// The config from a parsed config.yaml (anything YAML can hold): the
-// defaults, with the file's values over them. Obsolete keys are dropped, so
-// the write-back removes them, and named in `problems` with anything else
-// worth a log line.
-export function configFromFile(parsed: unknown): {
+// The config from a parsed config.yaml (a mapping, or null for an empty
+// file; configStore.ts sets anything else aside): the defaults, with the
+// file's values over them. Obsolete keys are dropped, so the write-back
+// removes them, and named in `problems` with anything else worth a log line.
+export function configFromFile(parsed: object | null | undefined): {
   config: KarafriendsConfig;
   problems: string[];
 } {
   const problems: string[] = [];
-  const isMapping =
-    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-  // An empty file parses as null.
-  if (!isMapping && parsed !== null && parsed !== undefined) {
-    problems.push("config.yaml isn't a list of settings; using the defaults");
-  }
-  const local: Record<string, unknown> = isMapping ? { ...parsed } : {};
+  const local: Record<string, unknown> = { ...parsed };
 
-  for (const [key, placeholder] of Object.entries(PLACEHOLDERS)) {
-    if (local[key] === placeholder) local[key] = "";
-  }
+  clearPlaceholders(local);
 
   const obsolete = OBSOLETE_KEYS.filter((key) => Object.hasOwn(local, key));
   for (const key of obsolete) delete local[key];
@@ -218,14 +217,12 @@ export const PROXY_KEYS: readonly ConfigKey[] = RESTART_KEYS.filter(
   (key) => key !== "remoconPort",
 );
 
-// Whether a login is filled in: both fields set, and neither the
-// placeholder config.yaml starts with.
+// Whether a login is filled in: both fields set. (Placeholders were read as
+// empty.)
 export function hasLogin(
   config: Pick<KarafriendsConfig, ConfigKey>,
   service: "dam" | "joysound",
 ): boolean {
   const keys = service === "dam" ? DAM_LOGIN_KEYS : JOYSOUND_LOGIN_KEYS;
-  return keys.every(
-    (key) => config[key] !== "" && config[key] !== DEFAULT_CONFIG[key],
-  );
+  return keys.every((key) => config[key] !== "");
 }

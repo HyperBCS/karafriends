@@ -31,7 +31,7 @@ import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
-import { adhocLyricsKey, type StateStore } from "./state";
+import { adhocLyricsKey, isDownloading, type StateStore } from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -47,7 +47,7 @@ export interface Caller {
 // An error the caller caused, with the HTTP status to answer with.
 export class ApiError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404,
+    readonly status: 400 | 403 | 404 | 409,
     message: string,
   ) {
     super(message);
@@ -537,6 +537,19 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         };
       }
 
+      // The download that's running would ignore this one, and its song
+      // queues as whoever started it. (A DAM song queues at once.)
+      if (
+        input.kind !== "dam" &&
+        isDownloading(store.getState().downloadQueue, {
+          kind: input.kind,
+          songId: input.songId,
+          suffix: input.kind === "joysound" ? input.youtubeVideoId : null,
+        })
+      ) {
+        return { ok: false, reason: "Someone is already adding this song" };
+      }
+
       const pushToHead = input.tryHeadOfQueue === true && isAdmin(caller);
       console.log(`queueSong: ${input.kind}, pushToHead=${pushToHead}`);
       const eta = queueEta();
@@ -744,7 +757,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     },
 
     async popSong(_input, caller) {
-      if (!isAdmin(caller)) {
+      // Not an admin's phone either: the song it took would never play.
+      if (!caller.isDisplay) {
         throw new ApiError(403, "Only the display starts the next song");
       }
       const song = store.update((state) => {
@@ -802,12 +816,10 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         throw new ApiError(400, "The display is always an admin");
       }
       if (config.adminPasswordHash === "") {
-        throw new ApiError(
-          403,
-          "The host hasn't set an admin password, so no phone can be an admin",
-        );
+        // Not 403, so the phone doesn't say "Wrong password".
+        throw new ApiError(409, "The host hasn't set an admin password");
       }
-      if (!isAdminPassword(password, config)) {
+      if (!(await isAdminPassword(password, config))) {
         throw new ApiError(403, "Wrong admin password");
       }
       console.log(`adminLogin: ${caller.nickname ?? "a phone"} signed in`);

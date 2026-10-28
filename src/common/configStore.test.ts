@@ -59,6 +59,38 @@ describe("createConfigStore at launch", () => {
     assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), broken);
   });
 
+  test("sets aside a file that isn't a list of settings too", () => {
+    for (const text of ["- damUsername: me\n", "just text\n"]) {
+      fs.writeFileSync(filePath, text);
+      const store = open();
+      assert.deepEqual(store.get(), DEFAULT_CONFIG);
+      assert.equal(fs.readFileSync(filePath, "utf8"), text);
+      assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), text);
+    }
+  });
+
+  test("an empty file is the defaults, written back", () => {
+    fs.writeFileSync(filePath, "");
+    assert.deepEqual(open().get(), DEFAULT_CONFIG);
+    assert.deepEqual(onDisk(), DEFAULT_CONFIG);
+    assert.equal(fs.existsSync(`${filePath}.broken`), false);
+  });
+
+  test("logs a parse error's line number, never the line", (t) => {
+    fs.writeFileSync(filePath, "damPassword: secret-pw\n  bad: [\n");
+    const logged: string[] = [];
+    for (const level of ["error", "warn", "log"] as const) {
+      t.mock.method(console, level, (...args: unknown[]) => {
+        logged.push(args.map(String).join(" "));
+      });
+    }
+    const warned = t.mock.method(process, "emitWarning", () => {});
+    open();
+    assert.match(logged.join("\n"), /\(line 1 isn't valid YAML\)/);
+    assert.doesNotMatch(logged.join("\n"), /secret-pw/);
+    assert.equal(warned.mock.callCount(), 0);
+  });
+
   test("KARAFRIENDS_REMOCON_PORT overrides the running port, not the file", () => {
     fs.writeFileSync(filePath, "remoconPort: 9000\n");
     const store = open({ KARAFRIENDS_REMOCON_PORT: "9123" });

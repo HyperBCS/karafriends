@@ -105,10 +105,9 @@ test.describe("live state", () => {
     const { token } = await login.json();
     expect(token).toMatch(/^[0-9a-f]{64}$/);
 
-    const eventsFor = async (deviceId?: string, adminToken?: string) => {
+    const eventsFor = async (deviceId?: string) => {
       const url = new URL("api/events", remoconUrl);
       if (deviceId) url.searchParams.set("deviceId", deviceId);
-      if (adminToken) url.searchParams.set("adminToken", adminToken);
       const text = await firstEvent(url);
       const { state } = JSON.parse(text);
       const songs = [state.currentSong, ...state.queue].filter(Boolean);
@@ -125,11 +124,8 @@ test.describe("live state", () => {
     expect(alice.mine).toEqual([title(1), title(2)]);
     expect((await eventsFor(BOB.deviceId)).mine).toEqual([title(3)]);
     expect((await eventsFor()).mine).toEqual([]);
-    // An admin sees the same.
-    const admin = await eventsFor(BOB.deviceId, token);
-    expect(admin.mine).toEqual([title(3)]);
     // No device IDs go out, nor anything of the admin password's.
-    for (const { text } of [alice, admin, await eventsFor()]) {
+    for (const { text } of [alice, await eventsFor()]) {
       expect(text).not.toContain(ALICE.deviceId);
       expect(text).not.toContain(BOB.deviceId);
       expect(text).not.toContain("deviceId");

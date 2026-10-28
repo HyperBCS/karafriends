@@ -278,6 +278,7 @@ test.describe("export, then import on a second launch", () => {
     expect(result).toEqual({
       ok: true,
       problems: [
+        "Phones signed in as admins must sign in again.",
         "No DAM login is set: enter the username and password first.",
         "No Joysound login is set: enter the email and password first.",
       ],
@@ -328,11 +329,5 @@ test.describe("@jp with the installed app's logins", () => {
     expect(await output(display, "testLogin", { service: "joysound" })).toEqual(
       { ok: true },
     );
-    // A wrong password is a plain no.
-    const wrong = await output(display, "testLogin", {
-      service: "joysound",
-      credentials: { username: "nobody@example.com", password: "wrong" },
-    });
-    expect(wrong.ok).toBe(false);
   });
 });

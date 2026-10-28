@@ -227,14 +227,14 @@ describe("GET /api/events", () => {
     assert.equal(subscribers, 0);
   });
 
-  test("tells the hub which device is watching, and its admin token", async () => {
+  test("tells the hub which device is watching", async () => {
     viewers.length = 0;
     for (const query of [
       "",
       `?deviceId=${encodeURIComponent("phone 1/ü")}`,
       "?deviceId=",
-      `?deviceId=p2&adminToken=${"cd".repeat(32)}`,
-      "?adminToken=&adminToken=x",
+      "?deviceId=p2",
+      "?deviceId=a&deviceId=b",
     ]) {
       const controller = new AbortController();
       const res = await fetch(`${base}/events${query}`, {
@@ -244,11 +244,11 @@ describe("GET /api/events", () => {
       controller.abort();
     }
     assert.deepEqual(viewers, [
-      { deviceId: null, adminToken: null },
-      { deviceId: "phone 1/ü", adminToken: null },
-      { deviceId: null, adminToken: null },
-      { deviceId: "p2", adminToken: "cd".repeat(32) },
-      { deviceId: null, adminToken: null },
+      { deviceId: null },
+      { deviceId: "phone 1/ü" },
+      { deviceId: null },
+      { deviceId: "p2" },
+      { deviceId: null },
     ]);
   });
 });
