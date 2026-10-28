@@ -43,6 +43,7 @@ export const ja: Messages = {
   "search.results": "検索結果",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
+  "search.songCount.one": "{count}曲",
   "search.failed": "{source}を検索できませんでした：{reason}",
   "search.moreFailed": "{source}の続きを読み込めませんでした：{reason}",
 
@@ -53,6 +54,7 @@ export const ja: Messages = {
   "song.removeBackground": "背景動画を外す",
 
   "video.views": "{count}回再生",
+  "video.views.one": "{count}回再生",
   "video.infoFailed": "動画の情報を取得できませんでした：{reason}",
   "video.niconicoSlow": "ニコニコの動画はダウンロードに時間がかかります。",
 

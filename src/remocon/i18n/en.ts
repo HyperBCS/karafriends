@@ -47,7 +47,9 @@ export const en = {
   "search.sourceButton": "Source: {source}",
   "search.results": "Results",
   "search.noResults": "No results found",
+  // A count's singular is its key with ".one" (countKey in index.ts).
   "search.songCount": "{count} songs",
+  "search.songCount.one": "{count} song",
   "search.failed": "Couldn't search {source}: {reason}",
   "search.moreFailed": "Couldn't load more from {source}: {reason}",
 
@@ -60,6 +62,7 @@ export const en = {
 
   // A video's page.
   "video.views": "{count} views",
+  "video.views.one": "{count} view",
   "video.infoFailed": "Couldn't get this video: {reason}",
   "video.niconicoSlow": "Niconico videos take a while to download.",
 

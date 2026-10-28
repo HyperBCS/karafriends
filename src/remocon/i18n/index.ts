@@ -80,6 +80,24 @@ export function t<K extends MessageKey>(key: K, ...vars: VarsArg<K>): string {
   return translate(current, key, ...vars);
 }
 
+// The keys with a singular form, "<key>.one": "{count} song" beside
+// "{count} songs". (Japanese has none, so its two are the same.)
+export type CountedKey = {
+  [K in MessageKey]: `${K}.one` extends MessageKey ? K : never;
+}[MessageKey];
+
+// The form of key for count in language: t(countKey("search.songCount", n),
+// { count: n }).
+export function countKey<K extends CountedKey>(
+  key: K,
+  count: number,
+  language: Language = current,
+): K | `${K}.one` {
+  return new Intl.PluralRules(language).select(count) === "one"
+    ? `${key}.one`
+    : key;
+}
+
 type LanguageState = {
   language: Language;
   setLanguage: (language: Language) => void;

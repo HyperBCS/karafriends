@@ -3,7 +3,7 @@ import React from "react";
 
 import type { Page } from "../../common/api";
 import { call } from "../../common/apiClient";
-import { t } from "../i18n";
+import { countKey, t } from "../i18n";
 import { rank } from "../rank";
 import Loader from "./Loader";
 import MoreButton from "./MoreButton";
@@ -98,7 +98,9 @@ const SearchResults = ({ query, by, source }: Props) => {
       title={<WithReading text={item.name} yomi={item.nameYomi} />}
       subtitle={
         item.songCount !== undefined
-          ? t("search.songCount", { count: item.songCount })
+          ? t(countKey("search.songCount", item.songCount), {
+              count: item.songCount,
+            })
           : item.artistName && (
               <WithReading text={item.artistName} yomi={item.artistNameYomi} />
             )

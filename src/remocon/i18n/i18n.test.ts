@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { en } from "./en";
-import { pickLanguage, translate } from "./index";
+import { countKey, pickLanguage, translate } from "./index";
 import { ja } from "./ja";
 
 const placeholders = (text: string) =>
@@ -41,6 +41,28 @@ describe("translate", () => {
     assert.equal(
       translate("ja", "queueButton.downloadingPercent", { percent: 42.6 }),
       "ダウンロード中 42.6%",
+    );
+  });
+});
+
+describe("countKey", () => {
+  test("picks English's singular for 1, and its plural for the rest", () => {
+    const songs = (count: number) =>
+      translate("en", countKey("search.songCount", count, "en"), { count });
+    assert.equal(songs(1), "1 song");
+    assert.equal(songs(0), "0 songs");
+    assert.equal(songs(2), "2 songs");
+    assert.equal(
+      translate("en", countKey("video.views", 1, "en"), { count: "1" }),
+      "1 view",
+    );
+  });
+
+  test("Japanese has one form", () => {
+    assert.equal(countKey("search.songCount", 1, "ja"), "search.songCount");
+    assert.equal(
+      translate("ja", countKey("search.songCount", 1, "ja"), { count: 1 }),
+      "1曲",
     );
   });
 });
