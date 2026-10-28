@@ -63,7 +63,7 @@
     "@types/youtube-player": "5.5.11",
     "@vitejs/plugin-react": "6.1.2",
     "cargo-cp-artifact": "0.1.9",
-    "electron": "43.4.1",
+    "electron": "45.1.0",
     "electron-vite": "6.0.0",
     "husky": "9.1.7",
     "lint-staged": "17.6.0",

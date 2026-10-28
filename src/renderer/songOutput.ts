@@ -3,7 +3,7 @@
 // input, an HDMI blip, a DAC unplugged), and used once it shows up when it
 // wasn't there at launch.
 //
-// Chromium (150, audio_context.cc) treats an explicitly chosen output that
+// Chromium (156, audio_context.cc) treats an explicitly chosen output that
 // leaves the device list as a render error: it fires 'error' and suspends
 // the context, and nothing but resume() runs it again. The video's sound
 // goes only through the context, so the video, the lyrics and the pitch

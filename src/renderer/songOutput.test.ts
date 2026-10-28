@@ -6,7 +6,7 @@ import { type SinkId, SongOutputKeeper } from "./songOutput";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Chromium 150's AudioContext as far as the song output goes
+// Chromium 156's AudioContext as far as the song output goes
 // (audio_context.cc): setSinkId suspends a running context while it
 // switches and runs it again after sinkchange; an id that isn't listed is
 // rejected; an explicitly chosen output that leaves the list fires 'error'
