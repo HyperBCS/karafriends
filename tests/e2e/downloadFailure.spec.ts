@@ -78,9 +78,13 @@ async function openVideo(remote: Page) {
     route.fulfill({ json: { ok: true, info: VIDEO_INFO } }),
   );
 
-  // An ID in the search box opens the video's page on Enter.
+  // An ID in the search box is searched for, with a row above the results
+  // that opens the video's page.
   await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
-  await remote.getByRole("searchbox", { name: "Search" }).press("Enter");
+  await remote
+    .getByRole("list", { name: "Open the video with this ID" })
+    .getByRole("link")
+    .click();
   await expect(
     remote.getByText(VIDEO_INFO.title, { exact: true }),
   ).toBeVisible();
