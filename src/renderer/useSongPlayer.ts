@@ -14,7 +14,7 @@ import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { damMelody, type Melody } from "./melody";
-import { lowBitrateFallback } from "./playback";
+import { lowBitrateFallback, songGain } from "./playback";
 import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
@@ -22,9 +22,6 @@ const POLL_INTERVAL_MS = 5 * 1000;
 // How often the display tells the server where the song is, besides on
 // every start, pause, stall and seek.
 const POSITION_REPORT_MS = 10 * 1000;
-// XXX: Another idea is to add some gain to the DAM videos?
-const DAM_GAIN = 1.0;
-const NON_DAM_GAIN = 0.8;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
@@ -127,12 +124,6 @@ export default function useSongPlayer({
     pollQueue();
   };
 
-  // Plays the video, once its source is set, at gain.
-  const play = (video: HTMLVideoElement, gain: number) => {
-    audio.gain(gain);
-    video.play();
-  };
-
   // Streams a DAM song from DAM, at the bitrate popSong says, and on its
   // third buffer stall moves to the low bitrate from where it is, for the
   // rest of the song. False if it can't, and has moved on to the next song.
@@ -225,7 +216,7 @@ export default function useSongPlayer({
       );
       if (!streamDam(video, song)) return;
     }
-    play(video, DAM_GAIN);
+    video.play();
   };
 
   const loadJoysound = async (
@@ -255,7 +246,6 @@ export default function useSongPlayer({
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
     setOverlay({ ...overlay, telop });
-    // At the gain the previous song left, as always.
     video.play();
   };
 
@@ -270,7 +260,7 @@ export default function useSongPlayer({
       trackRef.current.src = `karafriends://local/yt-${song.songId}.vtt`;
     }
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
-    play(video, song.gainValue);
+    video.play();
   };
 
   const loadNico = (
@@ -279,7 +269,7 @@ export default function useSongPlayer({
   ) => {
     setOverlay({ kind: "nico" });
     video.src = `karafriends://local/nico-${song.songId}.mp4`;
-    play(video, NON_DAM_GAIN);
+    video.play();
   };
 
   const startSong = useEffectEvent((song: PoppedSong | null) => {
@@ -299,6 +289,7 @@ export default function useSongPlayer({
     }
     setPitchShiftSemis(0);
     audio.setJoysoundMode(song.kind === "joysound");
+    audio.gain(songGain(song));
     hlsRef.current?.destroy();
     hlsRef.current = null;
     songRef.current = song;

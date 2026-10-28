@@ -1,4 +1,4 @@
-import type { PoppedDamSong } from "../common/api";
+import type { PoppedDamSong, PoppedSong } from "../common/api";
 
 // The display's own settings (Settings → Display), kept in its localStorage
 // like the mics, and the playback arithmetic that follows from them. Pure,
@@ -52,4 +52,25 @@ export function lowBitrateFallback(
 ): string | null {
   if (song.startWithLowBitrate || stalls !== STALLS_BEFORE_LOW) return null;
   return song.streamingUrls[song.streamingUrlIdx]?.low ?? null;
+}
+
+// The song's gain in the audio graph. Every song sets its own, so none plays
+// at the gain the one before it left. Joysound plays as DAM does; a YouTube
+// song's comes from YouTube's loudness figure (queueSong).
+// XXX: Another idea is to add some gain to the DAM videos?
+const DAM_GAIN = 1.0;
+const JOYSOUND_GAIN = 1.0;
+const NICO_GAIN = 0.8;
+
+export function songGain(song: PoppedSong): number {
+  switch (song.kind) {
+    case "dam":
+      return DAM_GAIN;
+    case "joysound":
+      return JOYSOUND_GAIN;
+    case "youtube":
+      return song.gainValue;
+    case "nico":
+      return NICO_GAIN;
+  }
 }
