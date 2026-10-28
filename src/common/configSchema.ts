@@ -80,24 +80,19 @@ const OBSOLETE_KEYS: Readonly<Record<string, string>> = {
 };
 
 // Deletes, in place, each obsolete key in values. Returns one note per
-// reason: the keys it dropped for it, as a list ("a, b and c"), and why.
+// reason: the keys it dropped for it ("a, b, c"), and why.
 export function dropObsoleteKeys(
   values: Record<string, unknown>,
 ): { keys: string; why: string }[] {
-  const byReason = new Map<string, string[]>();
-  for (const key of Object.keys(values)) {
-    if (!Object.hasOwn(OBSOLETE_KEYS, key)) continue;
-    const why = OBSOLETE_KEYS[key];
-    byReason.set(why, [...(byReason.get(why) ?? []), key]);
-    delete values[key];
+  const notes: { keys: string; why: string }[] = [];
+  for (const why of new Set(Object.values(OBSOLETE_KEYS))) {
+    const keys = Object.keys(values).filter(
+      (key) => OBSOLETE_KEYS[key] === why,
+    );
+    for (const key of keys) delete values[key];
+    if (keys.length > 0) notes.push({ keys: keys.join(", "), why });
   }
-  return [...byReason].map(([why, keys]) => ({
-    keys:
-      keys.length === 1
-        ? keys[0]
-        : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`,
-    why,
-  }));
+  return notes;
 }
 
 // The config from a parsed config.yaml (a mapping, or null for an empty

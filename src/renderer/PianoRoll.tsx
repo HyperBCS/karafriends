@@ -6,7 +6,7 @@ import React, { useEffect, useRef } from "react";
 
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
-import { drawTime } from "./playback";
+import { drawTime, pitchTime } from "./playback";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
 import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl?raw";
 import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl?raw";
@@ -439,6 +439,9 @@ export default function PianoRoll(props: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
+  // Read by draw() and pollPitch(), so an offset change keeps the trace.
+  const avOffsetMsRef = useRef(props.avOffsetMs);
+  avOffsetMsRef.current = props.avOffsetMs;
 
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
@@ -534,15 +537,18 @@ export default function PianoRoll(props: {
 
     function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
       if (!mic || !props.videoRef.current) return;
+      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
+        return;
+      }
       const { midiNumber, confidence } = mic.getPitch();
       if (
         confidence >= 0.8 &&
         midiNumber !== 0 &&
         !props.videoRef.current.paused
       ) {
-        const time = drawTime(
+        const time = pitchTime(
           props.videoRef.current.currentTime,
-          props.avOffsetMs,
+          avOffsetMsRef.current,
         );
         while (
           notes[currentNoteIndex].endTime < time &&
@@ -583,10 +589,16 @@ export default function PianoRoll(props: {
 
     const draw = () => {
       if (!canvasRef.current || !props.videoRef.current) return;
+      // No stream yet (the low-bitrate switch, before its seek): the time
+      // reads 0, so keep the last frame rather than flash the song's start.
+      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
+        animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+        return;
+      }
 
       const time = drawTime(
         props.videoRef.current.currentTime,
-        props.avOffsetMs,
+        avOffsetMsRef.current,
       );
       const canvasWidth = canvasRef.current.width;
 
@@ -651,7 +663,7 @@ export default function PianoRoll(props: {
         );
       }
     };
-  }, [props]);
+  }, [props.scoringData, props.mics, props.pitchShiftSemis, props.videoRef]);
 
   return <canvas className="pianoRollRoll" ref={canvasRef}></canvas>;
 }

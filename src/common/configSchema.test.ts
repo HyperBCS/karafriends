@@ -38,7 +38,7 @@ describe("configFromFile", () => {
       ),
     );
     assert.equal(problems.length, 1);
-    assert.match(problems[0], /Ignoring adminDeviceIds and adminNicks/);
+    assert.match(problems[0], /Ignoring adminDeviceIds, adminNicks/);
     assert.equal(config.damUsername, "me");
     assert.equal("adminDeviceIds" in config, false);
     assert.equal("adminNicks" in config, false);
@@ -62,7 +62,7 @@ describe("configFromFile", () => {
     assert.deepEqual(problems, [
       "Ignoring adminNicks in config.yaml (removed from the file): the " +
         "admin lists are gone. Phones become admins with the admin password.",
-      "Ignoring proxyEnable, proxyHost, proxyPort, proxyUser and proxyPass " +
+      "Ignoring proxyEnable, proxyHost, proxyPort, proxyUser, proxyPass " +
         "in config.yaml (removed from the file): karafriends no longer uses " +
         "a proxy. Outside Japan, run a VPN to Japan on this computer.",
     ]);

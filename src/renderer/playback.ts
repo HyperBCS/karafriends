@@ -33,6 +33,13 @@ export function drawTime(videoTime: number, offsetMs: number): number {
   return videoTime + Math.min(0, offsetMs) / 1000;
 }
 
+// The song's time the singer hears, in seconds, which the mic's pitch is
+// filed at: behind the video's by the offset either way (a plus offset
+// delays the sound, a minus one is sound that comes late).
+export function pitchTime(videoTime: number, offsetMs: number): number {
+  return videoTime - Math.abs(offsetMs) / 1000;
+}
+
 // The buffer stalls in one DAM song before it moves to the low bitrate.
 export const STALLS_BEFORE_LOW = 3;
 

@@ -9,6 +9,7 @@ import {
   audioDelay,
   drawTime,
   lowBitrateFallback,
+  pitchTime,
   savedChoice,
 } from "./playback";
 
@@ -47,6 +48,12 @@ describe("the audio/video offset", () => {
   test("zero changes nothing", () => {
     assert.equal(audioDelay(0), 0);
     assert.equal(drawTime(10, 0), 10);
+  });
+
+  test("the mic's pitch is filed at the song's time the singer hears", () => {
+    assert.equal(pitchTime(10, 200), 9.8);
+    assert.equal(pitchTime(10, -200), 9.8);
+    assert.equal(pitchTime(10, 0), 10);
   });
 });
 
