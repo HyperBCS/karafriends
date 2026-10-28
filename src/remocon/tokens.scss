@@ -4,8 +4,9 @@
 // remote comes from here (see the design brief in notes/PLAN-product.md).
 //
 // Use them in a module with `@use "<relative path>/tokens" as *;`. This file
-// emits no CSS by itself; index.scss puts the values on :root as custom
-// properties (--kf-*) with the mixins below.
+// emits no CSS by itself; index.scss puts the colors and shadows on :root as
+// custom properties (--kf-*) with the color mixins below. Sizes, spaces and
+// type are Sass values only.
 //
 // Colors come in two sets, a dark theme and a light one, chosen by
 // data-theme="dark" | "light" on <html> (theme.ts; without it, before
@@ -310,26 +311,4 @@ $kf-line-height: 1.35;
   line-height: 1.2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-// The other tokens as custom properties, for inline styles and anything
-// outside Sass; index.scss includes this under :root.
-@mixin custom-properties {
-  --kf-space-1: #{$kf-space-1};
-  --kf-space-2: #{$kf-space-2};
-  --kf-space-3: #{$kf-space-3};
-  --kf-space-4: #{$kf-space-4};
-  --kf-space-5: #{$kf-space-5};
-  --kf-space-6: #{$kf-space-6};
-  --kf-radius: #{$kf-radius};
-  --kf-radius-control: #{$kf-radius-control};
-  --kf-radius-card: #{$kf-radius-card};
-  --kf-radius-sheet: #{$kf-radius-sheet};
-  --kf-tap: #{$kf-tap};
-  --kf-font: #{$kf-font};
-  --kf-text-label: #{$kf-text-label};
-  --kf-text-body: #{$kf-text-body};
-  --kf-text-title: #{$kf-text-title};
-  --kf-text-control: #{$kf-text-control};
-  --kf-text-icon: #{$kf-text-icon};
 }

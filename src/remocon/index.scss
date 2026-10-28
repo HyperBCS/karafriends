@@ -4,7 +4,6 @@
 // is in light mode: so a light-mode phone's first frame is light, and an
 // explicit Dark stays dark.
 :root {
-  @include custom-properties;
   @include dark-colors;
   color-scheme: dark;
 }
