@@ -70,7 +70,11 @@ function savedMics(): InputDevice[] {
 
 function openSavedMics(): InputDevice[] {
   setOutputDevice(localStorage.getItem(MIC_OUTPUT_KEY));
-  const channelCounts = new Map(window.karafriends.nativeAudio.inputDevices());
+  const channelCounts = new Map(
+    window.karafriends.nativeAudio
+      .inputDevices()
+      .map(([id, , channels]) => [id, channels]),
+  );
   return readSavedMics()
     .filter(({ name, channel }) => channel < (channelCounts.get(name) ?? 0))
     .flatMap((mic) => {
@@ -179,7 +183,7 @@ function App(props: {
   useEffect(() => {
     const list: MicInfo[] = mics.map((mic) => ({
       id: micId(mic.name, mic.channelSelection),
-      label: `${mic.name}, channel ${mic.channelSelection + 1}`,
+      label: mic.label,
       ...(levels[micId(mic.name, mic.channelSelection)] ?? DEFAULT_LEVELS),
     }));
     sentMics.current = [...sentMics.current, levelsKey(list)].slice(-10);

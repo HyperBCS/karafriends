@@ -15,7 +15,7 @@ import {
   MicrophoneSetting,
   type MicLevels,
 } from "./MicrophoneSetting";
-import { InputDevice, outputDevices } from "./nativeAudio";
+import { asioStatus, InputDevice, outputDevices } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
 import "./Settings.css";
 
@@ -175,6 +175,7 @@ export default function Settings(props: {
   const [updatingTools, setUpdatingTools] = useState(false);
   // Listed each time Settings opens.
   const [outputs] = useState(outputDevices);
+  const [asio] = useState(asioStatus);
   // What the native side says about the output while the mics work ("ok:
   // <note>"): that the chosen one is missing or won't open, say.
   const micStatus = props.mics[0]?.status();
@@ -582,6 +583,7 @@ export default function Settings(props: {
               </select>
             </label>
           </div>
+          <p className="settingsNote">{asio}</p>
           {outputNote ? (
             <p className="settingsNote" role="status">
               {outputNote}

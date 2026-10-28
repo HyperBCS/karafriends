@@ -270,10 +270,10 @@ test.describe("D1, four queued", () => {
       .getByRole("region", { name: "Microphones" });
     await section
       .getByLabel("Add a microphone")
-      .selectOption("E2E Mic (Windows), channel 1");
+      .selectOption("E2E Mic (USB), channel 1");
     await section
       .getByLabel("Add a microphone")
-      .selectOption("E2E Interface (Windows), channel 2");
+      .selectOption("E2E Interface (USB), channel 2");
     await section.getByLabel("Gain 100%").first().fill("140");
     await section.getByLabel("Gain 140%").blur();
     await section.getByLabel("Mic output").selectOption("E2E Interface (ASIO)");

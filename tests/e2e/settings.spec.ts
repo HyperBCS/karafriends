@@ -256,13 +256,17 @@ test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
 
+  // The fake inputs' ids (what is saved, opened and sent) and labels (what
+  // shows), as on Windows: an endpoint id, and the device's name.
+  const MIC_DEVICE = "{0.0.1.00000000}.{e2e-mic} (USB)";
+  const INTERFACE_DEVICE = "{0.0.1.00000000}.{e2e-interface} (USB)";
   const MIC = {
-    id: "E2E Mic (Windows)#0",
-    label: "E2E Mic (Windows), channel 1",
+    id: `${MIC_DEVICE}#0`,
+    label: "E2E Mic (USB), channel 1",
   };
   const INTERFACE = {
-    id: "E2E Interface (Windows)#1",
-    label: "E2E Interface (Windows), channel 2",
+    id: `${INTERFACE_DEVICE}#1`,
+    label: "E2E Interface (USB), channel 2",
   };
 
   // An admin's phone: signs in, then calls setMicLevels with each body.
@@ -301,8 +305,18 @@ test.describe("the microphones", () => {
     ).toHaveCount(0);
     expect(await phoneMics()).toEqual([]);
 
-    // Add the first, and turn it up.
+    // Every channel shows by its device's name, and the ASIO line says
+    // what ASIO has.
     const add = section.getByLabel("Add a microphone");
+    await expect(add.locator("option")).toHaveText([
+      "Select a microphone",
+      "E2E Mic (USB), channel 1",
+      "E2E Interface (USB), channel 1",
+      "E2E Interface (USB), channel 2",
+    ]);
+    await expect(section.getByText("ASIO: E2E Interface")).toBeVisible();
+
+    // Add the first, and turn it up.
     await add.selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
@@ -313,7 +327,7 @@ test.describe("the microphones", () => {
     await expect.poll(phoneMics).toEqual([{ ...MIC, gain: 150, echo: 25 }]);
     expect(await fakeAudioCalls(display)).toEqual(
       expect.arrayContaining([
-        ["inputDevice_new", "E2E Mic (Windows)", 0],
+        ["inputDevice_new", MIC_DEVICE, 0],
         ["inputDevice_setGain", 0, 1.5],
         ["inputDevice_setEcho", 0, 0.25],
       ]),
@@ -390,7 +404,7 @@ test.describe("the microphones", () => {
         localStorage.getItem("micOutput"),
       ]),
     ).toEqual([
-      [{ name: "E2E Interface (Windows)", channel: 1, gain: 50, echo: 10 }],
+      [{ name: INTERFACE_DEVICE, channel: 1, gain: 50, echo: 10 }],
       "E2E Interface (ASIO)",
     ]);
     await display.reload();
@@ -400,7 +414,7 @@ test.describe("the microphones", () => {
     expect(calls).toEqual(
       expect.arrayContaining([
         ["setOutputDevice", "E2E Interface (ASIO)"],
-        ["inputDevice_new", "E2E Interface (Windows)", 1],
+        ["inputDevice_new", INTERFACE_DEVICE, 1],
         ["inputDevice_setGain", 0, 0.5],
       ]),
     );
@@ -483,12 +497,12 @@ test.describe("the microphones", () => {
     ).toBeNull();
   });
 
+  // Saved by the id, as before the labels: it opens and shows its label.
   test("old saved mics get the default levels", async ({ display }) => {
-    await display.evaluate(() =>
-      localStorage.setItem(
-        "mics",
-        JSON.stringify([{ name: "E2E Mic (Windows)", channel: 0 }]),
-      ),
+    await display.evaluate(
+      (name) =>
+        localStorage.setItem("mics", JSON.stringify([{ name, channel: 0 }])),
+      MIC_DEVICE,
     );
     await display.reload();
     const mic = display

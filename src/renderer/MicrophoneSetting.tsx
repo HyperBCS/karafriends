@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 
 import "./global";
-import { InputDevice } from "./nativeAudio";
+import { channelLabel, InputDevice } from "./nativeAudio";
 
 // A mic's levels, in percent: gain 0 to 200, echo (the reverb) 0 to 100.
 export interface MicLevels {
@@ -13,7 +13,8 @@ export interface MicLevels {
 // nativeAudio.ts checks every 2 s).
 const STATUS_MS = 2000;
 
-// The device select: every channel of every input device.
+// The device select: every channel of every input device, by its label;
+// the option's data carries the id.
 function DeviceSelect(props: {
   label: string;
   mic: InputDevice | null;
@@ -36,7 +37,7 @@ function DeviceSelect(props: {
         </option>
         {window.karafriends.nativeAudio
           .inputDevices()
-          .map(([name, channelCount]) =>
+          .map(([name, label, channelCount]) =>
             [...Array(channelCount)].map((_, channel) => (
               <option
                 key={`${name}_${channel}`}
@@ -44,7 +45,7 @@ function DeviceSelect(props: {
                 data-channel={channel}
                 value={`${name}_${channel}`}
               >
-                {`${name}, channel ${channel + 1}`}
+                {channelLabel(label, channel)}
               </option>
             )),
           )}
@@ -91,10 +92,8 @@ export function MicrophoneSetting(props: {
     const timer = setInterval(() => setTick((tick) => tick + 1), STATUS_MS);
     return () => clearInterval(timer);
   }, []);
-  const label = `${mic.name}, channel ${mic.channelSelection + 1}`;
-
   return (
-    <div className="settingsMic" role="group" aria-label={label}>
+    <div className="settingsMic" role="group" aria-label={mic.label}>
       <div className="settingsMicRow">
         <DeviceSelect label="Microphone" mic={mic} onChange={props.onChange} />
         <LevelSlider
