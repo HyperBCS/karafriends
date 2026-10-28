@@ -465,7 +465,12 @@ const DevUiPage = () => {
       <Section title="Sheet">
         <div className={styles.bleed}>
           <Demo state="collapsed">
-            <Sheet label={t("sheet.nowPlaying")} header={nowPlaying}>
+            <Sheet
+              label={t("sheet.nowPlaying")}
+              header={nowPlaying}
+              expanded={false}
+              onExpandedChange={noop}
+            >
               <List label={t("queue.label")}>
                 <QueueRows />
               </List>
