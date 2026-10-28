@@ -15,7 +15,6 @@ import type {
   JoysoundQueueItem,
   NicoQueueItem,
   NicoVideoInfo,
-  PoppedDamSong,
   PoppedSong,
   QueueItem,
   UserIdentity,
@@ -24,11 +23,18 @@ import type {
   YoutubeVideoInfo,
 } from "../common/api";
 import { isAdminPassword } from "../common/adminPassword";
-import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
+import {
+  isToolProblem,
+  REASONS,
+  TOOLS_PROBLEM,
+  ytdlpFailureReason,
+} from "../common/downloadFailure";
+import { isNicoVideoId } from "../common/nicoVideoInfo";
 import type { KarafriendsConfig } from "../common/config";
 import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
+import { NoLoginError } from "./credentials";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
@@ -37,9 +43,11 @@ import type { SettingsMethod } from "./settings";
 import {
   currentSongSecondsLeft,
   isDownloading,
+  MAX_HISTORY,
   type PendingSong,
   type StateStore,
 } from "./state";
+import { withTimeout } from "./timeout";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -154,16 +162,6 @@ export interface ApiDeps {
 // song without scoring data still plays.
 const DAM_POP_TIMEOUT_MS = 10_000;
 
-// promise's outcome, or a rejection after ms. (promise carries on, but its
-// outcome is ignored.)
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
 // The most adhoc lyrics one song can show (pushAdhocLyrics). Every live-state
 // event carries them all, to every phone, so they must stay small. A singer
 // sends a few dozen lines; these leave room to go round a song again.
@@ -182,8 +180,13 @@ const totalLength = (lines: readonly string[]) =>
 // worth a new live state for every phone every 10 seconds.
 const POSITION_SLACK_MS = 500;
 
-// Song and video IDs end up in file names and yt-dlp arguments.
+// Song and video IDs end up in file names and yt-dlp arguments. (queueSong's
+// are checked by its validator.)
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// nicoInfo's answer for an ID that isn't a Niconico video's. The remote
+// says it in the phone's language (src/remocon/i18n/reasons.ts).
+const NICO_INFO_FAILED = "Failed getting video info. Maybe an invalid VideoID?";
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
@@ -329,14 +332,16 @@ export function createApi(
     deps.publish({ type: "queueAdded", item });
   };
 
-  // Tells item's phone (and the display) that it won't be queued.
+  // Tells the display that item won't be queued (or, for a DAM song, play
+  // its download).
   const queueFailed = (item: QueueItem) => (reason: string) => {
     console.log(`queueFailed: ${item.kind} ${item.songId}: ${reason}`);
     deps.publish({ type: "queueFailed", item, reason });
   };
 
-  // YouTube and Niconico downloads run yt-dlp: one that fails because of it
-  // sets the tools problem the display shows, and one that works clears it.
+  // YouTube and Niconico downloads, and Joysound songs' YouTube backgrounds,
+  // run yt-dlp: one that fails because of it sets the tools problem the
+  // display shows, and one that works clears it.
   const ytdlpWorked = () => {
     if (store.getState().toolsProblem) {
       store.update((state) => {
@@ -372,11 +377,18 @@ export function createApi(
           pushToHead,
           (ready, toHead) => {
             done();
+            if (item.youtubeVideoId !== null) ytdlpWorked();
             pushSongToQueue(ready, toHead);
           },
           (reason) => {
             done();
-            queueFailed(item)(reason);
+            // A YouTube background runs yt-dlp, which counts as a YouTube
+            // song's does; Joysound's own failure doesn't.
+            if (item.youtubeVideoId !== null && reason !== REASONS.joysound) {
+              ytdlpFailed(item)(reason);
+            } else {
+              queueFailed(item)(reason);
+            }
           },
         );
         break;
@@ -652,15 +664,37 @@ export function createApi(
       };
     },
 
+    // ok: false only when the answer is about the video (no such ID, or
+    // yt-dlp says it's gone, private or blocked here): the phone keeps that
+    // answer for a while. Anything else (yt-dlp broken or slow, too many
+    // lookups at once) is an error, which the phone offers to try again.
     async nicoInfo({ videoId }) {
+      if (!isNicoVideoId(videoId)) {
+        return { ok: false, reason: NICO_INFO_FAILED };
+      }
       try {
         return { ok: true, info: await deps.getNicoVideoInfo(videoId) };
-      } catch (e) {
-        console.error(`Failed getting Niconico info for ${videoId}:`, e);
-        return {
-          ok: false,
-          reason: "Failed getting video info. Maybe an invalid VideoID?",
-        };
+      } catch (err) {
+        console.error(`Failed getting Niconico info for ${videoId}:`, err);
+        const failure = err as { stderr?: unknown; killed?: boolean } | null;
+        if (failure?.killed) {
+          throw new Error(
+            "Couldn't get the video's details: Niconico took too long. Try again.",
+            { cause: err },
+          );
+        }
+        if (typeof failure?.stderr === "string") {
+          const reason = ytdlpFailureReason(failure.stderr);
+          if (!isToolProblem(reason)) return { ok: false, reason };
+          throw new Error(
+            "Couldn't get the video's details: the downloader failed. Try again, or Update tools in the TV's Settings.",
+            { cause: err },
+          );
+        }
+        throw new Error(
+          `Couldn't get the video's details: ${(err as Error)?.message ?? err}`,
+          { cause: err },
+        );
       }
     },
 
@@ -677,23 +711,18 @@ export function createApi(
       const { songHistory } = store.getState();
       return {
         // Without device IDs, like the live state.
-        items: songHistory
-          .slice(offset, offset + limit)
-          .map((entry) => shareQueueItem(entry.song, caller.deviceId)),
+        items: songHistory.slice(offset, offset + limit).map((entry) => ({
+          ...shareQueueItem(entry.song, caller.deviceId),
+          playedAt: entry.playedAt,
+        })),
         nextOffset: nextOffset(offset, limit, songHistory.length),
       };
     },
 
     async queueSong(input, caller) {
+      // Its song and video IDs are safe for file names and yt-dlp: the
+      // validator (validate.ts) let only those through.
       const user = requireIdentity(caller);
-      if (
-        !SONG_ID.test(input.songId) ||
-        (input.kind === "joysound" &&
-          input.youtubeVideoId !== null &&
-          !SONG_ID.test(input.youtubeVideoId))
-      ) {
-        throw new ApiError(400, "Invalid song ID");
-      }
 
       if (hasMaxSongsInQueue(user, caller)) {
         return {
@@ -756,12 +785,14 @@ export function createApi(
                 queueFailed(item),
               );
             })
-            .catch((err) =>
-              console.error(
-                `Failed to start the download of DAM song ${item.songId}:`,
-                err,
-              ),
-            );
+            .catch((err) => {
+              const what = `Not downloading DAM song ${item.songId}`;
+              if (err instanceof NoLoginError) {
+                console.warn(`${what}: ${err.message}`);
+              } else {
+                console.error(`${what}:`, err);
+              }
+            });
           pushSongToQueue(item, pushToHead);
           break;
         }
@@ -848,19 +879,26 @@ export function createApi(
       });
     },
 
-    async moveSong({ songId, timestamp, toIndex }, caller) {
+    async moveSong({ song, before, toIndex }, caller) {
       if (!isAdmin(caller)) {
         throw new ApiError(403, "Only an admin can reorder the queue");
       }
       return store.update((state) => {
         const from = state.songQueue.findIndex(
-          (item) => item.songId === songId && item.timestamp === timestamp,
+          (item) => songKey(item) === song,
         );
         // The song may already be playing or removed by another phone.
         if (from === -1) return { ok: false };
         const [item] = state.songQueue.splice(from, 1);
+        // In front of the song the phone put it before, wherever that is
+        // now: songs above may have started or gone since the phone's
+        // view. At toIndex if that one has gone too.
+        const at =
+          before === null
+            ? state.songQueue.length
+            : state.songQueue.findIndex((other) => songKey(other) === before);
         // splice puts it at the end if toIndex is past it.
-        state.songQueue.splice(toIndex, 0, item);
+        state.songQueue.splice(at === -1 ? toIndex : at, 0, item);
         return { ok: true };
       });
     },
@@ -941,13 +979,17 @@ export function createApi(
       if (!isAdmin(caller)) {
         throw new ApiError(403, "Only an admin can change the mics");
       }
-      return store.update((state) => {
-        const mic = state.mics.find((m) => m.id === id);
-        if (!mic) return false;
-        if (gain !== undefined) mic.gain = gain;
-        if (echo !== undefined) mic.echo = echo;
-        return true;
+      if (!store.getState().mics.some((mic) => mic.id === id)) return false;
+      // The display owns the levels: it applies just the ones given (so a
+      // change the host is making to the other stands), and its setMics
+      // then shows them to the phones.
+      deps.publish({
+        type: "micLevels",
+        id,
+        ...(gain !== undefined && { gain }),
+        ...(echo !== undefined && { echo }),
       });
+      return true;
     },
 
     async pushAdhocLyrics({ lyricIndex, song }, caller) {
@@ -1030,6 +1072,20 @@ export function createApi(
       if (!caller.isDisplay) {
         throw new ApiError(403, "Only the display starts the next song");
       }
+      // The idle display asks every 5 seconds: with nothing to start and
+      // nothing to clear, don't save (and serialize) the state each time.
+      const before = store.getState();
+      if (
+        before.currentSong === null &&
+        before.songQueue.length === 0 &&
+        before.playbackState === "WAITING" &&
+        before.currentSongStartedAt === null &&
+        before.currentSongPausedSince === null &&
+        before.currentSongLength === null &&
+        before.currentSongAdhocLyrics.length === 0
+      ) {
+        return null;
+      }
       const song = store.update((state) => {
         const skipping = state.playbackState === "SKIPPING";
         // WAITING until the display has loaded the song and says PLAYING:
@@ -1067,7 +1123,8 @@ export function createApi(
             last.songId !== next.songId ||
             last.timestamp !== next.timestamp
           ) {
-            state.songHistory.unshift({ song: next });
+            state.songHistory.unshift({ song: next, playedAt: now() });
+            state.songHistory.splice(MAX_HISTORY);
           }
         }
         return next;
@@ -1079,20 +1136,35 @@ export function createApi(
       // and the song has already started, so neither may hold it up for long
       // or fail it.
       const timeoutMs = deps.damPopTimeoutMs ?? DAM_POP_TIMEOUT_MS;
+      // No DAM login is the host's choice, not a failure: one line for it.
+      let noLogin: NoLoginError | null = null;
+      const failed = (what: string) => (err: unknown) => {
+        if (err instanceof NoLoginError) {
+          noLogin = err;
+        } else {
+          console.error(`No ${what} for ${song.songId}:`, err);
+        }
+        return [];
+      };
       const [urls, scoringData] = await Promise.all([
-        withTimeout(streamingUrls(song.songId), timeoutMs).catch(
-          (err): PoppedDamSong["streamingUrls"] => {
-            console.error(`No streaming URLs for ${song.songId}:`, err);
-            return [];
-          },
-        ),
-        withTimeout(deps.minsei.getScoringData(song.songId), timeoutMs)
+        withTimeout(
+          streamingUrls(song.songId),
+          timeoutMs,
+          "DAM's streaming URLs",
+        ).catch(failed("streaming URLs")),
+        withTimeout(
+          deps.minsei.getScoringData(song.songId),
+          timeoutMs,
+          "DAM's scoring data",
+        )
           .then((data) => Array.from(new Uint8Array(data)))
-          .catch((err): number[] => {
-            console.error(`No scoring data for ${song.songId}:`, err);
-            return [];
-          }),
+          .catch(failed("scoring data")),
       ]);
+      if (noLogin) {
+        console.warn(
+          `${song.songId} plays without streaming URLs or scoring data: ${(noLogin as NoLoginError).message}`,
+        );
+      }
       const popped: PoppedSong = {
         ...song,
         streamingUrls: urls,
@@ -1115,7 +1187,13 @@ export function createApi(
         // Not 403, so the phone doesn't say "Wrong password".
         throw new ApiError(409, "The host hasn't set an admin password");
       }
+      const hash = config.adminPasswordHash;
       if (!(await isAdminPassword(password, config))) {
+        throw new ApiError(403, "Wrong admin password");
+      }
+      // The host set a new password while this was hashed, which ended
+      // every session: this one mustn't outlive it.
+      if (config.adminPasswordHash !== hash) {
         throw new ApiError(403, "Wrong admin password");
       }
       console.log(`adminLogin: ${caller.nickname ?? "a phone"} signed in`);

@@ -4,7 +4,8 @@
 // Everything that changes the state goes through update(), which saves it and
 // tells the listeners. The one exception is downloadQueue, which
 // src/main/downloads changes in place (with the helpers below) as downloads
-// start, progress, finish and fail.
+// start, progress, finish and fail, several times a second, without a save
+// each time: the live hub polls it instead (watchDownloads in live.ts).
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { EventEmitter } from "events";
@@ -142,7 +143,14 @@ function sameDownload(
 
 export interface HistoryItem {
   song: QueueItem;
+  // When it started (ms since the epoch); null for a song sung before this
+  // was kept.
+  playedAt: number | null;
 }
+
+// The most songs the history keeps, newest first: a long run of parties,
+// and every state change saves it all to queue.json.
+export const MAX_HISTORY = 1000;
 
 // A YouTube, Niconico or Joysound song whose download is running: it joins
 // the queue once that's done (queueSong), with what came with it. Saved, so
@@ -190,6 +198,12 @@ export interface State {
   // (isToolProblem), cleared when one works or the tools are updated. Not
   // saved.
   toolsProblem: { message: string; since: number } | null;
+  // Why phones can't connect (the remote's server couldn't listen), as a
+  // sentence for the display. Not saved.
+  remoconProblem: string | null;
+  // How many times this launch every admin phone was signed out (the admin
+  // password changed). Not saved.
+  adminSignOuts: number;
 }
 
 export interface StateStore {
@@ -239,6 +253,8 @@ export function emptyState(): State {
     downloadQueue: [],
     songHistory: [],
     toolsProblem: null,
+    remoconProblem: null,
+    adminSignOuts: 0,
   };
 }
 
@@ -293,11 +309,11 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json: the queue, with the current song at its head so
 // that after a restart it plays again from the start, the queued songs' adhoc
-// lyrics, the songs still downloading (to download again), the history and
-// the guide melody level. Everything else starts over: nothing plays
+// lyrics, the songs still downloading (to download again), the history (its
+// newest MAX_HISTORY) and the guide melody level. Everything else starts over: nothing plays
 // (WAITING, until the display takes the first song), and the download
 // queue, pitch, pushed lines, the song's timing, the song volume, the mics
-// and the tools problem are a launch's own.
+// and the two problems are a launch's own.
 export function serializeState(state: Readonly<State>): string {
   return JSON.stringify({
     songQueue: state.currentSong
@@ -305,7 +321,7 @@ export function serializeState(state: Readonly<State>): string {
       : state.songQueue,
     idToAdhocLyrics: state.idToAdhocLyrics,
     pendingSongs: state.pendingSongs,
-    songHistory: state.songHistory,
+    songHistory: state.songHistory.slice(0, MAX_HISTORY),
     guideMelodyLevel: state.guideMelodyLevel,
   });
 }
@@ -335,9 +351,8 @@ export function loadState(filePath: string): State {
 }
 
 // Builds a State from a parsed queue.json (serializeState), keeping whatever
-// is valid. Reads the GraphQL-shaped items older versions saved too
-// (`__typename` and `userIdentity` instead of `kind` and `user`), and drops
-// the null they saved at the head of the queue when nothing was playing. A
+// is valid, from 0.1.0 on. (Items from before it, GraphQL-shaped with
+// `__typename` and `userIdentity`, are dropped, each with a warning.) A
 // current song in the file (none has saved one, but in case) goes at the
 // head of the queue.
 export function parseState(raw: Record<string, unknown>): State {
@@ -347,17 +362,19 @@ export function parseState(raw: Record<string, unknown>): State {
   if (current) state.songQueue.unshift(current);
   state.songHistory = parseList(raw.songHistory, (entry) => {
     const song = isObject(entry) ? parseQueueItem(entry.song) : null;
-    return song ? { song } : null;
-  });
+    if (!song) return null;
+    const playedAt = (entry as Record<string, unknown>).playedAt;
+    return { song, playedAt: typeof playedAt === "number" ? playedAt : null };
+  }).slice(0, MAX_HISTORY);
   // Only the lyrics of songs still queued: older versions kept those of
-  // songs that never played. And they saved them by video ID.
+  // songs that never played.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
-  const saved = (key: string) =>
-    Object.hasOwn(savedLyrics, key) ? savedLyrics[key] : undefined;
   for (const item of state.songQueue) {
     if (item.kind !== "youtube" || !item.hasAdhocLyrics) continue;
     const key = songKey(item);
-    const lyrics = saved(key) ?? saved(item.songId);
+    const lyrics = Object.hasOwn(savedLyrics, key)
+      ? savedLyrics[key]
+      : undefined;
     if (Array.isArray(lyrics)) {
       state.idToAdhocLyrics[key] = lyrics.filter(
         (line): line is string => typeof line === "string",
@@ -371,13 +388,6 @@ export function parseState(raw: Record<string, unknown>): State {
   }
   return state;
 }
-
-const KIND_BY_TYPENAME: Record<string, QueueItemKind> = {
-  DamQueueItem: "dam",
-  JoysoundQueueItem: "joysound",
-  YoutubeQueueItem: "youtube",
-  NicoQueueItem: "nico",
-};
 
 function parsePendingSong(raw: unknown): PendingSong | null {
   if (!isObject(raw)) return null;
@@ -402,11 +412,7 @@ function parsePendingSong(raw: unknown): PendingSong | null {
 
 function parseQueueItem(raw: unknown): QueueItem | null {
   if (!isObject(raw)) return null;
-  const kind =
-    typeof raw.kind === "string"
-      ? raw.kind
-      : KIND_BY_TYPENAME[raw.__typename as string];
-  const user = isObject(raw.user) ? raw.user : raw.userIdentity;
+  const { kind, user } = raw;
   if (
     typeof raw.songId !== "string" ||
     typeof raw.name !== "string" ||

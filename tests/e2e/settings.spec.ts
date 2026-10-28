@@ -1176,7 +1176,7 @@ test.describe("the microphones", () => {
     ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
   });
 
-  test("an admin's return to an earlier level lands; two mics changed at once both land", async ({
+  test("an admin's levels reach the display as given: back to an earlier level, two mics at once, one level of two", async ({
     karafriends,
     display,
   }) => {
@@ -1196,8 +1196,7 @@ test.describe("the microphones", () => {
         )
         .at(-1)?.[2];
 
-    // 100 → 150 → 100: the display's own list at 100 went out before, and
-    // the second change must not be taken for it coming back.
+    // 100 → 150 → 100: each one lands.
     await adminSetsMicLevels(karafriends.remoconUrl, { id: MIC.id, gain: 150 });
     await expect(mic.getByLabel("Gain 150%")).toBeVisible();
     await adminSetsMicLevels(karafriends.remoconUrl, { id: MIC.id, gain: 100 });
@@ -1222,6 +1221,19 @@ test.describe("the microphones", () => {
         ),
       )
       .toEqual([120, 80]);
+
+    // The host turns the mic's echo down here as an admin sets its gain:
+    // the admin's gain lands, and the host's echo stays.
+    await mic.getByLabel("Echo 40%").fill("15");
+    await adminSetsMicLevels(karafriends.remoconUrl, { id: MIC.id, gain: 90 });
+    await expect(mic.getByLabel("Gain 90%")).toBeVisible();
+    await expect(mic.getByLabel("Echo 15%")).toBeVisible();
+    await expect
+      .poll(async () => (await phoneLiveState(karafriends.remoconUrl)).mics)
+      .toEqual([
+        { ...MIC, gain: 90, echo: 15 },
+        { ...INTERFACE, gain: 80, echo: 40 },
+      ]);
   });
 
   test("a saved mic output that isn't connected says so; System default clears it", async ({

@@ -132,6 +132,10 @@ type Shared<Item> = Item extends QueueItem
 // A queue item as the live state and history show it.
 export type SharedQueueItem = Shared<QueueItem>;
 
+// A song in the history: as the queue showed it, and when it started (ms
+// since the epoch; null for one sung before that was kept).
+export type PlayedSong = SharedQueueItem & { playedAt: number | null };
+
 // What popSong hands the display. A DAM song comes with what the display needs
 // to play and score it, as far as DAM answered in time: either list may be
 // empty.
@@ -255,20 +259,32 @@ export interface LiveState {
   config: { supervisedMode: boolean; everyoneIsAdmin: boolean };
   // ToolsStatus's problem, for the display's notice. Phones ignore it.
   toolsProblem: string | null;
+  // Why phones can't connect (the server couldn't listen: "Phones can't
+  // connect: port 8080 is in use..."), for the display's notice too.
+  remoconProblem: string | null;
+  // Goes up each time the host's new admin password signs every phone out:
+  // a phone signed in asks whoami again, and signs out.
+  adminSignOuts: number;
 }
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"
 // event comes first on every (re)connect, and again whenever the state
 // changes (at most about 4 a second). Its sentAt is the server's clock when
 // it was made (ms since the epoch), so a phone can tell how far off its own
-// clock is.
+// clock is. A "downloads" event comes when only the downloads changed (their
+// progress, mostly, several times a second): the state's downloads are now
+// these. The other events are the display's only.
 export type LiveEvent =
   | { type: "state"; state: LiveState; sentAt: number }
+  | { type: "downloads"; downloads: DownloadProgress[] }
   | { type: "emote"; emote: string; user: PublicUser }
   | { type: "queueAdded"; item: SharedQueueItem }
-  // A song's download failed, so it won't join the queue. Only the phone
-  // that queued it and the display hear about it.
-  | { type: "queueFailed"; item: SharedQueueItem; reason: string };
+  // A song's download failed, so it won't join the queue. (The phone that
+  // queued it sees the failure in the state's downloads.)
+  | { type: "queueFailed"; item: SharedQueueItem; reason: string }
+  // An admin's setMicLevels, with just the levels it gave. The display
+  // applies them, and its setMics shows them to the phones.
+  | { type: "micLevels"; id: string; gain?: number; echo?: number };
 
 export type LiveEventType = LiveEvent["type"];
 
@@ -431,8 +447,8 @@ export interface Api {
   };
   // A YouTube song's adhoc lyrics, null if it has none.
   adhocLyrics: { input: { songId: string }; output: string[] | null };
-  // Newest first.
-  history: { input: PageInput; output: Page<SharedQueueItem> };
+  // Newest first: the last 1,000 songs sung.
+  history: { input: PageInput; output: Page<PlayedSong> };
 
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and
@@ -446,12 +462,15 @@ export interface Api {
     input: { songId: string; timestamp: string };
     output: boolean;
   };
-  // Moves a queued song to position toIndex in the queue (after the current
-  // song): 0 is "move to top", and past the end is the end. For admins only,
-  // in supervised mode or not. ok is false if the song isn't in the queue
-  // (any more).
+  // Moves a queued song (song: its songKey, songId@timestamp) in front of
+  // the song before names (its songKey), or to the end for null: where the
+  // phone put it, even if songs above have started or gone since its view.
+  // If before isn't queued any more, to position toIndex in the queue
+  // (after the current song; past the end is the end). For admins only, in
+  // supervised mode or not. ok is false if the song isn't in the queue (any
+  // more).
   moveSong: {
-    input: { songId: string; timestamp: string; toIndex: number };
+    input: { song: string; before: string | null; toIndex: number };
     output: { ok: boolean };
   };
   // The commands that act on the current song (setPlaybackState,

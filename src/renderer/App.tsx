@@ -196,24 +196,17 @@ function savedLevels(): Record<string, MicLevels> {
   );
 }
 
-// A mic list's levels as one string, to tell this display's own setMics
-// lists in the live state from an admin's setMicLevels.
-function levelsKey(mics: MicInfo[]): string {
-  return mics.map(({ id, gain, echo }) => `${id}:${gain}:${echo}`).join("|");
-}
-
 function App(props: { audio: KarafriendsAudio }) {
   const [mics, _setMics] = useState(savedMics);
   // Apart from the devices, so the piano roll keeps its mics (and what they
   // sang) while a level changes. By micId.
   const [levels, setLevels] = useState(savedLevels);
+  // The latest levels, which changeLevels builds on: two admins'
+  // setMicLevels can come before a render.
+  const latestLevels = useRef(levels);
   const [micOutput, setMicOutput] = useState(savedMicOutput);
   const [micMode, setMicModeState] = useState(savedMicMode);
   const [songOutput, setSongOutput] = useState(savedSongOutput);
-  // The mic lists this display sent with setMics lately, as levelsKey.
-  const sentMics = useRef<string[]>([]);
-  const seenLiveMics = useRef<MicInfo[] | undefined>(undefined);
-  const liveMics = useLiveState((state) => state?.mics);
   const [avOffsetMs, setAvOffsetMs] = useState(() =>
     savedChoice(localStorage.getItem(AV_OFFSET_KEY), AV_OFFSETS, 0),
   );
@@ -271,7 +264,8 @@ function App(props: { audio: KarafriendsAudio }) {
   // New levels for some mics, by micId: on their devices (and any other row
   // on the same channel), and saved, all in one update.
   const changeLevels = (changes: Record<string, MicLevels>) => {
-    const allLevels = { ...levels, ...changes };
+    const allLevels = { ...latestLevels.current, ...changes };
+    latestLevels.current = allLevels;
     for (const mic of mics) {
       const newLevels = changes[idOf(mic)];
       if (!newLevels) continue;
@@ -289,36 +283,17 @@ function App(props: { audio: KarafriendsAudio }) {
       label: mic.label,
       ...(levels[micId(mic.name, mic.channelSelection)] ?? DEFAULT_LEVELS),
     }));
-    sentMics.current = [...sentMics.current, levelsKey(list)].slice(-10);
     call("setMics", { mics: list }).catch((err) =>
       console.error("Couldn't list the mics for the phones:", err),
     );
   }, [mics, levels]);
 
-  // An admin's setMicLevels: levels in the live state that differ from this
-  // display's own, in a list it didn't send. A list it did send (even one a
-  // later one overtook) is its own coming back, and is left alone, or two
-  // quick changes here would undo each other.
-  useEffect(() => {
-    if (!liveMics || liveMics === seenLiveMics.current) return;
-    seenLiveMics.current = liveMics;
-    const sent = sentMics.current.indexOf(levelsKey(liveMics));
-    if (sent >= 0) {
-      sentMics.current = sentMics.current.slice(sent);
-      return;
-    }
-    const changes: Record<string, MicLevels> = {};
-    for (const { id, gain, echo } of liveMics) {
-      if (!mics.some((mic) => idOf(mic) === id)) continue;
-      const own = levelsOf(id);
-      if (own.gain !== gain || own.echo !== echo) changes[id] = { gain, echo };
-    }
-    if (Object.keys(changes).length === 0) return;
-    // The server already holds the list this display sends next, so that
-    // one never comes back to trim the older ones: an admin's later return
-    // to one of them would be taken for an echo.
-    sentMics.current = [];
-    changeLevels(changes);
+  // An admin's setMicLevels: just the levels it gave, so a change the host
+  // is making to the other one here stands.
+  useLiveEvent("micLevels", ({ id, gain, echo }) => {
+    if (!mics.some((mic) => idOf(mic) === id)) return;
+    const own = latestLevels.current[id] ?? DEFAULT_LEVELS;
+    changeLevels({ [id]: { gain: gain ?? own.gain, echo: echo ?? own.echo } });
   });
 
   // Kept only once it opened (or fell back to the default), so a choice

@@ -1,19 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 import { useLiveState } from "../common/apiClient";
-import "./global";
 import "./NoticeBar.css";
 
 // One bar across the top for what the host should know: phones can't
 // connect (the remote's server couldn't listen, say because its port is
-// taken), or YouTube downloads keep failing (the tools problem). The show
-// goes on either way. "Dismiss" hides it until something new comes up.
+// taken), or YouTube downloads keep failing (the tools problem). Both come
+// with the live state. The show goes on either way. "Dismiss" hides it
+// until something new comes up.
 export default function NoticeBar() {
-  const [remoconProblem, setRemoconProblem] = useState<string | null>(null);
+  const remoconProblem = useLiveState((state) => state?.remoconProblem ?? null);
   const toolsProblem = useLiveState((state) => state?.toolsProblem ?? null);
   const [dismissed, setDismissed] = useState<string | null>(null);
-
-  useEffect(() => window.karafriends.onRemoconProblem(setRemoconProblem), []);
 
   const problems = [remoconProblem, toolsProblem].filter(
     (problem): problem is string => problem !== null,

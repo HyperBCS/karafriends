@@ -217,6 +217,16 @@ export function mergeLiveState(
   return changed ? merged : prev;
 }
 
+// The state with a downloads event's downloads (the rest stays the same
+// objects). Null until the first state event, which a downloads event never
+// comes before.
+export function withDownloads(
+  prev: LiveState | null,
+  downloads: LiveState["downloads"],
+): LiveState | null {
+  return prev && mergeLiveState(prev, { ...prev, downloads });
+}
+
 // How many of the latest state events serverNow() takes its offset from.
 export const CLOCK_SAMPLES = 20;
 
@@ -288,7 +298,11 @@ const LiveEventsContext = createContext<LiveEvents>({
 const AdminContext = createContext<boolean | undefined>(undefined);
 
 // How long to wait before opening a new stream when EventSource gives up.
-const RESTART_MS = 5_000;
+export const RESTART_MS = 5_000;
+
+// How long a stream may stay silent before it counts as dead: the server
+// pings every 20 seconds (server.ts), so a little over two pings missed.
+export const SILENCE_MS = 45_000;
 
 // Opens the page's live-event stream: over IPC on the display, through
 // EventSource on a phone. Calls onOpen each time it (re)connects, and
@@ -306,13 +320,40 @@ export function openLiveStream(
 
   let source: EventSource | null = null;
   let restart: ReturnType<typeof setTimeout> | null = null;
+  let silence: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
 
+  const stopTimers = () => {
+    if (restart) clearTimeout(restart);
+    if (silence) clearTimeout(silence);
+    restart = null;
+    silence = null;
+  };
+
+  // Anything from the server, a ping included, says the stream is alive. A
+  // connection that died without a word (the laptop slept and woke on
+  // another address, say) leaves EventSource open and waiting forever:
+  // after SILENCE_MS of nothing, start over.
+  const heard = () => {
+    if (silence) clearTimeout(silence);
+    silence = setTimeout(() => {
+      console.warn("The live stream went silent; opening a new one");
+      source?.close();
+      connect();
+    }, SILENCE_MS);
+  };
+
   const connect = () => {
+    stopTimers();
     const current = new EventSource(eventsUrl(deviceId()));
     source = current;
-    current.onopen = onOpen;
+    heard();
+    current.onopen = () => {
+      heard();
+      onOpen();
+    };
     current.onmessage = (message) => {
+      heard();
       const event = parseLiveEvent(message.data);
       if (event === null) {
         console.warn("Ignoring a live event I can't read:", message.data);
@@ -320,6 +361,7 @@ export function openLiveStream(
       }
       onEvent(event);
     };
+    current.addEventListener("ping", heard);
     // EventSource reconnects by itself when a connection drops (the server
     // then sends the whole state again), but gives up when the server
     // answers with an error, like a proxy's 502 while the app restarts.
@@ -327,6 +369,7 @@ export function openLiveStream(
     current.onerror = () => {
       if (current.readyState !== EventSource.CLOSED || stopped) return;
       current.close();
+      stopTimers();
       restart = setTimeout(connect, RESTART_MS);
     };
   };
@@ -335,13 +378,60 @@ export function openLiveStream(
   return () => {
     stopped = true;
     source?.close();
-    if (restart) clearTimeout(restart);
+    stopTimers();
   };
+}
+
+// Asks the server whether this phone is an admin, for useIsAdmin(): ask()
+// each time that may have changed. Only the latest question's answer counts.
+// A no for a phone that asked with the token it still has means its session
+// ended (the host changed the password, say): it signs out here too, so it
+// offers to sign in again.
+export function adminCheck(setIsAdmin: (isAdmin: boolean) => void) {
+  let stopped = false;
+  let asked = 0;
+  return {
+    // Resolves once the answer is taken in (or ignored).
+    ask(): Promise<void> {
+      const question = ++asked;
+      const token = storedAdminToken();
+      return call("whoami", {}).then(
+        (who) => {
+          if (stopped || question !== asked) return;
+          setIsAdmin(who.isAdmin);
+          if (!who.isAdmin && token !== null && storedAdminToken() === token) {
+            storeAdminToken(null);
+          }
+        },
+        (err) => console.warn("Couldn't ask whoami:", err),
+      );
+    },
+    // Answers after this are ignored.
+    stop() {
+      stopped = true;
+    },
+  };
+}
+
+// Whether a new state means this phone's admin status may have changed:
+// the host turned everyone-admin mode on or off, or a new admin password
+// signed every phone out (and this one is signed in).
+export function adminMayHaveChanged(
+  before: LiveState | null,
+  after: LiveState,
+  signedIn: boolean,
+): boolean {
+  return (
+    before !== null &&
+    (before.config.everyoneIsAdmin !== after.config.everyoneIsAdmin ||
+      (signedIn && before.adminSignOuts !== after.adminSignOuts))
+  );
 }
 
 // One stream for the page. Mount it once, at the root. With checkAdmin, it
 // also asks whoami each time it connects, each time the phone signs in or
-// out, and each time everyone-admin mode turns on or off, for useIsAdmin().
+// out, each time everyone-admin mode turns on or off, and when a new admin
+// password signs the phones out, for useIsAdmin().
 export function LiveStateProvider({
   children,
   checkAdmin = false,
@@ -360,24 +450,8 @@ export function LiveStateProvider({
   }));
 
   useEffect(() => {
-    let stopped = false;
-    // Only the latest question's answer counts.
-    let asked = 0;
-    const askWhoami = () => {
-      const question = ++asked;
-      const token = storedAdminToken();
-      call("whoami", {})
-        .then((who) => {
-          if (stopped || question !== asked) return;
-          setIsAdmin(who.isAdmin);
-          // The session ended (the password changed, say): sign out here
-          // too, so the phone offers to sign in again.
-          if (!who.isAdmin && token !== null && storedAdminToken() === token) {
-            storeAdminToken(null);
-          }
-        })
-        .catch((err) => console.warn("Couldn't ask whoami:", err));
-    };
+    const check = adminCheck(setIsAdmin);
+    const askWhoami = () => void check.ask();
     const stopWatchingToken = checkAdmin
       ? onAdminTokenChange(askWhoami)
       : () => {};
@@ -394,17 +468,22 @@ export function LiveStateProvider({
           if (reconnected) resetClockOffset();
           reconnected = false;
           noteStateSentAt(event.sentAt, Date.now());
-          const before = store.get()?.config.everyoneIsAdmin;
-          store.set(mergeLiveState(store.get(), event.state));
-          // The host turned everyone-admin mode on or off. (On connect,
-          // the open above already asked.)
+          const before = store.get();
+          store.set(mergeLiveState(before, event.state));
+          // (On connect, the open above already asked.)
           if (
             checkAdmin &&
-            before !== undefined &&
-            before !== event.state.config.everyoneIsAdmin
+            adminMayHaveChanged(
+              before,
+              event.state,
+              storedAdminToken() !== null,
+            )
           ) {
             askWhoami();
           }
+        } else if (event.type === "downloads") {
+          const next = withDownloads(store.get(), event.downloads);
+          if (next) store.set(next);
         }
         for (const listener of listeners) {
           try {
@@ -416,7 +495,7 @@ export function LiveStateProvider({
       },
     );
     return () => {
-      stopped = true;
+      check.stop();
       stopWatchingToken();
       close();
     };

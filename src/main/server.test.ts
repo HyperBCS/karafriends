@@ -3,14 +3,14 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import { after, before, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import compression from "compression";
 import express from "express";
 
-import type { LiveEvent, LiveState } from "../common/api";
+import type { DownloadProgress, LiveEvent, LiveState } from "../common/api";
 import { ApiError, type Caller } from "./api";
 import type { Viewer } from "./live";
 import { SETTINGS_METHODS } from "./settings";
@@ -18,6 +18,7 @@ import {
   apiRouter,
   DISPLAY_ONLY_METHODS,
   eventWriter,
+  PING,
   rateLimiter,
   serializeEvent,
   shouldCompress,
@@ -39,8 +40,8 @@ const handlers = {
     if (password !== "right") throw new ApiError(403, "Wrong admin password");
     return { token: "t".repeat(64) };
   },
-  popSong: async () => {
-    throw new Error("DAM is down");
+  youtubeInfo: async () => {
+    throw new Error("YouTube is down");
   },
   // Answers anyone, to show the router refuses phones before it gets here.
   ...Object.fromEntries(
@@ -111,6 +112,7 @@ describe("POST /api/<method>", () => {
       "getSettings",
       "getToolsStatus",
       "importConfig",
+      "popSong",
       "reportSongPosition",
       "restartApp",
       "setAdminPassword",
@@ -200,7 +202,7 @@ describe("POST /api/<method>", () => {
     const original = console.error;
     console.error = () => {};
     try {
-      const failed = await post("popSong", "{}");
+      const failed = await post("youtubeInfo", '{"videoId":"x"}');
       assert.equal(failed.status, 500);
     } finally {
       console.error = original;
@@ -348,20 +350,26 @@ describe("event stream limits", () => {
     }
   });
 
-  // A response whose buffer is full until drained.
+  // A response to a phone that reads only when drained: what is written
+  // waits, and write() says false once highWaterMark bytes wait, as Node's
+  // does.
   class FakeResponse extends EventEmitter {
     written: string[] = [];
-    full = false;
+    writableLength = 0;
     destroyed = false;
+    constructor(readonly highWaterMark = 100) {
+      super();
+    }
     write(chunk: string) {
       this.written.push(chunk);
-      return !this.full;
+      this.writableLength += Buffer.byteLength(chunk);
+      return this.writableLength < this.highWaterMark;
     }
     destroy() {
       this.destroyed = true;
     }
     drain() {
-      this.full = false;
+      this.writableLength = 0;
       this.emit("drain");
     }
   }
@@ -371,49 +379,107 @@ describe("event stream limits", () => {
     state: { pitchShiftSemis } as LiveState,
     sentAt: 0,
   });
+  const downloads = (progress: number): LiveEvent => ({
+    type: "downloads",
+    downloads: [{ progress } as DownloadProgress],
+  });
   const emote: LiveEvent = {
     type: "emote",
     emote: "🎉",
     user: { nickname: "n" },
   };
+  const line = (event: LiveEvent) => `data: ${JSON.stringify(event)}\n\n`;
 
-  test("eventWriter holds back all but the latest state while a phone is behind", () => {
+  test("eventWriter holds back all but the latest state and downloads while a phone is behind", () => {
     const res = new FakeResponse();
     const writer = eventWriter(res);
     writer.start();
     writer.send(state(1));
-    res.full = true;
-    // This one fills the buffer: from now on, the phone is behind.
+    // This one fills the buffer, past twice an event: from now on, the
+    // phone is behind.
     writer.send(state(2));
     writer.send(state(3));
     writer.send(emote);
+    writer.send(downloads(0.1));
     writer.send(state(4));
+    writer.send(downloads(0.2));
     writer.heartbeat();
     assert.equal(res.written.length, 3);
 
     res.drain();
     writer.send(emote);
     assert.deepEqual(res.written.slice(1), [
-      `data: ${JSON.stringify(state(1))}\n\n`,
-      `data: ${JSON.stringify(state(2))}\n\n`,
-      `data: ${JSON.stringify(state(4))}\n\n`,
-      `data: ${JSON.stringify(emote)}\n\n`,
+      line(state(1)),
+      line(state(2)),
+      line(state(4)),
+      line(downloads(0.2)),
+      line(emote),
     ]);
     assert.equal(res.destroyed, false);
   });
 
-  test("eventWriter cuts off a phone that stays behind", () => {
+  test("eventWriter sends the event after a state that fills the buffer on its own", () => {
     const res = new FakeResponse();
+    const writer = eventWriter(res);
+    const big: LiveEvent = {
+      type: "state",
+      state: { adhocLyrics: [{ lyric: "歌".repeat(100), lyricIndex: 0 }] },
+      sentAt: 0,
+    } as unknown as LiveEvent;
+    writer.send(big);
+    writer.send(emote);
+    assert.deepEqual(res.written, [line(big), line(emote)]);
+  });
+
+  test("eventWriter's heartbeat is a ping the page sees", () => {
+    const res = new FakeResponse();
+    eventWriter(res).heartbeat();
+    assert.deepEqual(res.written, [PING]);
+    assert.equal(PING, "event: ping\ndata: {}\n\n");
+  });
+
+  test("eventWriter cuts off a phone that stays behind", () => {
+    const res = new FakeResponse(1);
     let now = 0;
     const writer = eventWriter(res, () => now);
-    res.full = true;
-    writer.send(state(1));
+    for (const semis of [1, 2, 3]) writer.send(state(semis));
     now = 10_000;
     writer.heartbeat();
     assert.equal(res.destroyed, false);
     now = 20_000;
     writer.heartbeat();
     assert.equal(res.destroyed, true);
+  });
+
+  test("eventWriter over a real socket: the event after a 70 KB state arrives", async () => {
+    const big: LiveEvent = {
+      type: "state",
+      state: { adhocLyrics: [{ lyric: "x".repeat(70_000), lyricIndex: 0 }] },
+      sentAt: 0,
+    } as unknown as LiveEvent;
+    const failed: LiveEvent = {
+      type: "queueFailed",
+      item: { songId: "sm1" },
+      reason: "Video unavailable",
+    } as unknown as LiveEvent;
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      const writer = eventWriter(res);
+      // In one tick, as ytdlpFailed's update then its message go.
+      writer.send(big);
+      writer.send(failed);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const { port } = server.address() as AddressInfo;
+      const text = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+      assert.equal(text, line(big) + line(failed));
+    } finally {
+      server.close();
+    }
   });
 });
 

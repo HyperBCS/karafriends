@@ -87,9 +87,9 @@ test("/graphql answers 404", async ({ karafriends }) => {
   expect((await fetch(url)).status).toBe(404);
 });
 
-// Nothing speaks WebSocket. A phone that asks anyway, then resets the
-// connection, used to crash the app.
-test("a WebSocket upgrade is refused, and a reset after it is harmless", async ({
+// Nothing speaks WebSocket: an upgrade gets the plain answer. A phone that
+// asks anyway, then resets the connection, once crashed the app.
+test("a WebSocket upgrade isn't taken, and a reset after it is harmless", async ({
   karafriends,
 }) => {
   const { hostname, port } = new URL(karafriends.remoconUrl);
@@ -110,7 +110,7 @@ test("a WebSocket upgrade is refused, and a reset after it is harmless", async (
           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
       );
     });
-    expect(answer).toMatch(/^HTTP\/1\.1 400 /);
+    expect(answer).toMatch(/^HTTP\/1\.1 200 /);
     socket.resetAndDestroy();
   }
   // Time for the resets to arrive, and for a crash to happen.
@@ -224,6 +224,8 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       downloads: [],
       config: { supervisedMode: false, everyoneIsAdmin: false },
       toolsProblem: null,
+      remoconProblem: null,
+      adminSignOuts: 0,
     },
     sentAt: expect.any(Number),
   });
@@ -523,9 +525,10 @@ test.describe("supervised mode", () => {
     }) => {
       const { remoconUrl } = karafriends;
       await waitForSong1(remoconUrl);
+      // Song 3 to the top: before song 2.
       const song3 = {
-        songId: "sm90003",
-        timestamp: song(3, someoneElse).timestamp,
+        song: `sm90003@${song(3, someoneElse).timestamp}`,
+        before: `sm90002@${song(2, someoneElse).timestamp}`,
       };
 
       expect(
@@ -568,9 +571,10 @@ test.describe("supervised mode", () => {
     }) => {
       const { remoconUrl } = karafriends;
       await waitForSong1(remoconUrl);
+      // Song 3 to the top: before song 2.
       const song3 = {
-        songId: "sm90003",
-        timestamp: song(3, someoneElse).timestamp,
+        song: `sm90003@${song(3, someoneElse).timestamp}`,
+        before: `sm90002@${song(2, someoneElse).timestamp}`,
       };
       const move = () =>
         call(remoconUrl, "moveSong", { ...song3, toIndex: 0 }, REMOTE_HEADERS);
@@ -674,8 +678,8 @@ test.describe("supervised mode", () => {
       ],
       songHistory: [],
       playbackState: "WAITING",
-      // As older versions saved them: by video ID.
-      idToAdhocLyrics: { [VIDEO]: LYRICS },
+      // By the queue item's songKey.
+      idToAdhocLyrics: { [`${VIDEO}@${Date.UTC(2026, 0, 1)}`]: LYRICS },
     });
 
     const LYRICS_SONG = `${VIDEO}@${Date.UTC(2026, 0, 1)}`;
@@ -877,7 +881,10 @@ test.describe("the song volume and the mics", () => {
 
     const { state } = await liveState(remoconUrl, other);
     expect(state.songVolume).toBe(50);
-    expect(state.mics).toEqual([{ ...MIC, gain: 150 }]);
+    // The levels go to the display, which applies them to the mics it has
+    // open and lists them again (settings.spec has that). This one it
+    // doesn't really have, so the list stays as it sent it.
+    expect(state.mics).toEqual([MIC]);
   });
 });
 

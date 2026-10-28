@@ -2,10 +2,12 @@
 // window, so these run as a phone would, unless a test gives one with the
 // display's preload API.
 import assert from "node:assert/strict";
-import { afterEach, describe, test } from "node:test";
+import { afterEach, beforeEach, describe, mock, test } from "node:test";
 
 import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
+  adminCheck,
+  adminMayHaveChanged,
   adminSignIn,
   adminSignOut,
   ApiCallError,
@@ -22,6 +24,7 @@ import {
   resetClockOffset,
   serverNow,
   storedAdminToken,
+  withDownloads,
 } from "./apiClient";
 import type { ApiResponse, DisplayApi } from "./ipc";
 import { removeItem, setItem } from "./storage";
@@ -45,10 +48,14 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   playbackState: "WAITING",
   pitchShiftSemis: 0,
   guideMelodyLevel: 0,
+  songVolume: 100,
+  mics: [],
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
+  remoconProblem: null,
+  adminSignOuts: 0,
   ...overrides,
 });
 
@@ -234,6 +241,160 @@ describe("openLiveStream on the display", () => {
   });
 });
 
+// An EventSource the test drives: open(), message(), ping() and fail().
+class FakeEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+  static made: FakeEventSource[] = [];
+  readyState = FakeEventSource.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((message: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  private named = new Map<string, () => void>();
+  constructor(readonly url: string) {
+    FakeEventSource.made.push(this);
+  }
+  addEventListener(type: string, listener: () => void) {
+    this.named.set(type, listener);
+  }
+  close() {
+    this.readyState = FakeEventSource.CLOSED;
+  }
+  open() {
+    this.readyState = FakeEventSource.OPEN;
+    this.onopen?.();
+  }
+  message(event: LiveEvent) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+  ping() {
+    this.named.get("ping")?.();
+  }
+  // EventSource reconnecting by itself (CONNECTING), or giving up (CLOSED).
+  fail(readyState: number) {
+    this.readyState = readyState;
+    this.onerror?.();
+  }
+}
+
+describe("openLiveStream on a phone", () => {
+  const ge = globalThis as { EventSource?: unknown };
+  let made: FakeEventSource[];
+  const latest = () => made[made.length - 1];
+  const live = (n: number): LiveEvent => ({
+    type: "state",
+    state: state({ pitchShiftSemis: n }),
+    sentAt: 0,
+  });
+
+  beforeEach(() => {
+    FakeEventSource.made = made = [];
+    ge.EventSource = FakeEventSource;
+    mock.timers.enable({ apis: ["setTimeout"] });
+    fakeStorage({ deviceId: "phone-1" });
+  });
+  afterEach(() => {
+    delete ge.EventSource;
+    mock.timers.reset();
+  });
+
+  test("passes on events, opens on each (re)connect, and starts over 5 s after the server refuses", () => {
+    let opened = 0;
+    const events: LiveEvent[] = [];
+    const close = openLiveStream(
+      () => opened++,
+      (event) => events.push(event),
+    );
+    assert.equal(made.length, 1);
+    assert.equal(made[0].url, "/api/events?deviceId=phone-1");
+    made[0].open();
+    made[0].message(live(1));
+    assert.deepEqual([opened, events], [1, [live(1)]]);
+
+    // EventSource reconnects by itself: no new one.
+    made[0].fail(FakeEventSource.CONNECTING);
+    mock.timers.tick(10_000);
+    assert.equal(made.length, 1);
+    made[0].open();
+    assert.equal(opened, 2);
+
+    // A 503: it gave up, so a new one, after a while, with the device ID
+    // as it is then.
+    fakeStorage({ deviceId: "phone-2" });
+    made[0].fail(FakeEventSource.CLOSED);
+    mock.timers.tick(4_999);
+    assert.equal(made.length, 1);
+    mock.timers.tick(1);
+    assert.equal(made.length, 2);
+    assert.equal(latest().url, "/api/events?deviceId=phone-2");
+    latest().open();
+    latest().message(live(2));
+    assert.deepEqual([opened, events], [3, [live(1), live(2)]]);
+
+    // Closed while waiting to start over: nothing more.
+    latest().fail(FakeEventSource.CLOSED);
+    close();
+    mock.timers.tick(60_000);
+    assert.equal(made.length, 2);
+  });
+
+  test("a stream silent for 45 s is replaced; the server's pings keep it", () => {
+    let opened = 0;
+    const close = openLiveStream(
+      () => opened++,
+      () => {},
+    );
+    made[0].open();
+    for (let i = 0; i < 5; i++) {
+      mock.timers.tick(20_000);
+      made[0].ping();
+    }
+    assert.equal(made.length, 1);
+
+    // The connection died without a word.
+    mock.timers.tick(44_999);
+    assert.equal(made.length, 1);
+    mock.timers.tick(1);
+    assert.equal(made.length, 2);
+    assert.equal(made[0].readyState, FakeEventSource.CLOSED);
+    latest().open();
+    assert.equal(opened, 2);
+
+    // One that never even opens is replaced too.
+    mock.timers.tick(45_000);
+    assert.equal(made.length, 3);
+    mock.timers.tick(45_000);
+    assert.equal(made.length, 4);
+
+    close();
+    mock.timers.tick(60_000);
+    assert.equal(made.length, 4);
+    assert.equal(latest().readyState, FakeEventSource.CLOSED);
+  });
+});
+
+describe("withDownloads", () => {
+  test("takes a downloads event's downloads, keeping the rest", () => {
+    const before = state({ queue: [song(1)] });
+    const download = {
+      id: 1,
+      kind: "nico" as const,
+      songId: "sm2",
+      suffix: null,
+      progress: 0.5,
+      status: "downloading" as const,
+      reason: null,
+      isMine: true,
+    };
+    const after = withDownloads(before, [download])!;
+    assert.deepEqual(after.downloads, [download]);
+    assert.equal(after.queue, before.queue);
+    assert.equal(withDownloads(after, [download]), after);
+    assert.equal(withDownloads(null, [download]), null);
+  });
+});
+
 describe("eventsUrl", () => {
   test("passes a phone's device ID, encoded", () => {
     assert.equal(eventsUrl(null), "/api/events");
@@ -315,6 +476,81 @@ describe("admin sign-in", () => {
     };
     await adminSignOut();
     assert.equal(storage.items.adminToken, undefined);
+  });
+});
+
+describe("adminCheck", () => {
+  const TOKEN = "ab".repeat(32);
+  // whoami's answers, in the order the test gives them.
+  function whoamiAnswers() {
+    const pending: ((isAdmin: boolean) => void)[] = [];
+    globalThis.fetch = () =>
+      new Promise((resolve) =>
+        pending.push((isAdmin) => resolve(Response.json({ isAdmin }))),
+      );
+    return pending;
+  }
+
+  test("only the latest answer counts", async () => {
+    fakeStorage();
+    const answers = whoamiAnswers();
+    const seen: boolean[] = [];
+    const check = adminCheck((isAdmin) => seen.push(isAdmin));
+    const first = check.ask();
+    const second = check.ask();
+    answers[1](true);
+    await second;
+    // The first question's answer comes late, from before a sign-in, say.
+    answers[0](false);
+    await first;
+    assert.deepEqual(seen, [true]);
+    // Nor any once stopped.
+    const third = check.ask();
+    check.stop();
+    answers[2](false);
+    await third;
+    assert.deepEqual(seen, [true]);
+  });
+
+  test("a no to the token still stored signs the phone out; to another, not", async () => {
+    const storage = fakeStorage({ adminToken: TOKEN });
+    const answers = whoamiAnswers();
+    let changes = 0;
+    const stop = onAdminTokenChange(() => changes++);
+    try {
+      const check = adminCheck(() => {});
+      const asked = check.ask();
+      answers[0](false);
+      await asked;
+      assert.equal(storage.items.adminToken, undefined);
+      assert.equal(changes, 1);
+
+      // Asked with one token, then the phone signed in again meanwhile.
+      storage.items.adminToken = TOKEN;
+      const again = check.ask();
+      storage.items.adminToken = "cd".repeat(32);
+      answers[1](false);
+      await again;
+      assert.equal(storage.items.adminToken, "cd".repeat(32));
+      assert.equal(changes, 1);
+    } finally {
+      stop();
+    }
+  });
+
+  test("asks again when everyone-admin mode flips, or a new password signs phones out", () => {
+    const before = state();
+    const sameAgain = state();
+    const everyone = state({
+      config: { supervisedMode: false, everyoneIsAdmin: true },
+    });
+    const signedOut = state({ adminSignOuts: 1 });
+    assert.equal(adminMayHaveChanged(null, before, true), false);
+    assert.equal(adminMayHaveChanged(before, sameAgain, true), false);
+    assert.equal(adminMayHaveChanged(before, everyone, false), true);
+    assert.equal(adminMayHaveChanged(before, signedOut, true), true);
+    // A phone not signed in has nothing to lose.
+    assert.equal(adminMayHaveChanged(before, signedOut, false), false);
   });
 });
 

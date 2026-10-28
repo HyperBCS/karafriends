@@ -15,8 +15,10 @@ import {
   failDownload,
   isDownloading,
   loadState,
+  MAX_HISTORY,
   removeDownload,
   removeExpiredDownloads,
+  serializeState,
   startDownload,
   type State,
 } from "./state";
@@ -63,13 +65,13 @@ describe("createStateStore", () => {
     const withLyrics = song(1, { hasAdhocLyrics: true });
     store.update((state) => {
       state.songQueue.push(withLyrics, song(2));
-      state.songHistory.unshift({ song: song(0) });
+      state.songHistory.unshift({ song: song(0), playedAt: 5 });
       state.idToAdhocLyrics[songKey(withLyrics)] = ["la", "la"];
     });
 
     const loaded = createStateStore(file).getState();
     assert.deepEqual(loaded.songQueue, [withLyrics, song(2)]);
-    assert.deepEqual(loaded.songHistory, [{ song: song(0) }]);
+    assert.deepEqual(loaded.songHistory, [{ song: song(0), playedAt: 5 }]);
     assert.deepEqual(loaded.idToAdhocLyrics, {
       [songKey(withLyrics)]: ["la", "la"],
     });
@@ -109,6 +111,7 @@ describe("createStateStore", () => {
         suffix: null,
       });
       state.toolsProblem = { message: "Update the tools", since: 1 };
+      state.remoconProblem = "Phones can't connect: port 8080 is in use.";
       state.currentSongStartedAt = 1000;
       state.currentSongPausedSince = 1500;
       state.currentSongLength = 245;
@@ -131,6 +134,7 @@ describe("createStateStore", () => {
     assert.deepEqual(loaded.currentSongAdhocLyrics, []);
     assert.deepEqual(loaded.downloadQueue, []);
     assert.equal(loaded.toolsProblem, null);
+    assert.equal(loaded.remoconProblem, null);
   });
 
   test("keeps the songs still downloading, with what came with them", () => {
@@ -280,29 +284,9 @@ describe("loadState", () => {
     assert.deepEqual(loadState(file).songQueue, [song(1)]);
   });
 
-  test("reads the GraphQL-shaped items older versions saved", () => {
+  test("drops the GraphQL-shaped items from before 0.1.0, saying so", () => {
     write({
       songQueue: [
-        {
-          __typename: "DamQueueItem",
-          songId: "1234-56",
-          name: "DAM song",
-          artistName: "Artist",
-          playtime: 200,
-          timestamp: "1",
-          userIdentity: { deviceId: "d", nickname: "n" },
-          streamingUrlIdx: "1",
-        },
-        {
-          __typename: "JoysoundQueueItem",
-          songId: "123456",
-          name: "Joysound song",
-          artistName: "Artist",
-          timestamp: "2",
-          userIdentity: { deviceId: "d", nickname: "n" },
-          isRomaji: true,
-          youtubeVideoId: null,
-        },
         {
           __typename: "NicoQueueItem",
           songId: "sm9",
@@ -312,41 +296,22 @@ describe("loadState", () => {
           timestamp: "3",
           userIdentity: { deviceId: "d", nickname: "n" },
         },
+        song(1),
       ],
     });
-    const user = { deviceId: "d", nickname: "n" };
-    assert.deepEqual(loadState(file).songQueue, [
-      {
-        kind: "dam",
-        songId: "1234-56",
-        name: "DAM song",
-        artistName: "Artist",
-        playtime: 200,
-        timestamp: "1",
-        user,
-        streamingUrlIdx: 1,
-      },
-      {
-        kind: "joysound",
-        songId: "123456",
-        name: "Joysound song",
-        artistName: "Artist",
-        playtime: null,
-        timestamp: "2",
-        user,
-        lyricsMode: "romaji",
-        youtubeVideoId: null,
-      },
-      {
-        kind: "nico",
-        songId: "sm9",
-        name: "Nico video",
-        artistName: "",
-        playtime: null,
-        timestamp: "3",
-        user,
-      },
-    ]);
+    const warned: unknown[] = [];
+    const { warn } = console;
+    console.warn = (...args) => warned.push(args.join(" "));
+    try {
+      assert.deepEqual(loadState(file).songQueue, [song(1)]);
+    } finally {
+      console.warn = warn;
+    }
+    assert.equal(warned.length, 1);
+    assert.match(
+      String(warned[0]),
+      /^Dropping an unreadable saved entry: .*sm9/,
+    );
   });
 
   test("reads a Joysound song's isRomaji, saved before the lyrics modes, as its mode", () => {
@@ -406,6 +371,22 @@ describe("loadState", () => {
     assert.equal(state.songHistory[0].song.readingsMode, "kana");
   });
 
+  test("keeps the newest MAX_HISTORY of the history, saving and loading", () => {
+    const history = Array.from({ length: MAX_HISTORY + 5 }, (_, n) => ({
+      song: song(n),
+      playedAt: n,
+    }));
+    write({ songHistory: history });
+    const state = loadState(file);
+    assert.equal(state.songHistory.length, MAX_HISTORY);
+    assert.deepEqual(state.songHistory.at(-1), history[MAX_HISTORY - 1]);
+    state.songHistory.push(...history.slice(MAX_HISTORY));
+    assert.equal(
+      JSON.parse(serializeState(state)).songHistory.length,
+      MAX_HISTORY,
+    );
+  });
+
   test("drops entries it can't read and keeps the rest", () => {
     write({
       songQueue: [{ kind: "karaoke-cassette" }, song(1), "junk"],
@@ -416,30 +397,25 @@ describe("loadState", () => {
     });
     const state: State = loadState(file);
     assert.deepEqual(state.songQueue, [song(1)]);
-    assert.deepEqual(state.songHistory, [{ song: song(2) }]);
+    assert.deepEqual(state.songHistory, [{ song: song(2), playedAt: null }]);
     assert.equal(state.playbackState, "WAITING");
     assert.equal(state.pitchShiftSemis, 0);
     assert.equal(state.guideMelodyLevel, 0);
   });
 
-  test("keeps only the adhoc lyrics of queued songs, and moves older ones' to their song", () => {
+  test("keeps only the adhoc lyrics of queued songs", () => {
     const keyed = song(1, { hasAdhocLyrics: true });
-    // Saved by video ID, as older versions did.
-    const old = song(2, { hasAdhocLyrics: true });
     write({
-      songQueue: [keyed, old, song(3)],
+      songQueue: [keyed, song(3)],
       idToAdhocLyrics: {
         [songKey(keyed)]: ["one", 1, "two"],
-        video2: ["old"],
         // Songs that aren't queued (a failed download, say).
-        video3: ["not queued with lyrics"],
-        video4: ["never queued"],
-        "video5@1": ["gone"],
+        [songKey(song(3))]: ["not queued with lyrics"],
+        "video4@1": ["never queued"],
       },
     });
     assert.deepEqual(loadState(file).idToAdhocLyrics, {
       [songKey(keyed)]: ["one", "two"],
-      [songKey(old)]: ["old"],
     });
   });
 

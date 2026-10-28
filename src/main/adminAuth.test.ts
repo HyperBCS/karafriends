@@ -5,15 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
-import {
-  hashAdminPassword,
-  isAdminPassword,
-  type AdminPasswordConfig,
-} from "../common/adminPassword";
+import { hashAdminPassword } from "../common/adminPassword";
 import { createConfigStore } from "../common/configStore";
 import {
   createAdminSessions,
-  createSetAdminPassword,
   endSessionsOnPasswordChange,
   MAX_ADMIN_SESSIONS,
 } from "./adminAuth";
@@ -102,65 +97,28 @@ describe("admin sessions", () => {
   });
 });
 
-describe("setAdminPassword", () => {
-  const setup = (config: AdminPasswordConfig) => {
-    const saved: AdminPasswordConfig[] = [];
-    const setAdminPassword = createSetAdminPassword({
-      config,
-      saveConfig(values) {
-        saved.push(values);
-        Object.assign(config, values);
-      },
-    });
-    return { saved, setAdminPassword };
-  };
-
-  test("makes a salt the first time, then keeps it", async () => {
-    const config = { adminPasswordHash: "", adminPasswordSalt: "" };
-    const { saved, setAdminPassword } = setup(config);
-    setAdminPassword("first");
-    const salt = config.adminPasswordSalt;
-    assert.match(salt, /^[0-9a-f]{32}$/);
-    assert.equal(config.adminPasswordHash, hashAdminPassword("first", salt));
-    assert.equal(await isAdminPassword("first", config), true);
-
-    setAdminPassword("second");
-    assert.equal(config.adminPasswordSalt, salt);
-    assert.equal(await isAdminPassword("first", config), false);
-    assert.equal(await isAdminPassword("second", config), true);
-    assert.equal(saved.length, 2);
-  });
-
-  test("signs every phone out, through the config store", () => {
+describe("endSessionsOnPasswordChange", () => {
+  test("signs every phone out when the hash or salt changes, then says so", () => {
     const store = createConfigStore(path.join(dir, "config.yaml"));
     const sessions = createAdminSessions(file);
-    endSessionsOnPasswordChange(store, sessions);
-    const setAdminPassword = createSetAdminPassword({
-      config: store.get(),
-      saveConfig: (values) => store.update(values),
-    });
-    setAdminPassword("first");
+    let ended = 0;
+    endSessionsOnPasswordChange(store, sessions, () => ended++);
+    store.update({ adminPasswordSalt: "a", adminPasswordHash: "b" });
     const tokens = [sessions.create(), sessions.create()];
     // Another setting leaves them be.
     store.update({ supervisedMode: true });
     assert.deepEqual(tokens.map(sessions.has), [true, true]);
-    setAdminPassword("second");
+    assert.equal(ended, 1);
+    // A new salt alone (setAdminPassword with the same password).
+    store.update({ adminPasswordSalt: "c" });
     assert.deepEqual(tokens.map(sessions.has), [false, false]);
+    assert.equal(ended, 2);
     // Saved that way too.
     assert.deepEqual(tokens.map(createAdminSessions(file).has), [false, false]);
     // So does a new hash from anywhere else (importConfig, say).
     const token = sessions.create();
     store.update({ adminPasswordHash: hashAdminPassword("third", "salt") });
     assert.equal(sessions.has(token), false);
-  });
-
-  test("an empty password means none", async () => {
-    const config = { adminPasswordHash: "", adminPasswordSalt: "" };
-    const { setAdminPassword } = setup(config);
-    setAdminPassword("first");
-    setAdminPassword("");
-    assert.equal(config.adminPasswordHash, "");
-    assert.equal(await isAdminPassword("first", config), false);
-    assert.equal(await isAdminPassword("", config), false);
+    assert.equal(ended, 3);
   });
 });

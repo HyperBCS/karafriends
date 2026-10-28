@@ -546,7 +546,8 @@ test.describe("a YouTube song's adhoc lyrics", () => {
       ],
       songHistory: [],
       playbackState: "WAITING",
-      idToAdhocLyrics: { [VIDEO]: LYRICS },
+      // By the queue item's songKey.
+      idToAdhocLyrics: { [`${VIDEO}@${Date.UTC(2026, 0, 1)}`]: LYRICS },
     },
   });
 

@@ -29,14 +29,21 @@ const remoconPort = Number(
 );
 
 // The live events, from the main process. This page asks for them once, as
-// it loads, and the live state comes first; the latest one is kept for
-// listeners that start later.
+// it loads, and the live state comes first; the latest one (with the latest
+// downloads) is kept for listeners that start later.
 type LiveListener = (event: LiveEvent) => void;
 const liveListeners = new Set<LiveListener>();
-let liveState: LiveEvent | null = null;
+let liveState: Extract<LiveEvent, { type: "state" }> | null = null;
 
 ipcRenderer.on(IPC_CHANNELS.live, (_event, liveEvent: LiveEvent) => {
-  if (liveEvent.type === "state") liveState = liveEvent;
+  if (liveEvent.type === "state") {
+    liveState = liveEvent;
+  } else if (liveEvent.type === "downloads" && liveState) {
+    liveState = {
+      ...liveState,
+      state: { ...liveState.state, downloads: liveEvent.downloads },
+    };
+  }
   for (const listener of liveListeners) {
     try {
       listener(liveEvent);
@@ -65,25 +72,6 @@ const files: DisplayFiles = {
     ipcRenderer.invoke(IPC_CHANNELS.saveTextFile, suggestedName, text),
   openTextFile: () => ipcRenderer.invoke(IPC_CHANNELS.openTextFile),
 };
-
-// Why phones can't connect, if they can't: asked for as the page loads (it
-// usually happens first), and sent when it happens.
-type ProblemListener = (message: string) => void;
-const problemListeners = new Set<ProblemListener>();
-let remoconProblem: string | null = null;
-
-const setRemoconProblem = (message: unknown) => {
-  if (typeof message !== "string" || message === remoconProblem) return;
-  remoconProblem = message;
-  for (const listener of problemListeners) listener(message);
-};
-ipcRenderer.on(IPC_CHANNELS.remoconProblem, (_event, message: unknown) =>
-  setRemoconProblem(message),
-);
-ipcRenderer
-  .invoke(IPC_CHANNELS.remoconProblem)
-  .then(setRemoconProblem)
-  .catch((err) => console.error("Couldn't ask about the remote:", err));
 
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
@@ -286,15 +274,6 @@ if (fakeAudioCalls) {
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
   remoconPort: (): number => remoconPort,
-  // Calls listener with why phones can't connect, at once if it is known.
-  // Returns a function that stops it.
-  onRemoconProblem: (listener: ProblemListener): (() => void) => {
-    problemListeners.add(listener);
-    if (remoconProblem !== null) listener(remoconProblem);
-    return () => {
-      problemListeners.delete(listener);
-    };
-  },
   api,
   ...files,
   nativeAudio: fakeAudioCalls ? fakeNativeAudio(fakeAudioCalls) : realAudio(),

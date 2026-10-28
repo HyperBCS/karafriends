@@ -5,7 +5,9 @@
 // No device IDs go out: a listener says which device it is, and sees which
 // songs and downloads are its own (isMine). Whatever a listener doesn't own
 // is the same object for every listener, so a transport can serialize it once
-// per change instead of once per phone (server.ts does).
+// per change instead of once per phone (server.ts does). That keeps a flush
+// flat in the number of streams open (up to STREAM_LIMITS' 200, which a
+// script can open), not just at party size.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import type {
@@ -18,13 +20,13 @@ import type {
 } from "../common/api";
 import type { State, StateStore } from "./state";
 
-// What the API publishes, with whole identities. The hub passes these on
-// without the device IDs.
+// What the API publishes for the display, with whole identities. The hub
+// passes these on without the device IDs.
 export type HubMessage =
   | { type: "emote"; emote: string; user: UserIdentity }
   | { type: "queueAdded"; item: QueueItem }
-  // Goes only to the phone that queued item, and the display.
-  | { type: "queueFailed"; item: QueueItem; reason: string };
+  | { type: "queueFailed"; item: QueueItem; reason: string }
+  | { type: "micLevels"; id: string; gain?: number; echo?: number };
 
 // Who is listening: a phone gives its device ID; the display, or a phone
 // that gives none, owns nothing.
@@ -36,8 +38,7 @@ export interface Viewer {
 const NOBODY: Viewer = { deviceId: null };
 
 export interface LiveHub {
-  // Sends an emote or queueAdded event to every listener, or a queueFailed
-  // event to its phone and the display.
+  // Sends message's event to the display (no phone uses one).
   publish(message: HubMessage): void;
   // The listener gets the current state at once, then every state change
   // (throttled) and every message. Returns a function that stops it.
@@ -56,6 +57,23 @@ export function shareQueueItem(
     user: { nickname: user.nickname },
     isMine: deviceId !== null && user.deviceId === deviceId,
   } as SharedQueueItem;
+}
+
+// The downloads as deviceId's phone sees them.
+function liveDownloads(
+  state: Readonly<State>,
+  deviceId: string | null,
+): DownloadProgress[] {
+  return state.downloadQueue.map((download) => ({
+    id: download.id,
+    kind: download.kind,
+    songId: download.songId,
+    suffix: download.suffix,
+    progress: download.progress,
+    status: download.status,
+    reason: download.reason,
+    isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
+  }));
 }
 
 // The live state as deviceId's phone sees it (null: as the display does).
@@ -82,21 +100,14 @@ export function toLiveState(
     songVolume: state.songVolume,
     mics: state.mics,
     adhocLyrics: state.currentSongAdhocLyrics,
-    downloads: state.downloadQueue.map((download): DownloadProgress => ({
-      id: download.id,
-      kind: download.kind,
-      songId: download.songId,
-      suffix: download.suffix,
-      progress: download.progress,
-      status: download.status,
-      reason: download.reason,
-      isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
-    })),
+    downloads: liveDownloads(state, deviceId),
     config: {
       supervisedMode: config.supervisedMode,
       everyoneIsAdmin: config.everyoneIsAdmin,
     },
     toolsProblem: state.toolsProblem?.message ?? null,
+    remoconProblem: state.remoconProblem,
+    adminSignOuts: state.adminSignOuts,
   };
 }
 
@@ -140,66 +151,59 @@ function stateEvents(
   };
 }
 
-// The event each viewer gets for message, or null for none.
-function messageEvents(
-  message: HubMessage,
-): (viewer: Viewer) => LiveEvent | null {
+// The downloads events for a change to them alone, shared as stateEvents'
+// are: one for every listener downloading nothing, and one per device that
+// is.
+function downloadsEvents(
+  state: Readonly<State>,
+  shared: DownloadProgress[] = liveDownloads(state, null),
+) {
+  const sharedEvent: LiveEvent = { type: "downloads", downloads: shared };
+  const byDevice = new Map<string, LiveEvent>();
+  return (viewer: Viewer): LiveEvent => {
+    const { deviceId } = viewer;
+    if (deviceId === null) return sharedEvent;
+    let event = byDevice.get(deviceId);
+    if (!event) {
+      event = state.downloadQueue.some(
+        (download) => download.userIdentity.deviceId === deviceId,
+      )
+        ? { type: "downloads", downloads: liveDownloads(state, deviceId) }
+        : sharedEvent;
+      byDevice.set(deviceId, event);
+    }
+    return event;
+  };
+}
+
+// The display's event for message. Messages are the display's alone: the
+// phones use only the state (a failed download shows in its downloads).
+function messageEvent(message: HubMessage): LiveEvent {
   switch (message.type) {
-    case "emote": {
-      const event: LiveEvent = {
+    case "emote":
+      return {
         type: "emote",
         emote: message.emote,
         user: { nickname: message.user.nickname },
       };
-      return () => event;
-    }
-    case "queueAdded": {
-      const { item } = message;
-      const shared: LiveEvent = {
-        type: "queueAdded",
-        item: shareQueueItem(item, null),
+    case "queueAdded":
+      return { type: "queueAdded", item: shareQueueItem(message.item, null) };
+    case "queueFailed":
+      return {
+        type: "queueFailed",
+        item: shareQueueItem(message.item, null),
+        reason: message.reason,
       };
-      let mine: LiveEvent | null = null;
-      return (viewer: Viewer): LiveEvent => {
-        if (viewer.deviceId !== item.user.deviceId) return shared;
-        mine ??= {
-          type: "queueAdded",
-          item: shareQueueItem(item, viewer.deviceId),
-        };
-        return mine;
-      };
-    }
-    case "queueFailed": {
-      const { item, reason } = message;
-      let forDisplay: LiveEvent | null = null;
-      let forOwner: LiveEvent | null = null;
-      return (viewer: Viewer): LiveEvent | null => {
-        if (viewer.isDisplay) {
-          forDisplay ??= {
-            type: "queueFailed",
-            item: shareQueueItem(item, null),
-            reason,
-          };
-          return forDisplay;
-        }
-        if (viewer.deviceId === null || viewer.deviceId !== item.user.deviceId)
-          return null;
-        forOwner ??= {
-          type: "queueFailed",
-          item: shareQueueItem(item, viewer.deviceId),
-          reason,
-        };
-        return forOwner;
-      };
-    }
+    case "micLevels":
+      return { ...message };
   }
 }
 
 export function createLiveHub(
   store: StateStore,
   config: LiveState["config"],
-  // At most one state event per interval: about 4 a second while downloads
-  // report progress.
+  // At most one state or downloads event per interval: about 4 a second
+  // while downloads report progress.
   intervalMs = 250,
 ): LiveHub & {
   // Sends the state again if it changed some other way than through the
@@ -208,8 +212,24 @@ export function createLiveHub(
 } {
   const listeners = new Map<(event: LiveEvent) => void, Viewer>();
   // The last state sent to everyone, serialized, so unchanged state isn't
-  // sent again.
+  // sent again: its downloads apart, since their progress changes several
+  // times a second while the rest stays, and goes out alone (a downloads
+  // event, a few hundred bytes, not the whole state).
   let lastSent: string | null = null;
+  let lastDownloads: string | null = null;
+  // Takes shared as sent, and says what changed since the last.
+  const remember = (shared: LiveState) => {
+    const { downloads, ...rest } = shared;
+    const serialized = JSON.stringify(rest);
+    const serializedDownloads = JSON.stringify(downloads);
+    const changed = {
+      state: serialized !== lastSent,
+      downloads: serializedDownloads !== lastDownloads,
+    };
+    lastSent = serialized;
+    lastDownloads = serializedDownloads;
+    return changed;
+  };
   // When, by the monotonic clock (performance.now()): the wall clock may
   // step back (a time sync), which would hold every change back that long.
   // Only an event's sentAt is the wall clock's, for the phones.
@@ -238,10 +258,12 @@ export function createLiveHub(
     lastSentAt = performance.now();
     const state = store.getState();
     const shared = toLiveState(state, config);
-    const serialized = JSON.stringify(shared);
-    if (serialized === lastSent) return;
-    lastSent = serialized;
-    deliver(stateEvents(state, config, shared));
+    const changed = remember(shared);
+    if (changed.state) {
+      deliver(stateEvents(state, config, shared));
+    } else if (changed.downloads) {
+      deliver(downloadsEvents(state, shared.downloads));
+    }
   };
 
   const scheduleFlush = () => {
@@ -258,6 +280,8 @@ export function createLiveHub(
 
   // src/main/downloads updates downloads in place, without going through the
   // store, so look at them while any are running or failed (or just went).
+  // A poll, not a notice from every place that changes one: it costs a
+  // length check each interval and can't miss a change.
   let downloadsSent = 0;
   const watchDownloads = () => {
     const running = store.getState().downloadQueue.length;
@@ -271,7 +295,8 @@ export function createLiveHub(
       // Send a pending state change first, so a client never hears about a
       // queued song before it can see it in the queue.
       if (flushTimer) flush();
-      deliver(messageEvents(message));
+      const event = messageEvent(message);
+      deliver((viewer) => (viewer.isDisplay ? event : null));
     },
     subscribe(listener, viewer = NOBODY) {
       // Send a pending state change first, so the new listener starts from
@@ -283,7 +308,7 @@ export function createLiveHub(
       const state = store.getState();
       if (listeners.size === 1) {
         // Nobody was listening, so what was last sent is stale.
-        lastSent = JSON.stringify(toLiveState(state, config));
+        remember(toLiveState(state, config));
         lastSentAt = performance.now();
         downloadWatch = setInterval(watchDownloads, intervalMs);
         downloadWatch.unref?.();

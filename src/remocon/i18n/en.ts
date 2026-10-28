@@ -147,7 +147,9 @@ export const en = {
   // History.
   "history.heading": "History",
   "history.empty": "No history",
-  // When a sung song was queued (the server doesn't keep when it was sung).
+  // When a song was sung; for one sung before the server kept that, when
+  // it was queued.
+  "history.sungAt": "Sung {time}",
   "history.queuedAt": "Queued {time}",
 
   // Settings: the phone's nickname and choices, the TV's lyrics, and

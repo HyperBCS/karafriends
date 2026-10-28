@@ -50,14 +50,14 @@ async function upgradeThenReset(): Promise<string> {
   return answer;
 }
 
-test("a WebSocket upgrade is refused, and a reset after it crashes nothing", async () => {
+test("a WebSocket upgrade is answered as a plain request, and a reset after it crashes nothing", async () => {
   // An unhandled socket error would end the app (see index.ts).
   const uncaught: unknown[] = [];
   const onUncaught = (err: unknown) => uncaught.push(err);
   process.on("uncaughtException", onUncaught);
   try {
     for (let i = 0; i < 5; i++) {
-      assert.match(await upgradeThenReset(), /^HTTP\/1\.1 400 Bad Request\r\n/);
+      assert.match(await upgradeThenReset(), /^HTTP\/1\.1 200 OK\r\n/);
     }
     // Give the resets time to arrive.
     await sleep(200);

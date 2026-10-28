@@ -49,6 +49,12 @@ export function useApiQuery<M extends ApiMethod>(
   return useSuspenseQuery({
     queryKey: [method, input],
     queryFn: () => call(method, input),
+    // A lookup that answered ok: false (YouTube's bot check, say) asks
+    // again next time: unlike a good answer, it may not last.
+    staleTime: (query) =>
+      (query.state.data as { ok?: unknown } | undefined)?.ok === false
+        ? 0
+        : LOOKUP_STALE_MS,
     ...options,
   }).data;
 }

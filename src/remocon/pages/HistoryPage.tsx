@@ -1,6 +1,6 @@
 import React from "react";
 
-import type { SharedQueueItem } from "../../common/api";
+import type { PlayedSong } from "../../common/api";
 import { usePagedApiQuery } from "../../common/apiQueries";
 import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
@@ -11,11 +11,11 @@ import songLink, { sourceName } from "../songLink";
 import * as styles from "./HistoryPage.module.scss";
 
 // Tells history entries apart: a song may have been sung more than once.
-const historyKey = (song: SharedQueueItem) =>
+const historyKey = (song: PlayedSong) =>
   `${song.kind}_${song.songId}_${song.timestamp}`;
 
-// When a song was queued: the time, and the date too if not today.
-function queuedAt(timestamp: number, language: string): string {
+// A time: the time of day, and the date too if not today.
+function timeText(timestamp: number, language: string): string {
   const when = new Date(timestamp);
   // The time in one piece ("7:35 PM"): a line may break before it.
   const time = when
@@ -29,10 +29,20 @@ function queuedAt(timestamp: number, language: string): string {
   return `${date} ${time}`;
 }
 
-// The songs sung so far, newest first: when and by whom each was queued.
-// (When it was sung isn't kept, so the time says "Queued": with a long
-// queue, or one reordered, it's well before, and out of order.) Tapping one
-// opens its page, to queue it again.
+// The songs sung so far, newest first: when each was sung, and who queued
+// it. (A song sung before the server kept when says when it was queued.)
+// Tapping one opens its page, to queue it again.
+const When = ({ song, language }: { song: PlayedSong; language: string }) => {
+  const at = song.playedAt ?? Number(song.timestamp);
+  return (
+    <time dateTime={new Date(at).toISOString()}>
+      {t(song.playedAt !== null ? "history.sungAt" : "history.queuedAt", {
+        time: timeText(at, language),
+      })}
+    </time>
+  );
+};
+
 const HistoryPage = () => {
   const { language } = useLanguage();
   // The history grows as songs play, so coming back shows what was here at
@@ -59,11 +69,7 @@ const HistoryPage = () => {
             state={{ artistNameYomi: song.artistNameYomi }}
             trailing={
               <span className={styles.when}>
-                <time dateTime={new Date(Number(song.timestamp)).toISOString()}>
-                  {t("history.queuedAt", {
-                    time: queuedAt(Number(song.timestamp), language),
-                  })}
-                </time>
+                <When song={song} language={language} />
                 <span className={styles.who}>
                   {song.user.nickname || t("common.unknownUser")}
                 </span>
