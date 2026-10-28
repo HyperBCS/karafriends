@@ -1,4 +1,4 @@
-import { isRomaji, toHiragana } from "wanakana";
+import { isKana, isRomaji, toHiragana, toRomaji } from "wanakana";
 
 // What a search result is ranked by: its title (or, for an artist, its
 // name), the artist it's by, and the kana readings DAM gives for both.
@@ -28,13 +28,16 @@ interface Query {
 const TITLE = [100, 80, 60, 50];
 const ARTIST = [40, 30, 20, 10];
 
-// The query as typed and, typed in romaji, also in hiragana, so "koi" finds
-// DAM's reading こい.
+// The query as typed, and typed in romaji also in hiragana, so "koi" finds
+// DAM's reading こい, or typed in kana also in romaji, so "よあそび" finds
+// YOASOBI (Joysound gives no readings).
 function queryForms(query: string): Query[] {
   const typed = query.normalize("NFKC").split(/\s+/).map(normalize);
-  const forms = isRomaji(query)
-    ? [typed, typed.map((word) => toHiragana(word))]
-    : [typed];
+  const forms = [typed];
+  if (isRomaji(query)) forms.push(typed.map((word) => toHiragana(word)));
+  else if (isKana(typed.join(""))) {
+    forms.push(typed.map((word) => toRomaji(word)));
+  }
   return forms
     .map((words) => words.filter(Boolean))
     .filter((words) => words.length > 0)

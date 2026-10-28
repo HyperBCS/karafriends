@@ -54,6 +54,16 @@ describe("rank", () => {
     assert.deepEqual(rank("よあそび", [[koi, other]]), [other, koi]);
   });
 
+  test("a kana query matches Latin titles and artists, as romaji", () => {
+    const yoasobi = song("夜に駆ける", "YOASOBI");
+    const medley = song("YOASOBIメドレー", "YOASOBI");
+    assert.deepEqual(rank("よあそび", [[song("恋"), yoasobi, medley]]), [
+      medley,
+      yoasobi,
+      song("恋"),
+    ]);
+  });
+
   test("a romaji query matches Latin titles and DAM's kana readings", () => {
     assert.deepEqual(titles("lemon", ["Lemonade", "LEMON", "Lemon Tree"]), [
       "LEMON",
