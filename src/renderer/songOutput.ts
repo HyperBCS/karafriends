@@ -80,15 +80,23 @@ export class SongOutputKeeper {
     return this.apply();
   }
 
-  // The host's choice: kept only if the songs play there.
+  // The host's choice: kept only if the songs play there. System default is
+  // always kept: where the machine has no output at all (so even the
+  // default is "not found"), the songs play silently until one is connected.
   async choose(id: string): Promise<void> {
     const before = this.wanted;
     this.wanted = id;
     try {
       await this.apply();
     } catch (err) {
-      this.wanted = before;
-      throw err;
+      if (id !== "") {
+        this.wanted = before;
+        throw err;
+      }
+      console.warn("No sound output to play the songs on:", err);
+      await this.setSinkId({ type: "none" }).catch((e) =>
+        console.warn("Couldn't play the songs silently:", e),
+      );
     }
   }
 

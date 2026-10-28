@@ -65,13 +65,15 @@ class FakeDevices extends EventTarget {
   // Until it's true, the context's own list lags the page's by one look
   // (Chromium updates them apart).
   lagging = false;
+  // A machine with no output at all: Chromium then finds no default either.
+  noDefault = false;
 
   listed(id: string) {
     if (this.lagging) {
       this.lagging = false;
       return false;
     }
-    return id === "" || this.outputs.has(id);
+    return (id === "" && !this.noDefault) || this.outputs.has(id);
   }
 
   async enumerateDevices() {
@@ -183,6 +185,23 @@ describe("the songs' output", () => {
     await settled();
     assert.equal(context.sinkId, "tv");
     assert.equal(keeper.place(), "chosen");
+  });
+
+  test("System default on a machine with no output at all is kept, and the songs play silently", async () => {
+    const { devices, context, keeper } = setup();
+    // A CI runner: no output, so even the default is "not found".
+    devices.outputs.clear();
+    devices.noDefault = true;
+    await assert.rejects(keeper.want("e2e-gone"), /not found/);
+    // With nothing to render on, the context errors at launch.
+    context.dispatchEvent(new Event("error"));
+    await settled();
+    assert.equal(keeper.place(), "silent");
+    await keeper.choose("");
+    await settled();
+    assert.equal(keeper.place(), "silent");
+    assert.deepEqual(context.sinkId, { type: "none" });
+    assert.ok(context.calls.includes("setSinkId none"));
   });
 
   test("System default while the chosen output is gone plays on the default", async () => {

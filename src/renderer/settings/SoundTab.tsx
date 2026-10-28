@@ -141,6 +141,13 @@ function SongOutputPlace(props: {
   if (place === "chosen" || (place === "default" && !props.output)) {
     return null;
   }
+  if (!props.output) {
+    return (
+      <p className="settingsHint" role="status">
+        No sound output is connected: the songs play silently until one is.
+      </p>
+    );
+  }
   const where = place === "silent" ? "silently" : "on System default";
   return (
     <p className="settingsHint" role="status">
