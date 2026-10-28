@@ -317,8 +317,8 @@ export function openLiveStream(
 }
 
 // One stream for the page. Mount it once, at the root. With checkAdmin, it
-// also asks whoami each time it connects and each time the phone signs in or
-// out, for useIsAdmin().
+// also asks whoami each time it connects, each time the phone signs in or
+// out, and each time everyone-admin mode turns on or off, for useIsAdmin().
 export function LiveStateProvider({
   children,
   checkAdmin = false,
@@ -364,7 +364,17 @@ export function LiveStateProvider({
       },
       (event) => {
         if (event.type === "state") {
+          const before = store.get()?.config.everyoneIsAdmin;
           store.set(mergeLiveState(store.get(), event.state));
+          // The host turned everyone-admin mode on or off. (On connect,
+          // the open above already asked.)
+          if (
+            checkAdmin &&
+            before !== undefined &&
+            before !== event.state.config.everyoneIsAdmin
+          ) {
+            askWhoami();
+          }
         }
         for (const listener of listeners) {
           try {
