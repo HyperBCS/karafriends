@@ -6,19 +6,19 @@
 // the ones here only pass locals that outlive the call.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 
-use windows::core::{w, Error, Interface, GUID, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_NOT_FOUND, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::Media::Audio::{
-    eCapture, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator, IMMEndpoint,
-    MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY, AUDCLNT_BUFFERFLAGS_SILENT,
-    AUDCLNT_E_BUFFER_ERROR, AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_INVALIDATED,
-    AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_SHAREMODE_EXCLUSIVE,
-    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
+    AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_E_BUFFER_ERROR,
+    AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_DEVICE_INVALIDATED,
+    AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_SHAREMODE_EXCLUSIVE,
+    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, IAudioCaptureClient, IAudioClient, IMMDevice,
+    IMMDeviceEnumerator, IMMEndpoint, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
+    WAVEFORMATEXTENSIBLE_0, eCapture,
 };
 use windows::Win32::Media::KernelStreaming::{
     KSDATAFORMAT_SUBTYPE_PCM, SPEAKER_FRONT_CENTER, SPEAKER_FRONT_LEFT, SPEAKER_FRONT_RIGHT,
@@ -26,13 +26,14 @@ use windows::Win32::Media::KernelStreaming::{
 };
 use windows::Win32::Media::Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
-    COINIT_MULTITHREADED,
+    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
+    CoUninitialize,
 };
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, CreateEventW,
     WaitForSingleObject,
 };
+use windows::core::{Error, GUID, HRESULT, HSTRING, Interface, PCWSTR, w};
 
 type Outcome<T> = std::result::Result<T, String>;
 
@@ -43,10 +44,9 @@ const FALLBACK_RATES: [u32; 3] = [48000, 44100, 96000];
 // every host.)
 const WAIT_MS: u32 = 100;
 
-const NOT_ALLOWED: &str =
-    "Windows doesn't allow exclusive use of this mic: in Sound settings, open \
-     the mic's Properties, Advanced, and tick 'Allow applications to take exclusive control of \
-     this device'";
+const NOT_ALLOWED: &str = "Windows doesn't allow exclusive use of this mic: in Sound settings, \
+     open the mic's Properties, Advanced, and tick 'Allow applications to take exclusive control \
+     of this device'";
 // Windows also says this when another program has the mic in shared mode and
 // exclusive programs don't get priority.
 const IN_USE: &str = "Another program is using this mic, so Windows won't give it to us alone: \
@@ -152,10 +152,10 @@ fn capture_thread(
     let ended = capture.run(stop, realtime, lost, &mut on_data);
     // Release the mic before saying it stopped.
     drop(capture);
-    if let Some(e) = ended {
-        if !stop.load(Relaxed) {
-            on_error(e);
-        }
+    if let Some(e) = ended
+        && !stop.load(Relaxed)
+    {
+        on_error(e);
     }
 }
 
@@ -650,10 +650,10 @@ fn failed(step: &str, e: &Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
     use std::time::{Duration, Instant};
-    use windows::Win32::Media::Audio::{eRender, EDataFlow, DEVICE_STATE_ACTIVE};
+    use windows::Win32::Media::Audio::{DEVICE_STATE_ACTIVE, EDataFlow, eRender};
 
     fn converted(sample: SampleFormat, bytes: &[u8]) -> Vec<f32> {
         let mut out = vec![9.0; 3];

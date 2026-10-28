@@ -8,8 +8,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
-    _output_devices, _output_name, describe, error_callback, find_output, kept, lock, system_host,
-    DeviceType, RateLimit, Result, Stall, Stream, StreamSlot,
+    _output_devices, _output_name, DeviceType, RateLimit, Result, Stall, Stream, StreamSlot,
+    describe, error_callback, find_output, kept, lock, system_host,
 };
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
@@ -371,17 +371,17 @@ impl Mixer {
     ) -> Result<(Stream, cpal::SampleRate)> {
         let default_config = device.default_output_config()?;
         let mut config = default_config.config();
-        if let Some(rate) = rate.or_else(|| lock(&self.sources).first().map(|s| s.rate)) {
-            if crate::takes_rate(&default_config, device.supported_output_configs()?, rate) {
-                config.sample_rate = rate;
-            }
+        if let Some(rate) = rate.or_else(|| lock(&self.sources).first().map(|s| s.rate))
+            && crate::takes_rate(&default_config, device.supported_output_configs()?, rate)
+        {
+            config.sample_rate = rate;
         }
         if let (Some(frames), cpal::SupportedBufferSize::Range { min, max }) =
             (buffer, default_config.buffer_size())
+            && device_type.is_asio()
+            && (min..=max).contains(&&frames)
         {
-            if device_type.is_asio() && (min..=max).contains(&&frames) {
-                config.buffer_size = cpal::BufferSize::Fixed(frames);
-            }
+            config.buffer_size = cpal::BufferSize::Fixed(frames);
         }
         #[cfg(target_os = "linux")]
         {
@@ -712,13 +712,13 @@ fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
         };
         if let Some(mut sources) = sources {
             let events = mix_into(&mut sources, &mut mix, rate);
-            if let Some(margin) = events.ran_dry {
-                if dry_prints.ready() {
-                    eprintln!(
-                        "mic fell behind: refilling, and keeping {} ms spare from now on",
-                        millis(rate, margin)
-                    );
-                }
+            if let Some(margin) = events.ran_dry
+                && dry_prints.ready()
+            {
+                eprintln!(
+                    "mic fell behind: refilling, and keeping {} ms spare from now on",
+                    millis(rate, margin)
+                );
             }
             if events.cut > 0 && cut_prints.ready() {
                 eprintln!(
@@ -823,9 +823,11 @@ mod tests {
         let mut pacer = Pacer::new(RATE);
         pacer.plan(34, WANTED, CAPACITY);
         for level in [13, 15] {
-            assert!(plan_at(&mut pacer, level, 100)
-                .iter()
-                .all(|r| *r == plays(10)));
+            assert!(
+                plan_at(&mut pacer, level, 100)
+                    .iter()
+                    .all(|r| *r == plays(10))
+            );
         }
     }
 

@@ -78,8 +78,8 @@ use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use neon::prelude::Finalize;
 use ringbuf::traits::{Producer, Split};
-use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::Resampler;
+use rubato::audioadapter_buffers::direct::InterleavedSlice;
 
 pub use mixer::{output_devices, output_format, output_options, output_status, set_output_device};
 
@@ -369,7 +369,7 @@ mod shared {
         // For the stream's thread: hands each packet to every mic. While a
         // mic is added or removed (the JS thread holds the lock only for
         // that), the packet is dropped rather than the thread made to wait.
-        pub(crate) fn on_data(&self) -> impl FnMut(&[f32]) + Send + 'static {
+        pub(crate) fn on_data(&self) -> impl FnMut(&[f32]) + Send + 'static + use<> {
             let taps = self.taps.clone();
             move |data| {
                 let mut taps = match taps.try_lock() {
@@ -384,7 +384,7 @@ mod shared {
         }
 
         // For the stream's thread, when the stream stops by itself.
-        pub(crate) fn on_error(&self) -> impl FnOnce(String) + Send + 'static {
+        pub(crate) fn on_error(&self) -> impl FnOnce(String) + Send + 'static + use<> {
             let taps = self.clone();
             move |e| {
                 eprintln!("Mic stopped: {e}");
@@ -1103,7 +1103,7 @@ impl InputDevice {
         meters: Arc<Meters>,
         mut pitch_tx: ringbuf::HeapProd<f32>,
         mut output_tx: ringbuf::HeapProd<f32>,
-    ) -> Result<impl FnMut(&[Sample]) + Send + 'static>
+    ) -> Result<impl FnMut(&[Sample]) + Send + 'static + use<Sample>>
     where
         f32: cpal::FromSample<Sample>,
     {
@@ -1549,7 +1549,7 @@ fn _output_name(device: &cpal::Device, device_type: &DeviceType) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pitch_detector::{freq2midi, PitchDetector};
+    use pitch_detector::{PitchDetector, freq2midi};
     use ringbuf::traits::Consumer;
     use wavegen::{sine, wf};
 
@@ -1968,9 +1968,10 @@ mod tests {
     }
 
     unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
+        // Each passes its caller's GlobalAlloc contract on to System.
         unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
             let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
-            std::alloc::System.alloc(layout)
+            unsafe { std::alloc::System.alloc(layout) }
         }
 
         unsafe fn realloc(
@@ -1980,11 +1981,11 @@ mod tests {
             new_size: usize,
         ) -> *mut u8 {
             let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
-            std::alloc::System.realloc(ptr, layout, new_size)
+            unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
-            std::alloc::System.dealloc(ptr, layout)
+            unsafe { std::alloc::System.dealloc(ptr, layout) }
         }
     }
 

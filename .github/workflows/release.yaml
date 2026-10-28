@@ -11,10 +11,10 @@ on:
 permissions:
   contents: write
 # The Rust toolchain steps keep the old actions-rs/toolchain behaviour: no
-# cache (a release builds from scratch) and no "-D warnings" (a new compiler
-# warning shouldn't stop a release; the Build workflow already fails on
-# warnings). setup-rust-toolchain sets RUSTFLAGS only when given some, and
-# Linux needs some: see matrix.rustflags.
+# cache (a release builds from scratch) and warnings allowed, hence
+# build-warnings: warn (a new compiler warning shouldn't stop a release; the
+# Build workflow already fails on warnings). setup-rust-toolchain sets
+# RUSTFLAGS only when given some, and Linux gets some: see matrix.rustflags.
 
 jobs:
   release:
@@ -69,11 +69,12 @@ jobs:
             echo "::error::The release's tag is $TAG, but package.json's version makes it $version"
             exit 1
           fi
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           target: ${{ matrix.target }}
           cache: false
+          build-warnings: warn
           rustflags: ${{ matrix.rustflags || '' }}
       - uses: actions/setup-node@v7
         with:
