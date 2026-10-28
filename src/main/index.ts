@@ -40,6 +40,7 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  powerSaveBlocker,
   protocol,
 } from "electron";
 import isDev from "electron-is-dev";
@@ -296,6 +297,14 @@ function createWindow() {
 }
 
 app.on("ready", () => {
+  // Keep the TV on, and the computer awake, for as long as the app runs.
+  // Between songs nothing plays, so nothing else stops the screen blanking
+  // after the OS's idle timeout (5 minutes on GNOME, which also locks the
+  // session): the QR code would be gone and later songs would play behind a
+  // black or locked screen. Taken at launch, because taking it once the
+  // screen has blanked doesn't bring the screen back. (Not for a hidden
+  // window: the tests and checks.)
+  if (!HIDE_WINDOW) powerSaveBlocker.start("prevent-display-sleep");
   // Start warming the external resource cache as soon as the app is ready so
   // the binaries are usually in place before the first song is queued. This is
   // best-effort: failures are logged and retried on demand by the downloader,
