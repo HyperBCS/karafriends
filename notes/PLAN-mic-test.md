@@ -1,0 +1,43 @@
+# Plan: mic round, from the test (2026-10-28)
+
+The user tried the mic round ([`PLAN-mic.md`](PLAN-mic.md)) on the other machine and came back with three things. Same way of working: Fable coordinates, Opus sessions in their own worktrees, the coordinator reviews, re-runs checks, merges and pushes; "Keep it simple" binds. Nothing plays sound on this computer.
+
+## Status (keep this table current)
+
+| Step                                                          | State       | Branch / commit | Notes |
+| ------------------------------------------------------------- | ----------- | --------------- | ----- |
+| T1: native: real mic names, ASIO on by default, ASIO line     | not started |                 |       |
+| T2: downloads: Clear downloads, a short DAM file re-downloads | not started |                 |       |
+| Final: check by the user on the other machine                 | not started |                 |       |
+
+## The list and the decisions from Q&A
+
+1. **A cached download of a "preview" song.** A DAM song plays only a short clip, every time: the file under `%TEMP%\karafriends_tmp` (downloads are kept there by song id) is a sample, and the app reuses it. Decisions: a **Clear downloads** button in the display's Settings (a new "Downloads" section: how many files and how much space, and the button; it deletes every file in the folder that no current download is writing and nothing is playing from, and says what it freed); and the app **refuses a DAM file that is much shorter than the song**: when a DAM download finishes, its duration (ffprobe, which ships with ffmpeg) is compared with the song's `playtime`; a file under 60 % of it is deleted and the download counts as failed with a new reason ("DAM sent a sample, not the song"), so the song streams instead and the next queue tries again. The display does the same check for a file it is about to play when the song has a playtime (the video's `duration` once metadata loads): it skips the file and streams.
+2. **The real mic name, not a UUID.** cpal's `device.id()` on Windows is the endpoint ID (`{0.0.1.00000000}.{guid}`); the outputs already use `description().name()`. Decision: inputs are **labelled by their friendly name** too ("Yeti Stereo Microphone (USB), channel 1"), and the **id stays the key** (what `localStorage` and the phone's `MicInfo.id` carry), so saved mics keep matching with no migration. `inputDevices()` returns `[id, label, channels]`; the display shows the label everywhere and sends it in `MicInfo.label`.
+3. **ASIO support: no ASIO devices show.** The app reaches that machine both as a local build (`yarn dev` / `build-prod`, which build without ASIO today) and as a CI build (which has it). Decisions:
+   - **ASIO is on by default** in the native crates (`default = ["asio"]`), so every Windows build has it; CI's `--features asio` becomes redundant and stays harmless. Our ASIO code is gated on `all(windows, feature = "asio")`, so the default is harmless on macOS and Linux (cpal ignores the feature there). Building with it needs LLVM (bindgen): the README's build section says `winget install LLVM.LLVM` once, and that `CARGO_ARGS=--no-default-features` builds without ASIO. The ASIO SDK downloads itself at build time (asio-sys) unless `CPAL_ASIO_DIR` points at one. LLVM was installed on this computer on 2026-10-28, so the check chain here covers the ASIO path.
+   - **A failing ASIO host never hides the WASAPI mics.** Today `_input_devices` fails outright when the ASIO host can't initialise; from now on the ASIO half is skipped with a note.
+   - **An "ASIO" line in Settings' Microphones section** says what the system has, so the user can tell the cases apart: "not in this build", "no ASIO drivers are installed", "ASIO: N drivers" with the names, and a driver that is registered but won't load, by name with the error. The native side exposes `asioStatus(): string`. Both kinds of driver are just ASIO drivers to cpal: an interface's own and a wrapper (ASIO4ALL, FlexASIO) alike; the line lists whichever is registered. Electron is 64-bit, so only 64-bit drivers show (ASIO4ALL v2 and FlexASIO have them).
+
+## Phases
+
+### T1: native: real mic names, ASIO on by default, the ASIO line (branch `asio-default`)
+
+Files: `native/**` (not `target`), `src/preload/index.ts`, `src/renderer/global.ts`, `nativeAudio.ts`, `MicrophoneSetting.tsx`, `Settings.tsx` (the Microphones section only), `App.tsx` (the mic label in `MicInfo`), `README.md` (the build section and the Microphones line), `package.json` only if a script needs it, `.github/workflows/*.yaml` (drop the now-redundant `--features asio`, or leave it; say which), the e2e fake audio in the preload and `tests/e2e/settings.spec.ts`, `CHANGELOG.md`, the T1 Status row.
+
+- Item 2: `inputDevices()` → `[id, label, channels][]`; `_device_name` stays the id-based key, a new `_device_label` gives "<friendly name> (USB)" (or "(ASIO)"); the display's select options, mic rows, status lines and `MicInfo.label` use the label; `localStorage` keeps the id. The fake audio gives labels like "E2E Mic" with ids like `{0.0.1.00000000}.{e2e-mic}` so the tests prove the label shows and the id is what's saved and sent.
+- Item 3: `default = ["asio"]` in both crates; `cfg(all(windows, feature = "asio"))` on every ASIO-gated line; `_input_devices` and `_output_devices` skip a failing ASIO host; `asioStatus()` through the binding, preload and wrapper, shown as a line under the Mic output select; README build notes. `cargo check` and `cargo test` must pass with the default features on this computer (LLVM is installed; set `LIBCLANG_PATH` to `C:\Program Files\LLVM\bin` if the shell doesn't see it) and with `--no-default-features`. The ASIO host on this computer has no drivers, so the line here should read "no ASIO drivers are installed"; say what it read in a real launch.
+- Checks: `cargo clippy` (default features and `--no-default-features`), `cargo test` (both), `yarn typecheck`, `yarn lint`, `yarn prettier --check .`, `yarn test:unit`, `yarn build-prod` (default features), `yarn test:e2e:ci`, one hidden launch.
+
+### T2: downloads: Clear downloads, a short DAM file re-downloads (branch `clear-downloads`)
+
+Files: `src/main/downloads/**`, `src/main/api.ts`, `validate.ts`, `server.ts` (`DISPLAY_ONLY_METHODS`), `src/common/api.ts`, `src/common/downloadFailure.ts`, `src/main/settings.ts` if the method fits there, `src/renderer/Settings.tsx` (a new "Downloads" section, placed after "Display" and before "Microphones", nothing else in the file), `src/renderer/useSongPlayer.ts` (the short-file check before playing a downloaded DAM file), `tests/e2e/settings.spec.ts` (a new describe at the end), `downloadFailure.spec.ts`, unit tests, `CHANGELOG.md`, the T2 Status row.
+
+- Display-only methods `downloadsInfo` → `{ files: number; bytes: number }` and `clearDownloads` → `{ deleted: number; bytes: number; kept: number }` (kept: files in use: a download in progress, or the current song's file). The section shows "N files, X MB" and the button, then "Freed X MB" (and "N kept, in use" if any).
+- The DAM download job probes the finished file's duration with ffprobe (`getResourcePaths()` gives ffmpeg's folder; ffprobe sits beside it; if it doesn't, use `ffmpeg -i` and parse "Duration"); a file under 60 % of the song's `playtime` (when known) is deleted and the job fails with `REASONS.damSample` ("DAM sent a sample, not the song"), which reaches the phone like other failures. Unit test with the fake tools in `tests/fixtures/bin/` (add a fake ffprobe that prints a duration from an env var or the file name).
+- The display: when a DAM song is about to play from its downloaded file and `playtime` is known, it waits for `loadedmetadata`; if `duration` is under 60 % of playtime it logs, asks the server to delete that file (`clearDownload { songId, suffix }`, display-only) and streams instead.
+- Checks as usual.
+
+### Final: check by the user on the other machine
+
+Settings' Microphones section shows the mic by its real name; the ASIO line names the interface's driver and the wrapper, and both can be picked as Mic output (and the interface as a mic if it has inputs); Clear downloads removes the sample, and the song plays whole after re-queueing; a DAM song whose download is a sample is refused and streams.
