@@ -52,9 +52,9 @@ export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>([
 const HEARTBEAT_MS = 20_000;
 
 // How many event streams may be open at once: in all, and from one address.
-// A phone needs one per open remote page. A proxy on this machine (a
-// Cloudflare tunnel, the dev server) connects for every phone, so its
-// streams only count toward the total.
+// A phone needs one per open remote page. A proxy on this machine (the dev
+// server) connects for every phone, so its streams only count toward the
+// total.
 export interface StreamLimits {
   total: number;
   perAddress: number;
@@ -193,7 +193,7 @@ export function serializeEvent(event: LiveEvent): string {
 
 // How many adminLogin tries one address gets in a window, so a phone can't
 // guess the password at speed. Through a proxy on this machine (the dev
-// server, a tunnel) every phone shares one address, and so one limit.
+// server) every phone shares one address, and so one limit.
 export interface RateLimit {
   tries: number;
   windowMs: number;
@@ -272,7 +272,7 @@ export function apiRouter(
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
-      // Ask proxies (e.g. a Cloudflare tunnel) not to buffer it either.
+      // Ask any proxy not to buffer it either.
       "X-Accel-Buffering": "no",
     });
     const writer = eventWriter(res);

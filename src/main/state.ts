@@ -350,9 +350,8 @@ export function loadState(filePath: string): State {
 }
 
 // Builds a State from a parsed queue.json (serializeState), keeping whatever
-// is valid. Reads the GraphQL-shaped items older versions saved too
-// (`__typename` and `userIdentity` instead of `kind` and `user`), and drops
-// the null they saved at the head of the queue when nothing was playing. A
+// is valid, from 0.1.0 on. (Items from before it, GraphQL-shaped with
+// `__typename` and `userIdentity`, are dropped, each with a warning.) A
 // current song in the file (none has saved one, but in case) goes at the
 // head of the queue.
 export function parseState(raw: Record<string, unknown>): State {
@@ -367,14 +366,14 @@ export function parseState(raw: Record<string, unknown>): State {
     return { song, playedAt: typeof playedAt === "number" ? playedAt : null };
   }).slice(0, MAX_HISTORY);
   // Only the lyrics of songs still queued: older versions kept those of
-  // songs that never played. And they saved them by video ID.
+  // songs that never played.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
-  const saved = (key: string) =>
-    Object.hasOwn(savedLyrics, key) ? savedLyrics[key] : undefined;
   for (const item of state.songQueue) {
     if (item.kind !== "youtube" || !item.hasAdhocLyrics) continue;
     const key = songKey(item);
-    const lyrics = saved(key) ?? saved(item.songId);
+    const lyrics = Object.hasOwn(savedLyrics, key)
+      ? savedLyrics[key]
+      : undefined;
     if (Array.isArray(lyrics)) {
       state.idToAdhocLyrics[key] = lyrics.filter(
         (line): line is string => typeof line === "string",
@@ -388,13 +387,6 @@ export function parseState(raw: Record<string, unknown>): State {
   }
   return state;
 }
-
-const KIND_BY_TYPENAME: Record<string, QueueItemKind> = {
-  DamQueueItem: "dam",
-  JoysoundQueueItem: "joysound",
-  YoutubeQueueItem: "youtube",
-  NicoQueueItem: "nico",
-};
 
 function parsePendingSong(raw: unknown): PendingSong | null {
   if (!isObject(raw)) return null;
@@ -419,11 +411,7 @@ function parsePendingSong(raw: unknown): PendingSong | null {
 
 function parseQueueItem(raw: unknown): QueueItem | null {
   if (!isObject(raw)) return null;
-  const kind =
-    typeof raw.kind === "string"
-      ? raw.kind
-      : KIND_BY_TYPENAME[raw.__typename as string];
-  const user = isObject(raw.user) ? raw.user : raw.userIdentity;
+  const { kind, user } = raw;
   if (
     typeof raw.songId !== "string" ||
     typeof raw.name !== "string" ||

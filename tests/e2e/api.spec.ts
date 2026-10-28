@@ -87,9 +87,9 @@ test("/graphql answers 404", async ({ karafriends }) => {
   expect((await fetch(url)).status).toBe(404);
 });
 
-// Nothing speaks WebSocket. A phone that asks anyway, then resets the
-// connection, used to crash the app.
-test("a WebSocket upgrade is refused, and a reset after it is harmless", async ({
+// Nothing speaks WebSocket: an upgrade gets the plain answer. A phone that
+// asks anyway, then resets the connection, once crashed the app.
+test("a WebSocket upgrade isn't taken, and a reset after it is harmless", async ({
   karafriends,
 }) => {
   const { hostname, port } = new URL(karafriends.remoconUrl);
@@ -110,7 +110,7 @@ test("a WebSocket upgrade is refused, and a reset after it is harmless", async (
           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
       );
     });
-    expect(answer).toMatch(/^HTTP\/1\.1 400 /);
+    expect(answer).toMatch(/^HTTP\/1\.1 200 /);
     socket.resetAndDestroy();
   }
   // Time for the resets to arrive, and for a crash to happen.

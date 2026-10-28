@@ -3,7 +3,6 @@
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { createServer, type Server } from "http";
-import type { Duplex } from "stream";
 
 import type { Application } from "express";
 
@@ -35,25 +34,11 @@ export function startHttpServer(
     onProblem(message);
   });
 
-  httpServer.on("upgrade", (_req, socket) => refuseUpgrade(socket));
-
+  // No "upgrade" listener: Node then hands a WebSocket upgrade (nothing
+  // here speaks it) to the app like any request, which answers it as one.
   httpServer.listen(port, host, () => {
     console.log(`Server is now running on http://localhost:${port}`);
   });
 
   return httpServer;
-}
-
-// Nothing here speaks WebSocket, so refuse upgrades, as graphql-ws did for
-// any other path, instead of Node handing them to Express. (In dev, the
-// remote's hot-reload socket goes to the Vite dev server, not here.)
-//
-// Node takes its own error handler off the socket before it emits "upgrade",
-// so this one needs its own: an unhandled "error" (the phone resetting the
-// connection, say) would be an uncaught exception, which ends the app (see
-// index.ts). Once the answer is out, close the socket, as ws does.
-export function refuseUpgrade(socket: Duplex) {
-  socket.on("error", () => socket.destroy());
-  socket.once("finish", () => socket.destroy());
-  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 }

@@ -284,29 +284,9 @@ describe("loadState", () => {
     assert.deepEqual(loadState(file).songQueue, [song(1)]);
   });
 
-  test("reads the GraphQL-shaped items older versions saved", () => {
+  test("drops the GraphQL-shaped items from before 0.1.0, saying so", () => {
     write({
       songQueue: [
-        {
-          __typename: "DamQueueItem",
-          songId: "1234-56",
-          name: "DAM song",
-          artistName: "Artist",
-          playtime: 200,
-          timestamp: "1",
-          userIdentity: { deviceId: "d", nickname: "n" },
-          streamingUrlIdx: "1",
-        },
-        {
-          __typename: "JoysoundQueueItem",
-          songId: "123456",
-          name: "Joysound song",
-          artistName: "Artist",
-          timestamp: "2",
-          userIdentity: { deviceId: "d", nickname: "n" },
-          isRomaji: true,
-          youtubeVideoId: null,
-        },
         {
           __typename: "NicoQueueItem",
           songId: "sm9",
@@ -316,41 +296,22 @@ describe("loadState", () => {
           timestamp: "3",
           userIdentity: { deviceId: "d", nickname: "n" },
         },
+        song(1),
       ],
     });
-    const user = { deviceId: "d", nickname: "n" };
-    assert.deepEqual(loadState(file).songQueue, [
-      {
-        kind: "dam",
-        songId: "1234-56",
-        name: "DAM song",
-        artistName: "Artist",
-        playtime: 200,
-        timestamp: "1",
-        user,
-        streamingUrlIdx: 1,
-      },
-      {
-        kind: "joysound",
-        songId: "123456",
-        name: "Joysound song",
-        artistName: "Artist",
-        playtime: null,
-        timestamp: "2",
-        user,
-        lyricsMode: "romaji",
-        youtubeVideoId: null,
-      },
-      {
-        kind: "nico",
-        songId: "sm9",
-        name: "Nico video",
-        artistName: "",
-        playtime: null,
-        timestamp: "3",
-        user,
-      },
-    ]);
+    const warned: unknown[] = [];
+    const { warn } = console;
+    console.warn = (...args) => warned.push(args.join(" "));
+    try {
+      assert.deepEqual(loadState(file).songQueue, [song(1)]);
+    } finally {
+      console.warn = warn;
+    }
+    assert.equal(warned.length, 1);
+    assert.match(
+      String(warned[0]),
+      /^Dropping an unreadable saved entry: .*sm9/,
+    );
   });
 
   test("reads a Joysound song's isRomaji, saved before the lyrics modes, as its mode", () => {
@@ -442,24 +403,19 @@ describe("loadState", () => {
     assert.equal(state.guideMelodyLevel, 0);
   });
 
-  test("keeps only the adhoc lyrics of queued songs, and moves older ones' to their song", () => {
+  test("keeps only the adhoc lyrics of queued songs", () => {
     const keyed = song(1, { hasAdhocLyrics: true });
-    // Saved by video ID, as older versions did.
-    const old = song(2, { hasAdhocLyrics: true });
     write({
-      songQueue: [keyed, old, song(3)],
+      songQueue: [keyed, song(3)],
       idToAdhocLyrics: {
         [songKey(keyed)]: ["one", 1, "two"],
-        video2: ["old"],
         // Songs that aren't queued (a failed download, say).
-        video3: ["not queued with lyrics"],
-        video4: ["never queued"],
-        "video5@1": ["gone"],
+        [songKey(song(3))]: ["not queued with lyrics"],
+        "video4@1": ["never queued"],
       },
     });
     assert.deepEqual(loadState(file).idToAdhocLyrics, {
       [songKey(keyed)]: ["one", "two"],
-      [songKey(old)]: ["old"],
     });
   });
 
