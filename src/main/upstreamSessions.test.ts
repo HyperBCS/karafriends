@@ -8,9 +8,13 @@ import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, mock, test } from "node:test";
 
 import { memoizeSuccess, NoLoginError } from "./credentials";
-import { MinseiAPI } from "./damApi";
+import { MinseiAPI, type MinseiCredentialsProvider } from "./damApi";
 import { HttpStatusError } from "./http";
-import { JoysoundAPI } from "./joysoundApi";
+import { JoysoundAPI, type JoysoundCredentialsProvider } from "./joysoundApi";
+
+// What each client's login answers.
+type JoysoundLogin = Awaited<ReturnType<JoysoundCredentialsProvider>>;
+type DamLogin = Awaited<ReturnType<MinseiCredentialsProvider>>;
 
 // Retries without the waits.
 const FAST = { retries: 3, minTimeoutMs: 1, maxTimeoutMs: 1 };
@@ -77,7 +81,7 @@ beforeEach(() => {
 // Sessions s1, s2, ...: each login makes the next.
 function joysoundLogins() {
   const logins: string[] = [];
-  const session = memoizeSuccess(async () => {
+  const session = memoizeSuccess<JoysoundLogin>(async () => {
     logins.push(`s${logins.length + 1}`);
     return { cookies: { JSESSIONID: logins.at(-1)! }, csrfToken: "token" };
   });
@@ -139,7 +143,7 @@ describe("JoysoundAPI's downloads", () => {
   test("fail a refused login at once, logging in once", async () => {
     let logins = 0;
     const joysound = joysoundWith(
-      memoizeSuccess(async () => {
+      memoizeSuccess<JoysoundLogin>(async () => {
         logins++;
         throw new Error("Joysound login rejected (result 1)");
       }),
@@ -152,7 +156,7 @@ describe("JoysoundAPI's downloads", () => {
   test("fail a login from outside Japan at once", async () => {
     let logins = 0;
     const joysound = joysoundWith(
-      memoizeSuccess(async () => {
+      memoizeSuccess<JoysoundLogin>(async () => {
         logins++;
         throw new HttpStatusError(403, "https://www.sound-cafe.jp/login");
       }),
@@ -342,7 +346,7 @@ describe("MinseiAPI", () => {
   test("fails a refused login at once", async () => {
     let logins = 0;
     const minsei = minseiWith(
-      memoizeSuccess(async () => {
+      memoizeSuccess<DamLogin>(async () => {
         logins++;
         throw new Error("NG 1001: wrong password");
       }),

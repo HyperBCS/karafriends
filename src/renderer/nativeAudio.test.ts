@@ -25,7 +25,7 @@ const native = {
     if (busy) throw new Error("The device is busy");
     return nextHandle++;
   },
-  inputDevice_setGain: () => undefined,
+  inputDevice_setGain: (_deviceId: number, _gain: number) => undefined,
   inputDevice_setEcho: () => undefined,
   inputDevice_status: () => "ok",
   inputDevice_level: () => 0.5,

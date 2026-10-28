@@ -8,7 +8,7 @@ import {
   limitLookups,
   nicoWatchUrl,
   parseNicoVideoInfo,
-} from "./nicoVideoInfo.ts";
+} from "./nicoVideoInfo";
 
 // Trimmed from `yt-dlp --dump-single-json --skip-download` for sm9
 // (yt-dlp 2026.10.26).

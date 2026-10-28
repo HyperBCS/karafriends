@@ -205,7 +205,7 @@ describe("a JOY-02 telop's romaji", () => {
 
   before(async () => {
     const instance = new Kuroshiro();
-    const analyzer = new KuromojiAnalyzer();
+    const analyzer = new KuromojiAnalyzer({});
     await instance.init(analyzer);
     kuroshiro = { kuroshiro: instance, analyzer };
   });
