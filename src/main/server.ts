@@ -40,7 +40,7 @@ export const EVENTS_PATH = "/api/events";
 
 // Methods only the display may call, over IPC: the settings. A phone gets
 // 403 before its body is read, whoever it is signed in as. (popSong is the
-// display's too, but admin phones may call it; api.ts checks.)
+// display's too; api.ts checks.)
 export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>(
   SETTINGS_METHODS,
 );

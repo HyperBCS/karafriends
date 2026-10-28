@@ -298,10 +298,12 @@ describe("admin checks", () => {
     });
   });
 
-  test("only the display (or an admin) may start the next song", async () => {
+  test("only the display may start the next song", async () => {
     const api = makeApi();
     store.update((state) => state.songQueue.push(song(1, alice)));
     await rejectsWith(api.popSong({}, alice), 403);
+    // Not an admin's phone: the song would never play.
+    await rejectsWith(api.popSong({}, admin("host")), 403);
     assert.equal(store.getState().songQueue.length, 1);
 
     const popped = await api.popSong({}, display);

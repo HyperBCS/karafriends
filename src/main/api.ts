@@ -744,7 +744,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     },
 
     async popSong(_input, caller) {
-      if (!isAdmin(caller)) {
+      // Not an admin's phone either: the song it took would never play.
+      if (!caller.isDisplay) {
         throw new ApiError(403, "Only the display starts the next song");
       }
       const song = store.update((state) => {
