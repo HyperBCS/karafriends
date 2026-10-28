@@ -1,8 +1,14 @@
+/* From just right of the QR tile in the corner (QRCode.css) to the
+   screen's right edge, so the tile never hides the bars. (A canvas doesn't
+   stretch between left and right, so the width is given.) */
 .pianoRollRoll {
+  --clear-of-qr: calc(
+    var(--kf-space-6) + var(--kf-join-corner) + var(--kf-space-4)
+  );
   position: absolute;
-  left: 0;
+  left: var(--clear-of-qr);
   top: 5%;
-  width: 100%;
+  width: calc(100% - var(--clear-of-qr));
   height: 30%;
   background: repeating-linear-gradient(
     rgba(50%, 75%, 100%, 0.7),

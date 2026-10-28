@@ -162,7 +162,7 @@ test.describe("while a song plays", () => {
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
   });
 
-  test("the QR code and the address stay in the corner, but not over Settings", async ({
+  test("the QR code stays in the corner, without the address, but not over Settings", async ({
     display,
     karafriends,
   }) => {
@@ -178,7 +178,8 @@ test.describe("while a song plays", () => {
       display.getByRole("region", { name: "Up next" }).getByRole("listitem"),
     ).toHaveText([/E2E strip song 2/]);
     await expect(qrCode).toBeVisible();
-    await expect(address).toBeVisible();
+    // The code alone: the address and "Scan to join" are the idle screen's.
+    await expect(address).toHaveCount(0);
     await expect(display.getByText("Scan to join")).toHaveCount(0);
     // Small and top-left, clear of the lyrics along the bottom.
     const box = (await qrCode.boundingBox())!;
@@ -191,7 +192,18 @@ test.describe("while a song plays", () => {
     ]);
     expect(box.x + box.width).toBeLessThan(width / 2);
     expect(box.y + box.height).toBeLessThan(strip.y / 2);
-    expect(box.width).toBeCloseTo(8 * rem, 0);
+    // The white tile is 7.25rem square; the code in it is drawn in whole
+    // pixels per module, so it fits inside, and the rest is white border.
+    const tile = (await qrCode.locator("..").boundingBox())!;
+    expect(tile.width).toBeCloseTo(7.25 * rem, 0);
+    expect(tile.height).toBeCloseTo(tile.width, 0);
+    expect(box.width).toBeLessThanOrEqual(tile.width + 0.5);
+    expect(box.height).toBeCloseTo(box.width, 0);
+    // The code and a 2-module border, 29 modules across.
+    const canvasWidth = await qrCode.evaluate(
+      (canvas: HTMLCanvasElement) => canvas.width,
+    );
+    expect(canvasWidth % 29).toBe(0);
 
     await display.keyboard.press("s");
     await expect(settings).toBeVisible();

@@ -6,17 +6,23 @@
   text-align: center;
 }
 
-/* 45% of the screen's height on the idle screen, white with its own quiet
-   zone. */
+/* A white tile, 45% of the screen's height on the idle screen. The code
+   is drawn in whole pixels per module (QRCode.tsx), so it may be a few
+   pixels smaller than the tile: centered, the rest is more white border. */
 .joinCode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 45vh;
+  aspect-ratio: 1;
   border-radius: var(--kf-radius-control);
+  background-color: #fff;
   overflow: hidden;
   line-height: 0;
 }
 
 .qrcode {
-  width: 100%;
+  display: block;
 }
 
 .joinScan {
@@ -31,26 +37,19 @@
   font-size: var(--kf-text-heading);
 }
 
-/* While a song plays: top-left over the video, on a card with a shadow
-   over the video, clear of the lyrics, which karaoke puts at the bottom
-   (DAM's in the video, Joysound's and ad-hoc ones drawn over it).
-   Announcements take the top-right. */
+/* While a song plays: the tile alone, top-left over the video with a
+   shadow, clear of the lyrics, which karaoke puts at the bottom (DAM's in
+   the video, Joysound's and ad-hoc ones drawn over it). The pitch bars
+   start right of it (PianoRoll.css). Announcements take the top-right. */
 .joinCorner {
   position: absolute;
   top: var(--kf-space-6);
   left: var(--kf-space-6);
   z-index: 5;
-  padding: var(--kf-space-4);
-  border-radius: var(--kf-radius-card);
-  background-color: var(--kf-surface);
-  box-shadow: var(--kf-shadow-float);
   pointer-events: none;
 }
 
 .joinCorner .joinCode {
-  width: 8rem;
-}
-
-.joinCorner .joinAddress {
-  font-size: var(--kf-text-label);
+  width: var(--kf-join-corner);
+  box-shadow: var(--kf-shadow-float);
 }
