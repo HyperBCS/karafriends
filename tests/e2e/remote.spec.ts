@@ -302,15 +302,18 @@ test("a Joysound song with a background keeps the way back", async ({
   await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
   await expect(remote.getByText("Me at the zoo")).toBeVisible();
 
+  // The artist link opens the search by artist, a home screen without a
+  // Back button: the phone's own back returns from it.
   await remote.getByRole("link", { name: "E2E artist" }).click();
   await expect(remote).toHaveURL(/by=artist/);
-  const back = remote.getByRole("button", { name: "Back" });
-  await back.click();
+  await remote.goBack();
   await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
   await expect(
     remote.getByRole("button", { name: "Remove the video" }),
   ).toBeVisible();
-  await back.click();
+  // The top bar's Back goes back in the history, to the search, not to an
+  // empty one.
+  await remote.getByRole("button", { name: "Back" }).click();
   await expect(search).toHaveValue("E2E");
   await expect(
     remote.getByRole("main").getByRole("link", { name: /E2E Joysound song/ }),
