@@ -31,7 +31,12 @@ import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
-import { adhocLyricsKey, isDownloading, type StateStore } from "./state";
+import {
+  adhocLyricsKey,
+  currentSongSecondsLeft,
+  isDownloading,
+  type StateStore,
+} from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -229,10 +234,10 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
   // Seconds until a song added to the end of the queue would start.
   const queueEta = () => {
-    const { currentSong, songQueue } = store.getState();
+    const state = store.getState();
     return (
-      (currentSong?.playtime || 0) +
-      songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
+      currentSongSecondsLeft(state, now()) +
+      state.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
     );
   };
 

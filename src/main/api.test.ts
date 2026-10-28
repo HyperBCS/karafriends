@@ -847,6 +847,24 @@ describe("queueSong", () => {
     assert.deepEqual(next, { ok: true, eta: 200 });
   });
 
+  test("counts only what is left of the current song", async () => {
+    // Song 1 (100 s) started 40 s ago and was paused for 10 of them.
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.currentSongStartedAt = 20_000;
+      state.currentSongPausedMs = 10_000;
+      state.songQueue.push(song(2, alice));
+    });
+    const api = makeApi({}, { now: () => 60_000 });
+    assert.deepEqual(
+      await api.queueSong(
+        { kind: "nico", songId: "sm9", name: "", artistName: "" },
+        bob,
+      ),
+      { ok: true, eta: 70 + 100 },
+    );
+  });
+
   test("passes a DAM song's readings on to the queue item", async () => {
     const api = makeApi();
     await api.queueSong(

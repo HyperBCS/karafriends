@@ -188,6 +188,28 @@ export function adhocLyricsKey(item: {
   return `${item.songId}@${item.timestamp}`;
 }
 
+// Seconds left of the current song at now (ms since the epoch): its playtime
+// less the time it has played, never below 0, rounded as the phones' queue
+// rounds it (withETAs in src/common/hooks/useQueue.ts). Before the song has
+// started (currentSongStartedAt null), all of it.
+export function currentSongSecondsLeft(
+  state: Pick<
+    State,
+    | "currentSong"
+    | "currentSongStartedAt"
+    | "currentSongPausedMs"
+    | "currentSongPausedSince"
+  >,
+  now: number,
+): number {
+  const playtime = state.currentSong?.playtime || 0;
+  if (state.currentSongStartedAt === null) return playtime;
+  const until = state.currentSongPausedSince ?? now;
+  const playedMs =
+    until - state.currentSongStartedAt - state.currentSongPausedMs;
+  return Math.max(0, Math.round(playtime - Math.max(0, playedMs) / 1000));
+}
+
 export function emptyState(): State {
   return {
     currentSong: null,

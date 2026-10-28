@@ -9,6 +9,7 @@ import type { QueueItem } from "../common/api";
 import {
   adhocLyricsKey,
   createStateStore,
+  currentSongSecondsLeft,
   type DownloadQueueItem,
   FAILED_DOWNLOAD_KEPT_MS,
   failDownload,
@@ -166,6 +167,41 @@ describe("createStateStore", () => {
     const store = createStateStore(file);
     store.update((state) => state.songQueue.push(song(1)));
     assert.deepEqual(fs.readdirSync(path.dirname(file)), ["queue.json"]);
+  });
+});
+
+describe("currentSongSecondsLeft", () => {
+  // Song 1 is 60 s long.
+  const timing = (
+    currentSongStartedAt: number | null,
+    currentSongPausedMs = 0,
+    currentSongPausedSince: number | null = null,
+  ) => ({
+    currentSong: song(1),
+    currentSongStartedAt,
+    currentSongPausedMs,
+    currentSongPausedSince,
+  });
+
+  test("is all of it before the song starts, and 0 with none", () => {
+    assert.equal(currentSongSecondsLeft(timing(null), 99_000), 60);
+    assert.equal(
+      currentSongSecondsLeft({ ...timing(null), currentSong: null }, 99_000),
+      0,
+    );
+  });
+
+  test("counts down while it plays, never below 0", () => {
+    assert.equal(currentSongSecondsLeft(timing(1000), 1000), 60);
+    assert.equal(currentSongSecondsLeft(timing(1000), 21_400), 40);
+    assert.equal(currentSongSecondsLeft(timing(1000), 200_000), 0);
+  });
+
+  test("leaves out the pauses, and stops while paused", () => {
+    // 10 s of earlier pauses.
+    assert.equal(currentSongSecondsLeft(timing(1000, 10_000), 21_000), 50);
+    // Paused since 21 s: 20 s played, however long the pause.
+    assert.equal(currentSongSecondsLeft(timing(1000, 0, 21_000), 90_000), 40);
   });
 });
 
