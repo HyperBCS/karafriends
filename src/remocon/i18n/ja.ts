@@ -90,8 +90,6 @@ export const ja: Messages = {
   "queue.queuedBy": "{nickname}さんの予約",
   "queue.remove": "予約を取り消す",
   "queue.moveToTop": "先頭に移動",
-  "queue.moveUp": "1つ上へ",
-  "queue.moveDown": "1つ下へ",
 
   "playback.play": "再生",
   "playback.pause": "一時停止",

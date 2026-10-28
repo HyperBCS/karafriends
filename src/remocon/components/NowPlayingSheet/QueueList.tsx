@@ -7,7 +7,7 @@ import { useApiMutation } from "../../../common/apiQueries";
 import useOptimisticValue from "../../../common/hooks/useOptimisticValue";
 import useQueue, { withETAs } from "../../../common/hooks/useQueue";
 import { t } from "../../i18n";
-import { MdClose, MdVerticalAlignTop } from "../../icons";
+import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
 import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
 import * as styles from "./NowPlayingSheet.module.scss";
@@ -15,11 +15,6 @@ import useDragReorder from "./useDragReorder";
 
 // The grip a queued row is dragged by: Material Design's drag indicator,
 // copied from react-icons 5.7.0 as the icons in ../../icons are.
-const MdDragIndicator = () => (
-  <svg fill="currentColor" height="1em" width="1em" viewBox="0 0 24 24">
-    <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-  </svg>
-);
 
 // The singer's initial, before each row.
 const Initial = ({ nickname }: { nickname: string }) => (

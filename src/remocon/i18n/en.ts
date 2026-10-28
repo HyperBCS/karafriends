@@ -98,8 +98,6 @@ export const en = {
   "queue.queuedBy": "Queued by {nickname}",
   "queue.remove": "Remove from queue",
   "queue.moveToTop": "Move to top",
-  "queue.moveUp": "Move up",
-  "queue.moveDown": "Move down",
 
   // Playback and key.
   "playback.play": "Play",

@@ -57,18 +57,6 @@ export const MdArrowBack = () => (
   </Svg>
 );
 
-export const MdArrowDownward = () => (
-  <Svg viewBox="0 0 24 24">
-    <path d="m20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8z" />
-  </Svg>
-);
-
-export const MdArrowUpward = () => (
-  <Svg viewBox="0 0 24 24">
-    <path d="m4 12 1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8z" />
-  </Svg>
-);
-
 export const MdClose = () => (
   <Svg viewBox="0 0 24 24">
     <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -133,4 +121,10 @@ export const MdVerticalAlignTop = () => (
   <Svg viewBox="0 0 24 24">
     <path d="M8 11h3v10h2V11h3l-4-4zM4 3v2h16V3z" />
   </Svg>
+);
+
+export const MdDragIndicator = () => (
+  <svg fill="currentColor" height="1em" width="1em" viewBox="0 0 24 24">
+    <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+  </svg>
 );
