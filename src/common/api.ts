@@ -59,6 +59,10 @@ interface QueueItemBase {
   songId: string;
   name: string;
   artistName: string;
+  // The kana readings DAM gives, for the phones that show them: on DAM
+  // songs queued from this version on.
+  nameYomi?: string;
+  artistNameYomi?: string;
   // Seconds, when known.
   playtime: number | null;
   // When it was queued: Date.now() as a string. With songId it identifies an
@@ -127,6 +131,8 @@ interface SongToQueueBase {
   songId: string;
   name: string;
   artistName: string;
+  nameYomi?: string;
+  artistNameYomi?: string;
   playtime?: number | null;
   // Admins only; anyone else's song goes to the end, as before.
   tryHeadOfQueue?: boolean;

@@ -562,6 +562,10 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         songId: input.songId,
         name: input.name,
         artistName: input.artistName,
+        ...(input.nameYomi !== undefined && { nameYomi: input.nameYomi }),
+        ...(input.artistNameYomi !== undefined && {
+          artistNameYomi: input.artistNameYomi,
+        }),
         playtime: input.playtime ?? null,
         timestamp: now().toString(),
         user,

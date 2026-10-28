@@ -135,6 +135,8 @@ const QUEUE_FIELDS = [
   "songId",
   "name",
   "artistName",
+  "nameYomi",
+  "artistNameYomi",
   "playtime",
   "tryHeadOfQueue",
 ];
@@ -165,6 +167,13 @@ function queueSong(raw: unknown): QueueSongInput {
     songId: safeId(string(input, "songId", 64), "songId"),
     name: string(input, "name"),
     artistName: string(input, "artistName"),
+    // Left out when not given.
+    ...(input.nameYomi !== undefined && {
+      nameYomi: string(input, "nameYomi", 200),
+    }),
+    ...(input.artistNameYomi !== undefined && {
+      artistNameYomi: string(input, "artistNameYomi", 200),
+    }),
     playtime:
       input.playtime === undefined || input.playtime === null
         ? null

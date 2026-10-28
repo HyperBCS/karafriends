@@ -735,6 +735,25 @@ describe("queueSong", () => {
     assert.deepEqual(next, { ok: true, eta: 200 });
   });
 
+  test("passes a DAM song's readings on to the queue item", async () => {
+    const api = makeApi();
+    await api.queueSong(
+      {
+        kind: "dam",
+        songId: "1234-56",
+        name: "恋",
+        nameYomi: "コイ",
+        artistName: "星野源",
+        artistNameYomi: "ホシノゲン",
+        streamingUrlIdx: 0,
+      },
+      alice,
+    );
+    const [item] = store.getState().songQueue;
+    assert.equal(item.nameYomi, "コイ");
+    assert.equal(item.artistNameYomi, "ホシノゲン");
+  });
+
   test("keeps a YouTube song's adhoc lyrics", async () => {
     const api = makeApi();
     await api.queueSong(
@@ -1273,6 +1292,33 @@ describe("validators", () => {
       }).kind,
       "youtube",
     );
+  });
+
+  test("queueSong takes a song's readings if given, as strings", () => {
+    const dam = {
+      kind: "dam",
+      songId: "1234-56",
+      name: "恋",
+      artistName: "星野源",
+      streamingUrlIdx: 0,
+    };
+    assert.deepEqual(
+      validators.queueSong({
+        ...dam,
+        nameYomi: "コイ",
+        artistNameYomi: "ホシノゲン",
+      }),
+      {
+        ...dam,
+        nameYomi: "コイ",
+        artistNameYomi: "ホシノゲン",
+        playtime: null,
+        tryHeadOfQueue: undefined,
+      },
+    );
+    assert.equal("nameYomi" in validators.queueSong(dam), false);
+    invalid("queueSong", { ...dam, nameYomi: 1 });
+    invalid("queueSong", { ...dam, artistNameYomi: "ア".repeat(201) });
   });
 
   test("queueSong refuses bad input", () => {

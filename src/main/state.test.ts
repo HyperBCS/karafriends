@@ -236,6 +236,22 @@ describe("loadState", () => {
     ]);
   });
 
+  test("keeps a DAM song's readings, which older items don't have", () => {
+    const old = {
+      kind: "dam",
+      songId: "1234-56",
+      name: "恋",
+      artistName: "星野源",
+      playtime: 252,
+      timestamp: "1",
+      user: { deviceId: "d", nickname: "n" },
+      streamingUrlIdx: 0,
+    };
+    const dam = { ...old, nameYomi: "コイ", artistNameYomi: "ホシノゲン" };
+    write({ songQueue: [dam, old, { ...old, nameYomi: 1 }] });
+    assert.deepEqual(loadState(file).songQueue, [dam, old, old]);
+  });
+
   test("drops entries it can't read and keeps the rest", () => {
     write({
       songQueue: [{ kind: "karaoke-cassette" }, song(1), "junk"],
