@@ -3,6 +3,7 @@ import React from "react";
 import { Link } from "react-router";
 
 import * as styles from "./ListRow.module.scss";
+import { Marquee } from "./Marquee";
 
 interface ListProps {
   // Names the list for screen readers: "Queue", "Search results".
@@ -19,7 +20,7 @@ export const List = ({ label, className, children }: ListProps) => (
 );
 
 interface RowContent {
-  // One line each; longer text ends in an ellipsis.
+  // One line each; longer text slides to show the rest (Marquee).
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   // Where the song comes from, already translated: "DAM", "YouTube".
@@ -54,11 +55,13 @@ const Content = ({ title, subtitle, source, leading }: RowContent) => (
   <>
     {leading && <span className={styles.leading}>{leading}</span>}
     <span className={styles.text}>
-      <span className={styles.title}>{title}</span>
+      <Marquee className={styles.title}>{title}</Marquee>
       {(subtitle || source) && (
         <span className={styles.subtitleLine}>
           {source && <span className={styles.source}>{source}</span>}
-          {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
+          {subtitle && (
+            <Marquee className={styles.subtitle}>{subtitle}</Marquee>
+          )}
         </span>
       )}
     </span>

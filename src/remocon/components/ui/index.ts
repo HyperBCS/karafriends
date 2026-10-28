@@ -7,6 +7,7 @@ export { EmptyState } from "./EmptyState";
 export { InlineError } from "./InlineError";
 export { List, ListRow } from "./ListRow";
 export type { ListRowProps } from "./ListRow";
+export { Marquee } from "./Marquee";
 export { Sheet } from "./Sheet";
 export { Tabs } from "./Tabs";
 export type { Tab } from "./Tabs";

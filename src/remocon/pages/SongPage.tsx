@@ -6,7 +6,7 @@ import { useApiQuery } from "../../common/apiQueries";
 import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
 import { withLoader } from "../components/Loader";
 import QueueButtons from "../components/QueueButtons";
-import { Button, TextField } from "../components/ui";
+import { Button, Marquee, TextField } from "../components/ui";
 import WithReading from "../components/WithReading";
 import useReadings from "../hooks/useReadings";
 import { t } from "../i18n";
@@ -49,7 +49,9 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
   return (
     <div className={styles.page}>
       <div className={styles.about}>
-        <h2 className={styles.title}>{title}</h2>
+        <h2 className={styles.title}>
+          <Marquee>{title}</Marquee>
+        </h2>
         {subtitle && <p className={styles.reading}>{subtitle}</p>}
         <Link
           className={styles.artist}

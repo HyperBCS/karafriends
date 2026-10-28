@@ -1813,6 +1813,108 @@ test("an older phone's saved Both reads as written", async ({ remote }) => {
   ).toHaveAttribute("aria-selected", "true");
 });
 
+test("a title or artist that doesn't fit slides, and one that fits stays still", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.emulateMedia({ reducedMotion: "no-preference" });
+  const LONG_ARTIST = "E2E artist with a name far too long for the phone";
+  const LONG_TITLE =
+    "残酷な天使のテーゼ (TVアニメ『新世紀エヴァンゲリオン』オープニングテーマ)";
+  const song = (id: string, name: string) => ({
+    id,
+    name,
+    nameYomi: "",
+    artistName: LONG_ARTIST,
+    artistNameYomi: "",
+  });
+  await remote.route("**/api/damArtist", (route) =>
+    route.fulfill({
+      json: {
+        id: "e2e-long",
+        name: LONG_ARTIST,
+        nameYomi: "",
+        songCount: 2,
+        songs: {
+          items: [song("e2e-long-1", LONG_TITLE), song("e2e-long-2", "Lemon")],
+          nextOffset: null,
+        },
+      },
+    }),
+  );
+  await remote.goto(new URL("#/artist/e2e-long", karafriends.remoconUrl).href);
+
+  // A Marquee's text (what getByText finds): whether its box slides, and
+  // how.
+  const marquee = (text: Locator) =>
+    text.evaluate((el) => {
+      const box = el.parentElement!;
+      const style = getComputedStyle(el);
+      return {
+        sliding: box.hasAttribute("data-marquee"),
+        moving: style.animationName !== "none",
+        shift: parseFloat(box.style.getPropertyValue("--kf-marquee-shift")),
+        seconds: parseFloat(style.animationDuration),
+        iterations: style.animationIterationCount,
+        direction: style.animationDirection,
+        ellipsis:
+          style.textOverflow === "ellipsis" && style.overflow === "hidden",
+      };
+    });
+  const sliding = (text: Locator) =>
+    expect.poll(async () => (await marquee(text)).sliding);
+
+  // The artist's name over the page, and the long title in its row, slide:
+  // 32px a second, with 2 s still at each end.
+  const heading = remote
+    .getByRole("heading", { level: 2 })
+    .getByText(LONG_ARTIST);
+  const rows = remote.getByRole("list", { name: "Results" });
+  const title = rows.getByText(LONG_TITLE);
+  const lemon = rows.getByText("Lemon", { exact: true });
+  for (const text of [heading, title]) {
+    await sliding(text).toBe(true);
+    const slide = await marquee(text);
+    expect(slide).toMatchObject({
+      moving: true,
+      iterations: "infinite",
+      direction: "alternate",
+      ellipsis: false,
+    });
+    const speed = slide.shift / (slide.seconds - 2);
+    expect(speed).toBeGreaterThan(30);
+    expect(speed).toBeLessThan(34);
+  }
+  // A short title stays still.
+  expect(await marquee(lemon)).toMatchObject({
+    sliding: false,
+    moving: false,
+  });
+
+  // Its size: on a wide screen the long title fits and stops, and on a
+  // narrow one it slides again.
+  await remote.setViewportSize({ width: 1600, height: 900 });
+  await sliding(title).toBe(false);
+  expect((await marquee(title)).moving).toBe(false);
+  await remote.setViewportSize({ width: 360, height: 780 });
+  await sliding(title).toBe(true);
+
+  // Its text: a longer one in place of "Lemon" (as a reading puts in place
+  // of a title) slides too, without the row being drawn again.
+  await lemon.evaluate((el) => {
+    el.firstChild!.textContent = "Lemon, a title made much longer in place";
+  });
+  await sliding(rows.getByText("Lemon, a title made")).toBe(true);
+
+  // Asked for less motion, nothing moves, and the long title ends in an
+  // ellipsis.
+  await remote.emulateMedia({ reducedMotion: "reduce" });
+  expect(await marquee(title)).toMatchObject({
+    moving: false,
+    ellipsis: true,
+  });
+});
+
 test.describe("a DAM song's page", () => {
   test("shows the reading as its title, and the title as written under it", async ({
     karafriends,

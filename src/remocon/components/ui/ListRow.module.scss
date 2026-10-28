@@ -79,14 +79,9 @@ a.main {
   min-width: 0;
 }
 
-%one-line {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
+// The title and the subtitle are Marquees: one line each, sliding when
+// they don't fit.
 .title {
-  @extend %one-line;
   font-size: $kf-text-title;
   font-weight: 600;
   line-height: 1.3;
@@ -100,7 +95,6 @@ a.main {
 }
 
 .subtitle {
-  @extend %one-line;
   color: $kf-muted;
   font-size: $kf-text-body;
   line-height: 1.35;

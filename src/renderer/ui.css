@@ -140,3 +140,52 @@ select.kfField > option {
   accent-color: var(--kf-accent);
   cursor: pointer;
 }
+
+/* A line that may not fit (Marquee.tsx): a song's title or artist. Cut
+   short with an ellipsis; when it doesn't fit, useMarquee sets
+   data-marquee and the distance and timing, and the text slides to its
+   end, waits 2 s, slides back and waits, over and over, at 2rem a second
+   (32px at 1080p). It stays still when the computer asks for less motion.
+   The text is an inline block either way, so starting or stopping doesn't
+   change the line's height. */
+.kfMarquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kfMarqueeText {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kfMarquee[data-marquee] > .kfMarqueeText {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    animation-name: kfMarquee;
+    animation-duration: var(--kf-marquee-duration);
+    /* Still for the hold at each end, steady in between. */
+    animation-timing-function: linear(
+      0,
+      0 var(--kf-marquee-hold),
+      1 calc(100% - var(--kf-marquee-hold)),
+      1
+    );
+    /* A second before it first moves (2 s with the hold); Up next gives
+       each song its own, so songs side by side don't move in step. */
+    animation-delay: var(--kf-marquee-delay, 1s);
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+}
+
+@keyframes kfMarquee {
+  to {
+    transform: translateX(calc(-1 * var(--kf-marquee-shift)));
+  }
+}

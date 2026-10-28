@@ -6,8 +6,9 @@ import type { Announcement } from "./useSongPlayer";
 
 // The top right corner: a song starting, queued or failing, each for a few
 // seconds (App.tsx takes them away), with the song's title, artist and
-// singer as the up-next strip shows them. Text from the phones goes in as
-// text, never as markup.
+// singer as the up-next strip shows them, but with the singer's whole
+// nickname beside the initial. Text from the phones goes in as text, never
+// as markup.
 export default function Announcements(props: {
   items: (Announcement & { id: number })[];
 }) {

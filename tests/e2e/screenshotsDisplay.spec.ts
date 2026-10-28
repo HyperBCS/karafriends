@@ -287,6 +287,58 @@ test.describe("D1, four queued", () => {
   });
 });
 
+// The UI round's U5: Up next shows each singer's initial only, and a title
+// that doesn't fit slides (shown here where it starts: the screenshot stops
+// the animation).
+test.describe("U5, long titles", () => {
+  const LONG = [
+    song(
+      1,
+      "残酷な天使のテーゼ (TVアニメ『新世紀エヴァンゲリオン』オープニングテーマ)",
+      "高橋洋子",
+      "Ken",
+      240,
+    ),
+    song(2, "【初音ミク】千本桜【オリジナル曲PV】", "黒うさP", "あやか", 245),
+    song(
+      3,
+      "Official髭男dism - Pretender［Official Video］",
+      "Official髭男dism",
+      "Mio",
+      327,
+    ),
+    SONGS[3],
+  ];
+  test.use({
+    appConfig: LOGIN,
+    seedQueue: {
+      currentSong: null,
+      songQueue: LONG,
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("idle, then the first playing", async ({ display }) => {
+    await expect(
+      display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+    ).toHaveCount(4);
+    await shoot(display, "u5-idle-long");
+
+    await expect(
+      display.getByRole("status").filter({ hasText: "Now playing" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((video: HTMLVideoElement) => video.currentTime > 0.5),
+      )
+      .toBe(true);
+    await shoot(display, "u5-playing-long");
+  });
+});
+
 test("the first-launch banner", async ({ display }) => {
   await expect(
     display.getByText("Add your DAM or Joysound login", { exact: false }),
