@@ -14,23 +14,17 @@ import path from "path";
 
 import type { Page } from "@playwright/test";
 
-import type { LiveState, YoutubeVideoInfo } from "../../src/common/api";
+import type { YoutubeVideoInfo } from "../../src/common/api";
 import {
+  apiCall,
   displayCall,
+  displayLiveState,
   downloadsFolder,
   expect,
+  fakeTool,
   NICKNAME,
   test,
 } from "./fixtures";
-
-const fakeYtdlp = (name: string) =>
-  path.resolve(
-    __dirname,
-    "..",
-    "fixtures",
-    "bin",
-    process.platform === "win32" ? `${name}.cmd` : name,
-  );
 
 const VIDEO_ID = "jNQXAC9IVRw";
 const VIDEO_INFO: YoutubeVideoInfo = {
@@ -47,29 +41,6 @@ const VIDEO_INFO: YoutubeVideoInfo = {
 
 const TOOLS_PROBLEM =
   "YouTube downloads are failing; try Update tools in Settings";
-
-type DisplayApi = {
-  onLive(
-    listener: (event: { type: string; state?: LiveState }) => void,
-  ): () => void;
-};
-
-// The display's live state, from its preload.
-function displayLiveState(display: Page): Promise<LiveState> {
-  return display.evaluate(
-    () =>
-      new Promise<LiveState>((resolve) => {
-        const api = (window as unknown as { karafriends: { api: DisplayApi } })
-          .karafriends.api;
-        const stop = api.onLive((event) => {
-          if (event.type === "state") {
-            resolve(event.state!);
-            setTimeout(() => stop());
-          }
-        });
-      }),
-  );
-}
 
 // Opens the video's page on the remote, with YouTube kept offline.
 async function openVideo(remote: Page) {
@@ -101,7 +72,7 @@ async function queueVideo(remote: Page) {
 }
 
 test.describe("for a removed video", () => {
-  test.use({ appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-fails") } });
+  test.use({ appEnv: { KARAFRIENDS_YTDLP_PATH: fakeTool("yt-dlp-fails") } });
 
   test("a failed YouTube download says why on the remote and the display, and can be tried again", async ({
     remote,
@@ -146,7 +117,7 @@ test.describe("for a removed video", () => {
 
 test.describe("at YouTube's bot check", () => {
   test.use({
-    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-broken") },
+    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeTool("yt-dlp-broken") },
   });
 
   test("a failed download tells the display to update the tools", async ({
@@ -209,23 +180,15 @@ test("a downloaded DAM video much shorter than the song is deleted, and the song
 
   // Queued from a phone. Without a DAM login the download never starts,
   // and popSong gets no streaming URL.
-  const res = await fetch(new URL("api/queueSong", karafriends.remoconUrl), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Karafriends-Device-Id": "e2e-remote-device",
-      "X-Karafriends-Nickname": NICKNAME,
-    },
-    body: JSON.stringify({
-      kind: "dam",
-      songId: "1234-56",
-      name: "A DAM song",
-      artistName: "Artist",
-      playtime: 300,
-      streamingUrlIdx: 0,
-    }),
+  const { body } = await apiCall(karafriends.remoconUrl, "queueSong", {
+    kind: "dam",
+    songId: "1234-56",
+    name: "A DAM song",
+    artistName: "Artist",
+    playtime: 300,
+    streamingUrlIdx: 0,
   });
-  expect(await res.json()).toMatchObject({ ok: true });
+  expect(body).toMatchObject({ ok: true });
 
   // The display drops the file and goes to DAM's stream, which it can't
   // get here, so it moves on.

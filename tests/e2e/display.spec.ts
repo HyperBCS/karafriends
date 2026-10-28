@@ -1,6 +1,7 @@
 import type { Locator } from "@playwright/test";
 
-import { currentSongKey, expect, test } from "./fixtures";
+import { secondsLeft } from "../../src/common/currentSong";
+import { apiCall, currentSongKey, expect, liveState, test } from "./fixtures";
 
 // A Marquee's text (the element getByText finds) and its box: whether it
 // slides, and the animation's settings.
@@ -230,47 +231,45 @@ test.describe("while a song plays", () => {
     // Song 1 (60 s) has started: until then, it is up next too.
     await expect(next).toHaveText([/E2E strip song 2/]);
     await expect.poll(wait, { timeout: 15_000 }).toBeLessThan(60);
-
+    // Song 2's wait is what is left of song 1, by the server's clock (the
+    // display's reports of its video), as the phones see it too.
+    const { remoconUrl } = karafriends;
+    const left = async () => {
+      const state = await liveState(remoconUrl);
+      return secondsLeft(state.currentSong!.playtime!, state, Date.now());
+    };
+    await expect
+      .poll(async () => Math.abs((await wait()) - (await left())))
+      .toBeLessThanOrEqual(1);
+    // And it counts down.
     const before = await wait();
-    await display.waitForTimeout(2_000);
-    const after = await wait();
-    expect(before - after).toBeGreaterThanOrEqual(1);
-    expect(before - after).toBeLessThanOrEqual(3);
+    await expect.poll(wait).toBeLessThan(before);
 
     // A phone pauses (anyone may, without supervised mode).
-    const res = await fetch(
-      new URL("api/setPlaybackState", karafriends.remoconUrl),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Karafriends-Device-Id": "e2e-display-device",
-          "X-Karafriends-Nickname": "e2e",
-        },
-        body: JSON.stringify({
+    expect(
+      (
+        await apiCall(remoconUrl, "setPlaybackState", {
           playbackState: "PAUSED",
-          song: await currentSongKey(karafriends.remoconUrl),
-        }),
-      },
-    );
-    expect(await res.json()).toBe(true);
+          song: await currentSongKey(remoconUrl),
+        })
+      ).body,
+    ).toBe(true);
     await expect
       .poll(() =>
         display.locator("video").evaluate((v: HTMLVideoElement) => v.paused),
       )
       .toBe(true);
     // The countdown stops once the video's pause reaches the server (the
-    // display reports it: reportSongPosition), a moment later.
+    // display reports it: reportSongPosition), a moment later: the wait is
+    // then what was left when it paused, and stays there.
     await expect
-      .poll(async () => {
-        const before = await wait();
-        await display.waitForTimeout(1_100);
-        return (await wait()) - before;
-      })
-      .toBe(0);
-    const paused = await wait();
+      .poll(async () => (await liveState(remoconUrl)).currentSongPausedSince)
+      .not.toBeNull();
+    const paused = await left();
+    await expect.poll(wait).toBe(paused);
     await display.waitForTimeout(2_000);
     expect(await wait()).toBe(paused);
+    expect(await left()).toBe(paused);
   });
 });
 

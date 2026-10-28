@@ -1,19 +1,8 @@
 // The app as a whole: one copy at a time, and a display that crashes comes
 // back, but not in a loop.
 import { spawn } from "node:child_process";
-import path from "node:path";
 
-import { expect, test } from "./fixtures";
-
-const MAIN_ENTRY = path.resolve(
-  __dirname,
-  "..",
-  "..",
-  "build",
-  "prod",
-  "main",
-  "index.js",
-);
+import { appLaunch, expect, test } from "./fixtures";
 
 // A second launch with the same profile (the launcher clicked again) leaves
 // at once and brings the running display to the front, instead of opening a
@@ -34,31 +23,12 @@ test("a second launch leaves and focuses the first", async ({
   });
 
   // Launched as fixtures.ts launches the first, with the same profile.
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[key] = value;
-  }
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, {
-    ELECTRON_IS_DEV: "0",
-    TEMP: first.temp,
-    TMP: first.temp,
-    TMPDIR: first.temp,
-    KARAFRIENDS_REMOCON_PORT: new URL(remoconUrl).port,
-    KARAFRIENDS_LOCAL_ONLY: "1",
-    KARAFRIENDS_HIDE_WINDOW: "1",
-    KARAFRIENDS_FAKE_AUDIO: "1",
+  const { env, args } = appLaunch({
+    tempDir: first.temp,
+    userDataDir: first.userData,
+    port: Number(new URL(remoconUrl).port),
   });
-  const second = spawn(
-    first.electron,
-    [
-      "--mute-audio",
-      `--user-data-dir=${first.userData}`,
-      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
-      MAIN_ENTRY,
-    ],
-    { env, stdio: "ignore" },
-  );
+  const second = spawn(first.electron, args, { env, stdio: "ignore" });
   const exitCode = await new Promise<number | null>((resolve) => {
     const timer = setTimeout(() => {
       second.kill();
@@ -89,19 +59,31 @@ test("a crashed display reloads, but not in a loop", async ({
   karafriends,
 }) => {
   const { app } = karafriends;
-  await app.evaluate(({ BrowserWindow }) => {
-    const seen = { loads: 0 };
-    Object.assign(globalThis, { displayLoads: seen });
-    BrowserWindow.getAllWindows()[0].webContents.on(
-      "did-finish-load",
-      () => seen.loads++,
-    );
-  });
-  const loads = () =>
+  // Counted from the display's first load on: a load still under way (a
+  // busy machine) would otherwise count as a reload.
+  await app.evaluate(
+    ({ BrowserWindow }) =>
+      new Promise<void>((resolve) => {
+        const seen = { loads: 0, crashes: 0 };
+        Object.assign(globalThis, { display: seen });
+        const contents = BrowserWindow.getAllWindows()[0].webContents;
+        const count = () => {
+          contents.on("did-finish-load", () => seen.loads++);
+          contents.on("render-process-gone", () => seen.crashes++);
+          resolve();
+        };
+        if (contents.isLoading()) contents.once("did-finish-load", count);
+        else count();
+      }),
+  );
+  const seen = () =>
     app.evaluate(
       () =>
-        (globalThis as unknown as { displayLoads: { loads: number } })
-          .displayLoads.loads,
+        (
+          globalThis as unknown as {
+            display: { loads: number; crashes: number };
+          }
+        ).display,
     );
   const crash = () =>
     app.evaluate(({ BrowserWindow }) =>
@@ -110,12 +92,14 @@ test("a crashed display reloads, but not in a loop", async ({
 
   // Reloaded after a second, then after 3 more.
   await crash();
-  await expect.poll(loads).toBe(1);
+  await expect.poll(seen).toEqual({ loads: 1, crashes: 1 });
   await crash();
-  await expect.poll(loads).toBe(2);
+  await expect.poll(seen).toEqual({ loads: 2, crashes: 2 });
   // A third crash within the minute: no reload (with the window shown, a
-  // dialog asks the host).
+  // dialog asks the host). Seen, then given longer than the longest wait
+  // before a reload (3 s).
   await crash();
+  await expect.poll(seen).toEqual({ loads: 2, crashes: 3 });
   await new Promise((resolve) => setTimeout(resolve, 5_000));
-  expect(await loads()).toBe(2);
+  expect(await seen()).toEqual({ loads: 2, crashes: 3 });
 });

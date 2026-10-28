@@ -1,19 +1,12 @@
-import fs from "fs";
-import path from "path";
-
-import type {
-  ElectronApplication,
-  Locator,
-  Page,
-  Route,
-} from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 
 import {
   adminPasswordConfig,
   currentSongKey,
   displayCall,
-  downloadsFolder,
   expect,
+  fakeJoysoundDownload,
+  liveState,
   NICKNAME,
   test,
 } from "./fixtures";
@@ -2030,44 +2023,9 @@ test.describe("dragging the queue", () => {
   });
 });
 
-// Joysound songs, offline: each looks downloaded before (its lyrics and
-// video in the app's temp folder), so queueSong queues it at once. The
-// lyrics file is just enough for its playtime (getSongDuration), so the
-// display plays a minute of black video without lyrics.
-async function fakeJoysoundDownload(app: ElectronApplication, songId: string) {
-  const dir = await downloadsFolder(app);
-  fs.mkdirSync(dir, { recursive: true });
-  const telop = Buffer.alloc(32);
-  telop.writeUInt32LE(10, 6); // where the metadata starts
-  telop.writeUInt16LE(60, 10 + 18); // the playtime, in seconds
-  fs.writeFileSync(path.join(dir, `joysound-${songId}.joy_02`), telop);
-  fs.copyFileSync(
-    path.join(__dirname, "..", "fixtures", "black.mp4"),
-    path.join(dir, `joysound-${songId}-default.mp4`),
-  );
-}
-
-// The server's live state: the first event of a fresh /api/events stream.
-async function liveState(remoconUrl: string) {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]).state;
-    }
-  } finally {
-    controller.abort();
-  }
-}
-
+// Joysound songs, offline: each looks downloaded before (fakeJoysoundDownload:
+// its lyrics, without lines, and a minute of black video), so queueSong
+// queues it at once.
 test.describe("the lyrics mode", () => {
   // Three songs from one phone.
   test.use({ appConfig: { paxSongQueueLimit: 0 } });
@@ -2137,7 +2095,7 @@ test.describe("the lyrics mode", () => {
         const { currentSong, queue } = await liveState(remoconUrl);
         return Object.fromEntries(
           [currentSong, ...queue]
-            .filter(Boolean)
+            .filter((item) => item?.kind === "joysound")
             .map((item) => [item.songId, item.lyricsMode]),
         );
       })

@@ -5,65 +5,29 @@
 // (tests/fixtures/bin/yt-dlp-downloads-video) or an empty file the display
 // can't play (yt-dlp-downloads). A Joysound song's lyrics keep only the
 // textures of the lines around now.
-import fs from "fs";
-import path from "path";
-import type { Page } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 
 import { buildJoy02, type Joy02Event, joy02Events } from "../fixtures/joy02";
 import {
+  apiCall,
   currentSongKey,
   displayCall,
-  downloadsFolder,
+  anyOf,
   expect,
+  fakeJoysoundDownload,
+  fakeTool,
+  liveState,
+  NICKNAME,
   test,
 } from "./fixtures";
 
-const fakeYtdlp = (name: string) =>
-  path.resolve(
-    __dirname,
-    "..",
-    "fixtures",
-    "bin",
-    process.platform === "win32" ? `${name}.cmd` : name,
-  );
-
 test.use({
-  appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-downloads-video") },
+  appEnv: { KARAFRIENDS_YTDLP_PATH: fakeTool("yt-dlp-downloads-video") },
 });
 
-// The first event of a fresh /api/events stream: the live state.
-async function liveState(remoconUrl: string) {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]).state;
-    }
-  } finally {
-    controller.abort();
-  }
-}
-
-// A phone's call to the API.
+// A phone's call to the API: its answer.
 async function call(remoconUrl: string, method: string, input: object) {
-  const res = await fetch(new URL(`api/${method}`, remoconUrl), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Karafriends-Device-Id": "e2e-player-device",
-      "X-Karafriends-Nickname": "e2e",
-    },
-    body: JSON.stringify(input),
-  });
-  return res.json();
+  return (await apiCall(remoconUrl, method, input)).body;
 }
 
 // What's playing, as the phones see it.
@@ -124,7 +88,13 @@ test("a song queued while the display waits starts within 2 seconds", async ({
 
 test.describe("a download the display can't play", () => {
   test.use({
-    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-downloads") },
+    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeTool("yt-dlp-downloads") },
+    // The empty file, as the video element reports it.
+    allowDisplayErrors: anyOf(
+      /^Failed to load resource: net::ERR_REQUEST_RANGE_NOT_SATISFIABLE$/,
+      /^The video failed: MEDIA_ELEMENT_ERROR: Format error$/,
+      /^NotSupportedError: Failed to load because no supported source was found\.$/,
+    ),
   });
 
   test("is skipped, and the display waits for the next song", async ({
@@ -154,6 +124,13 @@ test.describe("a download the display can't play", () => {
 });
 
 test.describe("a queued song whose files are missing", () => {
+  // The Joysound song's video and lyrics.
+  test.use({
+    allowDisplayErrors: anyOf(
+      /^Failed to load resource: net::ERR_FILE_NOT_FOUND$/,
+      /^Couldn't load the lyrics for e2e-missing: /,
+    ),
+  });
   const user = { deviceId: "e2e-player-device", nickname: "e2e" };
   const at = (n: number) => String(Date.UTC(2026, 0, 1) + n);
   // A Joysound song with neither its video nor its lyrics: both fail to
@@ -349,7 +326,7 @@ test.describe("where the song really is", () => {
       );
       const played =
         (state.currentSongPausedSince ?? Date.now()) -
-        state.currentSongStartedAt;
+        state.currentSongStartedAt!;
       return Math.abs(played / 1000 - position);
     };
 
@@ -394,7 +371,11 @@ test.describe("a Joysound song's lyrics", () => {
   // Lyrics a minute long over black.mp4, as if downloaded before: a 1.5 s
   // title card, then `lines` lines, a new one every half second, two on
   // screen at once. Line 5 is only spaces.
-  function fakeJoysoundSong(folder: string, songId: string, lines: number) {
+  function fakeJoysoundSong(
+    app: ElectronApplication,
+    songId: string,
+    lines: number,
+  ) {
     const at = joy02Events;
     const events: Joy02Event[] = [at.titleOut(1500), at.fadeIn(2000, 2)];
     for (let line = 0; line < lines; line++) {
@@ -420,35 +401,30 @@ test.describe("a Joysound song's lyrics", () => {
       })),
       events,
     });
-    fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
-    fs.copyFileSync(
-      path.resolve(__dirname, "..", "fixtures", "black.mp4"),
-      path.join(folder, `joysound-${songId}-default.mp4`),
-    );
+    return fakeJoysoundDownload(app, songId, { telop });
   }
 
-  const queueJoysound = (
+  const queueJoysound = async (
     remoconUrl: string,
     songId: string,
     lyricsMode: string,
   ) =>
-    fetch(new URL("api/queueSong", remoconUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    (
+      await apiCall(
+        remoconUrl,
+        "queueSong",
+        {
+          kind: "joysound",
+          songId,
+          name: `E2E ${songId}`,
+          artistName: "E2E artist",
+          lyricsMode,
+          youtubeVideoId: null,
+        },
         // A phone each: one song in the queue each.
-        "X-Karafriends-Device-Id": `e2e-phone-${songId}`,
-        "X-Karafriends-Nickname": "e2e",
-      },
-      body: JSON.stringify({
-        kind: "joysound",
-        songId,
-        name: `E2E ${songId}`,
-        artistName: "E2E artist",
-        lyricsMode,
-        youtubeVideoId: null,
-      }),
-    }).then((res) => res.json());
+        { deviceId: `e2e-phone-${songId}`, nickname: NICKNAME },
+      )
+    ).body;
 
   // The lyrics canvas's texture count (JoysoundRenderer's data-textures) at
   // every frame for `ms`. (The hidden test window draws about one a second.)
@@ -471,10 +447,8 @@ test.describe("a Joysound song's lyrics", () => {
     display,
   }) => {
     const { remoconUrl } = karafriends;
-    const folder = await downloadsFolder(karafriends.app);
-    fs.mkdirSync(folder, { recursive: true });
-    fakeJoysoundSong(folder, "e2e-kana", 40);
-    fakeJoysoundSong(folder, "e2e-romaji", 12);
+    await fakeJoysoundSong(karafriends.app, "e2e-kana", 40);
+    await fakeJoysoundSong(karafriends.app, "e2e-romaji", 12);
     const dictionaryFetches = () =>
       karafriends.displayRequests.filter((url) => url.includes("/dict/"));
 

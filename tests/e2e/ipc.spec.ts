@@ -2,11 +2,9 @@
 // makes no /api requests (every test checks that too, see fixtures.ts), and
 // it keeps working when the remote's port is taken. No network: the songs
 // are Niconico videos, which the fixture gives a minute of black video.
-// (These tests don't check for console errors; display.spec.ts does, with
-// an empty queue.)
 import type { Page } from "@playwright/test";
 
-import { expect, isApiRequest, test } from "./fixtures";
+import { expect, liveState, test } from "./fixtures";
 
 const title = (n: number) => `E2E IPC song ${n}`;
 
@@ -43,18 +41,16 @@ test("the display uses IPC, not the HTTP API", async ({
 }) => {
   await expectSong1Started(display);
 
-  // Requests from the display to the remote's server are seen...
-  const probe = new URL("ipc-probe", karafriends.remoconUrl).href;
+  // Requests from the display to the remote's server are seen, so the
+  // fixture's check that none of them went to /api (at the end of every
+  // test) would see one that did. This test's display has started a song
+  // and shown the queue, all over IPC.
+  const probe = new URL("?ipc-probe", karafriends.remoconUrl).href;
   await display.evaluate(
     (url) => fetch(url, { mode: "no-cors" }).then(() => {}),
     probe,
   );
   await expect.poll(() => karafriends.displayRequests).toContain(probe);
-
-  // ...but none go to /api, while the display asks for the next song every
-  // 5 seconds.
-  await display.waitForTimeout(6_000);
-  expect(karafriends.displayRequests.filter(isApiRequest)).toEqual([]);
 });
 
 // The song the display's video plays, and how far in it is.
@@ -65,28 +61,6 @@ const playing = (display: Page) =>
       v.currentSrc.split("/").pop(),
       v.currentTime,
     ]);
-
-// The current song's id, as the phones see it: the first event of a fresh
-// /api/events stream is the live state.
-async function currentSongId(remoconUrl: string) {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]).state.currentSong?.songId ?? null;
-    }
-  } finally {
-    controller.abort();
-  }
-}
 
 test("a reloaded display plays the song again, and gets the live state and its updates", async ({
   karafriends,
@@ -108,7 +82,9 @@ test("a reloaded display plays the song again, and gets the live state and its u
     .toEqual([`nico-${song(1).songId}.mp4`, expect.any(Number)]);
   await expect.poll(async () => (await playing(display))[1]).toBeGreaterThan(0);
   await display.waitForTimeout(6_000);
-  expect(await currentSongId(karafriends.remoconUrl)).toBe(song(1).songId);
+  expect((await liveState(karafriends.remoconUrl)).currentSong?.songId).toBe(
+    song(1).songId,
+  );
   await expect(queue.getByText(title(2)).first()).toBeVisible();
   expect((await playing(display))[0]).toBe(`nico-${song(1).songId}.mp4`);
 

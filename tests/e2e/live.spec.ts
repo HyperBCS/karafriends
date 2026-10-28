@@ -1,7 +1,6 @@
 // Live state: a change on one phone shows up at once on the other phones and
 // the display, through GET /api/events. No network and no sound: the songs
-// are Niconico videos that were never downloaded, so the display "plays"
-// nothing.
+// are seeded Niconico songs, each a minute of black video, muted.
 import {
   devices,
   type Browser,
@@ -9,10 +8,16 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { adminPasswordConfig, expect, forbidGraphql, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  expect,
+  firstLiveEvent,
+  type Phone,
+  test,
+} from "./fixtures";
 
-const ALICE = { deviceId: "e2e-alice-device", nickname: "alice" };
-const BOB = { deviceId: "e2e-bob-device", nickname: "bob" };
+const ALICE: Phone = { deviceId: "e2e-alice-device", nickname: "alice" };
+const BOB: Phone = { deviceId: "e2e-bob-device", nickname: "bob" };
 const ADMIN_PASSWORD = "e2e live admin";
 const ADMIN_CONFIG = adminPasswordConfig(ADMIN_PASSWORD);
 
@@ -20,7 +25,7 @@ const title = (n: number) => `E2E live song ${n}`;
 
 // A queue.json song. Alice queued hers under an older nickname, so only her
 // device ID says they are hers.
-const song = (n: number, owner: { deviceId: string; nickname: string }) => ({
+const song = (n: number, owner: Phone) => ({
   kind: "nico",
   songId: `sm8000${n}`,
   name: title(n),
@@ -44,14 +49,12 @@ const seedQueue = {
 async function openPhone(
   browser: Browser,
   remoconUrl: string,
-  who: { deviceId: string; nickname: string },
-  graphqlRequests: string[],
+  who: Phone,
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     ...devices["Pixel 7"],
     locale: "en-US",
   });
-  await forbidGraphql(context, graphqlRequests);
   const page = await context.newPage();
   await page.addInitScript(
     ([deviceId, nickname]) => {
@@ -66,25 +69,6 @@ async function openPhone(
   ).toBeVisible();
   await page.getByRole("button", { name: "Show queue" }).click();
   return { context, page };
-}
-
-// The first event of GET /api/events (the state), as text.
-async function firstEvent(url: URL): Promise<string> {
-  const controller = new AbortController();
-  const res = await fetch(url, { signal: controller.signal });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return data[1];
-    }
-  } finally {
-    controller.abort();
-  }
 }
 
 test.describe("live state", () => {
@@ -106,9 +90,7 @@ test.describe("live state", () => {
     expect(token).toMatch(/^[0-9a-f]{64}$/);
 
     const eventsFor = async (deviceId?: string) => {
-      const url = new URL("api/events", remoconUrl);
-      if (deviceId) url.searchParams.set("deviceId", deviceId);
-      const text = await firstEvent(url);
+      const { data: text } = await firstLiveEvent(remoconUrl, { deviceId });
       const { state } = JSON.parse(text);
       const songs = [state.currentSong, ...state.queue].filter(Boolean);
       return {
@@ -139,12 +121,11 @@ test.describe("live state", () => {
     karafriends,
     display,
     browser,
-    graphqlRequests,
   }) => {
     const { remoconUrl } = karafriends;
     const phones = [
-      await openPhone(browser, remoconUrl, ALICE, graphqlRequests),
-      await openPhone(browser, remoconUrl, BOB, graphqlRequests),
+      await openPhone(browser, remoconUrl, ALICE),
+      await openPhone(browser, remoconUrl, BOB),
     ];
     try {
       const [alice, bob] = phones.map((phone) => phone.page);
