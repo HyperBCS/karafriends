@@ -1143,6 +1143,78 @@ test.describe("the microphones", () => {
   });
 });
 
+test.describe("devices that won't open", () => {
+  const MIC_DEVICE = "{0.0.1.00000000}.{e2e-mic} (USB)";
+  const INTERFACE_DEVICE = "{0.0.1.00000000}.{e2e-interface} (USB)";
+
+  test.beforeEach(async ({ display }) => {
+    await openTab(display, "Sound");
+  });
+
+  test("Settings says why a mic or the mic output didn't open; a new mic that won't is added down, a row keeps its mic", async ({
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const section = settings.getByRole("region", { name: "Microphones" });
+    const problem = section.locator(".settingsMessage.problem").last();
+    await failOpen(display, [INTERFACE_DEVICE, "E2E Speakers (Windows)"]);
+
+    // The mic output: the choice isn't kept.
+    const output = section.getByLabel("Mic output");
+    await output.selectOption("E2E Speakers (Windows)");
+    await expect(
+      section.getByText(
+        "Couldn't switch the mic output to E2E Speakers (Windows): E2E Speakers (Windows) won't open (fake)",
+      ),
+    ).toBeVisible();
+    await expect(output).toHaveValue("");
+    expect(
+      await display.evaluate(() => localStorage.getItem("micOutput")),
+    ).toBeNull();
+    // Seen from another tab, Sound has something to look at.
+    await openTab(display, "Display");
+    await expect(
+      settings.getByRole("tab", { name: "Sound" }).locator(".settingsTabDot"),
+    ).toHaveCount(1);
+    await openTab(display, "Sound");
+
+    // A new mic that won't open: its row says why.
+    const add = section.getByLabel("Add a microphone");
+    await add.selectOption("E2E Interface (USB), channel 2");
+    const down = section.getByRole("group", {
+      name: "E2E Interface (USB), channel 2",
+    });
+    await expect(
+      down.getByText("Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await down.getByRole("button", { name: "Remove" }).click();
+    await expect(down).toHaveCount(0);
+
+    // A row keeps its mic rather than change to one that won't open.
+    await add.selectOption("E2E Mic (USB), channel 1");
+    const mic = section.getByRole("group", {
+      name: "E2E Mic (USB), channel 1",
+    });
+    await mic
+      .getByLabel("Microphone")
+      .selectOption("E2E Interface (USB), channel 1");
+    await expect(problem).toHaveText(
+      "Couldn't open E2E Interface (USB), channel 1: Error: The device is busy (fake)",
+    );
+    await expect(mic).toBeVisible();
+    await expect(mic.getByLabel("Microphone")).toHaveValue(`${MIC_DEVICE}_0`);
+    expect(
+      await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
+    ).toEqual([{ name: MIC_DEVICE, channel: 0, gain: 100, echo: 40 }]);
+
+    // One that opens clears the message.
+    await failOpen(display, []);
+    await output.selectOption("E2E Speakers (Windows)");
+    await expect(output).toHaveValue("E2E Speakers (Windows)");
+    await expect(section.locator(".settingsMessage.problem")).toHaveCount(0);
+  });
+});
+
 test.describe("the microphones on Linux", () => {
   // The fake as on Linux with PipeWire (src/preload/index.ts).
   test.use({ appEnv: { KARAFRIENDS_FAKE_AUDIO: "linux" } });

@@ -36,7 +36,14 @@ import "./Settings.css";
 type Loaded = ApiOutput<"getSettings">;
 
 type Section =
-  LoginService | "admin" | "queue" | "network" | "tools" | "config";
+  | LoginService
+  | "admin"
+  | "queue"
+  | "network"
+  | "sound"
+  | "mics"
+  | "tools"
+  | "config";
 
 // The tabs down the left, in order.
 export const SETTINGS_TABS = [
@@ -63,6 +70,8 @@ const SECTION_TABS: Record<Section, SettingsTab> = {
   admin: "party",
   queue: "party",
   network: "party",
+  sound: "sound",
+  mics: "sound",
   tools: "advanced",
   config: "advanced",
 };
@@ -472,16 +481,17 @@ export default function Settings(props: {
   onHostnameChange: (hostname: string) => void;
   mics: InputDevice[];
   micLevels: (mic: InputDevice) => MicLevels;
-  // index is mics.length for a new mic.
-  onChangeMic: (index: number, name: string, channel: number) => void;
+  // index is mics.length for a new mic. These three return why the device
+  // didn't open, if it didn't.
+  onChangeMic: (index: number, name: string, channel: number) => string | null;
   onChangeLevels: (mic: InputDevice, levels: MicLevels) => void;
   onRemoveMic: (index: number) => void;
   micOutput: MicOutput;
-  onMicOutputChange: (output: MicOutput) => void;
+  onMicOutputChange: (output: MicOutput) => string | null;
   micMode: MicMode;
   onMicModeChange: (mode: MicMode) => void;
   songOutput: SongOutput | null;
-  onSongOutputChange: (output: SongOutput | null) => void;
+  onSongOutputChange: (output: SongOutput | null) => Promise<string | null>;
   // Where the songs play now (see songOutput.ts).
   songOutputPlace: () => OutputPlace;
   avOffsetMs: number;
@@ -528,6 +538,10 @@ export default function Settings(props: {
 
   const say = (section: Section, message: Message | null) =>
     setMessages((previous) => ({ ...previous, [section]: message }));
+
+  // Why a device didn't open, under its section; null clears it.
+  const report = (section: Section, problem: string | null) =>
+    say(section, problem === null ? null : { text: problem, tone: "problem" });
 
   const reload = async () => {
     const settings = await call("getSettings", {});
@@ -920,11 +934,18 @@ export default function Settings(props: {
 
           {props.tab === "sound" ? (
             <>
-              <SettingsSection title="Sound">
+              <SettingsSection
+                title="Sound"
+                message={messages.sound ?? undefined}
+              >
                 <div className="settingsFields">
                   <SongOutputSetting
                     output={props.songOutput}
-                    onChange={props.onSongOutputChange}
+                    onChange={(output) =>
+                      props
+                        .onSongOutputChange(output)
+                        .then((problem) => report("sound", problem))
+                    }
                   />
                   <label className="kfLabel">
                     Audio/video offset
@@ -953,11 +974,16 @@ export default function Settings(props: {
                 </Hint>
               </SettingsSection>
 
-              <SettingsSection title="Microphones">
+              <SettingsSection
+                title="Microphones"
+                message={messages.mics ?? undefined}
+              >
                 <MicOutputSetting
                   outputs={outputs}
                   output={props.micOutput}
-                  onChange={props.onMicOutputChange}
+                  onChange={(output) =>
+                    report("mics", props.onMicOutputChange(output))
+                  }
                 />
                 {outputNote ? (
                   <p className="settingsHint" role="status">
@@ -977,7 +1003,7 @@ export default function Settings(props: {
                     mic={mic}
                     levels={props.micLevels(mic)}
                     onChange={(name, channel) =>
-                      props.onChangeMic(i, name, channel)
+                      report("mics", props.onChangeMic(i, name, channel))
                     }
                     onLevelsChange={(levels) =>
                       props.onChangeLevels(mic, levels)
@@ -987,7 +1013,10 @@ export default function Settings(props: {
                 ))}
                 <AddMicrophone
                   onAdd={(name, channel) =>
-                    props.onChangeMic(props.mics.length, name, channel)
+                    report(
+                      "mics",
+                      props.onChangeMic(props.mics.length, name, channel),
+                    )
                   }
                 />
               </SettingsSection>
