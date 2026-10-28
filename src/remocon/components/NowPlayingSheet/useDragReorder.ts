@@ -15,10 +15,8 @@ export function dropIndex(
 ): number {
   let to = 0;
   middles.forEach((middle, i) => {
-    if (
-      i < from ? middle < y - height / 2 : i > from && middle < y + height / 2
-    )
-      to++;
+    const edge = i < from ? y - height / 2 : y + height / 2;
+    if (i !== from && middle < edge) to++;
   });
   return to;
 }
