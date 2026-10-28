@@ -8,7 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
-    _output_devices, _output_name, describe, error_callback, find_output, lock, system_host,
+    _output_devices, _output_name, describe, error_callback, find_output, kept, lock, system_host,
     DeviceType, RateLimit, Result, Stall, Stream, StreamSlot,
 };
 
@@ -53,11 +53,13 @@ fn millis(rate: cpal::SampleRate, frames: usize) -> usize {
     frames * 1000 / rate as usize
 }
 
-// Every output device, with the host in parentheses.
+// Every output device, with the host in parentheses. One that won't give
+// its name is left out, not the whole list.
 pub fn output_devices() -> Result<Vec<String>> {
-    _output_devices()?
-        .map(|(device, device_type)| _output_name(&device, &device_type))
-        .collect()
+    Ok(kept(
+        "An output",
+        _output_devices()?.map(|(device, device_type)| _output_name(&device, &device_type)),
+    ))
 }
 
 // The output picked in Settings, with its rate and buffer size in frames

@@ -710,20 +710,16 @@ impl InputDevice {
     // and the channels Settings offers. An input that won't say is left
     // out, not the whole list.
     pub fn collect_devices() -> Result<Vec<(String, String, u16)>> {
-        Ok(_input_devices()?
-            .filter_map(|(input_device, device_type)| {
-                let name = _device_name(&input_device, &device_type);
-                match listed_channels(&input_device) {
-                    Ok(channels) => {
-                        Some((name, _device_label(&input_device, &device_type), channels))
-                    }
-                    Err(e) => {
-                        eprintln!("The input {name} is left out: {e}");
-                        None
-                    }
-                }
-            })
-            .collect())
+        Ok(kept(
+            "An input",
+            _input_devices()?.map(|(input_device, device_type)| -> Result<_> {
+                let name = _device_name(&input_device, &device_type)?;
+                let channels =
+                    listed_channels(&input_device).map_err(|e| format!("{name}: {e}"))?;
+                let label = _device_label(&input_device, &device_type, &name);
+                Ok((name, label, channels))
+            }),
+        ))
     }
 
     pub fn new(name: &str, channel_selection: usize) -> Result<Self> {
@@ -1422,7 +1418,7 @@ fn find_input(name: &str) -> Result<(cpal::Device, DeviceType)> {
         return Ok(found.clone());
     }
     let is_named = |(device, device_type): &(cpal::Device, DeviceType)| {
-        _device_name(device, device_type) == name
+        _device_name(device, device_type).is_ok_and(|n| n == name)
     };
     let found = match names_asio(name) {
         #[cfg(all(windows, feature = "asio"))]
@@ -1503,22 +1499,35 @@ fn input_host(device_type: &DeviceType) -> &'static str {
 }
 
 // An input's key: its id and "(USB)" for the default host ("(Linux)" on
-// Linux), the form saved mics have.
-fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> String {
-    format!("{} ({})", device.id().unwrap(), input_host(device_type))
+// Linux), the form saved mics have. An input without an id has no key, and
+// isn't listed.
+fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> Result<String> {
+    Ok(format!("{} ({})", device.id()?, input_host(device_type)))
 }
 
 // An input's label: what the system calls it ("Yeti Stereo Microphone
-// (USB)"), or its id if the system won't say.
-fn _device_label(device: &cpal::Device, device_type: &DeviceType) -> String {
+// (USB)"), or its key (`name`) if the system won't say.
+fn _device_label(device: &cpal::Device, device_type: &DeviceType, name: &str) -> String {
     #[cfg(target_os = "linux")]
     if let Some(label) = linux::label(device) {
         return format!("{label} ({})", input_host(device_type));
     }
     match device.description() {
         Ok(description) => format!("{} ({})", description.name(), input_host(device_type)),
-        Err(_) => _device_name(device, device_type),
+        Err(_) => name.to_string(),
     }
+}
+
+// The listing's items that came, each failure printed and left out: one
+// device that won't say doesn't empty Settings' list.
+fn kept<T, E: std::fmt::Display>(
+    what: &str,
+    items: impl IntoIterator<Item = std::result::Result<T, E>>,
+) -> Vec<T> {
+    items
+        .into_iter()
+        .filter_map(|item| item.map_err(|e| eprintln!("{what} is left out: {e}")).ok())
+        .collect()
 }
 
 // An output's name: what the system calls it, and the host.
@@ -2184,6 +2193,16 @@ mod tests {
     // The tests that list devices take turns: two threads loading ASIO
     // drivers at once crash (the app lists them from one thread only).
     static DEVICES: Mutex<()> = Mutex::new(());
+
+    // A device that fails is left out, and the others still list.
+    #[test]
+    fn test_kept_skips_failures() {
+        let items: Vec<std::result::Result<&str, String>> =
+            vec![Ok("Mic 1"), Err("no id".to_string()), Ok("Mic 2")];
+        assert_eq!(kept("A device", items), ["Mic 1", "Mic 2"]);
+        let none: Vec<std::result::Result<&str, String>> = vec![Err("gone".to_string())];
+        assert!(kept("A device", none).is_empty());
+    }
 
     // Lists the outputs without opening any. CI machines may have no audio
     // system at all, so only the names are checked.
