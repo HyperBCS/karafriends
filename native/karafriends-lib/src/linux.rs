@@ -29,8 +29,10 @@ const BUFFERS: [u32; 5] = [64, 128, 256, 512, 1024];
 const HOST_VARIABLE: &str = "KARAFRIENDS_AUDIO_HOST";
 
 // cpal's PipeWire streams call pw_stream_get_time_n, from PipeWire 0.3.50.
-// The module binds it lazily (see build.rs), so with an older library it
-// loads, and PipeWire is skipped.
+// The module binds it when first called (see build.rs and
+// .cargo/config.toml), so with an older library it loads, and PipeWire is
+// skipped before anything calls it. scripts/checkLazyPipewire.sh checks
+// both.
 #[cfg(feature = "pipewire")]
 const PIPEWIRE_MIN: (u32, u32, u32) = (0, 3, 50);
 
