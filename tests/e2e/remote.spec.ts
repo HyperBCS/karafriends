@@ -898,6 +898,8 @@ test.describe("dragging the queue", () => {
       karafriends,
     );
     await expectOrder(2, 3, 4);
+    // The first waits for what is left of song 1's minute, counting down.
+    await expect(queued.first()).toContainText(/\+0:\d\d/);
 
     // Song 4 held by its handle and dragged above song 2, a few steps at a
     // time.
@@ -909,6 +911,7 @@ test.describe("dragging the queue", () => {
     await remote.mouse.move(x, top.y + 10, { steps: 8 });
     await remote.mouse.up();
     await expectOrder(4, 2, 3);
+    await expect(queued.first()).toContainText(/\+0:\d\d/);
 
     // Arrow Up on song 3's handle, twice: it keeps the focus as it moves.
     await handle(3).focus();

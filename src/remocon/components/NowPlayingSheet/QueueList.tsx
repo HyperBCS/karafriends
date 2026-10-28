@@ -1,11 +1,11 @@
 import formatDuration from "format-duration";
-import React, { useState } from "react";
+import React, { memo, useCallback, useState } from "react";
 
 import type { SharedQueueItem } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
 import useOptimisticValue from "../../../common/hooks/useOptimisticValue";
-import useQueue, { withETAs } from "../../../common/hooks/useQueue";
+import useQueue, { useWait, withETAs } from "../../../common/hooks/useQueue";
 import { t } from "../../i18n";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
@@ -27,28 +27,34 @@ const Initial = ({ nickname }: { nickname: string }) => (
 const nicknameOf = (item: SharedQueueItem) =>
   item.user.nickname || t("common.unknownUser");
 
+// A queued song's wait (from useQueue(false)), counting down while the
+// current song plays: the only part of a row that changes every second.
+const Wait = ({ eta }: { eta: number }) => (
+  <>{`+${formatDuration(useWait(eta) * 1000)}`}</>
+);
+
 interface RowProps {
   item: SharedQueueItem;
   eta: number;
   index: number;
   isAdmin: boolean;
-  onMoveToTop: () => void;
-  // The drag handle's props (useDragReorder), shown to an admin.
-  handleProps: ReturnType<ReturnType<typeof useDragReorder>>;
+  onMove: (from: number, to: number) => void;
+  // The drag handle's props for a row (useDragReorder), shown to an admin.
+  handleProps: ReturnType<typeof useDragReorder>;
 }
 
 // A queued song. Tapping it shows who queued it and what this phone may do
 // with it: remove it (its singer, or an admin; anyone outside supervised
 // mode), and for an admin, move it to the top. An admin also drags it by
-// its handle.
-const QueueRow = ({
+// its handle. It renders again only when its props change.
+const QueueRow = memo(function QueueRow({
   item,
   eta,
   index,
   isAdmin,
-  onMoveToTop,
+  onMove,
   handleProps,
-}: RowProps) => {
+}: RowProps) {
   const [expanded, setExpanded] = useState(false);
   const supervisedMode = useLiveState(
     (state) => state?.config.supervisedMode ?? false,
@@ -70,7 +76,7 @@ const QueueRow = ({
           label={t("queue.moveToTop")}
           icon={<MdVerticalAlignTop />}
           disabled={index === 0}
-          onClick={onMoveToTop}
+          onClick={() => onMove(index, 0)}
         />
       )}
       {canRemove && (
@@ -101,31 +107,32 @@ const QueueRow = ({
       aria-label={`${item.name}, ${queuedBy}`}
       trailing={
         <>
-          {expanded ? actions : `+${formatDuration(eta * 1000)}`}
+          {expanded ? actions : <Wait eta={eta} />}
           {isAdmin && (
             <IconButton
               label={t("queue.dragToReorder")}
               icon={<MdDragIndicator />}
               className={styles.handle}
-              {...handleProps}
+              {...handleProps(index)}
             />
           )}
         </>
       }
     />
   );
-};
+});
 
 // The current song (accented, a link to its page: for adhoc lyrics, its
 // singer's controls), then the queue with each song's wait. An admin's
 // moves show at once, until the live state has them (or the server says
-// why not, and the queue goes back).
+// why not, and the queue goes back). The order comes from useQueue(false),
+// which changes only with the queue, not every second.
 const QueueList = () => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
-  const [queue, setPending, clearPending] = useOptimisticValue(useQueue());
+  const [queue, setPending, clearPending] = useOptimisticValue(useQueue(false));
   const isAdmin = useIsAdmin() === true;
   const [moveError, setMoveError] = useState<string | null>(null);
-  const moveSong = useApiMutation("moveSong", {
+  const { mutate: moveSong } = useApiMutation("moveSong", {
     onSuccess: ({ ok }) => {
       // Gone from the queue meanwhile: nothing moved.
       if (!ok) clearPending();
@@ -136,18 +143,21 @@ const QueueList = () => {
     },
   });
 
-  const move = (from: number, to: number) => {
-    const items = queue.map(([item]) => item);
-    const [item] = items.splice(from, 1);
-    items.splice(to, 0, item);
-    setPending(withETAs(currentSong, items));
-    setMoveError(null);
-    moveSong.mutate({
-      songId: item.songId,
-      timestamp: item.timestamp,
-      toIndex: to,
-    });
-  };
+  const move = useCallback(
+    (from: number, to: number) => {
+      const items = queue.map(([item]) => item);
+      const [item] = items.splice(from, 1);
+      items.splice(to, 0, item);
+      setPending(withETAs(currentSong, items));
+      setMoveError(null);
+      moveSong({
+        songId: item.songId,
+        timestamp: item.timestamp,
+        toIndex: to,
+      });
+    },
+    [queue, currentSong, setPending, moveSong],
+  );
   const handleProps = useDragReorder(queue.length, move);
 
   return (
@@ -188,8 +198,8 @@ const QueueList = () => {
               eta={eta}
               index={index}
               isAdmin={isAdmin}
-              onMoveToTop={() => move(index, 0)}
-              handleProps={handleProps(index)}
+              onMove={move}
+              handleProps={handleProps}
             />
           ))}
         </List>

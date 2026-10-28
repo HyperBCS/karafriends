@@ -67,6 +67,13 @@ function usePlayed(live: boolean): number {
   return playtime - left(playtime, timing, now);
 }
 
+// A song's wait from useQueue(false), counting down once a second while
+// the current song plays: for the one part of a row that changes every
+// second, so the rest of it doesn't.
+export function useWait(eta: number): number {
+  return eta - usePlayed(true);
+}
+
 const EMPTY: SharedQueueItem[] = [];
 
 // The songs after the current one, with ETAs that count down once a second
