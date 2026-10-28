@@ -416,6 +416,11 @@ export default function Settings(props: {
             checked={settings.supervisedMode}
             onChange={(checked) => save("queue", { supervisedMode: checked })}
           />
+          <Checkbox
+            label="Everyone is an admin: any phone can change the queue and playback, no password needed."
+            checked={settings.everyoneIsAdmin}
+            onChange={(checked) => save("queue", { everyoneIsAdmin: checked })}
+          />
           <div className="settingsFields">
             <TextSetting
               label="Songs each phone may queue at once (0: no limit)"

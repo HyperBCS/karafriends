@@ -17,6 +17,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Fixes from the review: songs are no longer dropped or deleted when two phones pick the same one (the second hears "Someone is already adding this song", one failed Joysound background no longer deletes another, and a DAM song no longer downloads twice into one file), nor queued half-written after a crash; a failed Update tools no longer fails the downloads waiting on it; at most two YouTube or Niconico downloads run at once, and a stopped one stops for good; live, upcoming and paid videos say so instead of blaming the tools; with no admin password set, phones hear that instead of "Wrong password"; importing an old `config.yaml` reads its `YOUR_PASSWORD_HERE` as empty and says when phones must sign in again; a `config.yaml` that isn't settings is kept as `config.yaml.broken`, and the logs never print a line of it.
 - Remote fixes: Back keeps working after picking a Joysound background video, Back from the lyrics screen no longer returns to it while the song plays, a hand-typed YouTube or Niconico ID opens on Enter instead of mid-typing, the playback controls fit 320px phones, and the profile screen says when the host set no admin password.
 - Cleanup: removed upstream's unused Cloudflare tunnel and DAM decryptor files and the `offkai.karafriends.party` hostname choice; faster CI builds.
+- Settings has "Everyone is an admin" (`everyoneIsAdmin` in `config.yaml`) for parties: every phone gets the admin controls at once, with no password.
 
 ## 0.1.0
 
