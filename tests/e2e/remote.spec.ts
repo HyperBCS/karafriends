@@ -1088,6 +1088,44 @@ test("a DAM queue button is ready again while the live state keeps changing", as
   }
 });
 
+test("a video's line says 1 view, and leaves out a count it doesn't have", async ({
+  karafriends,
+  remote,
+}) => {
+  let info: Record<string, unknown> = { lengthSeconds: 320, viewCount: 1 };
+  await remote.route("**/api/nicoInfo", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        info: {
+          title: "千本桜",
+          author: "黒うさP",
+          channelId: "4",
+          description: "",
+          thumbnailUrl: "data:,",
+          ...info,
+        },
+      },
+    }),
+  );
+  await remote.goto(
+    new URL("#/search/niconico/sm9", karafriends.remoconUrl).href,
+  );
+  await expect(remote.getByText("Niconico · 5:20 · 1 view")).toBeVisible();
+
+  // NaN and undefined arrive as null and as no key at all.
+  info = { lengthSeconds: null };
+  await remote.goto(
+    new URL("#/search/niconico/sm10", karafriends.remoconUrl).href,
+  );
+  await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
+  // No length and no views: the line is just the source.
+  await expect(remote.getByText(/ · |views?$/)).toHaveCount(0);
+  await expect(
+    remote.getByRole("button", { name: "Queue video" }),
+  ).toBeEnabled();
+});
+
 test("a song already queued says why it wasn't queued again", async ({
   karafriends,
   remote,
@@ -1122,44 +1160,6 @@ test("a song already queued says why it wasn't queued again", async ({
       name: "Not queued: That song is already in the queue",
     }),
   ).toBeDisabled();
-  await expect(
-    remote.getByRole("button", { name: "Queue video" }),
-  ).toBeEnabled();
-});
-
-test("a video's line says 1 view, and leaves out a count it doesn't have", async ({
-  karafriends,
-  remote,
-}) => {
-  let info: Record<string, unknown> = { lengthSeconds: 320, viewCount: 1 };
-  await remote.route("**/api/nicoInfo", (route) =>
-    route.fulfill({
-      json: {
-        ok: true,
-        info: {
-          title: "千本桜",
-          author: "黒うさP",
-          channelId: "4",
-          description: "",
-          thumbnailUrl: "data:,",
-          ...info,
-        },
-      },
-    }),
-  );
-  await remote.goto(
-    new URL("#/search/niconico/sm9", karafriends.remoconUrl).href,
-  );
-  await expect(remote.getByText("Niconico · 5:20 · 1 view")).toBeVisible();
-
-  // NaN and undefined arrive as null and as no key at all.
-  info = { lengthSeconds: null };
-  await remote.goto(
-    new URL("#/search/niconico/sm10", karafriends.remoconUrl).href,
-  );
-  await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
-  // No length and no views: the line is just the source.
-  await expect(remote.getByText(/ · |views?$/)).toHaveCount(0);
   await expect(
     remote.getByRole("button", { name: "Queue video" }),
   ).toBeEnabled();
