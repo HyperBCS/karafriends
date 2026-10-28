@@ -2,6 +2,8 @@
 
 The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is about what guests and the host see: the phone remote, the display, first-time setup, and the failures that happen at a party. Scoring is out of scope for this round.
 
+> **Done (2026-10-27).** Every phase below is merged and reviewed. The next round is the mobile work in [`PLAN-mobile.md`](PLAN-mobile.md).
+
 ## Status (keep this table current; it is how any session picks up where things stand)
 
 | Step                                             | State           | Branch / commit                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                       |
