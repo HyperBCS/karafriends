@@ -30,29 +30,29 @@ Choices this plan makes, which the orchestrator may revisit with a reason in the
 
 ## Status (keep this table current)
 
-| Phase                                         | Wave | Starts after  | High / Med / Low / OE | State       | Branch / commit | Notes |
-| --------------------------------------------- | ---- | ------------- | --------------------- | ----------- | --------------- | ----- |
-| A: party basics (wake, one instance, mDNS)    | 1    | none          | 2 / 3 / 3 / 2         | not started |                 |       |
-| B: tools and config                           | 1    | none          | 2 / 4 / 4 / 2         | not started |                 |       |
-| C: downloads                                  | 1    | none          | 1 / 2 / 8 / 2         | not started |                 |       |
-| D: upstream services                          | 1    | none          | 0 / 3 / 0 / 0         | not started |                 |       |
-| E: native Linux loading and sound systems     | 1    | none          | 1 / 1 / 3 / 0         | not started |                 |       |
-| F: native device recovery, exclusive, ASIO    | 1    | none          | 1 / 7 / 4 / 0         | not started |                 |       |
-| G: key change rewrite                         | 1    | none          | 1 / 2 / 2 / 2         | not started |                 |       |
-| H: display song output and mics               | 1    | none          | 1 / 3 / 1 / 0         | not started |                 |       |
-| I: display pitch bars and guide melody        | 1    | none          | 0 / 3 / 6 / 2         | not started |                 |       |
-| J: display Joysound lyrics and parser         | 1    | none          | 1 / 0 / 8 / 2         | not started |                 |       |
-| K: display playback flow                      | 1    | none          | 0 / 4 / 1 / 0         | not started |                 |       |
-| L: commands, playback state, clock            | 2    | A, C, H, K    | 0 / 3 / 9 / 4         | not started |                 |       |
-| M: phone navigation and pages                 | 2    | A             | 0 / 2 / 7 / 0         | not started |                 |       |
-| N: phone components, UI kit, i18n             | 2    | A             | 0 / 0 / 15 / 7        | not started |                 |       |
-| O: native real time, pitch window, bindings   | 2    | E, F          | 0 / 1 / 5 / 8         | not started |                 |       |
-| P: server live stream, admin, API cleanup     | 3    | L             | 0 / 1 / 13 / 11       | not started |                 |       |
-| Q: TV Settings                                | 3    | H, O, P       | 0 / 1 / 9 / 0         | not started |                 |       |
-| R: CI, build and tests                        | 3    | all of A to Q | 0 / 1 / 15 / 7        | not started |                 |       |
-| Close-out: screenshots, docs, audit, full run |      | R             |                       | not started |                 |       |
+| Phase                                         | Wave | Starts after         | High / Med / Low / OE | State  | Branch / commit | Notes                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------- | ---- | -------------------- | --------------------- | ------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A: party basics (wake, one instance, mDNS)    | 1    | none                 | 2 / 3 / 3 / 2         | merged | `5159a74`       | 8 fixed, 2 need hardware (wake lock, Android). Unicast also to QM queriers on our subnet (VPN routes multicast). withTimeout merge and queueFailed display-only left to P.                                                                                                                                                                                                                                          |
+| B: tools and config                           | 1    | none                 | 2 / 4 / 4 / 2         | merged | `996170a`       | All 12 fixed. macOS ffmpeg from ffmpeg.martin-riedl.de (signed arm64, latest redirect); tools run -version before replacing; weekly ffmpeg check; getSettings gains `loadProblem` (additive). 3 hardware checks (22.04, Apple Silicon, Windows Update tools).                                                                                                                                                       |
+| C: downloads                                  | 1    | none                 | 1 / 2 / 8 / 2         | merged | `4423cff`       | All 13 fixed. Downloads and queue.json now under userData (one-time move). songFiles.ts shared. runDownload takes an options object. No hardware checks.                                                                                                                                                                                                                                                            |
+| D: upstream services                          | 1    | none                 | 0 / 3 / 0 / 0         | merged | `60d11db`       | All 3 fixed via one `withSession` in http.ts; 4xx status passes through to phones; promise-retry now unused (drop at close-out). 5 VPN checks for the user.                                                                                                                                                                                                                                                         |
+| E: native Linux loading and sound systems     | 1    | none                 | 1 / 1 / 3 / 0         | merged | `938684d`       | All 5 fixed. Partial RELRO via .cargo/config.toml; all 26 pw_* imports now JUMP_SLOT; stub-library load passes. R MUST add `-C relro-level=partial` to both workflows' RUSTFLAGS (they override the config) and run scripts/checkLazyPipewire.sh. PulseAudio default buffer 512. 22.04 check for the user.                                                                                                          |
+| F: native device recovery, exclusive, ASIO    | 1    | none                 | 1 / 7 / 4 / 0         | merged | `dc66aab`       | All 12 fixed; 9 need Windows/ASIO/Mac hardware. ASIO cfg arms can't compile here: the Windows CI build is the first real check. `output_status()` not yet bound to JS (O). mixer.register has a 4th arg.                                                                                                                                                                                                            |
+| G: key change rewrite                         | 1    | none                 | 1 / 2 / 2 / 2         | merged | `02b3fdb`       | Laroche–Dolson peak-locked shift; ±0.001 st at every tested frequency; 109 µs/quantum at +2 (was 503). Won't fix: ~40 ms lyric lead while shifted (needs playback.ts latency; follow-up). By-ear check needed.                                                                                                                                                                                                      |
+| H: display song output and mics               | 1    | none                 | 1 / 3 / 1 / 0         | merged | `e547148`       | Edits Settings.tsx (sections, songOutputPlace, mic.key) that Q must absorb; preload fake gains failOpen(), O should reuse. 2 need hardware (TV standby, TV on after launch).                                                                                                                                                                                                                                        |
+| I: display pitch bars and guide melody        | 1    | none                 | 0 / 3 / 6 / 2         | merged | `2f6638d`       | All 11 fixed + one extra (lone pitch drawn at MIDI y). color-convert/gl-vec2 removed (yarn.lock). Overlay DAM melody is `Melody                                                                                                                                                                                                                                                                                     | null`. Needs a real two-mic check of the trace.                   |
+| J: display Joysound lyrics and parser         | 1    | none                 | 1 / 0 / 8 / 2         | merged | `c111bb3`       | All 11 fixed. Textures per 40-line song: peak 6 (was 81). Romaji only in romaji/both modes, so kana songs never load kuromoji. `parseJoysoundData(data, kuroshiro                                                                                                                                                                                                                                                   | null)`; `loadKuroshiro()` in kuroshiro.ts. 4K check for the user. |
+| K: display playback flow                      | 1    | none                 | 0 / 4 / 1 / 0         | merged | `f377ade`       | popSong input is now `{ resume?: boolean }`; replay once per songId@timestamp. Joysound gain 1.0 via songGain(). renderer-playback-7 untested (no known repro).                                                                                                                                                                                                                                                     |
+| L: commands, playback state, clock            | 2    | A, C, H, K           | 0 / 3 / 9 / 4         | merged | `c89f92e`       | All 16 fixed. Commands carry `song` = `songKey()` (songId@timestamp); popSong sets WAITING on every path; `currentSongPausedMs` gone; `useLiveSetter` replaces useOptimisticValue/useGuideMelodyLevel; display has no QueryClient; `pendingSongs` in queue.json + `resumeDownloads()`. Ticker not stopped while the sheet is folded (negligible).                                                                   |
+| M: phone navigation and pages                 | 2    | A                    | 0 / 2 / 7 / 0         | merged | `da1460f`       | All 9 fixed. `PerId` remount per route id; per-history-entry scroll restore (relies on one `Screen` instance across routes). History says "Queued": P should add `playedAt` to HistoryItem for a real fix. iPhone scroll check for the user.                                                                                                                                                                        |
+| N: phone components, UI kit, i18n             | 2    | A                    | 0 / 0 / 15 / 7        | merged | `7994164`       | All 22 fixed. Typed queue-button status; native `<select>` source picker; `storage.ts` wrapper; `deviceId()` in apiClient; `i18n/reasons.ts` maps server reasons (P: keep wording or add codes). Found a master regression from M in downloadFailure.spec (fixed at merge). iPhone checks: source wheel, marquee on iOS 15/16.                                                                                      |
+| O: native real time, pitch window, bindings   | 2    | E, F                 | 0 / 1 / 5 / 8         | merged | `5f5ad61`       | 13 fixed; oe-native-5 (one crate) won't fix: churn in build.rs, CI paths and scripts for a 26-line gain. 0 allocations per mic callback (was 21), bit-identical reverb. `outputStatus()` bound; Q must use it instead of mics[0].status(). `getPitch` confidence 0 when nothing new. Mac/Windows launch checks for the user.                                                                                        |
+| P: server live stream, admin, API cleanup     | 3    | L                    | 0 / 1 / 13 / 11       | merged | `8cee40f`       | 20 fixed. Won't fix: oe-main-5 (paging `limit`, WEAK) and the externalResources part of cross-maintainability-12. Display-only check kept per handler (defence in depth), popSong added to the set. `moveSong { song, before, toIndex }`; `history` returns `PlayedSong` with `playedAt`; SSE `ping` + 45 s reconnect; pre-0.1.0 queue.json entries dropped with a warning. launch.spec flaked once under load (R). |
+| Q: TV Settings                                | 3    | H, O (P in parallel) | 0 / 1 / 9 / 0         | merged | `1c4107c`       | All 10 fixed. Settings.tsx → 220-line shell + `src/renderer/settings/*`. Device listings out of render via one catch; `outputStatus()` used. Native side of native-bindings-4 (skip one bad device in lib.rs) done by the integrator at merge. Address pick saved as `hostname`.                                                                                                                                    |
+| R: CI, build and tests                        | 3    | all of A to Q        | 0 / 1 / 15 / 7        | merged | `76a334b`       | All 23 fixed. Linux load failure reproduced in an ubuntu:22.04 container and fixed there; both workflows now set `-C relro-level=partial` and run the check; new smoke job + `scripts/smokeLinuxPackage.sh`. Unit tests typechecked (30 errors fixed). e2e: shared helpers, display-error assertions, no flakes over 3 repeats. First CI run and a manual Release run still to confirm.                             |
+| Close-out: screenshots, docs, audit, full run |      | R                    |                       | done   | `9d5568b`       | Screenshots in 3 commits (85 files; `u4-search-menu-*` replaced by `u4-search-source-*`). CHANGELOG and README written. Final run green: 634 unit, 60 cargo, 123 e2e, cross-target clippy, PipeWire check, hidden launch. The 22.04 package smoke test fails for a zip built on this laptop (glibc 2.43 `log10f`), as expected: release zips must come from CI (ubuntu-24.04). 162 commits since the plan.          |
 
-A phase starts as soon as the phases in "Starts after" are merged, not when its whole wave is. The waves only show the rough order. The critical path is A, C, H and K, then L, P, Q and R.
+Round finished 2026-10-28: every phase merged, 206 of 213 ids fixed (see the Completeness audit). A phase starts as soon as the phases in "Starts after" are merged, not when its whole wave is. The waves only show the rough order. The critical path is A, C, H and K, then L, P, Q and R.
 
 ## Phases
 
@@ -106,26 +106,80 @@ Each phase's file in `review-fixes/` lists its findings, most severe first. The 
 
 - The integrator merges each accepted branch into master with `git merge --no-ff` and the repo's message style (`Merge A: the screen stays on, phones find karafriends.local, ...`), in the order branches are accepted. L and P are merged alone, with nothing else in between.
 - After each merge, it runs `yarn typecheck`, `yarn lint`, `prettier --check .`, `yarn test:unit`, and, when native changed, `cargo clippy --all-targets`, `cargo test` and `yarn build-native-dev`. It fixes small breakages itself. Otherwise it reverts the merge and hands the branch back to the orchestrator with the failure.
-- When a wave's phases are all merged (and after L and after P), it runs `yarn build-prod`, `xvfb-run --auto-servernum yarn test:e2e:ci`, one hidden launch, and the cross-target clippy runs.
+- When a wave's phases are all merged (and after L and after P), it runs `yarn build-prod`, `xvfb-run --auto-servernum yarn test:e2e:ci`, one hidden launch, and the cross-target clippy runs. The hidden launch must use a throwaway profile, or the real dev profile's queue starts playing: `KARAFRIENDS_HIDE_WINDOW=1 KARAFRIENDS_LOCAL_ONLY=1 TMPDIR=$(mktemp -d /tmp/kf-XXXX) xvfb-run --auto-servernum timeout 20 npx electron build/prod/main/index.js --no-sandbox --user-data-dir=<scratch>/ud` (the first wave-1 launch forgot this: C's migration moved the dev profile's old `/tmp/karafriends_tmp` queue into `~/.config/Electron/downloads` and played its first song for a few seconds).
 - Close-out:
   - Regenerate the screenshots once (`KARAFRIENDS_SCREENSHOTS=1`, both screenshot specs).
   - Write CHANGELOG.md and README.md from the workers' lines. The README's Linux section should say 22.04 works and drop any mention of notifications.
   - Run every check one last time.
   - Update `MEMORY.md`'s review note to point at this plan's final state.
 
+## Completeness audit (2026-10-28, after R)
+
+All 213 ids in `review-fixes/` have a state. 206 are fixed. None is "needs hardware" alone: every hardware-only fix was built, compiled for its target and listed below for the host to confirm. Seven are not fully fixed, each with a reason a reader can check:
+
+| Id                           | State              | Reason                                                                                                                                                                                                                                      |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| oe-native-5                  | won't fix          | Merging the two Rust crates touches build.rs, the CI `workspaces: native` path, the cargo-cp-artifact scripts and every native path, for a 26-line manifest. The verifier called it marginal.                                               |
+| oe-main-5                    | won't fix          | Paging's unused `limit` is small, correct and stable; removing it touches `PageInput`, validate.ts and 7 handlers to save about 20 lines. WEAK per its verifier.                                                                            |
+| cross-maintainability-12     | partly fixed       | The duplicate `withTimeout` is gone (P). The externalResources retry rewrite changes behaviour (two timeouts become one) in B's file; the verifier called it a judgment call.                                                               |
+| renderer-audio-6             | partly fixed       | The 37 ms drop at a key change is gone (G). While shifted, lyrics and pitch bars still lead the music by about 40 ms, under lip-sync tolerance; a fix needs `drawTime`/`pitchTime` to take the vocoder's latency in playback.ts. Follow-up. |
+| cross-performance-9          | partly fixed       | One shared ticker per page (L). It still ticks while the sheet is folded; stopping it needs a prop through the sheet, for a cost the verifier called negligible.                                                                            |
+| oe-main-2, oe-architecture-3 | partly fixed       | `popSong` is in `DISPLAY_ONLY_METHODS` and the duplicate ID regex is gone (P). Each handler keeps its own display check on purpose: the main review's skeptic called it defence in depth.                                                   |
+| native-bindings-4            | fixed in two parts | The renderer side by Q, the native side (skip one bad device, not the whole list) by the integrator at Q's merge (`00b2110`).                                                                                                               |
+
+Found and fixed along the way, outside the review's list: a lone mic pitch drawn at its MIDI number instead of its height (I); two `downloadFailure.spec` tests and one `api.spec` test that M's and N's changes had broken on master (integrator); a `NoLoginError` stack trace on every DAM `popSong` without a login (P); `yarn lint` scanning the agents' worktrees (integrator).
+
+Left for after the round: the first CI run and a manual Release run (R's list in the Checks below), the Windows checks in [`WINDOWS-CHECKS.md`](WINDOWS-CHECKS.md), and the follow-ups named above.
+
 ## Checks for you on real hardware
 
-The orchestrator adds each worker's "needs hardware" check here as phases report. These are known already:
+Every worker's "needs hardware" check, grouped by setup. Each line says which phase it comes from.
 
-- [ ] An Android phone opens the QR code's `karafriends.local` address, also with the Japan VPN on. An iPhone still does. (A)
-- [ ] Left idle for 15 minutes, the TV stays on and the session doesn't lock. (A)
-- [ ] On Ubuntu 22.04 or Mint 21, the Linux zip starts, the mics use PulseAudio, and YouTube and Niconico songs download. (E, B)
-- [ ] On an Apple Silicon Mac without Rosetta, Joysound, YouTube and Niconico songs play. (B)
-- [ ] On Windows, Update tools works while a download is running. (B)
-- [ ] Windows exclusive mode: two channels of one USB interface as Mic 1 and Mic 2. (F)
-- [ ] ASIO: the chosen buffer size holds with an ASIO mic on the output's driver, and closing the output doesn't buzz. (F)
-- [ ] On Windows and macOS, unplugging and replugging a mic mid-song brings it back. (F)
-- [ ] With a song output chosen, turning the TV off and on mid-song keeps the song going. A TV turned on after launch is used. (H)
-- [ ] By ear: the key at ±1 and ±2 on a bass-heavy song sounds in tune. (G)
-- [ ] On a 4K TV, ten Joysound songs in a row don't grow GPU memory, and lyrics appear without a stall. (J)
-- [ ] With the Japan VPN, DAM and Joysound still log in, search and play, and a refused login stops retrying quickly. (D)
+**Any machine, first party**
+
+- [ ] Left idle for 15 minutes with an empty queue, the TV stays on, the QR code stays up and the session doesn't lock. On Linux, `gnome-session-inhibit --list` shows karafriends' inhibitor. (A)
+- [ ] An Android phone opens the QR code's `karafriends.local` address, with the Japan VPN off and on. An iPhone does too. (A)
+- [ ] By ear, on a bass-heavy song: the key at ±1 and ±2 keeps the bass in tune with the chords; −5 and −7 add no hiss; tapping 0 → +1 → 0 mid-song gives no gap or click; key 0 and a shifted key are about as loud. (G)
+- [ ] With two mics on a DAM song, each trace draws in its own pale colour and follows the bars; a key change mid-song keeps the trace on screen and lined up. (I)
+- [ ] On an iPhone: search 恋, scroll far down, tap a row, then Back lands where you were; Settings opens at the top. The source button opens the iOS wheel (All, DAM, Joysound) and picking DAM shows "DAM" without zooming the page. On iOS 15 or 16 a long title rests at each end before sliding back. (M, N)
+- [ ] Start a Joysound song, change the key, skip: no leftover lyrics or pitch bars behind the idle screen. (K)
+
+**Japan VPN and the real logins**
+
+- [ ] DAM and Joysound log in, search, download and play; DAM scoring loads. (D)
+- [ ] A wrong Joysound password: a queued Joysound song fails within seconds, and the search shows "Couldn't search Joysound: … rejected" with Retry. With the VPN off, a search shows the error and a queued song fails within about 2 minutes. (D)
+- [ ] After 30+ minutes idle, the next Joysound song logs in again by itself (the log says "logging in again after: …"). A DAM song without scoring data still plays. (D)
+- [ ] While a DAM song is streaming (the first after idle), turn the VPN off and on: the song buffers and carries on rather than being skipped. (K)
+
+**Song output and mic output (a TV over HDMI)**
+
+- [ ] Song output set to the TV: put the TV on standby mid-song. Video and lyrics keep moving silently and Settings says "<TV> went away: the songs play silently until it's back"; turn the TV on and the sound returns there within seconds. Launch with the TV off: songs play on the default, then move to the TV when it's turned on, without opening Settings. (H)
+- [ ] Mic output set to the TV (not the system default): TV on standby mid-song makes the mics fall back to the default with a note; within about 10 s of the TV's return the mics move back and the note clears. Same with a USB sink on Linux. (F)
+
+**Windows**
+
+- [ ] Exclusive mode, a 2-input USB interface, Mic 1 on ch1 and Mic 2 on ch2: both open, both meters move, both say "Exclusive"; both survive a restart and a Mic buffer change; switching to Shared, both work within 2 s. (F)
+- [ ] ASIO, mics on the interface's inputs and Mic output on the same interface at Buffer 64: "In use" shows 64; changing to 128 shows 128 on the output and the mics. Switching Mic output to the Windows speakers leaves the interface silent (no buzz) and the mics play on the speakers within 2 s. Unplug and replug the interface, or change its rate in its control panel: both mics come back. (F)
+- [ ] Unplug a USB mic mid-song and plug it back: it returns by itself. (F)
+- [ ] A launch outside a terminal opens a console titled "karafriends native console"; a launch from a terminal logs no error. The Windows build starts and Settings lists mics (neon's export registration was only compile-checked). (O)
+- [ ] Press Update tools while a DAM or YouTube download is running: it answers ok, and an `ffmpeg.exe.<n>.old` file is gone after the next launch. (B)
+- [ ] Each mic's "In use:" line shows the same format as before this round (WASAPI and ASIO). (O)
+
+**macOS (Apple Silicon, no Rosetta)**
+
+- [ ] Joysound, YouTube and Niconico songs play; Settings shows ffmpeg 9.x. (B)
+- [ ] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F)
+
+**Linux, Ubuntu 22.04 or Mint 21 (stock PipeWire 0.3.48)**
+
+- [ ] The release zip (built with the CI flag from R) starts. Settings → Sound says "Sound system: PulseAudio (PipeWire 0.3.48 is older than 0.3.50). Not real-time…", Mic buffer defaults to 512, a mic plays through the mic output without crackling, only real mics are listed. (E)
+- [ ] YouTube and Niconico songs download (the standalone yt-dlp). (B)
+- [ ] On PulseAudio, whether 128 crackles and 512 doesn't. (E)
+
+**4K TV**
+
+- [ ] Ten Joysound songs in a row, skipping a few early: GPU-process memory stays flat instead of climbing about 1 GB per song, and lyrics appear at song start without a stall. (J)
+
+**First CI run after the round** (added by R)
+
+- [ ] Both workflows build the Linux module with `-C relro-level=partial` and `scripts/checkLazyPipewire.sh` passes; the Windows job compiles the ASIO code (the `#[cfg(all(windows, feature = "asio"))]` arms from F were never compiled here). (E, F, R)
