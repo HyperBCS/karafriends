@@ -29,11 +29,11 @@ interface RowContent {
 }
 
 type Press =
-  // A page in the remote.
-  | { to: string; onPress?: never }
-  | { onPress: () => void; to?: never }
+  // A page in the remote, and what the row tells it (router state).
+  | { to: string; state?: unknown; onPress?: never }
+  | { onPress: () => void; to?: never; state?: never }
   // Not pressable.
-  | { to?: never; onPress?: never };
+  | { to?: never; state?: never; onPress?: never };
 
 export type ListRowProps = RowContent &
   Press & {
@@ -78,6 +78,7 @@ export const ListRow = ({
   current,
   expanded,
   to,
+  state,
   onPress,
   className,
   "aria-label": ariaLabel,
@@ -98,6 +99,7 @@ export const ListRow = ({
     main = (
       <Link
         to={to}
+        state={state}
         className={styles.main}
         aria-label={ariaLabel}
         {...currentProps}

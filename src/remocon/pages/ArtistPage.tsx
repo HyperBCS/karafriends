@@ -75,6 +75,7 @@ const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
             }
             source={source}
             to={`${SONG_PAGES[kind]}${song.id}`}
+            state={{ artistNameYomi: nameYomi }}
           />
         ))}
       </List>

@@ -1633,6 +1633,27 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
     "hoshinogen",
   );
   await expect(results).toHaveText(["koiDAM"]);
+  // And a song's page, with the artist's reading from the row: DAM's song
+  // details give none.
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        id: "5860-12",
+        name: "恋",
+        nameYomi: "コイ",
+        artistName: "星野 源",
+        artistNameYomi: "",
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 252,
+      },
+    }),
+  );
+  await results.first().click();
+  await expect(
+    remote.getByRole("main").getByRole("link", { name: "hoshinogen" }),
+  ).toBeVisible();
 });
 
 test("an older phone's saved Both reads as written", async ({ remote }) => {

@@ -39,6 +39,7 @@ const HistoryPage = () => {
             }
             source={sourceName(song.kind)}
             to={songLink(song)}
+            state={{ artistNameYomi: song.artistNameYomi }}
             trailing={
               <span className={styles.when}>
                 <time dateTime={new Date(Number(song.timestamp)).toISOString()}>

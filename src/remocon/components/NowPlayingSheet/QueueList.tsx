@@ -204,6 +204,7 @@ const QueueList = () => {
               }
               source={sourceOf(currentSong)}
               to={songLink(currentSong)}
+              state={{ artistNameYomi: currentSong.artistNameYomi }}
               trailing={<SingerBadge nickname={nicknameOf(currentSong)} />}
             />
           )}
