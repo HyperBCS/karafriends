@@ -4,6 +4,7 @@ import React from "react";
 import type { Page } from "../../common/api";
 import { call } from "../../common/apiClient";
 import { t } from "../i18n";
+import { rank } from "../rank";
 import Loader from "./Loader";
 import MoreButton from "./MoreButton";
 import * as styles from "./SearchResults.module.scss";
@@ -18,12 +19,15 @@ const METHODS = {
   joysound: { title: "joysoundSearchSongs", artist: "joysoundSearchArtists" },
 } as const;
 
-// What the four searches answer with, as far as a row needs: a song
-// (with its artist) or an artist (with DAM's song count).
+// What the four searches answer with, as far as a row and the ranking
+// need: a song (with its artist) or an artist (with DAM's song count), and
+// the kana readings DAM gives.
 interface Found {
   id: string;
   name: string;
+  nameYomi?: string;
   artistName?: string;
+  artistNameYomi?: string;
   songCount?: number;
 }
 
@@ -60,8 +64,9 @@ interface Props {
   source: SearchSource;
 }
 
-// DAM's and Joysound's answers to a search, a page from each in turn, in the
-// order each catalog returned them. Each row says which catalog it's from.
+// DAM's and Joysound's answers to a search in one list, best match first
+// (see rank), ranked again as each page comes in. Each row says which
+// catalog it's from.
 const SearchResults = ({ query, by, source }: Props) => {
   const searches = {
     dam: useCatalogSearch("dam", by, query, source !== "joysound"),
@@ -73,33 +78,32 @@ const SearchResults = ({ query, by, source }: Props) => {
   const sourceName = (catalog: Catalog) =>
     t(catalog === "dam" ? "source.dam" : "source.joysound");
 
-  const rows: React.ReactNode[] = [];
-  const seen = new Set<string>();
-  const pageCount = Math.max(
-    ...catalogs.map((catalog) => searches[catalog].data?.pages.length ?? 0),
-  );
-  for (let i = 0; i < pageCount; i++) {
-    for (const catalog of catalogs) {
-      for (const item of searches[catalog].data?.pages[i]?.items ?? []) {
-        const key = `${catalog}_${item.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push(
-          <ListRow
-            key={key}
-            title={item.name}
-            subtitle={
-              item.songCount !== undefined
-                ? t("search.songCount", { count: item.songCount })
-                : item.artistName
-            }
-            source={sourceName(catalog)}
-            to={`${PAGES[catalog][by]}${item.id}`}
-          />,
-        );
+  // Each catalog's loaded pages, without the repeats a shifting catalog
+  // can put on a later page.
+  const found = catalogs.map((catalog) => {
+    const seen = new Set<string>();
+    return (searches[catalog].data?.pages ?? [])
+      .flatMap((page) => page.items)
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      })
+      .map((item) => ({ ...item, catalog }));
+  });
+  const rows = rank(query, found).map((item) => (
+    <ListRow
+      key={`${item.catalog}_${item.id}`}
+      title={item.name}
+      subtitle={
+        item.songCount !== undefined
+          ? t("search.songCount", { count: item.songCount })
+          : item.artistName
       }
-    }
-  }
+      source={sourceName(item.catalog)}
+      to={`${PAGES[item.catalog][by]}${item.id}`}
+    />
+  ));
 
   const active = catalogs.map((catalog) => searches[catalog]);
   const loading = active.some((search) => search.isPending);

@@ -251,9 +251,10 @@ test("Home on a song page goes to the search screen", async ({
   expect(new URL(remote.url()).hash).toBe("#/");
 });
 
-test("an artist search from both catalogs shows a page from each in turn", async ({
+test("an artist search from both catalogs takes turns on equal matches, and More loads both", async ({
   remote,
 }) => {
+  // Names of one length, so every artist matches "E2E" equally well.
   const artist = (source: string) => (n: number) => ({
     id: `${source}-${n}`,
     name: `E2E ${source} artist ${String(n).padStart(2, "0")}`,
@@ -264,7 +265,7 @@ test("an artist search from both catalogs shows a page from each in turn", async
     fakePages(route, 40, artist("DAM")),
   );
   await remote.route("**/api/joysoundSearchArtists", (route) =>
-    fakePages(route, 35, artist("Joysound")),
+    fakePages(route, 35, artist("JOY")),
   );
 
   await remote.getByRole("tab", { name: "Artist" }).click();
@@ -272,21 +273,24 @@ test("an artist search from both catalogs shows a page from each in turn", async
   const results = remote
     .getByRole("list", { name: "Results" })
     .getByRole("link");
+  const names = async () =>
+    (await results.allTextContents()).map((text) => {
+      const [, source, n] = text.match(/E2E (DAM|JOY) artist (\d+)/)!;
+      return `${source} ${Number(n)}`;
+    });
+  const turns = (count: number) =>
+    Array.from({ length: count }, (_, i) => [`DAM ${i + 1}`, `JOY ${i + 1}`]);
   await expect(results).toHaveCount(60);
+  expect(await names()).toEqual(turns(30).flat());
   await remote.getByRole("button", { name: "More" }).click();
   await expect(results).toHaveCount(75);
-
-  const names = (await results.allTextContents()).map((text) => {
-    const [, source, n] = text.match(/E2E (DAM|Joysound) artist (\d+)/)!;
-    return `${source} ${Number(n)}`;
-  });
-  const run = (source: string, from: number, to: number) =>
-    Array.from({ length: to - from + 1 }, (_, i) => `${source} ${from + i}`);
-  expect(names).toEqual([
-    ...run("DAM", 1, 30),
-    ...run("Joysound", 1, 30),
-    ...run("DAM", 31, 40),
-    ...run("Joysound", 31, 35),
+  expect(await names()).toEqual([
+    ...turns(35).flat(),
+    "DAM 36",
+    "DAM 37",
+    "DAM 38",
+    "DAM 39",
+    "DAM 40",
   ]);
   // The address keeps the search, for going back to it.
   const hash = new URL(remote.url()).hash;
@@ -742,4 +746,59 @@ test.describe("a long queue", () => {
       remote.getByRole("button", { name: "Show emotes" }),
     ).toBeInViewport();
   });
+});
+
+test("a title search ranks both catalogs' results together, best match first", async ({
+  remote,
+}) => {
+  // Each catalog has the exact match, but not first.
+  const dam = [
+    ["恋愛サーキュレーション", "花澤香菜"],
+    ["初恋", "宇多田ヒカル"],
+    ["恋", "星野源"],
+  ];
+  const joysound = [
+    ["恋におちて", "小林明子"],
+    ["恋人よ", "五輪真弓"],
+    ["恋", "星野源"],
+  ];
+  await remote.route("**/api/damSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: dam.map(([name, artistName], i) => ({
+          id: `e2e-${i}`,
+          name,
+          nameYomi: "",
+          artistName,
+          artistNameYomi: "",
+        })),
+        nextOffset: null,
+      },
+    }),
+  );
+  await remote.route("**/api/joysoundSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: joysound.map(([name, artistName], i) => ({
+          id: `e2e-joy-${i}`,
+          name,
+          artistName,
+        })),
+        nextOffset: null,
+      },
+    }),
+  );
+
+  await remote.getByRole("searchbox", { name: "Search" }).fill("恋");
+  const results = remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link");
+  await expect(results).toHaveCount(6);
+  // Both exact matches, side by side, then the shorter of the titles that
+  // start with 恋. Each row keeps its catalog's label.
+  expect((await results.allTextContents()).slice(0, 3)).toEqual([
+    "恋DAM星野源",
+    "恋Joysound星野源",
+    "恋人よJoysound五輪真弓",
+  ]);
 });
