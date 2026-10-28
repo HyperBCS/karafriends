@@ -470,6 +470,25 @@ export interface Api {
   // The display only (a phone gets 403): the mics it has open, whenever one
   // is added, removed or its levels change on the display.
   setMics: { input: { mics: MicInfo[] }; output: boolean };
+  // The display only (a phone gets 403), for Settings: how many files the
+  // downloads folder holds, and their bytes.
+  downloadsInfo: {
+    input: Record<string, never>;
+    output: { files: number; bytes: number };
+  };
+  // The display only: deletes every download but the files in use (a
+  // download running, the current song's). kept counts those, and any that
+  // couldn't be deleted.
+  clearDownloads: {
+    input: Record<string, never>;
+    output: { deleted: number; bytes: number; kept: number };
+  };
+  // The display only: deletes a DAM song's downloaded video, which it found
+  // is a sample. False if there was none, or it's downloading.
+  clearDownload: {
+    input: { songId: string; suffix: string };
+    output: boolean;
+  };
 
   // Whether the caller is an admin: the display, or a phone that sent a
   // live session's token in ADMIN_TOKEN_HEADER.

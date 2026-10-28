@@ -10,13 +10,14 @@ import type { JoysoundQueueItem } from "../../common/api";
 import { isCaptionCode } from "../../common/captionCode";
 import {
   DownloadFailure,
+  isDamSample,
   REASONS,
   ytdlpFailureReason,
 } from "../../common/downloadFailure";
 import { getSongDuration } from "../../common/joysoundParser";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
-import { runTool, type ToolRun } from "./run";
+import { probeDuration, runTool, type ToolRun } from "./run";
 
 // Where the jobs write (TEMP_FOLDER, in the app) and the tools they run.
 export interface JobPaths {
@@ -178,12 +179,17 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
 }
 
 // Downloads a DAM song's video, which streams meanwhile, to
-// <songId>-<suffix>.mp4, unless it's there already.
+// <songId>-<suffix>.mp4, unless it's there already. DAM sometimes sends a
+// sample instead of the song: with the song's playtime (seconds) known, a
+// video much shorter than it (isDamSample) is deleted and the download
+// fails, so the song streams, and the next time it's queued it downloads
+// again.
 export async function damJob(
   paths: JobPaths,
   m3u8Url: string,
   songId: string,
   suffix: string,
+  playtime: number | null,
 ): Promise<void> {
   fs.mkdirSync(paths.folder, { recursive: true });
 
@@ -220,6 +226,16 @@ export async function damJob(
   } catch (err) {
     safeUnlink(tempFilename);
     throw err;
+  }
+  if (playtime) {
+    const duration = await probeDuration(paths.ffmpeg, tempFilename);
+    if (duration !== null && isDamSample(duration, playtime)) {
+      safeUnlink(tempFilename);
+      throw new DownloadFailure(
+        REASONS.damSample,
+        `DAM's video for ${songId} is ${duration} s long, the song ${playtime} s`,
+      );
+    }
   }
   safeRename(tempFilename, filename);
 }

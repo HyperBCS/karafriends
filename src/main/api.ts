@@ -28,6 +28,7 @@ import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
 import type { KarafriendsConfig } from "../common/config";
 import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
+import type { SongFiles } from "./downloads/folder";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
@@ -101,9 +102,25 @@ export interface ApiDeps {
   getNicoVideoInfo: (videoId: string) => Promise<NicoVideoInfo>;
   // Start a download. The non-DAM ones call onReady once the video is ready
   // to play, and only then is the song queued; or onFailed with a reason for
-  // guests if it can't be downloaded.
+  // guests if it can't be downloaded. A DAM song is queued at once, and
+  // calls onFailed only when DAM sent a sample (its playtime, in seconds,
+  // tells).
   downloads: {
-    dam(url: string, songId: string, suffix: string): void;
+    dam(
+      url: string,
+      songId: string,
+      suffix: string,
+      playtime: number | null,
+      onFailed: (reason: string) => void,
+    ): void;
+    // The downloads folder (see downloads/folder.ts).
+    info(): { files: number; bytes: number };
+    clear(inUse: SongFiles[]): {
+      deleted: number;
+      bytes: number;
+      kept: number;
+    };
+    clearDam(songId: string, suffix: string): boolean;
     joysound(
       item: JoysoundQueueItem,
       pushToHead: boolean,
@@ -198,6 +215,13 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         403,
         "Supervised mode: only an admin or the current singer can do that",
       );
+    }
+  };
+
+  // server.ts refuses the display's methods to phones; this checks again.
+  const requireDisplay = (caller: Caller) => {
+    if (!caller.isDisplay) {
+      throw new ApiError(403, "Only the display can do that");
     }
   };
 
@@ -602,6 +626,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
                 config.useLowBitrateUrl ? url.low : url.high,
                 item.songId,
                 item.streamingUrlIdx.toString(),
+                item.playtime,
+                queueFailed(item),
               );
             })
             .catch((err) =>
@@ -846,6 +872,44 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         state.mics = mics;
       });
       return true;
+    },
+
+    async downloadsInfo(_input, caller) {
+      requireDisplay(caller);
+      return deps.downloads.info();
+    },
+
+    async clearDownloads(_input, caller) {
+      requireDisplay(caller);
+      // The current song's files and the downloads running now's. (The DAM
+      // ones running are the downloads' to keep: they aren't in the queue.)
+      const { currentSong, downloadQueue } = store.getState();
+      const inUse: SongFiles[] = downloadQueue
+        .filter((item) => item.status === "downloading")
+        .map(({ kind, songId, suffix }) => ({ kind, songId, suffix }));
+      if (currentSong) {
+        inUse.push({
+          kind: currentSong.kind,
+          songId: currentSong.songId,
+          suffix:
+            currentSong.kind === "dam"
+              ? currentSong.streamingUrlIdx.toString()
+              : currentSong.kind === "joysound"
+                ? currentSong.youtubeVideoId
+                : null,
+        });
+      }
+      const result = deps.downloads.clear(inUse);
+      console.log(`clearDownloads: ${JSON.stringify(result)}`);
+      return result;
+    },
+
+    async clearDownload({ songId, suffix }, caller) {
+      requireDisplay(caller);
+      if (!SONG_ID.test(songId) || !SONG_ID.test(suffix)) {
+        throw new ApiError(400, "Invalid song ID");
+      }
+      return deps.downloads.clearDam(songId, suffix);
     },
 
     async popSong(_input, caller) {

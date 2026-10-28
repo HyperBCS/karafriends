@@ -17,6 +17,7 @@ export const REASONS = {
   noTools: "Couldn't get the download tools",
   toolFailedToStart: "Couldn't start the downloader",
   videoProcessing: "Couldn't put the video together",
+  damSample: "DAM sent a sample, not the song",
   other: "Download failed",
 } as const;
 
@@ -29,6 +30,21 @@ const VIDEO_REASONS: readonly string[] = [
   REASONS.liveOrPaid,
   REASONS.geoBlocked,
 ];
+
+// Whether a DAM video durationSeconds long is a sample DAM sent instead of
+// the song, playtimeSeconds long: under 60 % of it. Kept, the sample would
+// play every time the song is queued. False when the playtime isn't known,
+// or the duration (NaN).
+export function isDamSample(
+  durationSeconds: number,
+  playtimeSeconds: number | null,
+): boolean {
+  return (
+    playtimeSeconds !== null &&
+    playtimeSeconds > 0 &&
+    durationSeconds < 0.6 * playtimeSeconds
+  );
+}
 
 // What the display says after a YouTube or Niconico download fails with
 // isToolProblem.

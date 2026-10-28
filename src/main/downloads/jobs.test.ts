@@ -9,9 +9,10 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
-import { REASONS } from "../../common/downloadFailure";
+import { failureReason, REASONS } from "../../common/downloadFailure";
 import type { DownloadQueueItem } from "../state";
 import {
+  damJob,
   deleteJoysoundTempFiles,
   joysoundJob,
   nicoJob,
@@ -20,6 +21,7 @@ import {
   type JobPaths,
 } from "./jobs";
 import { runDownload, YTDLP_SLOTS } from "./queue";
+import { parseDuration } from "./run";
 
 const fake = (name: string) =>
   path.resolve(
@@ -414,4 +416,36 @@ test("a Joysound download whose song data fails doesn't wait for the video's URL
   // When the URL comes, ffmpeg doesn't start.
   await new Promise((resolve) => setTimeout(resolve, 600));
   assert.deepEqual(files(), []);
+});
+
+// ffmpeg-ok says every video is 2 seconds long, so a DAM song longer than
+// 2 / 0.6 seconds gets a sample.
+test("a DAM video much shorter than the song is deleted, and its download fails", async () => {
+  await assert.rejects(
+    damJob(paths, "https://dam/song.m3u8", "1234-56", "0", 240),
+    (err) => failureReason(err) === REASONS.damSample,
+  );
+  assert.deepEqual(files(), ["dam-1234-56.log"]);
+});
+
+test("a DAM video about as long as the song stays", async () => {
+  await damJob(paths, "https://dam/song.m3u8", "1234-56", "0", 3);
+  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56.log"]);
+});
+
+test("a DAM video stays when the song's playtime isn't known", async () => {
+  await damJob(paths, "https://dam/song.m3u8", "1234-56", "0", null);
+  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56.log"]);
+});
+
+test("parseDuration reads ffmpeg's Duration line", () => {
+  assert.equal(
+    parseDuration(
+      "Input #0, mov,mp4\n  Duration: 00:04:01.52, start: 0.000000, bitrate: 1 kb/s",
+    ),
+    241.52,
+  );
+  assert.equal(parseDuration("  Duration: 01:00:00.00,"), 3600);
+  assert.equal(parseDuration("  Duration: N/A, bitrate: N/A"), null);
+  assert.equal(parseDuration("No such file or directory"), null);
 });

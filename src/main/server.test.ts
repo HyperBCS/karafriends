@@ -104,6 +104,9 @@ describe("POST /api/<method>", () => {
 
   test("refuses every display-only method with 403, even to an admin", async () => {
     assert.deepEqual([...DISPLAY_ONLY_METHODS].sort(), [
+      "clearDownload",
+      "clearDownloads",
+      "downloadsInfo",
       "exportConfig",
       "getSettings",
       "getToolsStatus",

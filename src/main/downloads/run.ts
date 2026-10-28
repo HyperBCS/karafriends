@@ -1,5 +1,6 @@
 // Runs one yt-dlp or ffmpeg to the end: its output to the console and a log
-// file, a timeout, and the reason for guests when it fails.
+// file, a timeout, and the reason for guests when it fails. And how long a
+// video is.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { ChildProcess, execFile, spawn } from "child_process";
@@ -190,6 +191,43 @@ export function runTool(run: ToolRun): Promise<void> {
         console.error(`${run.label} stdin error:`, err),
       );
       proc.stdin.end(run.stdin);
+    }
+  });
+}
+
+// The seconds in ffmpeg's "Duration: 00:04:01.52" line, or null if output
+// has none (or says "Duration: N/A").
+export function parseDuration(output: string): number | null {
+  const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const [, hours, minutes, seconds] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+// How long a video file is, in seconds, from what `ffmpeg -i` prints, or
+// null if it doesn't say. (The tools come without ffprobe. With no output
+// file named, ffmpeg exits 1 after printing it.) Never rejects.
+export function probeDuration(
+  ffmpeg: string,
+  filename: string,
+): Promise<number | null> {
+  const command = toolCommand(ffmpeg, ["-hide_banner", "-i", filename]);
+  return new Promise((resolve) => {
+    try {
+      execFile(
+        command.file,
+        command.args,
+        {
+          timeout: 60_000,
+          windowsHide: true,
+          windowsVerbatimArguments: command.windowsVerbatimArguments,
+        },
+        (_err, _stdout, stderr) => resolve(parseDuration(String(stderr))),
+      );
+    } catch (err) {
+      // Node refuses some paths outright.
+      console.error(`Couldn't run ${ffmpeg} to probe ${filename}:`, err);
+      resolve(null);
     }
   });
 }
