@@ -853,13 +853,15 @@ test.describe("dragging the queue", () => {
     }
   }
 
-  test("drags a song above the first, and moves one with the arrow keys", async ({
-    remote,
-    karafriends,
-  }) => {
+  // Opens the queue once song 1 has started (within 5 seconds): its queued
+  // rows, each with a handle, a song's handle, and a check of the order on
+  // the phone, in the live state and on the display.
+  async function openQueue(
+    remote: Page,
+    karafriends: { remoconUrl: string; display: Page },
+  ) {
     await remote.getByRole("button", { name: "Show queue" }).click();
     const queue = remote.getByRole("region", { name: "Queue" });
-    // Song 1 starts within 5 seconds; 2, 3 and 4 wait, each with a handle.
     await expect(queue.locator('[aria-current="true"]')).toContainText(
       "E2E drag song 1",
       { timeout: 15_000 },
@@ -872,7 +874,6 @@ test.describe("dragging the queue", () => {
         .filter({ hasText: `E2E drag song ${n}` })
         .getByRole("button", { name: "Drag to reorder" });
     const names = (songs: number[]) => songs.map((n) => `E2E drag song ${n}`);
-    // On the phone, in the live state and on the display.
     const expectOrder = async (...songs: number[]) => {
       const rows = names(songs).map((name) => new RegExp(name));
       await expect(queued).toHaveText(rows);
@@ -885,6 +886,17 @@ test.describe("dragging the queue", () => {
           .getByRole("listitem"),
       ).toHaveText(rows);
     };
+    return { queue, queued, handle, expectOrder };
+  }
+
+  test("drags a song above the first, and moves one with the arrow keys", async ({
+    remote,
+    karafriends,
+  }) => {
+    const { queued, handle, expectOrder } = await openQueue(
+      remote,
+      karafriends,
+    );
     await expectOrder(2, 3, 4);
 
     // Song 4 held by its handle and dragged above song 2, a few steps at a
@@ -919,6 +931,67 @@ test.describe("dragging the queue", () => {
       "Couldn't move the song: Only an admin can reorder the queue",
     );
     await expectOrder(3, 4, 2);
+  });
+
+  test("a song removed mid-drag leaves the held one held, and the held one removed lets go", async ({
+    remote,
+    karafriends,
+  }) => {
+    const { queue, queued, handle, expectOrder } = await openQueue(
+      remote,
+      karafriends,
+    );
+    await expectOrder(2, 3, 4);
+    // Another phone removes a song.
+    const remove = async (n: number) => {
+      const { songId, timestamp } = song(n);
+      const res = await fetch(
+        new URL("api/removeSong", karafriends.remoconUrl),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Karafriends-Device-Id": "e2e-other-phone",
+            "X-Karafriends-Nickname": "other",
+          },
+          body: JSON.stringify({ songId, timestamp }),
+        },
+      );
+      expect(res.status).toBe(200);
+    };
+    const hold = async (n: number) => {
+      const grip = (await handle(n).boundingBox())!;
+      const x = grip.x + grip.width / 2;
+      await remote.mouse.move(x, grip.y + grip.height / 2);
+      await remote.mouse.down();
+      await remote.mouse.move(x, grip.y, { steps: 2 });
+      return x;
+    };
+
+    // Song 4 held, song 3 above it removed, song 4 dropped above song 2:
+    // song 4 moves, not whichever song is where it was.
+    const x = await hold(4);
+    await remove(3);
+    await expect(queued).toHaveCount(2);
+    const top = (await queued.first().boundingBox())!;
+    await remote.mouse.move(x, top.y + 10, { steps: 8 });
+    await remote.mouse.up();
+    await expectOrder(4, 2);
+
+    // Song 2 held, then removed: the drag ends with nothing left lifted,
+    // and song 4 drags again.
+    await hold(2);
+    await remove(2);
+    await expectOrder(4);
+    await expect(
+      queue.locator("[data-dragging], [data-reordering]"),
+    ).toHaveCount(0);
+    expect(await queued.evaluate((row) => row.style.transform)).toBe("");
+    await remote.mouse.up();
+    await hold(4);
+    await expect(queue.locator("li[data-dragging]")).toHaveCount(1);
+    await remote.mouse.up();
+    await expect(queue.locator("[data-dragging]")).toHaveCount(0);
   });
 });
 
