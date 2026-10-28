@@ -784,6 +784,9 @@ test.describe("the now-playing bar", () => {
     const sheet = remote.getByRole("region", { name: "Now playing" });
     const toggle = sheet.getByRole("button", { name: /^(Show|Hide) queue$/ });
     const title = sheet.getByText(/^E2E playing song/);
+    // The title's line, which clips it (Marquee): getByText finds the text
+    // inside, as wide as the whole title.
+    const titleLine = title.locator("..");
     // The display starts it within 5 seconds.
     await expect(title).toBeVisible({ timeout: 15_000 });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -799,16 +802,15 @@ test.describe("the now-playing bar", () => {
     const artist = sheet.getByText("E2E artist", { exact: true });
     const nickname = sheet.getByText(NICKNAME_LONG);
     const [l, t, a, n] = await Promise.all(
-      [label, title, artist, nickname].map(
+      [label, titleLine, artist, nickname].map(
         async (el) => (await el.boundingBox())!,
       ),
     );
     expect(t.y).toBeGreaterThan(l.y);
     expect(a.y).toBeGreaterThan(t.y);
     expect(n.x).toBeGreaterThan(t.x + t.width);
-    const cut = (el: Locator) =>
-      el.evaluate((node) => node.scrollWidth > node.clientWidth);
-    expect(await cut(title)).toBe(true);
+    // Too long for the bar, the title slides.
+    await expect(titleLine).toHaveAttribute("data-marquee");
     await expect(nickname).toHaveCSS("text-overflow", "ellipsis");
     const muted = await remote.evaluate(() =>
       getComputedStyle(document.documentElement)
@@ -820,7 +822,7 @@ test.describe("the now-playing bar", () => {
 
     // A tap anywhere on it opens the sheet: on the title, then on the
     // singer to close it, then on the arrow.
-    await tap(title);
+    await tap(titleLine);
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(toggle).toHaveAccessibleName("Hide queue");
     const queue = sheet.getByRole("region", { name: "Queue" });
@@ -855,7 +857,7 @@ test.describe("the now-playing bar", () => {
 
     // The link opens the song's page and folds the sheet, so the page
     // shows.
-    await tap(title);
+    await tap(titleLine);
     await expect(remote).toHaveURL(/#\/search\/niconico\/sm60002$/);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });

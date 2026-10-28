@@ -580,12 +580,13 @@ test.describe("phase P2", () => {
       await shoot(remote, name("song"));
 
       await top("Settings").click();
-      // Scrolled down to the theme, then the admin's slider.
+      // Scrolled down to the theme. (The admin's sliders below it fit on
+      // a Pixel 7, not on an iPhone 15.)
       await remote
         .getByText("Theme", { exact: true })
         .evaluate((el) => el.scrollIntoView({ block: "start" }));
       await expect(
-        remote.getByRole("slider", { name: "Guide melody" }),
+        remote.getByRole("radiogroup", { name: "Theme" }),
       ).toBeInViewport();
       await shoot(remote, name("profile"));
       await top("Home").click();
@@ -650,8 +651,9 @@ test.describe("phase R1", () => {
       await remote
         .getByRole("heading", { name: "Admin" })
         .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      // Its top: the whole section is taller than an iPhone 15's screen.
       await expect(
-        remote.getByRole("button", { name: "Sign out" }),
+        remote.getByRole("slider", { name: "Song volume" }),
       ).toBeInViewport();
       await shoot(remote, `n-remote-admin-${theme}-${browserName}`);
     }

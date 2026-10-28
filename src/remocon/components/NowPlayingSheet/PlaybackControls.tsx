@@ -11,7 +11,7 @@ import * as styles from "./NowPlayingSheet.module.scss";
 // Restart, play or pause, skip, and the key. In supervised mode they're
 // dimmed for anyone but an admin and the current singer, as the server
 // would refuse them (setPlaybackState in src/main/api.ts). (The guide
-// melody's level is on the profile, for admins.)
+// melody's level is in Settings, for admins.)
 const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();

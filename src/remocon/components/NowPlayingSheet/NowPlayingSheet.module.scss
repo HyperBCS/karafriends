@@ -64,8 +64,8 @@ a.nowSong {
   }
 }
 
+// The title and artist slide when they don't fit (Marquee).
 .nowTitle {
-  @extend %one-line;
   font-size: $kf-text-title;
   font-weight: 600;
   line-height: 1.3;
@@ -80,9 +80,17 @@ a.nowSong {
 
 .nowArtist,
 .nothing {
-  @extend %one-line;
   color: $kf-muted;
   font-size: $kf-text-body;
+}
+
+.nowArtist {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.nothing {
+  @extend %one-line;
 }
 
 // Where the song comes from, as a queue row's label has it (ListRow).

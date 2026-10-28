@@ -5,11 +5,12 @@ import { useLiveState } from "../../../common/apiClient";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
 import songLink from "../../songLink";
-import { IconButton, Sheet } from "../ui";
+import { IconButton, Marquee, Sheet } from "../ui";
 import WithReading from "../WithReading";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
+import SongProgress from "./SongProgress";
 import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
 
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
@@ -46,19 +47,19 @@ const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
 
   const song = (
     <>
-      <span className={styles.nowTitle}>
+      <Marquee className={styles.nowTitle}>
         <WithReading text={currentSong.name} yomi={currentSong.nameYomi} />
-      </span>
+      </Marquee>
       <span className={styles.nowSubtitle}>
         {expanded && (
           <span className={styles.source}>{sourceOf(currentSong)}</span>
         )}
-        <span className={styles.nowArtist}>
+        <Marquee className={styles.nowArtist}>
           <WithReading
             text={currentSong.artistName}
             yomi={currentSong.artistNameYomi}
           />
-        </span>
+        </Marquee>
       </span>
     </>
   );
@@ -81,8 +82,7 @@ const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
         )}
         <SingerBadge nickname={nicknameOf(currentSong)} />
       </div>
-      {/* The song's progress line (SongProgress) goes here, under the
-          title row. */}
+      <SongProgress />
     </div>
   );
 };

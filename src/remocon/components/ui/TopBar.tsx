@@ -14,7 +14,7 @@ interface Props {
   // A back button: a path in the remote (a link), or what to do (a button).
   // None on the home screen.
   back?: string | (() => void);
-  // The home and profile buttons, or the language control.
+  // The History, Settings and Home buttons, or the language control.
   trailing?: React.ReactNode;
   className?: string;
 }

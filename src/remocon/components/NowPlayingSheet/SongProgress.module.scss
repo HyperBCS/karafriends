@@ -1,8 +1,10 @@
 @use "../../tokens" as *;
 
-// The bar takes the row, the time sits on its right.
+// The bar takes the row, the time sits on its right. Under the title row
+// on the now-playing bar.
 .progress {
   display: flex;
+  margin-top: $kf-space-2;
   align-items: center;
   gap: $kf-space-2;
   width: 100%;

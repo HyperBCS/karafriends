@@ -55,7 +55,7 @@ export interface PageInput {
 
 export type QueueItemKind = "dam" | "joysound" | "youtube" | "nico";
 
-// How a phone shows titles and artists (its profile's Readings): as written,
+// How a phone shows titles and artists (its Settings' Readings): as written,
 // or as the kana reading or its romaji.
 export const READINGS_MODES = ["written", "kana", "romaji"] as const;
 export type ReadingsMode = (typeof READINGS_MODES)[number];

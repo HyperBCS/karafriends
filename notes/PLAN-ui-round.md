@@ -4,14 +4,14 @@ The user listed ten UI changes and fixes after the mic test. Same way of working
 
 ## Status (keep this table current)
 
-| Phase                                 | State   | Branch / commit | Notes |
-| ------------------------------------- | ------- | --------------- | ----- |
-| U1: song progress and countdowns      | running |                 |       |
-| U2: TV Settings in tabs, pitch bars   | running |                 |       |
-| U3: phone sheet: layers, now playing  | running |                 |       |
-| U4: phone search bar and settings     | running |                 |       |
-| U5: TV up next initials, long names   | running |                 |       |
-| Merge: wiring, screenshots, changelog | waiting |                 |       |
+| Phase                                 | State  | Branch / commit | Notes                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U1: song progress and countdowns      | merged | `afe779e`       | The display reports `reportSongPosition` (on load, play, pause, stall, seek, every 10 s); the server re-bases the three timing fields and keeps the video's real length (`currentSongLength`, sent as the current song's playtime). State events carry `sentAt`; `serverNow()` corrects a phone's clock. `useSongProgress` and `SongProgress`.                         |
+| U2: TV Settings in tabs, pitch bars   | merged | `ee5268c`       | Tabs remember the last one (localStorage `settingsTab`); a red dot marks a tab with a problem, a restart to do, or what an import changed. Pitch bars off: `pitchBars` = `off`. The dev port hint wasn't seen in a real `yarn dev` (it builds native).                                                                                                                 |
+| U3: phone sheet: layers, now playing  | merged | `a2a73ca`       | Dark sheet `#4a4a4a` (1.4:1 over the list); muted text `#bdbdbd` and danger `#ff6b6b` everywhere so they hold on it. Light: page `#ebebeb`, lists `#f5f5f5`, sheet white (the light-theme note in PLAN-product.md is out of date). The toggle is the arrow; its tap area runs under the bar. Folded bar about 88px tall: check at the merge with the progress line in. |
+| U4: phone search bar and settings     | merged | `e33e698`       | `SegmentedControl` (ui), `SourceMenu`; Settings at `#/settings` (`#/profile` redirects), `profile.*` strings now `settings.*`; `Tabs` removed. Title/Artist chips are outlined, the picked one filled in the text color. Results start about 185px down (was 238). Fixed a WebKit test's Back race in `pickReadings`.                                                  |
+| U5: TV up next initials, long names   | merged | `a559b3a`       | `useMarquee` (src/common) sets the distance and timing; each bundle has its own `Marquee` and CSS. 2rem/s, 2 s holds, still under reduced motion (Windows: Animation effects). The Now playing card's title wraps instead (it shows for 4 s). Pauses need iOS 17.2+ (`linear()` easing).                                                                               |
+| Merge: wiring, screenshots, changelog | done   | see git log     | SongProgress and Marquee in the sheet's bar; stale "profile" comments; two WebKit screenshot checks for the taller Settings; screenshots regenerated; CHANGELOG and README.                                                                                                                                                                                            |
 
 ## The list and the decisions from Q&A
 
@@ -24,6 +24,7 @@ The user listed ten UI changes and fixes after the mic test. Same way of working
 7. **A name that doesn't fit scrolls.** Everywhere (TV and phone), a title or artist that doesn't fit slides slowly to its end, pauses, and slides back, over and over; it stays still when the device asks for reduced motion. (U5; the sheet's header at the merge)
 8. **The current song shows twice on the phone** (on the bar and as the queue's first row). Decision: only on the bar, with a small "Now playing" label and a thin progress line; the list below is headed "Up next" and holds only the waiting songs. The song's page (adhoc lyrics controls) opens from the bar's title once expanded. (U3; the progress line from U1, placed at the merge)
 9. **A switch for the DAM pitch bars** (the PianoRoll over DAM songs: the melody bars and the mics' pitch line). A checkbox in TV Settings, Display tab, on by default, kept on the display like UI scale. (U2)
+10. **"Why does Settings say port 8080 when the screen shows another in dev?"** By design: under `yarn dev` phones load the remote from the Vite dev server (5173 by default), which passes `/api` on to the app's server on 8080 (README, the `yarn dev` paragraph). Decision: a short hint under Port in dev builds only, naming the port phones use. (U2, added after it started)
 
 ## Rules for every phase
 
