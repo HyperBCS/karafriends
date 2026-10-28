@@ -517,62 +517,69 @@ test.describe("phase P2", () => {
     },
   });
 
+  // No reloads (after one, WebKit's searches got past the fake catalogs):
+  // the profile is set by hand, the theme stays Auto and follows the
+  // emulated mode, and every screen is reached by a tap.
   test("search, the sheet, the profile and a song page in both themes", async ({
     remote,
-    karafriends,
     browserName,
   }) => {
-    const { remoconUrl } = karafriends;
-    await remote.addInitScript(() => {
-      localStorage.setItem("nickname", "Ken");
-      localStorage.setItem("readings", "romaji");
-    });
     await fakeCatalogs(remote);
-    await remote.evaluate(async (password) => {
-      const res = await fetch("api/adminLogin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      localStorage.setItem("adminToken", (await res.json()).token);
-    }, ADMIN_PASSWORD);
+    // A real-looking nickname, romaji, and signed in as an admin.
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Nickname").fill("Ken");
+    await remote.getByRole("button", { name: "Save nickname" }).click();
+    await remote
+      .getByRole("tablist", { name: "Readings" })
+      .getByRole("tab", { name: "Romaji" })
+      .click();
+    await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await remote.getByRole("link", { name: "Home" }).click();
     // The display starts the first song within 5 seconds.
-    await expect(
-      remote.getByRole("region").getByText("千本桜").first(),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
+      timeout: 15_000,
+    });
+    const bar = remote
+      .getByRole("region", { name: "Now playing" })
+      .getByRole("button")
+      .first();
+    const top = (name: string) =>
+      remote.getByRole("banner").getByRole("link", { name, exact: true });
 
     for (const theme of ["light", "dark"] as const) {
-      const open = async (hash: string, expanded = false) => {
-        await remote.evaluate(
-          ([value, sheet]) => {
-            localStorage.setItem("theme", value);
-            localStorage.setItem("expanded", sheet);
-          },
-          [theme, String(expanded)] as const,
-        );
-        await remote.goto(`${remoconUrl}#${hash}`);
-        await remote.reload();
-        await expect(remote.locator("html")).toHaveAttribute(
-          "data-theme",
-          theme,
-        );
-      };
+      await remote.emulateMedia({ colorScheme: theme });
+      await expect(remote.locator("html")).toHaveAttribute("data-theme", theme);
       const name = (screen: string) => `p-${screen}-${theme}-${browserName}`;
 
-      await open(`/?q=${encodeURIComponent("恋")}`);
+      const search = remote.getByRole("searchbox", { name: "Search" });
+      await search.fill("恋");
+      await search.blur();
       await expect(
         remote.getByRole("link", { name: /恋愛裁判/ }),
       ).toBeVisible();
-      await remote.getByRole("searchbox", { name: "Search" }).blur();
       await shoot(remote, name("search"));
 
-      await open("/", true);
+      await bar.click();
       await expect(
         remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
       ).toHaveCount(5);
       await shoot(remote, name("sheet"));
+      await bar.click();
 
-      await open("/profile");
+      // DAM's 恋, the first result.
+      await remote
+        .getByRole("main")
+        .getByRole("link", { name: /hoshinogen/ })
+        .first()
+        .click();
+      await expect(
+        remote.getByRole("heading", { name: "koi", exact: true }),
+      ).toBeVisible();
+      await shoot(remote, name("song"));
+
+      await top("Profile").click();
       // Scrolled down to the theme, then the admin's slider.
       await remote
         .getByRole("heading", { name: "Theme" })
@@ -581,12 +588,7 @@ test.describe("phase P2", () => {
         remote.getByRole("slider", { name: "Guide melody" }),
       ).toBeInViewport();
       await shoot(remote, name("profile"));
-
-      await open("/song/dam-0");
-      await expect(
-        remote.getByRole("heading", { name: "koi", exact: true }),
-      ).toBeVisible();
-      await shoot(remote, name("song"));
+      await top("Home").click();
     }
   });
 });
