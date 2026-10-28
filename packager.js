@@ -64,6 +64,23 @@ function bundleExtractor() {
     }),
   });
   console.log(`Built ${output}. Zipping...`);
-  spawnSync(sevenBin.path7za, ["a", "-r", `${output}.zip`, output]);
-  console.log(`Built ${output}.zip.`);
+  // `7za a` adds to an existing archive, so a zip left from an earlier run
+  // would keep files this build doesn't have.
+  const zip = `${output}.zip`;
+  fs.rmSync(zip, { force: true });
+  // From dist/, so the zip holds karafriends-<platform>-<arch>/ and not
+  // dist/karafriends-<platform>-<arch>/.
+  const zipped = spawnSync(
+    sevenBin.path7za,
+    ["a", "-r", path.basename(zip), path.basename(output)],
+    { cwd: path.dirname(output), stdio: "inherit" },
+  );
+  // A 7za that couldn't start, or failed part way, fails the release.
+  if (zipped.error) throw zipped.error;
+  if (zipped.status !== 0) {
+    throw new Error(
+      `7za exited with ${zipped.status ?? zipped.signal} while zipping ${output}`,
+    );
+  }
+  console.log(`Built ${zip}.`);
 })();
