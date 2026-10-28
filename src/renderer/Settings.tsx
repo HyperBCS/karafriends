@@ -531,9 +531,9 @@ export default function Settings(props: {
             </label>
           </div>
           <p className="settingsNote">
-            A plus offset delays the sound, a minus one the lyrics and the piano
-            roll. DAM's own lyrics are in the video, so a minus offset can't
-            move them.
+            A plus offset delays the sound, a minus one the Joysound lyrics and
+            the piano roll. DAM's lyrics are in the video, and YouTube captions
+            and ad-hoc lyrics don't move.
           </p>
           <p className="settingsNote">
             Measured audio output latency: {props.audioLatencyMs} ms
