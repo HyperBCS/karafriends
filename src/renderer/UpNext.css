@@ -28,7 +28,7 @@
 .upNext-rows {
   flex: 1;
   min-width: 0;
-  max-width: 900px;
+  max-width: 56.25rem;
 }
 
 .upNext-rows .upNextHeading {
@@ -87,7 +87,7 @@
   display: flex;
   flex: none;
   gap: var(--kf-space-3);
-  max-width: 900px;
+  max-width: 56.25rem;
 }
 
 .upNext-strip .upNextItem + .upNextItem {

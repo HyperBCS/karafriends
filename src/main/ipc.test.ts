@@ -16,6 +16,9 @@ const DISPLAY_PAGE = DISPLAY_URL;
 
 const liveState: LiveState = {
   currentSong: null,
+  currentSongStartedAt: null,
+  currentSongPausedMs: 0,
+  currentSongPausedSince: null,
   queue: [],
   playbackState: "WAITING",
   pitchShiftSemis: 0,

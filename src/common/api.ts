@@ -196,7 +196,15 @@ export interface DownloadProgress {
 // the server.
 export interface LiveState {
   currentSong: SharedQueueItem | null;
-  // The songs after currentSong. Clients work out ETAs from playtime.
+  // When currentSong started (ms since the epoch, by the display's clock;
+  // null while none plays), how long it was paused before, and since when it
+  // is paused now (null while it isn't). How far into the song the party is:
+  // now - startedAt - pausedMs - (now - pausedSince, while paused).
+  currentSongStartedAt: number | null;
+  currentSongPausedMs: number;
+  currentSongPausedSince: number | null;
+  // The songs after currentSong. Clients work out ETAs from playtime and the
+  // timing above.
   queue: SharedQueueItem[];
   playbackState: PlaybackState;
   pitchShiftSemis: number;

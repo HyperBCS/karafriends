@@ -3,8 +3,11 @@
    (src/remocon/tokens.scss) except the background: pure black behind the
    video, and a surface just above it for panels.
 
-   Sizes are for a 1080p screen viewed from 3 m: nothing a guest reads is
-   under 32px. Contrast ratios are WCAG 2 ratios against --kf-bg. */
+   Sizes are for a screen viewed from 3 m: nothing a guest reads is under
+   2rem, which is 32px on a 1080p screen. They are all in rem, and the root
+   size follows the window's height (index.css), so the screen looks the same
+   at 720p and at 4K; only the 1px hairlines stay px. Contrast ratios are
+   WCAG 2 ratios against --kf-bg. */
 
 :root {
   color-scheme: dark;
@@ -32,28 +35,28 @@
   /* Errors and destructive actions. 6.9:1 as text. */
   --kf-danger: #ff5c5c;
 
-  --kf-space-1: 4px;
-  --kf-space-2: 8px;
-  --kf-space-3: 12px;
-  --kf-space-4: 16px;
-  --kf-space-5: 24px;
-  --kf-space-6: 32px;
+  --kf-space-1: 0.25rem;
+  --kf-space-2: 0.5rem;
+  --kf-space-3: 0.75rem;
+  --kf-space-4: 1rem;
+  --kf-space-5: 1.5rem;
+  --kf-space-6: 2rem;
 
   /* One radius; borders and spacing instead of shadows. */
-  --kf-radius: 4px;
+  --kf-radius: 0.25rem;
   /* The one shadow, for a bottom sheet only. */
-  --kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.6);
+  --kf-shadow-sheet: 0 -0.125rem 0.75rem rgba(0, 0, 0, 0.6);
 
   /* UI text uses the system stack; lyrics keep the bundled Noto fonts. */
   --kf-font:
     system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans",
     "Noto Sans JP", sans-serif;
   /* Settings labels, the address under the QR code's caption. */
-  --kf-text-label: 32px;
+  --kf-text-label: 2rem;
   /* Queue and up-next rows, notices, settings fields. */
-  --kf-text-body: 36px;
+  --kf-text-body: 2.25rem;
   /* Section headings, the up-next song's title. */
-  --kf-text-heading: 48px;
+  --kf-text-heading: 3rem;
   /* The current song's title in the start overlay. */
-  --kf-text-title: 64px;
+  --kf-text-title: 4rem;
 }

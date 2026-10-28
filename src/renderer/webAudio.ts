@@ -6,10 +6,11 @@ import phazeAudioWorkletUrl from "./audio/phazeAudioWorklet.ts?worker&url";
 const CENTRE_TO_SIDE = 0.7;
 
 // The display's sound: input → [Joysound routing] → gain → vocoder (once its
-// worklet loads) → speakers.
+// worklet loads, and only while the key is changed) → speakers.
 export default class KarafriendsAudio {
   private gainNode: GainNode;
   private vocoderNode: AudioWorkletNode | null;
+  private semitones = 0;
   // Joysound's ogg is 3-channel: 0 left, 1 right, 2 a synthesised guide
   // melody (centre), which a stereo destination drops. While a Joysound song
   // plays, the input goes through the splitter instead: left and right as
@@ -52,9 +53,8 @@ export default class KarafriendsAudio {
               this.audioContext,
               "phase-vocoder",
             );
-            this.gainNode.disconnect();
-            this.gainNode.connect(this.vocoderNode);
             this.vocoderNode.connect(this.audioContext.destination);
+            this.pitchShift(this.semitones);
           } catch (error) {
             // Handle errors that occur during the audio node operations
             console.error("Error setting up audio nodes:", error);
@@ -73,14 +73,20 @@ export default class KarafriendsAudio {
     }
   }
 
+  // The vocoder is in the chain only while the key is changed: even at no
+  // shift it costs about 8.5 dB and 44 ms (measured in M8, see
+  // notes/PLAN-mobile.md), so at 0 the gain goes straight to the speakers.
   pitchShift(semitones: number) {
-    if (this.vocoderNode) {
+    this.semitones = semitones;
+    const vocoder = this.vocoderNode;
+    if (vocoder) {
       // @ts-expect-error i swear there's a .get method on this object.
-      this.vocoderNode.parameters.get("pitchFactor").value = Math.pow(
-        2,
-        semitones / 12,
-      );
+      vocoder.parameters.get("pitchFactor").value = Math.pow(2, semitones / 12);
     }
+    this.gainNode.disconnect();
+    this.gainNode.connect(
+      vocoder && semitones !== 0 ? vocoder : this.audioContext.destination,
+    );
   }
 
   gain(gain: number) {

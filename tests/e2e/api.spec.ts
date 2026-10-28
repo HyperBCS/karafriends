@@ -222,6 +222,9 @@ test("/api/events sends the live state", async ({ karafriends }) => {
     type: "state",
     state: {
       currentSong: null,
+      currentSongStartedAt: null,
+      currentSongPausedMs: 0,
+      currentSongPausedSince: null,
       queue: [],
       playbackState: expect.any(String),
       pitchShiftSemis: 0,

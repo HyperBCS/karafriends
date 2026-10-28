@@ -68,6 +68,9 @@ export function toLiveState(
     currentSong: state.currentSong
       ? shareQueueItem(state.currentSong, deviceId)
       : null,
+    currentSongStartedAt: state.currentSongStartedAt,
+    currentSongPausedMs: state.currentSongPausedMs,
+    currentSongPausedSince: state.currentSongPausedSince,
     queue: state.songQueue.map((item) => shareQueueItem(item, deviceId)),
     playbackState: state.playbackState,
     pitchShiftSemis: state.pitchShiftSemis,

@@ -32,7 +32,8 @@ async function showNotification(
 // with the queue, so use it in a component of its own (QueueNotifications),
 // not one with the pages under it.
 export default function useQueueNotifications() {
-  const queue = useQueue();
+  // Not live: a countdown would notify again every second.
+  const queue = useQueue(false);
 
   // Preemptively register the service worker, once.
   useEffect(() => {

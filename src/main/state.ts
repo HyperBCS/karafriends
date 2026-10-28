@@ -142,6 +142,14 @@ export interface HistoryItem {
 
 export interface State {
   currentSong: QueueItem | null;
+  // When currentSong started (ms since the epoch; null while none plays), how
+  // long it has been paused before, and since when it is paused now (null
+  // while it isn't), so a phone can tell how far into it the party is. Set by
+  // popSong and setPlaybackState; not saved, since after a restart the song
+  // plays again from the start.
+  currentSongStartedAt: number | null;
+  currentSongPausedMs: number;
+  currentSongPausedSince: number | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   // The lines of each queued (or current) YouTube song with adhoc lyrics, by
   // adhocLyricsKey. Nothing else: they go when the song does.
@@ -183,6 +191,9 @@ export function adhocLyricsKey(item: {
 export function emptyState(): State {
   return {
     currentSong: null,
+    currentSongStartedAt: null,
+    currentSongPausedMs: 0,
+    currentSongPausedSince: null,
     currentSongAdhocLyrics: [],
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,
@@ -246,10 +257,16 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json. The current song is saved at the head of the queue,
 // so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics and the tools problem start over. The guide melody
-// level is kept.
+// pushed adhoc lyrics, the song's timing and the tools problem start over.
+// The guide melody level is kept.
 export function serializeState(state: Readonly<State>): string {
-  const { toolsProblem: _, ...saved } = state;
+  const {
+    toolsProblem: _,
+    currentSongStartedAt: _startedAt,
+    currentSongPausedMs: _pausedMs,
+    currentSongPausedSince: _pausedSince,
+    ...saved
+  } = state;
   return JSON.stringify({
     ...saved,
     pitchShiftSemis: 0,

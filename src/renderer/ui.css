@@ -16,9 +16,9 @@ select {
 }
 
 .kfButton {
-  min-height: 64px;
+  min-height: 4rem;
   padding: 0 var(--kf-space-5);
-  border: 2px solid var(--kf-border-strong);
+  border: 0.125rem solid var(--kf-border-strong);
   border-radius: var(--kf-radius);
   background-color: transparent;
   color: var(--kf-text);
@@ -53,8 +53,8 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
+  width: 5rem;
+  height: 5rem;
   padding: 0;
   border: none;
   border-radius: var(--kf-radius);
@@ -72,8 +72,8 @@ select {
 .kfIconButton:focus-visible,
 .kfField:focus-visible,
 .kfCheckbox input:focus-visible {
-  outline: 3px solid var(--kf-accent);
-  outline-offset: 3px;
+  outline: 0.1875rem solid var(--kf-accent);
+  outline-offset: 0.1875rem;
 }
 
 /* A label over its field. */
@@ -87,9 +87,9 @@ select {
 
 .kfField {
   width: 100%;
-  min-height: 72px;
+  min-height: 4.5rem;
   padding: 0 var(--kf-space-4);
-  border: 2px solid var(--kf-border-strong);
+  border: 0.125rem solid var(--kf-border-strong);
   border-radius: var(--kf-radius);
   background-color: var(--kf-bg);
   color: var(--kf-text);
@@ -102,10 +102,10 @@ select {
 
 select.kfField {
   appearance: none;
-  padding-right: 64px;
+  padding-right: 4rem;
   background: var(--kf-bg)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%23f5f5f5'/%3E%3C/svg%3E")
-    no-repeat right 8px center;
+    no-repeat right 0.5rem center / 3rem;
   cursor: pointer;
 }
 
@@ -118,15 +118,15 @@ select.kfField > option {
   display: flex;
   align-items: center;
   gap: var(--kf-space-4);
-  min-height: 64px;
+  min-height: 4rem;
   font-size: var(--kf-text-body);
   cursor: pointer;
 }
 
 .kfCheckbox input {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 2.5rem;
+  height: 2.5rem;
   accent-color: var(--kf-accent);
   cursor: pointer;
 }
