@@ -6,7 +6,7 @@ import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
 import { List, ListRow, Marquee } from "../components/ui";
 import WithReading from "../components/WithReading";
-import { t } from "../i18n";
+import { countKey, t } from "../i18n";
 import songLink, { sourceName } from "../songLink";
 import * as styles from "./SongPage.module.scss";
 
@@ -60,7 +60,7 @@ const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
           <p className={styles.source}>
             {source}
             {songCount !== null &&
-              ` · ${t("search.songCount", { count: songCount })}`}
+              ` · ${t(countKey("search.songCount", songCount), { count: songCount })}`}
           </p>
         </div>
       </div>
