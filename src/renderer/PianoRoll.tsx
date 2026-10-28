@@ -4,6 +4,7 @@ import vec from "gl-vec2";
 import getNormals from "polyline-normals";
 import React, { useEffect, useRef } from "react";
 
+import type { Melody } from "./melody";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
 import { drawTime, pitchTime } from "./playback";
@@ -429,8 +430,10 @@ function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
   return 0.5 + (midiNumber - medianMidiNumber) / 36;
 }
 
+// The pitch bars: the song's melody as bars along the top, the mics' pitch
+// over them.
 export default function PianoRoll(props: {
-  scoringData: readonly number[];
+  melody: Melody;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mics: InputDevice[];
   pitchShiftSemis: number;
@@ -446,26 +449,12 @@ export default function PianoRoll(props: {
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
 
-    const view = new Uint32Array(Uint8Array.from(props.scoringData).buffer);
-    const noteCount = view[1];
-    const lyricsIntervalCount = view[2];
-    const damTimeWindowIntervalCount = view[3];
-    const pogIntervalCount = view[4];
-
-    const notes: {
-      startTime: number;
-      endTime: number;
-      midiNumber: number;
-    }[] = [];
-
-    const notesOffset = 6;
-    for (let i = notesOffset; i < notesOffset + noteCount * 4; i += 4) {
-      notes.push({
-        startTime: view[i] / 1000,
-        endTime: view[i + 1] / 1000,
-        midiNumber: view[i + 2] + props.pitchShiftSemis,
-      });
-    }
+    // The notes in the song's key.
+    const notes = props.melody.notes.map((note) => ({
+      ...note,
+      midiNumber: note.midiNumber + props.pitchShiftSemis,
+    }));
+    const { lyricsIntervals, pogIntervals } = props.melody;
 
     const medianMidiNumber = median(notes.map((note) => note.midiNumber));
 
@@ -482,15 +471,6 @@ export default function PianoRoll(props: {
 
     let currentNoteIndex = 0;
 
-    const lyricsIntervals: [number, number][] = [];
-    const lyricsIntervalsOffset = notesOffset + noteCount * 4;
-    for (
-      let i = lyricsIntervalsOffset;
-      i < lyricsIntervalsOffset + lyricsIntervalCount * 2;
-      i += 2
-    ) {
-      lyricsIntervals.push([view[i] / 1000, view[i + 1] / 1000]);
-    }
     const combinedLyricsIntervals = lyricsIntervals.reduce<[number, number][]>(
       (acc, cur) => {
         if (acc.length === 0) {
@@ -521,22 +501,8 @@ export default function PianoRoll(props: {
       .map(([start, end]) => quadToTriangles(start, 1.0, end, 0.0))
       .flat();
 
-    const damTimeWindowIntervalsOffset =
-      lyricsIntervalsOffset + lyricsIntervalCount * 2;
-
-    const pogIntervals: [number, number][] = [];
-    const pogIntervalsOffset =
-      damTimeWindowIntervalsOffset + damTimeWindowIntervalCount * 2;
-    for (
-      let i = pogIntervalsOffset;
-      i < pogIntervalsOffset + pogIntervalCount * 2;
-      i += 2
-    ) {
-      pogIntervals.push([view[i] / 1000, view[i + 1] / 1000]);
-    }
-
     function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
-      if (!mic || !props.videoRef.current) return;
+      if (!mic || !props.videoRef.current || notes.length === 0) return;
       if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
         return;
       }
@@ -663,7 +629,7 @@ export default function PianoRoll(props: {
         );
       }
     };
-  }, [props.scoringData, props.mics, props.pitchShiftSemis, props.videoRef]);
+  }, [props.melody, props.mics, props.pitchShiftSemis, props.videoRef]);
 
   return <canvas className="pianoRollRoll" ref={canvasRef}></canvas>;
 }

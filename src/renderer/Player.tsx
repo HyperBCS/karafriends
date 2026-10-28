@@ -6,17 +6,18 @@ import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
+import useGuideMelody from "./useGuideMelody";
 import useSongPlayer, { type Announcement } from "./useSongPlayer";
 import KarafriendsAudio from "./webAudio";
 
-// The video, with the song's lyrics or piano roll over it.
+// The video, with the song's lyrics and pitch bars over it.
 function Player(props: {
   mics: InputDevice[];
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
   announce: (announcement: Announcement) => void;
   avOffsetMs: number;
-  // Whether DAM songs show the piano roll (Settings, Display).
+  // Whether DAM and Joysound songs show the pitch bars (Settings, Display).
   pitchBars: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -27,6 +28,20 @@ function Player(props: {
     audio: props.audio,
     announce: props.announce,
   });
+  // Read once the song has loaded (its lyrics have), and only while the
+  // bars show.
+  const guideMelody = useGuideMelody(
+    props.pitchBars && overlay?.kind === "joysound" && overlay.telop !== null
+      ? overlay
+      : null,
+  );
+  const melody = !props.pitchBars
+    ? null
+    : overlay?.kind === "dam"
+      ? overlay.melody
+      : overlay?.kind === "joysound"
+        ? guideMelody
+        : null;
 
   return (
     <div className="karaVidContainer">
@@ -39,9 +54,9 @@ function Player(props: {
           avOffsetMs={props.avOffsetMs}
         />
       ) : null}
-      {overlay?.kind === "dam" && props.pitchBars ? (
+      {melody ? (
         <PianoRoll
-          scoringData={overlay.scoringData}
+          melody={melody}
           videoRef={videoRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
