@@ -1,12 +1,8 @@
 const native = window.karafriends.nativeAudio;
 
-const registry = new FinalizationRegistry(native.inputDevice_delete);
-
-// The watchdog: how often it asks each mic, and how many reopens in a
-// minute it tries before it gives up.
+// How often the watchdog asks each mic, and tries again to reopen one that
+// is down.
 const WATCH_MS = 2000;
-const MAX_FAILURES = 3;
-const FAILURE_WINDOW_MS = 60_000;
 
 // Every output device the mics can play through, with the host in
 // parentheses.
@@ -30,12 +26,11 @@ export class InputDevice {
   channelSelection: number;
   // Why it was last reopened, while it works again.
   reopenedAfter: string | null = null;
-  // Why it stopped for good: it failed too often, or couldn't reopen.
+  // Why it won't reopen, while it is down (the watchdog keeps trying).
   error: string | null = null;
   private gain = 1;
   private echo = 0.4;
   private open = true;
-  private failures: number[] = [];
   private watchdog: ReturnType<typeof setInterval>;
 
   constructor(name: string, channelSelection: number) {
@@ -47,29 +42,20 @@ export class InputDevice {
 
   private create() {
     const deviceId = native.inputDevice_new(this.name, this.channelSelection);
-    registry.register(this, deviceId);
     native.inputDevice_setGain(deviceId, this.gain);
     native.inputDevice_setEcho(deviceId, this.echo);
     return deviceId;
   }
 
-  // Reopens the mic when its stream stopped, up to MAX_FAILURES a minute.
-  private check() {
+  // Reopens the mic when its stream stopped. One that won't reopen (a mic
+  // unplugged, a TV asleep) is tried again every time, until it is back.
+  check() {
     const status = this.status();
     if (working(status)) return;
-    const now = Date.now();
-    this.failures = [
-      ...this.failures.filter((time) => now - time < FAILURE_WINDOW_MS),
-      now,
-    ];
     this.close();
-    if (this.failures.length >= MAX_FAILURES) {
-      console.error(`Mic ${this.name} gave up: ${status}`);
-      this.error = status;
-      clearInterval(this.watchdog);
-      return;
+    if (this.error === null) {
+      console.warn(`Mic ${this.name} stopped (${status}); reopening`);
     }
-    console.warn(`Mic ${this.name} stopped (${status}); reopening`);
     try {
       this.deviceId = this.create();
       this.open = true;

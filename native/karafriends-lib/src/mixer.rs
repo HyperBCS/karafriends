@@ -96,28 +96,37 @@ impl Mixer {
         }
     }
 
+    // The chosen device, or the default one with a note saying why when the
+    // chosen one is missing or won't open.
     fn build(&mut self) -> Result<(Stream, cpal::SampleRate, Option<String>)> {
         let mut note = None;
-        let mut device = None;
-        if let Some(name) = &self.choice {
-            device = _output_devices()?
+        if let Some(name) = self.choice.clone() {
+            let device = _output_devices()?
                 .find(|(device, device_type)| {
-                    _output_name(device, device_type).is_ok_and(|n| &n == name)
+                    _output_name(device, device_type).is_ok_and(|n| n == name)
                 })
                 .map(|(device, _)| device);
-            if device.is_none() {
-                note = Some(format!(
-                    "ok: {name} isn't connected; the mics play through the default output"
-                ));
-            }
+            note = Some(match device.map(|device| self.build_on(&device)) {
+                Some(Ok((stream, rate))) => return Ok((stream, rate, None)),
+                Some(Err(e)) => {
+                    eprintln!("The mic output {name} couldn't open: {e}");
+                    format!(
+                        "ok: {name} couldn't open ({e}); the mics play through the default output"
+                    )
+                }
+                None => {
+                    format!("ok: {name} isn't connected; the mics play through the default output")
+                }
+            });
         }
-        let device = match device {
-            Some(device) => device,
-            None => cpal::default_host()
-                .default_output_device()
-                .ok_or("No default output device")?,
-        };
+        let device = cpal::default_host()
+            .default_output_device()
+            .ok_or("No default output device")?;
+        let (stream, rate) = self.build_on(&device)?;
+        Ok((stream, rate, note))
+    }
 
+    fn build_on(&mut self, device: &cpal::Device) -> Result<(Stream, cpal::SampleRate)> {
         // The device's own format, at the mics' rate if it has it.
         let default_config = device.default_output_config()?;
         let mut config = default_config.config();
@@ -150,7 +159,7 @@ impl Mixer {
             default_config.sample_format(),
         );
         self.output_error = output_error;
-        Ok((Stream(stream), config.sample_rate, note))
+        Ok((Stream(stream), config.sample_rate))
     }
 
     // "ok", the note, or why the output stopped.
@@ -222,11 +231,18 @@ fn plan_read(
     (skip, read)
 }
 
-// Adds every mic into `mix` (silence where one has nothing). Returns
-// whether any ran dry and whether any dropped samples.
-fn mix_into(sources: &mut [Source], mix: &mut [f32], target: usize) -> (bool, bool) {
+// Adds every mic into `mix` (silence where one has nothing). A mic still
+// resampling to an old output rate would play at the wrong pitch: it stays
+// silent until the display reopens it. Returns whether any ran dry and
+// whether any dropped samples.
+fn mix_into(
+    sources: &mut [Source],
+    mix: &mut [f32],
+    target: usize,
+    rate: cpal::SampleRate,
+) -> (bool, bool) {
     let (mut ran_dry, mut dropped) = (false, false);
-    for source in sources {
+    for source in sources.iter_mut().filter(|s| s.rate == rate) {
         let was_playing = source.playing;
         let (skip, read) = plan_read(
             source.rx.occupied_len(),
@@ -265,7 +281,7 @@ fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
             Err(TryLockError::WouldBlock) => None,
         };
         if let Some(mut sources) = sources {
-            let (ran_dry, dropped) = mix_into(&mut sources, &mut mix, target);
+            let (ran_dry, dropped) = mix_into(&mut sources, &mut mix, target, rate);
             if ran_dry && dry_prints.ready() {
                 eprintln!("mic fell behind: refilling");
             }
@@ -328,7 +344,7 @@ mod tests {
         Source {
             id,
             rx,
-            rate: 48000,
+            rate: RATE,
             playing: false,
             status: Arc::new(Mutex::new(None)),
         }
@@ -349,6 +365,17 @@ mod tests {
         for (a, b) in out.iter().zip(expected) {
             assert!((a - b).abs() < 1e-6, "{:?}", out);
         }
+    }
+
+    #[test]
+    fn test_a_mic_at_another_rate_is_silent() {
+        let mut stale = source(1, &[0.5; 4], 16);
+        stale.rate = RATE * 2;
+        let sources = Arc::new(Mutex::new(vec![stale, source(2, &[0.25; 4], 16)]));
+        let mut callback = output_data_callback::<f32>(sources, 1, RATE);
+        let mut out = [9.0; 4];
+        callback(&mut out);
+        assert_eq!(out, [0.25; 4]);
     }
 
     #[test]

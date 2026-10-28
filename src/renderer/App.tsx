@@ -57,14 +57,30 @@ function openMic(name: string, channel: number, levels: MicLevels) {
   return mic;
 }
 
+// Opened once per page: StrictMode calls App's initializer twice in
+// `yarn dev`, and a second set would play every mic twice.
+let openedSavedMics: InputDevice[] | null = null;
+
 // The mic output and the microphones picked last time, those still plugged
-// in. The output first, so the mics open on it.
+// in and that open. The output first, so the mics open on it.
 function savedMics(): InputDevice[] {
+  openedSavedMics ??= openSavedMics();
+  return openedSavedMics;
+}
+
+function openSavedMics(): InputDevice[] {
   setOutputDevice(localStorage.getItem(MIC_OUTPUT_KEY));
   const channelCounts = new Map(window.karafriends.nativeAudio.inputDevices());
   return readSavedMics()
     .filter(({ name, channel }) => channel < (channelCounts.get(name) ?? 0))
-    .map((mic) => openMic(mic.name, mic.channel, mic));
+    .flatMap((mic) => {
+      try {
+        return [openMic(mic.name, mic.channel, mic)];
+      } catch (err) {
+        console.warn(`Couldn't open the saved mic ${mic.name}:`, err);
+        return [];
+      }
+    });
 }
 
 function savedLevels(): Record<string, MicLevels> {
@@ -145,11 +161,13 @@ function App(props: {
     _setMics(newMics);
   };
 
-  // One mic's new levels, on its device (and any other row on the same
-  // channel), and saved.
-  const changeLevels = (id: string, newLevels: MicLevels) => {
-    const allLevels = { ...levels, [id]: newLevels };
-    for (const mic of mics.filter((m) => idOf(m) === id)) {
+  // New levels for some mics, by micId: on their devices (and any other row
+  // on the same channel), and saved, all in one update.
+  const changeLevels = (changes: Record<string, MicLevels>) => {
+    const allLevels = { ...levels, ...changes };
+    for (const mic of mics) {
+      const newLevels = changes[idOf(mic)];
+      if (!newLevels) continue;
       mic.setGain(newLevels.gain / 100);
       mic.setEcho(newLevels.echo / 100);
     }
@@ -182,21 +200,31 @@ function App(props: {
       sentMics.current = sentMics.current.slice(sent);
       return;
     }
+    const changes: Record<string, MicLevels> = {};
     for (const { id, gain, echo } of liveMics) {
       if (!mics.some((mic) => idOf(mic) === id)) continue;
       const own = levelsOf(id);
-      if (own.gain !== gain || own.echo !== echo) {
-        changeLevels(id, { gain, echo });
-      }
+      if (own.gain !== gain || own.echo !== echo) changes[id] = { gain, echo };
     }
+    if (Object.keys(changes).length === 0) return;
+    // The server already holds the list this display sends next, so that
+    // one never comes back to trim the older ones: an admin's later return
+    // to one of them would be taken for an echo.
+    sentMics.current = [];
+    changeLevels(changes);
   });
 
+  // Kept only once it opened (or fell back to the default), so a choice
+  // that fails can't break the next launch. Mics that went down with the
+  // old output reopen on the new one at once.
   const changeMicOutput = (name: string | null) => {
     try {
       setOutputDevice(name);
     } catch (err) {
       console.error(`Couldn't switch the mic output to ${name}:`, err);
+      return;
     }
+    for (const mic of mics.filter((m) => m.error)) mic.check();
     if (name === null) localStorage.removeItem(MIC_OUTPUT_KEY);
     else localStorage.setItem(MIC_OUTPUT_KEY, name);
     setMicOutput(name);
@@ -314,7 +342,7 @@ function App(props: {
             micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}
             onChangeLevels={(mic, newLevels) =>
-              changeLevels(idOf(mic), newLevels)
+              changeLevels({ [idOf(mic)]: newLevels })
             }
             onRemoveMic={removeMic}
             micOutput={micOutput}

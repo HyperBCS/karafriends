@@ -103,6 +103,36 @@ export function isApiRequest(url: string): boolean {
   }
 }
 
+// What the display's api.call answers.
+export type DisplayAnswer = {
+  ok: boolean;
+  output?: any;
+  status?: number;
+  error?: string;
+};
+
+// A call from the display, over IPC through its preload: { ok, output } or
+// { ok: false, status, error }.
+export function displayCall(
+  display: Page,
+  method: string,
+  input: object = {},
+): Promise<DisplayAnswer> {
+  return display.evaluate(
+    ([method, input]) =>
+      (
+        window as unknown as {
+          karafriends: {
+            api: {
+              call(method: string, input: object): Promise<DisplayAnswer>;
+            };
+          };
+        }
+      ).karafriends.api.call(method, input),
+    [method, input] as const,
+  );
+}
+
 type Fixtures = {
   // The /graphql requests the clients made, which must stay empty.
   graphqlRequests: string[];

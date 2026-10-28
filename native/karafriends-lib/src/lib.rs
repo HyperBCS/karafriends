@@ -122,11 +122,26 @@ impl RateLimit {
 }
 
 // A stream's error callback: keeps the first error for `status` and logs it.
+// An xrun (a WASAPI capture glitch, an ASIO overload), a default device that
+// changed under the stream, or a refused real-time priority leave the stream
+// running, so those are only logged.
 fn error_callback(
     status: Arc<Mutex<Option<String>>>,
     what: &'static str,
 ) -> impl FnMut(cpal::Error) + Send + 'static {
+    let mut harmless_prints = RateLimit::default();
     move |e| {
+        if matches!(
+            e.kind(),
+            cpal::ErrorKind::Xrun
+                | cpal::ErrorKind::DeviceChanged
+                | cpal::ErrorKind::RealtimeDenied
+        ) {
+            if harmless_prints.ready() {
+                eprintln!("{what} keeps running after: {e}");
+            }
+            return;
+        }
         let mut status = lock(&status);
         if status.is_none() {
             eprintln!("{what} stopped: {e}");
@@ -763,6 +778,18 @@ mod tests {
     #[test]
     fn test_input_callback_downsampling() {
         assert_resampled_pitch(96000, 44100);
+    }
+
+    #[test]
+    fn test_an_xrun_keeps_the_stream() {
+        let status = Arc::new(Mutex::new(None));
+        let mut callback = error_callback(status.clone(), "Mic");
+        callback(cpal::Error::new(cpal::ErrorKind::Xrun));
+        callback(cpal::Error::new(cpal::ErrorKind::DeviceChanged));
+        assert_eq!(*lock(&status), None);
+        // Anything else stops it.
+        callback(cpal::Error::new(cpal::ErrorKind::DeviceNotAvailable));
+        assert!(lock(&status).is_some());
     }
 
     // Lists the outputs without opening any. CI machines may have no audio

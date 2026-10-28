@@ -13,7 +13,7 @@ import path from "path";
 import type { Page } from "@playwright/test";
 
 import type { LiveState, YoutubeVideoInfo } from "../../src/common/api";
-import { expect, NICKNAME, test } from "./fixtures";
+import { displayCall, expect, NICKNAME, test } from "./fixtures";
 
 const fakeYtdlp = (name: string) =>
   path.resolve(
@@ -41,10 +41,6 @@ const TOOLS_PROBLEM =
   "YouTube downloads are failing; try Update tools in Settings";
 
 type DisplayApi = {
-  call(
-    method: string,
-    input: object,
-  ): Promise<{ ok: boolean; output?: any; status?: number }>;
   onLive(
     listener: (event: { type: string; state?: LiveState }) => void,
   ): () => void;
@@ -64,17 +60,6 @@ function displayLiveState(display: Page): Promise<LiveState> {
           }
         });
       }),
-  );
-}
-
-// A call from the display, over IPC.
-function displayCall(display: Page, method: string) {
-  return display.evaluate(
-    (method) =>
-      (
-        window as unknown as { karafriends: { api: DisplayApi } }
-      ).karafriends.api.call(method, {}),
-    method,
   );
 }
 
