@@ -11,8 +11,8 @@ import {
   InlineError,
   List,
   ListRow,
+  SegmentedControl,
   Sheet,
-  Tabs,
   TextField,
   TopBar,
 } from "../components/ui";
@@ -22,10 +22,10 @@ import {
   FaSmile,
   MdClose,
   MdPause,
-  MdPerson,
   MdPlayArrow,
   MdReplay,
   MdSearch,
+  MdSettings,
   MdSkipNext,
   MdTranslate,
 } from "../icons";
@@ -135,17 +135,23 @@ const DevUiPage = () => {
   const [query, setQuery] = useState("紅蓮華");
   const [empty, setEmpty] = useState("");
   const [by, setBy] = useState<"title" | "artist">("title");
-  const [source, setSource] = useState<"all" | "dam" | "joysound">("all");
+  const [readings, setReadings] = useState<"written" | "kana" | "romaji">(
+    "written",
+  );
   const [sheetOpen, setSheetOpen] = useState(true);
 
-  const byTabs = [
+  const byChoices = [
     { id: "title", label: t("search.title") },
     { id: "artist", label: t("search.artist") },
   ] as const;
-  const sourceTabs = [
-    { id: "all", label: t("search.sourceAll") },
-    { id: "dam", label: t("source.dam") },
-    { id: "joysound", label: t("source.joysound") },
+  const readingsChoices = [
+    { id: "written", label: t("readings.written") },
+    { id: "kana", label: t("readings.kana") },
+    { id: "romaji", label: t("readings.romaji") },
+  ] as const;
+  const languageChoices = [
+    { id: "en", label: t("language.en") },
+    { id: "ja", label: t("language.ja") },
   ] as const;
 
   // As the real bar has it (NowPlaying), folded: the label, the artist
@@ -177,12 +183,11 @@ const DevUiPage = () => {
       <TopBar
         title="UI"
         trailing={
-          <Tabs<Language>
+          <SegmentedControl<Language>
             label={t("language.label")}
-            tabs={[
-              { id: "en", label: t("language.en") },
-              { id: "ja", label: t("language.ja") },
-            ]}
+            hideLabel
+            small
+            choices={languageChoices}
             selected={language}
             onSelect={setLanguage}
           />
@@ -195,7 +200,7 @@ const DevUiPage = () => {
             <TopBar
               title={t("search.heading")}
               trailing={
-                <IconButton label={t("nav.profile")} icon={<MdPerson />} />
+                <IconButton label={t("nav.settings")} icon={<MdSettings />} />
               }
             />
           </Demo>
@@ -430,39 +435,71 @@ const DevUiPage = () => {
         </Demo>
       </Section>
 
-      <Section title="Tabs">
-        <Demo state="two tabs">
-          <Tabs
-            label={t("search.byLabel")}
-            tabs={byTabs}
-            selected={by}
-            onSelect={setBy}
+      <Section title="SegmentedControl">
+        <Demo state="three choices">
+          <SegmentedControl
+            label={t("readings.label")}
+            choices={readingsChoices}
+            selected={readings}
+            onSelect={setReadings}
           />
         </Demo>
-        <Demo state="three tabs">
-          <Tabs
-            label={t("search.sourceLabel")}
-            tabs={sourceTabs}
-            selected={source}
-            onSelect={setSource}
+        <Demo state="two choices">
+          <SegmentedControl
+            label={t("language.label")}
+            choices={languageChoices}
+            selected={language}
+            onSelect={setLanguage}
           />
         </Demo>
-        <Demo state="pressed" force="pressed">
-          <Tabs
-            label={t("search.byLabel")}
-            tabs={byTabs}
-            selected="title"
+        <Demo state="pressed (the others)" force="pressed">
+          <SegmentedControl
+            label={t("readings.label")}
+            choices={readingsChoices}
+            selected="kana"
             onSelect={noop}
           />
         </Demo>
         <Demo state="focus" force="focus">
-          <Tabs
-            label={t("search.byLabel")}
-            tabs={byTabs}
-            selected="artist"
+          <SegmentedControl
+            label={t("readings.label")}
+            choices={readingsChoices}
+            selected="romaji"
             onSelect={noop}
           />
         </Demo>
+        <div className={styles.row}>
+          <Demo state="small, hidden label">
+            <SegmentedControl
+              label={t("search.byLabel")}
+              hideLabel
+              small
+              choices={byChoices}
+              selected={by}
+              onSelect={setBy}
+            />
+          </Demo>
+          <Demo state="pressed" force="pressed">
+            <SegmentedControl
+              label={t("search.byLabel")}
+              hideLabel
+              small
+              choices={byChoices}
+              selected="title"
+              onSelect={noop}
+            />
+          </Demo>
+          <Demo state="focus" force="focus">
+            <SegmentedControl
+              label={t("search.byLabel")}
+              hideLabel
+              small
+              choices={byChoices}
+              selected="artist"
+              onSelect={noop}
+            />
+          </Demo>
+        </div>
       </Section>
 
       <Section title="EmptyState">

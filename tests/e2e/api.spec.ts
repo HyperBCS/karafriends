@@ -441,7 +441,7 @@ test.describe("supervised mode", () => {
       ).toMatchObject({ status: 403 });
     });
 
-    test("signs in from the profile page, and gets the controls at once", async ({
+    test("signs in from the settings, and gets the controls at once", async ({
       karafriends,
       page,
     }) => {
@@ -451,9 +451,9 @@ test.describe("supervised mode", () => {
       const pause = page.getByRole("button", { name: "Pause", exact: true });
       await expect(pause).toHaveAttribute("aria-disabled", "true");
 
-      await page.getByRole("link", { name: "Profile" }).click();
+      await page.getByRole("link", { name: "Settings" }).click();
       await expect(
-        page.getByRole("heading", { name: "Profile" }),
+        page.getByRole("heading", { name: "Settings" }),
       ).toBeVisible();
       await expect(page.getByLabel("Nickname")).toHaveValue(NICKNAME);
       const password = page.getByLabel("Admin password");
