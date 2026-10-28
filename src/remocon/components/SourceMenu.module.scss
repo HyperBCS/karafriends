@@ -1,47 +1,31 @@
 @use "../tokens" as *;
 
-// The menu opens under the button, against its right edge.
+// The button's look: as tall as the search's chips. The <select> over it
+// takes every tap, on a 44px target.
 .sourceMenu {
-  position: relative;
-}
-
-// As tall as the search's chips, with a 44px target.
-.button {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: $kf-space-1;
   min-height: 36px;
-  margin: 0;
   padding: 0 $kf-space-1 0 $kf-space-2;
   border: 1px solid $kf-border-strong;
   border-radius: $kf-tap;
-  background: none;
   color: $kf-muted;
-  font: inherit;
   font-size: $kf-text-body;
   font-weight: 600;
   white-space: nowrap;
-  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
-
-  &::after {
-    content: "";
-    position: absolute;
-    inset: -5px -1px;
-  }
-
-  &[aria-expanded="true"] {
-    @include kf-press-overlay;
-  }
 
   @include kf-pressed {
     @include kf-press-overlay;
   }
 
-  @include kf-focus-visible;
+  &:has(> .select:focus-visible),
+  [data-demo="focus"] & {
+    @include kf-focus-ring;
+  }
 }
 
 .icon {
@@ -49,53 +33,20 @@
   font-size: 24px;
 }
 
-// Level 4: the sheet's color and the strongest shadow, over everything.
-.menu {
+// Unseen, over the whole button and a little past it. At least 16px, so
+// iOS doesn't zoom in when it's tapped.
+.select {
   position: absolute;
-  top: calc(100% + #{$kf-space-1});
-  right: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  min-width: 180px;
-  padding: $kf-space-1 0;
-  overflow: hidden;
-  border-radius: $kf-radius-card;
-  background-color: $kf-panel;
-  box-shadow: $kf-shadow-menu;
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  gap: $kf-space-2;
-  min-height: $kf-tap;
+  top: -5px;
+  left: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 10px);
   margin: 0;
-  padding: 0 $kf-space-4 0 $kf-space-3;
-  border: none;
-  background: none;
-  color: $kf-text;
-  font: inherit;
-  font-size: $kf-text-title;
-  text-align: start;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
   cursor: pointer;
+  appearance: none;
   touch-action: manipulation;
-
-  @include kf-pressed {
-    @include kf-press-overlay;
-  }
-
-  // An inset ring: the items run edge to edge.
-  &:focus-visible {
-    @include kf-focus-ring;
-    outline-offset: -2px;
-  }
-}
-
-// The picked source's tick, in a slot every item has, so the names line up.
-.tick {
-  display: inline-flex;
-  width: 24px;
-  color: $kf-accent;
-  font-size: 24px;
 }

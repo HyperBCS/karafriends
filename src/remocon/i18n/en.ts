@@ -43,8 +43,6 @@ export const en = {
   "search.artist": "Artist",
   "search.sourceLabel": "Source",
   "search.sourceAll": "All",
-  // The source's button, which names the source.
-  "search.sourceButton": "Source: {source}",
   "search.results": "Results",
   "search.noResults": "No results found",
   // A count's singular is its key with ".one" (countKey in index.ts).

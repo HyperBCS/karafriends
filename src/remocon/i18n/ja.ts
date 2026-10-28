@@ -39,7 +39,6 @@ export const ja: Messages = {
   "search.artist": "歌手名",
   "search.sourceLabel": "機種",
   "search.sourceAll": "すべて",
-  "search.sourceButton": "機種：{source}",
   "search.results": "検索結果",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
