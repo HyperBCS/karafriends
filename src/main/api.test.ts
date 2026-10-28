@@ -113,11 +113,46 @@ function fakeDamSearch(total: number) {
   };
 }
 
+// An upstream client's fake: its answers carry only the fields api.ts
+// reads, not the whole of DAM's or Joysound's.
+const upstream = <T>(fake: object) => fake as T;
+
+// The downloads' fakes: they record what they're asked, and the non-DAM
+// ones are ready at once.
+function fakeDownloads(): ApiDeps["downloads"] {
+  return {
+    dam(url, _songId, _suffix, playtime, onFailed) {
+      downloads.push(url);
+      damDownloads.push({ playtime, onFailed });
+    },
+    info: () => ({ files: 3, bytes: 3000 }),
+    clear(inUse) {
+      clearedInUse.push(inUse);
+      return { deleted: 2, bytes: 2000, kept: inUse.length };
+    },
+    clearDam(songId, suffix) {
+      clearedDam.push([songId, suffix]);
+      return true;
+    },
+    joysound: (item, pushToHead, onReady) => onReady(item, pushToHead),
+    youtube: (_item, _captions, onReady) => onReady(),
+    nico: (_item, onReady) => onReady(),
+  };
+}
+
+// What a test changes: any dependency, and any of the downloads (the other
+// downloads keep their fakes).
+type Overrides = Partial<Omit<ApiDeps, "downloads">> & {
+  downloads?: Partial<ApiDeps["downloads"]>;
+};
+
+// The API on fakes, with its deps (deps.config may be changed as the app's
+// config would be).
 function makeApi(
   config: Partial<ApiDeps["config"]> = {},
-  overrides: Partial<ApiDeps> = {},
+  { downloads: downloadOverrides, ...overrides }: Overrides = {},
 ) {
-  const deps = {
+  const deps: ApiDeps = {
     config: {
       adminPasswordHash: ADMIN_HASH,
       adminPasswordSalt: ADMIN_SALT,
@@ -129,7 +164,7 @@ function makeApi(
     },
     store,
     adminSessions,
-    minsei: {
+    minsei: upstream<ApiDeps["minsei"]>({
       getMusicStreamingUrls: async () => ({
         list: [
           { highBitrateUrl: "https://dam/high0", lowBitrateUrl: "low0" },
@@ -137,16 +172,16 @@ function makeApi(
         ],
       }),
       getScoringData: async () => new Uint8Array([1, 2, 3]).buffer,
-    },
-    dkwebsys: {
+    }),
+    dkwebsys: upstream<ApiDeps["dkwebsys"]>({
       getMusicByKeyword: fakeDamSearch(75),
       getArtistByKeyword: fakeDamSearch(0),
       getMusicListByArtist: fakeDamSearch(0),
       getMusicDetailsInfo: async () => {
         throw new Error("not faked");
       },
-    },
-    joysound: {
+    }),
+    joysound: upstream<ApiDeps["joysound"]>({
       getSongListByKeyword: async (
         keyword: string,
         start: number,
@@ -166,7 +201,7 @@ function makeApi(
       getSongDetail: async () => {
         throw new Error("not faked");
       },
-    },
+    }),
     youtube: async () => ({
       getBasicInfo: async () => ({
         playability_status: { status: "LOGIN_REQUIRED", reason: "Bot check" },
@@ -175,41 +210,12 @@ function makeApi(
     getNicoVideoInfo: async () => {
       throw new Error("offline");
     },
-    downloads: {
-      dam: (
-        url: string,
-        _songId: string,
-        _suffix: string,
-        playtime: number | null,
-        onFailed: (reason: string) => void,
-      ) => {
-        downloads.push(url);
-        damDownloads.push({ playtime, onFailed });
-      },
-      info: () => ({ files: 3, bytes: 3000 }),
-      clear: (inUse: unknown[]) => {
-        clearedInUse.push(inUse);
-        return { deleted: 2, bytes: 2000, kept: inUse.length };
-      },
-      clearDam: (songId: string, suffix: string) => {
-        clearedDam.push([songId, suffix]);
-        return true;
-      },
-      // Ready at once.
-      joysound: (
-        item: QueueItem,
-        pushToHead: boolean,
-        onReady: (item: QueueItem, pushToHead: boolean) => void,
-      ) => onReady(item, pushToHead),
-      youtube: (_item: QueueItem, _captions: unknown, onReady: () => void) =>
-        onReady(),
-      nico: (_item: QueueItem, onReady: () => void) => onReady(),
-    },
-    publish: (message: HubMessage) => published.push(message),
+    publish: (message) => published.push(message),
     now: () => 42,
     ...overrides,
+    downloads: { ...fakeDownloads(), ...downloadOverrides },
   };
-  return createApi(deps as unknown as ApiDeps);
+  return Object.assign(createApi(deps), { deps });
 }
 
 // fn's outcome, with console.error and console.warn silenced meanwhile.
@@ -418,6 +424,28 @@ describe("admin checks", () => {
     assert.equal(store.getState().currentSong?.songId, "sm1");
     assert.deepEqual(store.getState().songHistory, [{ song: song(1, alice) }]);
     assert.equal(await api.popSong({}, display), null);
+  });
+
+  test("after a restart mid-song, that song plays again without a second history entry", async () => {
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.songQueue.push(song(2, bob));
+      state.songHistory.unshift({ song: song(1, alice) });
+    });
+    // The restart: queue.json has the song back at the head of the queue.
+    store = createStateStore(path.join(dir, "queue.json"));
+    assert.equal(store.getState().currentSong, null);
+    const api = makeApi();
+    assert.equal((await api.popSong({}, display))?.songId, "sm1");
+    assert.deepEqual(
+      store.getState().songHistory.map((entry) => entry.song.songId),
+      ["sm1"],
+    );
+    assert.equal((await api.popSong({}, display))?.songId, "sm2");
+    assert.deepEqual(
+      store.getState().songHistory.map((entry) => entry.song.songId),
+      ["sm2", "sm1"],
+    );
   });
 
   describe("a reloaded display (popSong with resume)", () => {
@@ -1175,13 +1203,13 @@ describe("commands for the current song", () => {
       makeApi(
         {},
         {
-          minsei: {
+          minsei: upstream<ApiDeps["minsei"]>({
             getMusicStreamingUrls: () =>
               new Promise((resolve) => {
                 answerDam = () => resolve({ list: [] });
               }),
             getScoringData: async () => new ArrayBuffer(0),
-          },
+          }),
         },
       );
 
@@ -1263,6 +1291,21 @@ describe("commands for the current song", () => {
 });
 
 describe("admin sign-in", () => {
+  test("a sign-in still hashing when the host sets a new password gets no session", async () => {
+    const api = makeApi();
+    const signingIn = api.adminLogin({ password: ADMIN_PASSWORD }, bob);
+    // What setAdminPassword does meanwhile: a new hash, every session ended.
+    api.deps.config.adminPasswordHash = hashAdminPassword("new", ADMIN_SALT);
+    adminSessions.clear();
+    await rejectsWith(signingIn, 403);
+    assert.equal(adminSessions.has(adminToken), false);
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(dir, "adminSessions.json"), "utf8"))
+        .sessions.length,
+      0,
+    );
+  });
+
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
     const { token } = await api.adminLogin({ password: ADMIN_PASSWORD }, bob);
@@ -1653,7 +1696,7 @@ describe("queueSong", () => {
                 args: [item, pushToHead],
                 ready: () => onReady(item, pushToHead),
               }),
-          } as ApiDeps["downloads"],
+          },
         },
       );
     // A relaunch: the state as queue.json has it.
@@ -1726,7 +1769,7 @@ describe("queueSong", () => {
         {
           downloads: {
             nico: (_item, _onReady, onFailed) => onFailed("Video unavailable"),
-          } as ApiDeps["downloads"],
+          },
         },
       );
       await failing.queueSong(
@@ -1748,7 +1791,7 @@ describe("queueSong", () => {
       makeApi(config, {
         downloads: {
           youtube: (_item, _captions, onReady) => finishDownloads.push(onReady),
-        } as ApiDeps["downloads"],
+        },
         now: () => ++clock,
       });
     const queue = (
@@ -1968,7 +2011,7 @@ describe("a failed download", () => {
         downloads: {
           youtube: (_item, _captions, _onReady, onFailed) =>
             onFailed("Video unavailable"),
-        } as ApiDeps["downloads"],
+        },
       },
     );
     assert.equal((await queueVideo(api, alice)).ok, true);
@@ -1993,7 +2036,7 @@ describe("a failed download", () => {
         downloads: {
           // Still downloading.
           youtube: () => {},
-        } as unknown as ApiDeps["downloads"],
+        },
       },
     );
     const { downloadQueue } = store.getState();
@@ -2016,7 +2059,7 @@ describe("a failed download", () => {
         downloads: {
           youtube: () => asked.push("youtube"),
           joysound: () => asked.push("joysound"),
-        } as unknown as ApiDeps["downloads"],
+        },
       },
     );
     const { downloadQueue } = store.getState();
@@ -2077,7 +2120,7 @@ describe("a failed download", () => {
           nico: (_item, onReady, onFailed) => finish(onReady, onFailed),
           joysound: (_item, _pushToHead, _onReady, onFailed) =>
             onFailed("YouTube blocked the download"),
-        } as ApiDeps["downloads"],
+        },
         now: () => clock,
       },
     );
@@ -2576,6 +2619,87 @@ describe("lookups", () => {
       ok: false,
       reason: "Bot check",
     });
+  });
+
+  test("a YouTube lookup: the details, the captions people wrote, and the gain that evens out its loudness", async () => {
+    // youtubei.js's getBasicInfo, as far as youtubeInfo reads it.
+    const basicInfo = {
+      playability_status: { status: "OK" },
+      basic_info: {
+        author: "jawed",
+        channel_id: "UC4QobU6STFB0P71PMvOGN5A",
+        keywords: ["me", "zoo"],
+        duration: 19,
+        short_description: "The first video",
+        title: "Me at the zoo",
+        view_count: 380_000_000,
+      },
+      captions: {
+        caption_tracks: [
+          { vss_id: ".en", language_code: "en", name: { text: "English" } },
+          // Made by YouTube's speech recognition: left out.
+          {
+            vss_id: "a.en",
+            language_code: "en",
+            name: { text: "English (auto-generated)" },
+          },
+          { vss_id: ".ja", language_code: "ja", name: {} },
+        ],
+      },
+      player_config: { audio_config: { loudness_db: 6 } },
+    };
+    const asked: string[] = [];
+    const api = makeApi(
+      {},
+      {
+        youtube: async () => ({
+          getBasicInfo: async (videoId: string) => {
+            asked.push(videoId);
+            return basicInfo;
+          },
+        }),
+      },
+    );
+    const result = await api.youtubeInfo({ videoId: "jNQXAC9IVRw" }, alice);
+    assert.deepEqual(asked, ["jNQXAC9IVRw"]);
+    assert.ok(result.ok);
+    const { gainValue, ...info } = result.info;
+    assert.deepEqual(info, {
+      author: "jawed",
+      captionLanguages: [
+        { code: "en", name: "English" },
+        { code: "ja", name: "" },
+      ],
+      channelId: "UC4QobU6STFB0P71PMvOGN5A",
+      keywords: ["me", "zoo"],
+      lengthSeconds: 19,
+      description: "The first video",
+      title: "Me at the zoo",
+      viewCount: 380_000_000,
+    });
+    // 6 dB too loud: about half as loud.
+    assert.ok(Math.abs(gainValue - 0.501) < 0.001, String(gainValue));
+
+    // No loudness, captions or keywords: plain.
+    basicInfo.player_config = {
+      audio_config: {},
+    } as typeof basicInfo.player_config;
+    const plain = { ...basicInfo, captions: undefined };
+    delete (plain.basic_info as { keywords?: unknown }).keywords;
+    const api2 = makeApi(
+      {},
+      { youtube: async () => ({ getBasicInfo: async () => plain }) },
+    );
+    const second = await api2.youtubeInfo({ videoId: "x" }, alice);
+    assert.ok(second.ok);
+    assert.deepEqual(
+      [
+        second.info.gainValue,
+        second.info.captionLanguages,
+        second.info.keywords,
+      ],
+      [1, [], []],
+    );
   });
 
   describe("a failed Niconico lookup", () => {
