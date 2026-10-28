@@ -87,12 +87,12 @@ test.describe("on a profile with logins", () => {
       damUsername: "e2e-dam-user",
       damPassword: MASK,
       joysoundEmail: "e2e@example.com",
+      // No Joysound password, so nothing to mask.
       joysoundPassword: "",
-      // A fresh config.yaml has no proxy password, so nothing to mask.
-      proxyPass: "",
       adminPasswordSet: false,
     });
     expect(settings).not.toHaveProperty("adminPasswordHash");
+    expect(settings).not.toHaveProperty("proxyPass");
     expect(JSON.stringify(settings)).not.toContain("e2e-dam-password");
     expect(isFirstRun).toBe(false);
     expect(needsRestart).toBe(false);
@@ -216,12 +216,12 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   ).toBe(3);
 
   // The port takes a restart, which the screen offers.
-  const network = settings.getByRole("region", {
-    name: "Remote port and proxy",
-  });
+  const network = settings.getByRole("region", { name: "Remote port" });
+  await expect(network.getByLabel(/proxy/i)).toHaveCount(0);
   await expect(network.getByRole("button", { name: "Restart" })).toHaveCount(0);
-  await network.getByLabel("Proxy host").fill("proxy.e2e.example");
-  await network.getByLabel("Proxy host").press("Enter");
+  // Not listened on until a restart, so any free-looking port will do.
+  await network.getByLabel("Port for phones").fill("18765");
+  await network.getByLabel("Port for phones").press("Enter");
   await expect(network.getByRole("button", { name: "Restart" })).toBeVisible();
 
   await settings.getByRole("button", { name: "Close" }).click();
@@ -259,8 +259,10 @@ test.describe("export, then import on a second launch", () => {
           useLowBitrateUrl: true,
           // No password, so neither launch tries to sign in to DAM.
           damUsername: "e2e-exported-user",
-          proxyHost: "proxy.e2e.example",
-          proxyPass: "e2e-proxy-pass",
+          // No email, so neither tries Joysound either.
+          joysoundPassword: "e2e-joysound-pass",
+          // Not listened on until a restart.
+          remoconPort: 18765,
         },
       }),
     ).toEqual({ ok: true, needsRestart: true });
@@ -274,7 +276,7 @@ test.describe("export, then import on a second launch", () => {
     expect(karafriendsConfigVersion).toBe(1);
     expect(exportedConfig).toEqual(await configOnDisk(karafriends.app));
     // Passwords travel as they are.
-    expect(exportedConfig.proxyPass).toBe("e2e-proxy-pass");
+    expect(exportedConfig.joysoundPassword).toBe("e2e-joysound-pass");
     expect(exportedConfig.adminPasswordHash).toMatch(/^[0-9a-f]{128}$/);
     exported = yaml;
   });
@@ -303,8 +305,8 @@ test.describe("export, then import on a second launch", () => {
       paxSongQueueLimit: 3,
       useLowBitrateUrl: true,
       damUsername: "e2e-exported-user",
-      proxyHost: "proxy.e2e.example",
-      proxyPass: MASK,
+      joysoundPassword: MASK,
+      remoconPort: 18765,
       adminPasswordSet: true,
     });
     expect(after.needsRestart).toBe(true);

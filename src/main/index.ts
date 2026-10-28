@@ -215,15 +215,6 @@ function createWindow() {
     },
   );
 
-  if (karafriendsConfig.proxyEnable) {
-    session
-      .setProxy({
-        proxyRules: `${karafriendsConfig.proxyHost}:${karafriendsConfig.proxyPort}`,
-        proxyBypassRules: "<local>,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8",
-      })
-      .catch((err) => console.error("Failed to set proxy:", err));
-  }
-
   protocol.registerFileProtocol("karafriends", (request, callback) => {
     console.log(`Got protocol request: ${request.method} ${request.url}`);
     // URLs are karafriends://local/<file>; the case-sensitive file name is in
@@ -341,25 +332,4 @@ app.on("browser-window-focus", () => {
 app.on("browser-window-blur", () => {
   globalShortcut.unregister("CommandOrControl+R");
   globalShortcut.unregister("F5");
-});
-
-app.on("login", (event, webContents, request, authInfo, callback) => {
-  console.log(
-    `login event received: authinfo=${authInfo} callback=${callback}`,
-  );
-  if (karafriendsConfig.proxyEnable) {
-    const { proxyHost, proxyPort, proxyUser, proxyPass } = karafriendsConfig;
-    console.log(`Time to login to ${proxyHost}:${proxyPort}`);
-    callback(proxyUser, proxyPass);
-    event.preventDefault();
-  } else {
-    // Well that's strange...
-    console.log("Received login event even though proxy is not enabled?");
-    if (rendererWindow) {
-      dialog.showMessageBoxSync(rendererWindow, {
-        message:
-          "Received login event even though proxy is not enabled. Proceed with caution",
-      });
-    }
-  }
 });

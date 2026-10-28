@@ -1,10 +1,7 @@
-// A small HTTP client for the DAM and Joysound APIs: timeouts, the optional
-// proxy from config.yaml, a form or JSON body, and the response parsed by its
-// content type.
+// A small HTTP client for the DAM and Joysound APIs: timeouts, a form or JSON
+// body, and the response parsed by its content type.
 //
-// No Electron imports (services.ts passes in the proxy settings), so unit
-// tests can load this file under plain Node.
-import type { Agent } from "http";
+// No Electron imports, so unit tests can load this file under plain Node.
 import { pipeline, Transform } from "stream";
 
 import nodeFetch, {
@@ -13,19 +10,14 @@ import nodeFetch, {
   Response,
   ResponseInit,
 } from "node-fetch";
-import tunnel from "tunnel";
-
-import type { KarafriendsConfig } from "../common/config";
 
 // Without a timeout, a hung upstream stalls the resolver (and the phone that
 // asked) indefinitely. Aborting surfaces it as an error that the promise-retry
 // wrappers can retry. The limit is on silence, not on the whole request: the
 // headers must arrive within it, and then the body may take as long as it
 // needs (Joysound's getFME sends a song's audio, several MB, which can take
-// minutes through the proxy) as long as no gap between chunks reaches it.
+// minutes over a slow VPN) as long as no gap between chunks reaches it.
 const TIMEOUT_MS = 30000;
-
-let agent: Agent | undefined;
 
 // An error status without the service's own answer. From DAM or Joysound,
 // 403 usually means the request didn't come from a Japanese IP address.
@@ -37,24 +29,6 @@ export class HttpStatusError extends Error {
     super(`${status} from ${url}`);
     this.name = "HttpStatusError";
   }
-}
-
-// Sends every later request through config.yaml's proxy, if it enables one.
-export function setProxy(
-  config: Pick<
-    KarafriendsConfig,
-    "proxyEnable" | "proxyHost" | "proxyPort" | "proxyUser" | "proxyPass"
-  >,
-) {
-  agent = config.proxyEnable
-    ? tunnel.httpsOverHttp({
-        proxy: {
-          host: config.proxyHost,
-          port: config.proxyPort,
-          proxyAuth: `${config.proxyUser}:${config.proxyPass}`,
-        },
-      })
-    : undefined;
 }
 
 export interface HttpRequest {
@@ -111,7 +85,6 @@ export async function httpFetch(
       headers,
       body,
       redirect: req.redirect,
-      agent,
       signal: controller.signal,
     });
   } catch (err) {

@@ -312,8 +312,8 @@ export type LookupResult<T> =
 // back as "unchanged".
 export const MASKED_PASSWORD = "••••••";
 
-// config.yaml as the settings screen sees it. damPassword, joysoundPassword
-// and proxyPass are MASKED_PASSWORD when not empty. The admin password's
+// config.yaml as the settings screen sees it. damPassword and
+// joysoundPassword are MASKED_PASSWORD when not empty. The admin password's
 // hash and salt never leave the main process: adminPasswordSet says whether
 // there is one.
 export type Settings = Omit<
@@ -451,8 +451,8 @@ export interface Api {
 
   // isFirstRun: neither a DAM nor a Joysound login is filled in.
   // needsRestart: a setting that only takes effect after a restart
-  // (remoconPort, the proxy) is saved with a value other than the one the
-  // app started with.
+  // (remoconPort) is saved with a value other than the one the app started
+  // with.
   getSettings: {
     input: Record<string, never>;
     output: { settings: Settings; isFirstRun: boolean; needsRestart: boolean };
@@ -493,7 +493,7 @@ export interface Api {
     output:
       { ok: true; problems: string[] } | { ok: false; problems: string[] };
   };
-  // Restarts the app, for remoconPort and the proxy. Answers first.
+  // Restarts the app, for remoconPort. Answers first.
   restartApp: {
     input: Record<string, never>;
     output: Record<string, never>;

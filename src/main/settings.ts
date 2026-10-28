@@ -17,9 +17,9 @@ import {
   clearPlaceholders,
   CONFIG_KEYS,
   configProblems,
+  dropObsoleteKeys,
   hasLogin,
   isConfigKey,
-  OBSOLETE_KEYS,
   RESTART_KEYS,
   type KarafriendsConfig,
 } from "../common/configSchema";
@@ -41,7 +41,7 @@ export const SETTINGS_METHODS = [
 
 export type SettingsMethod = (typeof SETTINGS_METHODS)[number];
 
-const PASSWORD_KEYS = ["damPassword", "joysoundPassword", "proxyPass"] as const;
+const PASSWORD_KEYS = ["damPassword", "joysoundPassword"] as const;
 
 // What setSettings may change: everything but the admin password's hash and
 // salt (setAdminPassword).
@@ -86,13 +86,13 @@ export function loginFailureReason(
   if (err === TIMED_OUT) {
     return (
       `${name} didn't answer within ${LOGIN_TIMEOUT_MS / 1000} seconds. ` +
-      "Check this computer's internet connection, VPN or proxy."
+      "Check this computer's internet connection and VPN."
     );
   }
   if (err instanceof HttpStatusError && err.status === 403) {
     return (
       `${name} answered 403: this usually means no Japanese IP address. ` +
-      "Connect through a VPN or proxy in Japan."
+      "Connect through a VPN to Japan."
     );
   }
   return `Couldn't sign in to ${name}: ${(err as Error)?.message ?? String(err)}`;
@@ -245,15 +245,11 @@ export function createSettingsHandlers(
       delete values.karafriendsConfigVersion;
       // An old config.yaml's YOUR_PASSWORD_HERE and the like mean nothing set.
       clearPlaceholders(values);
-      const notes: string[] = [];
+      const notes = dropObsoleteKeys(values).map(
+        ({ keys, why }) => `Dropped ${keys}: ${why}`,
+      );
       for (const key of Object.keys(values)) {
-        if ((OBSOLETE_KEYS as readonly string[]).includes(key)) {
-          notes.push(
-            `Dropped ${key}: it no longer does anything. Phones become ` +
-              "admins with the admin password.",
-          );
-          delete values[key];
-        } else if (!isConfigKey(key)) {
+        if (!isConfigKey(key)) {
           notes.push(`Dropped ${key}: karafriends has no such setting.`);
           delete values[key];
         }
