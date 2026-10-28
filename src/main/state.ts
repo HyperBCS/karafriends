@@ -142,11 +142,11 @@ export interface HistoryItem {
 
 export interface State {
   currentSong: QueueItem | null;
-  // When currentSong started (ms since the epoch; null while none plays), how
-  // long it has been paused before, and since when it is paused now (null
-  // while it isn't), so a phone can tell how far into it the party is. Set by
-  // popSong and setPlaybackState; not saved, since after a restart the song
-  // plays again from the start.
+  // When currentSong started (ms since the epoch; null while none plays or
+  // until the display starts it), how long it has been paused before, and
+  // since when it is paused now (null while it isn't), so a phone can tell
+  // how far into it the party is. Set by popSong and setPlaybackState; not
+  // saved, since after a restart the song plays again from the start.
   currentSongStartedAt: number | null;
   currentSongPausedMs: number;
   currentSongPausedSince: number | null;

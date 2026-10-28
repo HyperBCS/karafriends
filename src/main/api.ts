@@ -723,11 +723,20 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     async setPlaybackState({ playbackState }, caller) {
       requirePlaybackControl(caller);
       store.update((state) => {
-        // The current song's timing, for the countdowns. A skip leaves it:
-        // the next popSong starts over.
+        // The current song's timing, for the countdowns. popSong clears it
+        // and the display's PLAYING, sent once it starts the song, starts
+        // the clock: not popSong, which may wait for DAM first. A skip
+        // leaves it: the next popSong starts over.
         const at = now();
         if (state.currentSongStartedAt === null) {
-          // No song playing: nothing to time.
+          // Not started yet, or no song: nothing to time until then.
+          if (
+            playbackState === "PLAYING" &&
+            caller.isDisplay &&
+            state.currentSong !== null
+          ) {
+            state.currentSongStartedAt = at;
+          }
         } else if (playbackState === "PAUSED") {
           state.currentSongPausedSince ??= at;
         } else if (playbackState === "RESTARTING") {
@@ -809,7 +818,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         const previous = state.currentSong;
         if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
         state.currentSong = next;
-        state.currentSongStartedAt = next ? now() : null;
+        // The display's PLAYING starts the clock (setPlaybackState).
+        state.currentSongStartedAt = null;
         state.currentSongPausedMs = 0;
         state.currentSongPausedSince = null;
 

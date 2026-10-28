@@ -368,16 +368,33 @@ describe("admin checks", () => {
     const play = (playbackState: PlaybackState) =>
       api().setPlaybackState({ playbackState }, display);
 
+    // Song 1 is popped at 0 and starts playing at 1000.
     beforeEach(async () => {
-      clock = 1000;
+      clock = 0;
       store.update((state) => state.songQueue.push(song(1, alice)));
       await api().popSong({}, display);
+      clock = 1000;
+      await play("PLAYING");
     });
 
-    test("starts when popSong starts a song", async () => {
-      assert.deepEqual(timing(), [1000, 0, null]);
+    test("starts when the display plays the song, not at popSong", async () => {
+      store.update((state) => state.songQueue.push(song(2, alice)));
+      clock = 2000;
+      await api().popSong({}, display);
+      // popSong may wait for DAM, and the display has yet to load the song.
+      assert.deepEqual(timing(), [null, 0, null]);
+      // A phone's play or pause before then doesn't start it.
+      clock = 3000;
+      await api().setPlaybackState({ playbackState: "PAUSED" }, alice);
+      await api().setPlaybackState({ playbackState: "PLAYING" }, alice);
+      assert.deepEqual(timing(), [null, 0, null]);
+      clock = 4000;
       await play("PLAYING");
-      assert.deepEqual(timing(), [1000, 0, null]);
+      assert.deepEqual(timing(), [4000, 0, null]);
+      // Once started, the display's PLAYING leaves it.
+      clock = 5000;
+      await play("PLAYING");
+      assert.deepEqual(timing(), [4000, 0, null]);
     });
 
     test("adds each pause once it resumes", async () => {
@@ -415,7 +432,10 @@ describe("admin checks", () => {
       store.update((state) => state.songQueue.push(song(2, alice)));
       clock = 6000;
       await api().popSong({}, display);
-      assert.deepEqual(timing(), [6000, 0, null]);
+      assert.deepEqual(timing(), [null, 0, null]);
+      clock = 6500;
+      await play("PLAYING");
+      assert.deepEqual(timing(), [6500, 0, null]);
     });
 
     test("is empty while no song plays", async () => {
