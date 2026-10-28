@@ -1,5 +1,5 @@
-/* The display's controls: buttons, text fields, checkboxes and selects, at
-   the display's sizes (tokens.css). */
+/* The display's controls: buttons, text fields, checkboxes, selects and
+   sliders, at the display's sizes (tokens.css). */
 
 *,
 *::before,
@@ -124,13 +124,44 @@ select.kfField > option {
   cursor: pointer;
 }
 
-/* A level, as tall as a field. */
+/* A level, as tall as a field: a track filled with the accent up to the
+   value, which the slider's --kf-fill gives as a percent, and a solid
+   thumb. The thumb's travel ends at the track's ends, so the edge of the
+   fill is always under it. Drawn here in full: Chromium's own thumb is a
+   dot in a ring. */
 .kfSlider {
   width: 100%;
   height: 4.5rem;
   margin: 0;
-  accent-color: var(--kf-accent);
+  background: none;
+  appearance: none;
   cursor: pointer;
+}
+
+.kfSlider::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: var(--kf-radius);
+  background: linear-gradient(
+    to right,
+    var(--kf-accent) var(--kf-fill),
+    var(--kf-track) var(--kf-fill)
+  );
+}
+
+.kfSlider::-webkit-slider-thumb {
+  width: 2rem;
+  height: 2rem;
+  /* Centered on the track. */
+  margin-top: -0.75rem;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--kf-text);
+  appearance: none;
+}
+
+/* A step larger while held. */
+.kfSlider:active::-webkit-slider-thumb {
+  transform: scale(1.125);
 }
 
 .kfCheckbox input {

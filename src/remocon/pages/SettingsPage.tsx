@@ -231,25 +231,31 @@ const LevelSlider = ({
     return () => el.removeEventListener("change", send);
   });
 
+  const shown = held ?? value;
+  // The track fills to the value, held or live (SettingsPage.module.scss).
+  const fill = { "--kf-fill": `${((shown - min) / (max - min)) * 100}%` };
+
   return (
     <label className={styles.slider}>
-      {`${label} ${Math.round((held ?? value) * scale)}%`}
-      <input
-        ref={input}
-        aria-label={name}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={held ?? value}
-        onChange={(e) => setHeld(Number(e.target.value))}
-        onPointerDown={(e) => (start.current = e.currentTarget.value)}
-        onPointerUp={(e) => {
-          if (e.currentTarget.value === start.current) setHeld(null);
-        }}
-        onPointerCancel={() => setHeld(null)}
-        onBlur={() => setHeld(null)}
-      />
+      {`${label} ${Math.round(shown * scale)}%`}
+      <span className={styles.track} style={fill as React.CSSProperties}>
+        <input
+          ref={input}
+          aria-label={name}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={shown}
+          onChange={(e) => setHeld(Number(e.target.value))}
+          onPointerDown={(e) => (start.current = e.currentTarget.value)}
+          onPointerUp={(e) => {
+            if (e.currentTarget.value === start.current) setHeld(null);
+          }}
+          onPointerCancel={() => setHeld(null)}
+          onBlur={() => setHeld(null)}
+        />
+      </span>
     </label>
   );
 };

@@ -30,6 +30,7 @@ import {
   expect,
   type BrowserContext,
   type ElectronApplication,
+  type Locator,
   type Page,
   type TestInfo,
 } from "@playwright/test";
@@ -101,6 +102,14 @@ export function isApiRequest(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// How much of a slider's track the accent fills, in percent: the
+// --kf-fill that the display and the remote set from its value.
+export function sliderFill(slider: Locator): Promise<number> {
+  return slider.evaluate((el) =>
+    parseFloat(getComputedStyle(el).getPropertyValue("--kf-fill")),
+  );
 }
 
 // What the display's api.call answers.
