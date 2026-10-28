@@ -11,6 +11,7 @@ import type {
 import {
   adminPasswordConfig,
   displayCall,
+  downloadsFolder,
   expect,
   NICKNAME,
   test,
@@ -1659,8 +1660,7 @@ test.describe("dragging the queue", () => {
 // lyrics file is just enough for its playtime (getSongDuration), so the
 // display plays a minute of black video without lyrics.
 async function fakeJoysoundDownload(app: ElectronApplication, songId: string) {
-  const temp = await app.evaluate(({ app }) => app.getPath("temp"));
-  const dir = path.join(temp, "karafriends_tmp");
+  const dir = await downloadsFolder(app);
   fs.mkdirSync(dir, { recursive: true });
   const telop = Buffer.alloc(32);
   telop.writeUInt32LE(10, 6); // where the metadata starts

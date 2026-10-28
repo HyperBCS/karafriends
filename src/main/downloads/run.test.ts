@@ -9,7 +9,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { REASONS } from "../../common/downloadFailure";
 import type { DownloadQueueItem } from "../state";
 import { runDownload } from "./queue";
-import { runTool, type ToolRun } from "./run";
+import { parseDuration, runTool, stopAllTools, type ToolRun } from "./run";
 
 let folder: string;
 
@@ -40,11 +40,12 @@ test("a tool that runs too long fails its download as timed out", async () => {
         suffix: null,
         userIdentity: { nickname: "test", deviceId: "test-device" },
       },
-      "test download",
-      () => runTool({ ...hangs(), timeoutMs: 300 }),
-      () => reject(new Error("it finished")),
-      () => {},
-      resolve,
+      {
+        description: "test download",
+        job: () => runTool({ ...hangs(), timeoutMs: 300 }),
+        onReady: () => reject(new Error("it finished")),
+        onFailed: resolve,
+      },
     ),
   );
 
@@ -94,4 +95,47 @@ test("a tool aborted before it starts doesn't start", async () => {
     runTool({ ...hangs(), signal: AbortSignal.abort() }),
     /was stopped/,
   );
+});
+
+test("a tool's output reaches onStdout and onStderr a line at a time", async () => {
+  // As ffmpeg writes its Duration line: in pieces. Progress lines end in
+  // "\r", and the last line in nothing.
+  const script = `
+    process.stderr.write("  Duration: ");
+    setTimeout(() => {
+      process.stderr.write("00:04:01.52, start: 0.000000\\n");
+      process.stderr.write("frame=   30\\rframe=   60\\r");
+      process.stdout.write("[download]  50.0%\\n[download] 100.0%");
+    }, 200);
+  `;
+  const stderr: string[] = [];
+  const stdout: string[] = [];
+  await runTool({
+    ...hangs(),
+    label: "node (writes lines)",
+    args: ["-e", script],
+    onStderr: (line) => stderr.push(line),
+    onStdout: (line) => stdout.push(line),
+  });
+  assert.deepEqual(stderr, [
+    "  Duration: 00:04:01.52, start: 0.000000",
+    "frame=   30",
+    "frame=   60",
+  ]);
+  assert.deepEqual(stdout, ["[download]  50.0%", "[download] 100.0%"]);
+  assert.equal(parseDuration(stderr[0]), 241.52);
+});
+
+test("stopAllTools stops every tool running", async () => {
+  const runs = [
+    runTool({ ...hangs(), label: "first" }),
+    runTool({ ...hangs(), label: "second", logFilename: `${folder}/2.log` }),
+  ];
+  // Started, so there are processes to stop.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  stopAllTools();
+  await Promise.all(runs.map((run) => assert.rejects(run, /was stopped/)));
+  // None left to stop: a tool that ran to the end isn't stopped later.
+  await runTool({ ...hangs(), args: ["-e", ""] });
+  stopAllTools();
 });

@@ -2,8 +2,9 @@
 // throwaway profile and open its phone remote in an emulated phone.
 //
 // Everything a test touches lives in a fresh temp directory:
-//   <tmp>/user-data          --user-data-dir: config.yaml, externalResources
-//   <tmp>/karafriends_tmp    app.getPath("temp") + /karafriends_tmp: queue.json, downloads
+//   <tmp>/user-data          --user-data-dir: config.yaml, queue.json,
+//                            externalResources, downloads
+//   <tmp>                    app.getPath("temp")
 // and the remote server listens on a free port, so tests never see (or
 // change) the real app's queue, config or downloads, and can run while the
 // real app holds port 8080.
@@ -69,6 +70,9 @@ export type MediaTools =
 type Options = {
   // Contents of queue.json, written before launch.
   seedQueue: object | null;
+  // Write it (and its songs' videos) where versions before 0.3 kept them,
+  // with the downloads in the temp folder.
+  seedQueueInTempFolder: boolean;
   mediaTools: MediaTools;
   // Copy the DAM/Joysound logins from the installed app's config.yaml.
   realCredentials: boolean;
@@ -92,6 +96,14 @@ export type Karafriends = {
   // The phone remote's address.
   remoconUrl: string;
 };
+
+// The app's downloads folder (in userData), which the display plays from.
+export async function downloadsFolder(
+  app: ElectronApplication,
+): Promise<string> {
+  const userData = await app.evaluate(({ app }) => app.getPath("userData"));
+  return path.join(userData, "downloads");
+}
 
 // A request to the JSON API (/api/<method> or /api/events), which the display
 // must not make: it uses IPC.
@@ -347,7 +359,7 @@ async function launchKarafriends(
         fs.writeFileSync(logPath, mainLog.join(""));
         logs.push(["main-process.log", logPath]);
       }
-      const downloadsDir = path.join(tempDir, "karafriends_tmp");
+      const downloadsDir = path.join(userDataDir, "downloads");
       if (fs.existsSync(downloadsDir)) {
         for (const file of fs.readdirSync(downloadsDir)) {
           if (!file.endsWith(".log")) continue;
@@ -384,13 +396,18 @@ async function launchKarafriends(
     );
     prepareMediaTools(userDataDir, options.mediaTools);
     if (options.seedQueue) {
-      const queueDir = path.join(tempDir, "karafriends_tmp");
-      fs.mkdirSync(queueDir);
+      const [queueDir, videosDir] = options.seedQueueInTempFolder
+        ? [
+            path.join(tempDir, "karafriends_tmp"),
+            path.join(tempDir, "karafriends_tmp"),
+          ]
+        : [userDataDir, path.join(userDataDir, "downloads")];
+      fs.mkdirSync(videosDir, { recursive: true });
       fs.writeFileSync(
         path.join(queueDir, "queue.json"),
         JSON.stringify(options.seedQueue),
       );
-      seedVideos(queueDir, options.seedQueue);
+      seedVideos(videosDir, options.seedQueue);
     }
 
     const env: Record<string, string> = {};
@@ -507,6 +524,7 @@ async function launchKarafriends(
 
 export const test = base.extend<Options & Fixtures>({
   seedQueue: [null, { option: true }],
+  seedQueueInTempFolder: [false, { option: true }],
   mediaTools: ["stub", { option: true }],
   realCredentials: [false, { option: true }],
   appConfig: [{}, { option: true }],
@@ -532,6 +550,7 @@ export const test = base.extend<Options & Fixtures>({
   karafriends: async (
     {
       seedQueue,
+      seedQueueInTempFolder,
       mediaTools,
       realCredentials,
       appConfig,
@@ -545,6 +564,7 @@ export const test = base.extend<Options & Fixtures>({
     const { karafriends, close } = await launchKarafriends(
       {
         seedQueue,
+        seedQueueInTempFolder,
         mediaTools,
         realCredentials,
         appConfig,

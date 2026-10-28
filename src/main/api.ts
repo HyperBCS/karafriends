@@ -26,9 +26,9 @@ import type {
 import { isAdminPassword } from "../common/adminPassword";
 import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
 import type { KarafriendsConfig } from "../common/config";
+import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
-import type { SongFiles } from "./downloads/folder";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
@@ -936,17 +936,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         .filter((item) => item.status === "downloading")
         .map(({ kind, songId, suffix }) => ({ kind, songId, suffix }));
       for (const song of [currentSong, ...songQueue]) {
-        if (!song) continue;
-        inUse.push({
-          kind: song.kind,
-          songId: song.songId,
-          suffix:
-            song.kind === "dam"
-              ? song.streamingUrlIdx.toString()
-              : song.kind === "joysound"
-                ? song.youtubeVideoId
-                : null,
-        });
+        if (song) inUse.push(songFilesOf(song));
       }
       const result = deps.downloads.clear(inUse);
       console.log(`clearDownloads: ${JSON.stringify(result)}`);

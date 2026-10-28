@@ -15,7 +15,13 @@ import path from "path";
 import type { Page } from "@playwright/test";
 
 import type { LiveState, YoutubeVideoInfo } from "../../src/common/api";
-import { displayCall, expect, NICKNAME, test } from "./fixtures";
+import {
+  displayCall,
+  downloadsFolder,
+  expect,
+  NICKNAME,
+  test,
+} from "./fixtures";
 
 const fakeYtdlp = (name: string) =>
   path.resolve(
@@ -189,10 +195,7 @@ test("a downloaded DAM video much shorter than the song is deleted, and the song
   display,
 }) => {
   // DAM's sample: the minute of black video, of a five-minute song.
-  const folder = path.join(
-    await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
-    "karafriends_tmp",
-  );
+  const folder = await downloadsFolder(karafriends.app);
   const sample = path.join(folder, "1234-56-0.mp4");
   fs.mkdirSync(folder, { recursive: true });
   fs.copyFileSync(

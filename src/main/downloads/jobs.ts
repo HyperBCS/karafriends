@@ -1,5 +1,5 @@
 // One download job per kind of song: the yt-dlp and ffmpeg runs that make
-// its files in the temp folder, and the progress they report.
+// its files in the downloads folder, and the progress they report.
 //
 // No Electron imports, so unit tests can load this file under plain Node:
 // the folder and the tools come in as JobPaths.
@@ -15,11 +15,14 @@ import {
   ytdlpFailureReason,
 } from "../../common/downloadFailure";
 import { getSongDuration } from "../../common/joysoundParser";
+import { nicoWatchUrl } from "../../common/nicoVideoInfo";
+import { songFileNames } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
-import { probeDuration, runTool, type ToolRun } from "./run";
+import { withDamSlot, withYtdlpSlot } from "./queue";
+import { parseDuration, probeDuration, runTool, type ToolRun } from "./run";
 
-// Where the jobs write (TEMP_FOLDER, in the app) and the tools they run.
+// Where the jobs write (DOWNLOADS_FOLDER, in the app) and the tools they run.
 export interface JobPaths {
   folder: string;
   ffmpeg: string;
@@ -128,54 +131,15 @@ function joysoundFailure(err: unknown): never {
 // A tool exited non-zero while making the video out of downloaded files.
 const processingFailed = () => REASONS.videoProcessing;
 
-function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
-  const FIELD_TAG = new Uint8Array([
-    0x70, 0x6c, 0x61, 0x79, 0x74, 0x69, 0x6d, 0x65, 0x3d,
-  ]);
-
-  let fieldOffset = 0;
-  let fieldLength = 0;
-
-  for (let i = 0; i < oggBuffer.length; i++) {
-    const oggSlice = oggBuffer.subarray(i, i + FIELD_TAG.length);
-
-    let isFieldTag = true;
-
-    for (let j = 0; j < oggSlice.length; j++) {
-      if (oggSlice[j] !== FIELD_TAG[j]) {
-        isFieldTag = false;
-        break;
-      }
-    }
-
-    if (!isFieldTag) {
-      continue;
-    }
-
-    fieldOffset = i + FIELD_TAG.length;
-
-    const fieldLengthView = new DataView(
-      oggBuffer.buffer,
-      oggBuffer.byteOffset + i - 4,
-      4,
-    );
-    fieldLength = fieldLengthView.getUint32(0, true) - FIELD_TAG.length;
-
-    break;
-  }
-
-  const playtimeBuffer = oggBuffer.subarray(
-    fieldOffset,
-    fieldOffset + fieldLength,
-  );
-
-  let playtimeString = "";
-
-  for (const char of playtimeBuffer) {
-    playtimeString += String.fromCharCode(char);
-  }
-
-  return parseInt(playtimeString, 10);
+// The song's length in ms, from the "playtime=<ms>" comment in Joysound's
+// ogg (a Vorbis comment: its length, 4 bytes little-endian, then the text).
+// NaN if it has none.
+export function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
+  const tag = "playtime=";
+  const at = oggBuffer.indexOf(tag);
+  if (at < 4) return NaN;
+  const end = at + oggBuffer.readUInt32LE(at - 4);
+  return parseInt(oggBuffer.toString("latin1", at + tag.length, end), 10);
 }
 
 // Downloads a DAM song's video, which streams meanwhile, to
@@ -193,7 +157,8 @@ export async function damJob(
 ): Promise<void> {
   fs.mkdirSync(paths.folder, { recursive: true });
 
-  const filename = `${paths.folder}/${songId}-${suffix}.mp4`;
+  const names = songFileNames({ kind: "dam", songId, suffix });
+  const filename = path.join(paths.folder, names.video);
   const tempFilename = `${filename}.tmp`;
 
   if (fs.existsSync(filename)) {
@@ -204,25 +169,27 @@ export async function damJob(
   console.info(`Downloading DAM video to ${filename}`);
 
   try {
-    await runTool({
-      label: `ffmpeg (DAM ${songId})`,
-      bin: paths.ffmpeg,
-      args: [
-        "-y",
-        "-i",
-        m3u8Url,
-        "-c",
-        "copy",
-        "-movflags",
-        "faststart",
-        "-f",
-        "mp4",
-        tempFilename,
-      ],
-      logFilename: `${paths.folder}/dam-${songId}.log`,
-      freshLog: true,
-      reasonForExit: () => REASONS.other,
-    });
+    await withDamSlot(() =>
+      runTool({
+        label: `ffmpeg (DAM ${songId})`,
+        bin: paths.ffmpeg,
+        args: [
+          "-y",
+          "-i",
+          m3u8Url,
+          "-c",
+          "copy",
+          "-movflags",
+          "faststart",
+          "-f",
+          "mp4",
+          tempFilename,
+        ],
+        logFilename: path.join(paths.folder, names.log),
+        freshLog: true,
+        reasonForExit: () => REASONS.other,
+      }),
+    );
   } catch (err) {
     safeUnlink(tempFilename);
     throw err;
@@ -263,7 +230,7 @@ function downloadJoysoundVideoPromise(
   songId: string,
   videoUrl: string,
   downloadQueueItem: DownloadQueueItem,
-  tempFilename: string,
+  sourceFilename: string,
   ffmpegLogFilename: string,
   signal: AbortSignal,
 ): Promise<void> {
@@ -279,23 +246,16 @@ function downloadJoysoundVideoPromise(
     "-f",
     "mp4",
     "-y",
-    tempFilename,
+    sourceFilename,
   ];
 
-  const onStderr = (ffmpegLog: string) => {
-    const durationMatchData = ffmpegLog.match(/Duration:\s*(\d+):(\d+):(\d+)/);
-
-    if (durationMatchData) {
-      let songDuration = 0;
-
-      songDuration += parseInt(durationMatchData[1], 10) * 3600;
-      songDuration += parseInt(durationMatchData[2], 10) * 60;
-      songDuration += parseInt(durationMatchData[3], 10);
-
-      songFrames = songDuration * 30;
+  const onStderr = (line: string) => {
+    const duration = parseDuration(line);
+    if (duration !== null) songFrames = duration * 30;
+    // Not before the length is known: progress would be NaN, then stick.
+    if (songFrames > 0) {
+      handleFFmpegDownloadLog(line, songFrames, downloadQueueItem);
     }
-
-    handleFFmpegDownloadLog(ffmpegLog, songFrames, downloadQueueItem);
   };
 
   // ffmpeg fetches the video from Joysound's servers.
@@ -311,36 +271,39 @@ async function downloadJoysoundYoutubeVideoPromise(
   songId: string,
   youtubeVideoId: string,
   downloadQueueItem: DownloadQueueItem,
-  tempFilename: string,
+  sourceFilename: string,
+  ytdlpLogFilename: string,
   signal: AbortSignal,
 ): Promise<void> {
-  await runTool({
-    label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
-    bin: paths.ytdlp,
-    args: [
-      "-S",
-      "res:720,ext:mp4",
-      "-f",
-      "bv",
-      "--recode",
-      "mp4",
-      "-N",
-      "4",
-      "--ffmpeg-location",
-      paths.ffmpeg,
-      "-o",
-      tempFilename + ".mp4",
-      "--",
-      youtubeVideoId,
-    ],
-    logFilename: `${paths.folder}/yt-${youtubeVideoId}.log`,
-    freshLog: true,
-    onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-    reasonForExit: ytdlpFailureReason,
+  await withYtdlpSlot(
+    () =>
+      runTool({
+        label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
+        bin: paths.ytdlp,
+        args: [
+          "-S",
+          "res:720,ext:mp4",
+          "-f",
+          "bv",
+          "--recode",
+          "mp4",
+          "-N",
+          "4",
+          "--ffmpeg-location",
+          paths.ffmpeg,
+          "-o",
+          sourceFilename,
+          "--",
+          youtubeVideoId,
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+        signal,
+      }),
     signal,
-  });
-  safeUnlink(tempFilename);
-  safeRename(tempFilename + ".mp4", tempFilename);
+  );
 }
 
 async function composeJoysoundVideoPromise(
@@ -348,7 +311,7 @@ async function composeJoysoundVideoPromise(
   songId: string,
   telopBuffer: Buffer,
   oggBuffer: Buffer,
-  tempFilename: string,
+  sourceFilename: string,
   videoFilename: string,
   ffmpegLogFilename: string,
 ): Promise<JoysoundVideoData> {
@@ -358,7 +321,7 @@ async function composeJoysoundVideoPromise(
     "-stream_loop",
     "-1",
     "-i",
-    tempFilename,
+    sourceFilename,
     "-i",
     "-",
     "-c",
@@ -371,19 +334,12 @@ async function composeJoysoundVideoPromise(
     videoFilename,
   ];
 
-  const onStderr = (ffmpegLog: string) => {
-    const durationMatchData = ffmpegLog.match(
-      /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
-    );
-
-    // XXX: We assume that the video duration always comes first
-    if (durationMatchData && videoPlaytime === 0) {
-      videoPlaytime += parseInt(durationMatchData[1], 10) * 3600;
-      videoPlaytime += parseInt(durationMatchData[2], 10) * 60;
-      videoPlaytime += parseInt(durationMatchData[3], 10);
-      videoPlaytime =
-        videoPlaytime * 1000 + parseInt(durationMatchData[4], 10) * 10;
-    }
+  const onStderr = (line: string) => {
+    // The video's Duration comes first, as it's the first input. (The ogg
+    // on stdin says "Duration: N/A", which parseDuration skips.)
+    if (videoPlaytime !== 0) return;
+    const duration = parseDuration(line);
+    if (duration !== null) videoPlaytime = Math.round(duration * 1000);
   };
 
   try {
@@ -392,7 +348,7 @@ async function composeJoysoundVideoPromise(
       stdin: oggBuffer,
     });
   } finally {
-    safeUnlink(tempFilename);
+    safeUnlink(sourceFilename);
   }
 
   return {
@@ -521,28 +477,30 @@ async function padJoysoundVideoPromise(
   safeUnlink(videoListFilename);
 }
 
-// A Joysound song's files: joysound-<songId>.joy_02 (the lyrics, every
-// background's), joysound-<songId>-<background or "default">.mp4, and the
-// ffmpeg log.
+// A Joysound song's files in folder (songFileNames), and what the download
+// names the rest, after its video, <base>.mp4: <base>.mp4.tmp, which marks
+// it started until the video is whole, and <base>.source.mp4, the video
+// (Joysound's or the background) before the song's sound is put in.
 function joysoundFiles(
   folder: string,
   queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
 ) {
-  const videoFilenameSuffix = queueItem.youtubeVideoId
-    ? queueItem.youtubeVideoId
-    : "default";
-
-  const filenamePrefix = `joysound-${queueItem.songId}`;
-  const writeBasePath = `${folder}/${filenamePrefix}`;
-  const videoFilename = `${writeBasePath}-${videoFilenameSuffix}.mp4`;
-
+  const names = songFileNames({
+    kind: "joysound",
+    songId: queueItem.songId,
+    suffix: queueItem.youtubeVideoId,
+  });
+  const videoBaseName = names.video.slice(0, -".mp4".length);
+  const videoFilename = path.join(folder, names.video);
   return {
-    filenamePrefix,
-    videoBaseName: `${filenamePrefix}-${videoFilenameSuffix}`,
-    telopFilename: `${writeBasePath}.joy_02`,
+    filenamePrefix: `joysound-${queueItem.songId}`,
+    videoBaseName,
+    telopFilename: path.join(folder, names.telop ?? ""),
     videoFilename,
-    ffmpegLogFilename: `${writeBasePath}.log`,
+    ffmpegLogFilename: path.join(folder, names.log),
+    ytdlpLogFilename: path.join(folder, names.backgroundLog ?? names.log),
     tempFilename: `${videoFilename}.tmp`,
+    sourceFilename: path.join(folder, `${videoBaseName}.source.mp4`),
   };
 }
 
@@ -559,8 +517,8 @@ export function queueDownloadedJoysoundSong(
     queueItem,
   );
   if (!fs.existsSync(videoFilename)) return false;
-  // The marker of a download that never finished. (downloadJoysoundData has
-  // checked that none is running.)
+  // The marker of a download that never finished. (None is running: queueSong
+  // and the downloads' joysound check first.)
   if (fs.existsSync(tempFilename)) {
     console.error(`${videoFilename} is half-done; downloading it again`);
     deleteJoysoundTempFiles(folder, queueItem);
@@ -599,11 +557,9 @@ export function deleteJoysoundTempFiles(
   for (const ending of PAD_FILE_ENDINGS) {
     safeUnlink(path.join(folder, videoBaseName + ending));
   }
-  if (
-    !listFolder(folder).some((name) => name.startsWith(`${filenamePrefix}-`))
-  ) {
-    safeUnlink(telopFilename);
-  }
+  const otherBackground = (name: string) =>
+    name.startsWith(`${filenamePrefix}-`) && !name.endsWith(".log");
+  if (!listFolder(folder).some(otherBackground)) safeUnlink(telopFilename);
 }
 
 // Downloads a Joysound song's lyrics and video (Joysound's, or a YouTube
@@ -615,8 +571,14 @@ export async function joysoundJob(
   queueItem: JoysoundQueueItem,
 ): Promise<JoysoundQueueItem> {
   const songId = queueItem.songId;
-  const { telopFilename, videoFilename, ffmpegLogFilename, tempFilename } =
-    joysoundFiles(paths.folder, queueItem);
+  const {
+    telopFilename,
+    videoFilename,
+    ffmpegLogFilename,
+    ytdlpLogFilename,
+    tempFilename,
+    sourceFilename,
+  } = joysoundFiles(paths.folder, queueItem);
 
   prepareTempFile(paths.folder, tempFilename, () =>
     deleteJoysoundTempFiles(paths.folder, queueItem),
@@ -637,7 +599,8 @@ export async function joysoundJob(
         songId,
         queueItem.youtubeVideoId,
         downloadQueueItem,
-        tempFilename,
+        sourceFilename,
+        ytdlpLogFilename,
         stopVideo.signal,
       ))
     : joysoundApi
@@ -649,7 +612,7 @@ export async function joysoundJob(
             songId,
             data.movie.mov1,
             downloadQueueItem,
-            tempFilename,
+            sourceFilename,
             ffmpegLogFilename,
             stopVideo.signal,
           );
@@ -694,7 +657,7 @@ export async function joysoundJob(
     songId,
     telopBuffer,
     oggBuffer,
-    tempFilename,
+    sourceFilename,
     videoFilename,
     ffmpegLogFilename,
   );
@@ -717,30 +680,43 @@ export async function joysoundJob(
       `ffmpeg left no ${videoFilename}`,
     );
   }
+  // Done: the video is whole.
+  safeUnlink(tempFilename);
 
   return { ...queueItem, playtime: Math.floor(data.songPlaytime / 1000) };
 }
 
-// Downloads a YouTube video to yt-<videoId>.mp4, and its captions to
-// yt-<videoId>.vtt if captionCode.
-export async function youtubeJob(
+// Downloads a YouTube or Niconico video (item's kind and songId) with
+// yt-dlp to yt-<videoId>.mp4 or nico-<videoId>.mp4, and a YouTube video's
+// captions to yt-<videoId>.vtt if captionCode. yt-dlp is always told where
+// the app's ffmpeg is: it isn't on PATH, and without it yt-dlp can't merge
+// a video with its audio (every Niconico video needs that), leaves the
+// parts, and still exits 0.
+export async function ytdlpVideoJob(
   paths: JobPaths,
   downloadQueueItem: DownloadQueueItem,
-  videoId: string,
   captionCode: string | null,
 ): Promise<void> {
-  const filenamePrefix = `yt-${videoId}`;
-  const writeBasePath = `${paths.folder}/${filenamePrefix}`;
+  const { kind, songId: videoId } = downloadQueueItem;
+  if (kind !== "youtube" && kind !== "nico") {
+    throw new DownloadFailure(REASONS.other, `yt-dlp doesn't download ${kind}`);
+  }
+  const youtube = kind === "youtube";
+  const site = youtube ? "YouTube" : "Niconico";
+  const names = songFileNames({ kind, songId: videoId, suffix: null });
+  // yt-<videoId> or nico-<videoId>: yt-dlp names the captions after it.
+  const filenamePrefix = names.video.slice(0, -".mp4".length);
+  const writeBasePath = path.join(paths.folder, filenamePrefix);
 
-  const videoFilename = `${writeBasePath}.mp4`;
-  const vttFilename = `${writeBasePath}.vtt`;
-  const ytdlpLogFilename = `${writeBasePath}.log`;
+  const videoFilename = path.join(paths.folder, names.video);
+  const vttFilename = path.join(paths.folder, names.captions ?? "");
+  const ytdlpLogFilename = path.join(paths.folder, names.log);
 
   const tempFilename = `${videoFilename}.tmp`;
 
   // validate.ts already refuses these; this keeps a bad code off yt-dlp's
   // command line whoever calls.
-  if (captionCode !== null && !isCaptionCode(captionCode)) {
+  if (captionCode !== null && !(youtube && isCaptionCode(captionCode))) {
     throw new DownloadFailure(
       REASONS.other,
       `${captionCode} is not a valid caption code`,
@@ -751,36 +727,38 @@ export async function youtubeJob(
     deleteTempFiles(paths.folder, filenamePrefix),
   );
 
-  console.info(`Downloading YouTube video to ${videoFilename}`);
+  console.info(`Downloading ${site} video to ${videoFilename}`);
 
   const captionArgs = captionCode
     ? ["--write-subs", "--sub-langs", captionCode]
     : [];
+  const formatArgs = youtube
+    ? ["-S", "res:720,ext:mp4:m4a", "--recode", "mp4"]
+    : [];
 
   try {
-    await runTool({
-      label: `yt-dlp (YouTube ${videoId})`,
-      bin: paths.ytdlp,
-      args: [
-        ...captionArgs,
-        "-S",
-        "res:720,ext:mp4:m4a",
-        "--recode",
-        "mp4",
-        "-N",
-        "4",
-        "--ffmpeg-location",
-        paths.ffmpeg,
-        "-o",
-        `${videoFilename}`,
-        "--",
-        videoId,
-      ],
-      logFilename: ytdlpLogFilename,
-      freshLog: true,
-      onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-      reasonForExit: ytdlpFailureReason,
-    });
+    await withYtdlpSlot(() =>
+      runTool({
+        label: `yt-dlp (${site} ${videoId})`,
+        bin: paths.ytdlp,
+        args: [
+          ...captionArgs,
+          ...formatArgs,
+          "-N",
+          "4",
+          "--ffmpeg-location",
+          paths.ffmpeg,
+          "-o",
+          videoFilename,
+          "--",
+          youtube ? videoId : nicoWatchUrl(videoId),
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+      }),
+    );
   } finally {
     safeUnlink(tempFilename);
   }
@@ -800,54 +778,5 @@ export async function youtubeJob(
         `Error trying to rename caption file ${writeBasePath}.${captionCode}.vtt to ${writeBasePath}.vtt: ${fsError}`,
       );
     }
-  }
-}
-
-// Downloads a Niconico video to nico-<videoId>.mp4.
-export async function nicoJob(
-  paths: JobPaths,
-  downloadQueueItem: DownloadQueueItem,
-  videoId: string,
-): Promise<void> {
-  const filenamePrefix = `nico-${videoId}`;
-  const writeBasePath = `${paths.folder}/${filenamePrefix}`;
-
-  const videoFilename = `${writeBasePath}.mp4`;
-  const ytdlpLogFilename = `${writeBasePath}.log`;
-
-  const tempFilename = `${videoFilename}.tmp`;
-
-  prepareTempFile(paths.folder, tempFilename, () =>
-    deleteTempFiles(paths.folder, filenamePrefix),
-  );
-
-  console.info(`Downloading Niconico video to ${videoFilename}`);
-
-  try {
-    await runTool({
-      label: `yt-dlp (Niconico ${videoId})`,
-      bin: paths.ytdlp,
-      args: [
-        "-N",
-        "4",
-        "-o",
-        `${videoFilename}`,
-        "--",
-        `https://www.nicovideo.jp/watch/${videoId}`,
-      ],
-      logFilename: ytdlpLogFilename,
-      freshLog: true,
-      onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-      reasonForExit: ytdlpFailureReason,
-    });
-  } finally {
-    safeUnlink(tempFilename);
-  }
-
-  if (!fs.existsSync(videoFilename)) {
-    throw new DownloadFailure(
-      REASONS.other,
-      `yt-dlp exited 0 but left no ${videoFilename}; log=${ytdlpLogFilename}`,
-    );
   }
 }

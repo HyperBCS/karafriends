@@ -13,6 +13,7 @@ import { parse } from "yaml";
 import {
   adminPasswordConfig,
   displayCall,
+  downloadsFolder,
   expect,
   sliderFill,
   test,
@@ -456,10 +457,7 @@ test.describe("the pitch bars", () => {
     // The song "downloaded" as a minute of black video, as long as the song,
     // so it plays. Queued from a phone; without a DAM login, popSong brings
     // no scoring data, and the roll is empty but there.
-    const folder = path.join(
-      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
-      "karafriends_tmp",
-    );
+    const folder = await downloadsFolder(karafriends.app);
     fs.mkdirSync(folder, { recursive: true });
     fs.copyFileSync(
       path.resolve(__dirname, "..", "fixtures", "black.mp4"),
@@ -567,10 +565,7 @@ test.describe("the pitch bars", () => {
     display,
   }) => {
     const { remoconUrl } = karafriends;
-    const folder = path.join(
-      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
-      "karafriends_tmp",
-    );
+    const folder = await downloadsFolder(karafriends.app);
     fs.mkdirSync(folder, { recursive: true });
     // A minute of black video without sound: no guide channel.
     fakeJoysoundDownload(folder, "e2e-no-guide", "black.mp4", 60);
@@ -1429,10 +1424,7 @@ test.describe("the downloads", () => {
     karafriends,
     display,
   }) => {
-    const folder = path.join(
-      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
-      "karafriends_tmp",
-    );
+    const folder = await downloadsFolder(karafriends.app);
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, "yt-e2evideo.mp4"), "x".repeat(1.5e6));
     fs.writeFileSync(path.join(folder, "yt-e2evideo.log"), "x".repeat(5e5));
@@ -1467,5 +1459,51 @@ test.describe("the downloads", () => {
       );
       expect(res.status, method).toBe(403);
     }
+  });
+});
+
+test.describe("a queue an older version saved in the temp folder", () => {
+  // Niconico songs, whose videos (a minute of black) are next to it.
+  const song = (n: number) => ({
+    kind: "nico",
+    songId: `sm7100${n}`,
+    name: `E2E old song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-someone", nickname: "someone" },
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [song(1), song(2)],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+    seedQueueInTempFolder: true,
+  });
+
+  test("comes over to the user data folder with its songs' videos", async ({
+    karafriends,
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("button", { name: "Close" }).click();
+    // Song 1 plays from its moved video, with song 2 up next.
+    await expect(
+      display.getByRole("region", { name: "Up next" }).getByRole("listitem"),
+    ).toHaveText([/E2E old song 2/]);
+
+    const [userData, temp] = await karafriends.app.evaluate(({ app }) => [
+      app.getPath("userData"),
+      app.getPath("temp"),
+    ]);
+    const downloads = await downloadsFolder(karafriends.app);
+    expect(fs.readdirSync(downloads).sort()).toEqual([
+      "nico-sm71001.mp4",
+      "nico-sm71002.mp4",
+    ]);
+    expect(fs.existsSync(path.join(userData, "queue.json"))).toBe(true);
+    expect(fs.readdirSync(path.join(temp, "karafriends_tmp"))).toEqual([]);
   });
 });

@@ -13,6 +13,11 @@ import { call, useLiveState } from "../common/apiClient";
 import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
+import {
+  songFileNames,
+  songFilesOf,
+  type SongOfFiles,
+} from "../common/songFiles";
 import { damMelody, type Melody } from "./melody";
 import {
   FRAGMENT_RETRIES,
@@ -27,6 +32,11 @@ const POLL_INTERVAL_MS = 5 * 1000;
 // How often the display tells the server where the song is, besides on
 // every start, pause, stall and seek.
 const POSITION_REPORT_MS = 10 * 1000;
+
+// A song's downloaded file, which the main process serves from its
+// downloads folder.
+const localFile = (song: SongOfFiles, file: "video" | "telop" | "captions") =>
+  `karafriends://local/${songFileNames(songFilesOf(song))[file]}`;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
@@ -220,7 +230,7 @@ export default function useSongPlayer({
   // streams.
   const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
     setOverlay({ kind: "dam", melody: damMelody(song.scoringData) });
-    const fileUrl = `karafriends://local/${song.songId}-${song.streamingUrlIdx}.mp4`;
+    const fileUrl = localFile(song, "video");
     let downloaded = false;
     try {
       downloaded = (await fetch(fileUrl, { method: "HEAD" })).ok;
@@ -269,8 +279,7 @@ export default function useSongPlayer({
     video: HTMLVideoElement,
     song: Extract<PoppedSong, { kind: "joysound" }>,
   ) => {
-    const background = song.youtubeVideoId ?? "default";
-    const file = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const file = localFile(song, "video");
     const overlay = {
       kind: "joysound",
       songId: song.songId,
@@ -281,9 +290,9 @@ export default function useSongPlayer({
     video.src = file;
     let telop: ArrayBuffer;
     try {
-      telop = await fetch(
-        `karafriends://local/joysound-${song.songId}.joy_02`,
-      ).then((resp) => resp.arrayBuffer());
+      telop = await fetch(localFile(song, "telop")).then((resp) =>
+        resp.arrayBuffer(),
+      );
     } catch (error) {
       console.error(`Couldn't load the lyrics for ${song.songId}:`, error);
       skipBroken(song);
@@ -300,10 +309,10 @@ export default function useSongPlayer({
     song: Extract<PoppedSong, { kind: "youtube" }>,
   ) => {
     setOverlay({ kind: "youtube", adhocLyrics: song.hasAdhocLyrics });
-    video.src = `karafriends://local/yt-${song.songId}.mp4`;
+    video.src = localFile(song, "video");
     if (trackRef.current && song.hasCaptions) {
       trackRef.current.default = true;
-      trackRef.current.src = `karafriends://local/yt-${song.songId}.vtt`;
+      trackRef.current.src = localFile(song, "captions");
     }
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
     video.play();
@@ -314,7 +323,7 @@ export default function useSongPlayer({
     song: Extract<PoppedSong, { kind: "nico" }>,
   ) => {
     setOverlay({ kind: "nico" });
-    video.src = `karafriends://local/nico-${song.songId}.mp4`;
+    video.src = localFile(song, "video");
     video.play();
   };
 

@@ -48,7 +48,7 @@ import express from "express";
 
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
-import { TEMP_FOLDER } from "./downloads";
+import { stopAllTools, DOWNLOADS_FOLDER } from "./downloads";
 import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
@@ -244,10 +244,10 @@ function createWindow() {
       /^\/+/,
       "",
     );
-    const root = path.resolve(TEMP_FOLDER);
+    const root = path.resolve(DOWNLOADS_FOLDER);
     const target = path.resolve(root, file);
     const relative = path.relative(root, target);
-    // Only serve files inside the temp folder (net::ERR_ACCESS_DENIED).
+    // Only serve files inside the downloads folder (net::ERR_ACCESS_DENIED).
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
       callback({ error: -10 });
       return;
@@ -368,6 +368,9 @@ app.on("second-instance", () => {
 app.on("window-all-closed", () => {
   app.quit();
 });
+
+// A download running now would go on without the app.
+app.on("will-quit", stopAllTools);
 
 // F5 or Ctrl+R on the host's keyboard asks first. The dialog doesn't block
 // the main process, so phones, live updates and downloads carry on while

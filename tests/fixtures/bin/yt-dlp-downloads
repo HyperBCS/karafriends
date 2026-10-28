@@ -3,13 +3,29 @@
 # progress lines, creates the (empty) file named after -o and exits 0.
 # tests/e2e/player.spec.ts points KARAFRIENDS_YTDLP_PATH here, and
 # src/main/downloads/jobs.test.ts runs it as yt-dlp.
+#
+# Like the real one, it needs --ffmpeg-location to merge a video with its
+# audio (the app's ffmpeg isn't on PATH). Without it, it warns, leaves the
+# two parts and no file, and still exits 0.
+output=
+ffmpeg=
 while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    echo "[download] Destination: $2"
-    : > "$2"
-  fi
+  case "$1" in
+    -o) output=$2; shift ;;
+    --ffmpeg-location) ffmpeg=$2; shift ;;
+  esac
   shift
 done
+if [ -n "$output" ]; then
+  echo "[download] Destination: $output"
+  if [ -n "$ffmpeg" ]; then
+    : > "$output"
+  else
+    echo "WARNING: You have requested merging of multiple formats but ffmpeg is not installed. The formats won't be merged" >&2
+    : > "${output%.mp4}.f1.mp4"
+    : > "${output%.mp4}.f2.mp4"
+  fi
+fi
 echo "[download] 100.0% of    1.00MiB at    1.00MiB/s ETA 00:00"
 echo "[download] 100% of    1.00MiB in 00:00:00 at    1.00MiB/s"
 exit 0

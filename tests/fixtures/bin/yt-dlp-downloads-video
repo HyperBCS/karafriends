@@ -2,13 +2,26 @@
 # Like yt-dlp-downloads, but the file it "downloads" is a minute of black
 # video (tests/fixtures/black.mp4), so the display can play it.
 # tests/e2e/player.spec.ts points KARAFRIENDS_YTDLP_PATH here.
+here=$(dirname "$0")
+output=
+ffmpeg=
 while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    echo "[download] Destination: $2"
-    cp "$(dirname "$0")/../black.mp4" "$2"
-  fi
+  case "$1" in
+    -o) output=$2; shift ;;
+    --ffmpeg-location) ffmpeg=$2; shift ;;
+  esac
   shift
 done
+if [ -n "$output" ]; then
+  echo "[download] Destination: $output"
+  if [ -n "$ffmpeg" ]; then
+    cp "$here/../black.mp4" "$output"
+  else
+    echo "WARNING: You have requested merging of multiple formats but ffmpeg is not installed. The formats won't be merged" >&2
+    : > "${output%.mp4}.f1.mp4"
+    : > "${output%.mp4}.f2.mp4"
+  fi
+fi
 echo "[download] 100.0% of    1.00MiB at    1.00MiB/s ETA 00:00"
 echo "[download] 100% of    1.00MiB in 00:00:00 at    1.00MiB/s"
 exit 0

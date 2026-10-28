@@ -1,6 +1,5 @@
 // The main process's single instances: the shared state (saved in queue.json
-// next to the downloads), the admin sessions (adminSessions.json in
-// userData), the DAM/Joysound/YouTube clients, the live-state hub, and the
+// in userData), the admin sessions (adminSessions.json, next to it), the DAM/Joysound/YouTube clients, the live-state hub, and the
 // API handlers built on them, which the JSON RPC router serves.
 import path from "path";
 
@@ -9,17 +8,19 @@ import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
 import { toolsStatus, updateTools } from "../common/externalResources";
+import { songFilesOf } from "../common/songFiles";
 import {
-  clearDamDownload,
-  clearDownloads,
-  downloadDamVideo,
-  downloadJoysoundData,
-  downloadNicoVideo,
-  downloadYoutubeVideo,
-  downloadsInfo,
+  createDownloads,
+  DOWNLOADS_FOLDER,
   getNicoVideoInfo,
-  TEMP_FOLDER,
+  OLD_DOWNLOADS_FOLDER,
+  stopAllTools,
 } from "./downloads";
+import {
+  moveOldQueue,
+  moveOldSongFiles,
+  sweepHalfDone,
+} from "./downloads/folder";
 import {
   createAdminSessions,
   createSetAdminPassword,
@@ -36,7 +37,26 @@ import { createStateStore } from "./state";
 // The running config, kept up to date by configStore.update().
 const karafriendsConfig = configStore.get();
 
-export const store = createStateStore(path.resolve(TEMP_FOLDER, "queue.json"));
+// Older versions kept the saved queue with the downloads in the temp
+// folder: it comes over once, with the files of the songs it holds.
+const QUEUE_FILE = path.join(app.getPath("userData"), "queue.json");
+const queueMoved = moveOldQueue(OLD_DOWNLOADS_FOLDER, QUEUE_FILE);
+
+export const store = createStateStore(QUEUE_FILE);
+
+if (queueMoved) {
+  const { currentSong, songQueue } = store.getState();
+  moveOldSongFiles(
+    OLD_DOWNLOADS_FOLDER,
+    DOWNLOADS_FOLDER,
+    [currentSong, ...songQueue].flatMap((song) =>
+      song ? [songFilesOf(song)] : [],
+    ),
+  );
+}
+// Nothing is downloading yet, so what downloads left half-done is from
+// before: it goes.
+sweepHalfDone(DOWNLOADS_FOLDER);
 
 export const hub = createLiveHub(store, karafriendsConfig);
 
@@ -124,39 +144,10 @@ const queueApi = createApi({
   ...upstreamClients,
   youtube: innertubeApiProvider,
   getNicoVideoInfo,
-  downloads: {
-    dam: downloadDamVideo,
-    info: downloadsInfo,
-    clear: clearDownloads,
-    clearDam: clearDamDownload,
-    joysound: (item, pushToHead, onReady, onFailed) =>
-      downloadJoysoundData(
-        store.getState().downloadQueue,
-        item.user,
-        upstreamClients.joysound,
-        item,
-        pushToHead,
-        onReady,
-        onFailed,
-      ),
-    youtube: (item, captionCode, onReady, onFailed) =>
-      downloadYoutubeVideo(
-        store.getState().downloadQueue,
-        item.user,
-        item.songId,
-        captionCode,
-        onReady,
-        onFailed,
-      ),
-    nico: (item, onReady, onFailed) =>
-      downloadNicoVideo(
-        store.getState().downloadQueue,
-        item.user,
-        item.songId,
-        onReady,
-        onFailed,
-      ),
-  },
+  downloads: createDownloads(
+    () => store.getState().downloadQueue,
+    upstreamClients.joysound,
+  ),
   publish: hub.publish,
 });
 
@@ -171,6 +162,8 @@ export const api: ApiHandlers = {
       joysound: (email, password) => JoysoundAPI.login(email, password),
     },
     restart: () => {
+      // app.exit skips will-quit, where they are stopped otherwise.
+      stopAllTools();
       app.relaunch();
       app.exit(0);
     },
