@@ -329,8 +329,7 @@ test.describe("where the song really is", () => {
       );
       const played =
         (state.currentSongPausedSince ?? Date.now()) -
-        state.currentSongStartedAt -
-        state.currentSongPausedMs;
+        state.currentSongStartedAt;
       return Math.abs(played / 1000 - position);
     };
 

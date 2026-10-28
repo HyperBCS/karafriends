@@ -36,7 +36,6 @@ const song = (n: number, playtime: number | null = 60): SharedQueueItem => ({
 const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   currentSong: null,
   currentSongStartedAt: null,
-  currentSongPausedMs: 0,
   currentSongPausedSince: null,
   queue: [song(1), song(2)],
   playbackState: "WAITING",

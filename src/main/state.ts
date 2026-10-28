@@ -22,6 +22,7 @@ import type {
   UserIdentity,
 } from "../common/api";
 import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
+import { secondsLeft } from "../common/currentSong";
 
 // A download in progress, or one that failed in the last
 // FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
@@ -144,14 +145,11 @@ export interface HistoryItem {
 
 export interface State {
   currentSong: QueueItem | null;
-  // When currentSong started (ms since the epoch; null while none plays or
-  // until the display starts it), how long it has been paused before, and
-  // since when it is paused now (null while it isn't), so a phone can tell
-  // how far into it the party is. Set by popSong, setPlaybackState and the
-  // display's reportSongPosition; not saved, since after a restart the song
+  // The current song's clock (see LiveState), so a phone can tell how far
+  // into it the party is. The display's reportSongPosition is its one
+  // writer; popSong clears it. Not saved, since after a restart the song
   // plays again from the start.
   currentSongStartedAt: number | null;
-  currentSongPausedMs: number;
   currentSongPausedSince: number | null;
   // The current song's video's length, in whole seconds, once the display
   // reports it (null until then). The countdowns use it in place of the
@@ -199,17 +197,14 @@ export function adhocLyricsKey(item: {
   return `${item.songId}@${item.timestamp}`;
 }
 
-// Seconds left of the current song at now (ms since the epoch): its length
-// (the video's, else the playtime it was queued with) less the time it has
-// played, never below 0, rounded as the phones' queue rounds it (withETAs in
-// src/common/hooks/useQueue.ts). Before the song has started
-// (currentSongStartedAt null), all of it.
+// Seconds left of the current song at now (ms since the epoch): of its
+// length (the video's, else the playtime it was queued with), counted as the
+// phones count it (secondsLeft).
 export function currentSongSecondsLeft(
   state: Pick<
     State,
     | "currentSong"
     | "currentSongStartedAt"
-    | "currentSongPausedMs"
     | "currentSongPausedSince"
     | "currentSongLength"
   >,
@@ -218,18 +213,13 @@ export function currentSongSecondsLeft(
   const playtime = state.currentSong
     ? (state.currentSongLength ?? state.currentSong.playtime) || 0
     : 0;
-  if (state.currentSongStartedAt === null) return playtime;
-  const until = state.currentSongPausedSince ?? now;
-  const playedMs =
-    until - state.currentSongStartedAt - state.currentSongPausedMs;
-  return Math.max(0, Math.round(playtime - Math.max(0, playedMs) / 1000));
+  return secondsLeft(playtime, state, now);
 }
 
 export function emptyState(): State {
   return {
     currentSong: null,
     currentSongStartedAt: null,
-    currentSongPausedMs: 0,
     currentSongPausedSince: null,
     currentSongLength: null,
     currentSongAdhocLyrics: [],
@@ -305,7 +295,6 @@ export function serializeState(state: Readonly<State>): string {
     songVolume: _songVolume,
     mics: _mics,
     currentSongStartedAt: _startedAt,
-    currentSongPausedMs: _pausedMs,
     currentSongPausedSince: _pausedSince,
     currentSongLength: _length,
     ...saved

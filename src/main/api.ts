@@ -765,35 +765,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
     async setPlaybackState({ playbackState }, caller) {
       requirePlaybackControl(caller);
+      // Only the state: the song's clock follows the display's video, which
+      // reports each start, pause, restart and seek (reportSongPosition).
       store.update((state) => {
-        // The current song's timing, for the countdowns. popSong clears it
-        // and the display's PLAYING, sent once it starts the song, starts
-        // the clock: not popSong, which may wait for DAM first. A skip
-        // leaves it: the next popSong starts over. The display's
-        // reportSongPosition then puts it where the video really is.
-        const at = now();
-        if (state.currentSongStartedAt === null) {
-          // Not started yet, or no song: nothing to time until then.
-          if (
-            playbackState === "PLAYING" &&
-            caller.isDisplay &&
-            state.currentSong !== null
-          ) {
-            state.currentSongStartedAt = at;
-          }
-        } else if (playbackState === "PAUSED") {
-          state.currentSongPausedSince ??= at;
-        } else if (playbackState === "RESTARTING") {
-          state.currentSongStartedAt = at;
-          state.currentSongPausedMs = 0;
-          state.currentSongPausedSince = null;
-        } else if (
-          playbackState === "PLAYING" &&
-          state.currentSongPausedSince !== null
-        ) {
-          state.currentSongPausedMs += at - state.currentSongPausedSince;
-          state.currentSongPausedSince = null;
-        }
         state.playbackState = playbackState;
       });
       return true;
@@ -815,22 +789,17 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       const inStep =
         startedAt !== null &&
         (pausedSince === null) === playing &&
-        Math.abs(
-          (pausedSince ?? at) -
-            startedAt -
-            state.currentSongPausedMs -
-            positionMs,
-        ) < POSITION_SLACK_MS;
+        Math.abs((pausedSince ?? at) - startedAt - positionMs) <
+          POSITION_SLACK_MS;
       const songLength =
         length === null ? state.currentSongLength : Math.round(length);
       if (inStep && songLength === state.currentSongLength) return true;
       store.update((state) => {
         state.currentSongLength = songLength;
         if (inStep) return;
-        // The same timing, from scratch: position played by now, and
-        // paused since now unless it's moving.
+        // From scratch: position played by now, and paused since now unless
+        // it's moving.
         state.currentSongStartedAt = at - positionMs;
-        state.currentSongPausedMs = 0;
         state.currentSongPausedSince = playing ? null : at;
       });
       return true;
@@ -969,7 +938,6 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           // place in the history and its lines pushed so far.
           resumedSong = adhocLyricsKey(current);
           state.currentSongStartedAt = null;
-          state.currentSongPausedMs = 0;
           state.currentSongPausedSince = null;
           state.currentSongLength = null;
           return current;
@@ -979,9 +947,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         const previous = state.currentSong;
         if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
         state.currentSong = next;
-        // The display's PLAYING starts the clock (setPlaybackState).
+        // The display's first report starts the clock (reportSongPosition).
         state.currentSongStartedAt = null;
-        state.currentSongPausedMs = 0;
         state.currentSongPausedSince = null;
         state.currentSongLength = null;
 

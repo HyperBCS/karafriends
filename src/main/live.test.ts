@@ -82,7 +82,6 @@ describe("toLiveState", () => {
         { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
       ];
       state.currentSongStartedAt = 1000;
-      state.currentSongPausedMs = 200;
       state.currentSongPausedSince = 1500;
     });
     const live = toLiveState(store.getState(), {
@@ -102,12 +101,8 @@ describe("toLiveState", () => {
       { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
     ]);
     assert.deepEqual(
-      [
-        live.currentSongStartedAt,
-        live.currentSongPausedMs,
-        live.currentSongPausedSince,
-      ],
-      [1000, 200, 1500],
+      [live.currentSongStartedAt, live.currentSongPausedSince],
+      [1000, 1500],
     );
     assert.deepEqual(live.queue, [shared(false)]);
     const [download, failed] = store.getState().downloadQueue;

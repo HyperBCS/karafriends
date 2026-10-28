@@ -109,7 +109,6 @@ describe("createStateStore", () => {
       });
       state.toolsProblem = { message: "Update the tools", since: 1 };
       state.currentSongStartedAt = 1000;
-      state.currentSongPausedMs = 200;
       state.currentSongPausedSince = 1500;
       state.currentSongLength = 245;
     });
@@ -124,7 +123,6 @@ describe("createStateStore", () => {
     assert.equal(createStateStore(file).getState().toolsProblem, null);
     for (const key of [
       "currentSongStartedAt",
-      "currentSongPausedMs",
       "currentSongPausedSince",
       "currentSongLength",
     ]) {
@@ -189,48 +187,29 @@ describe("createStateStore", () => {
   });
 });
 
+// The counting itself is secondsLeft's (src/common/currentSong.test.ts).
 describe("currentSongSecondsLeft", () => {
-  // Song 1 is 60 s long.
-  const timing = (
-    currentSongStartedAt: number | null,
-    currentSongPausedMs = 0,
-    currentSongPausedSince: number | null = null,
-  ) => ({
+  // Song 1 was queued as 60 s long, and has played 20 s.
+  const state = {
     currentSong: song(1),
-    currentSongStartedAt,
-    currentSongPausedMs,
-    currentSongPausedSince,
+    currentSongStartedAt: 1000,
+    currentSongPausedSince: null,
     currentSongLength: null,
+  };
+
+  test("counts from the video's length once the display knows it, else the playtime", () => {
+    assert.equal(currentSongSecondsLeft(state, 21_000), 40);
+    assert.equal(
+      currentSongSecondsLeft({ ...state, currentSongLength: 75 }, 21_000),
+      55,
+    );
   });
 
-  test("is all of it before the song starts, and 0 with none", () => {
-    assert.equal(currentSongSecondsLeft(timing(null), 99_000), 60);
+  test("is 0 with no song", () => {
     assert.equal(
-      currentSongSecondsLeft({ ...timing(null), currentSong: null }, 99_000),
+      currentSongSecondsLeft({ ...state, currentSong: null }, 21_000),
       0,
     );
-  });
-
-  test("counts from the video's length once the display knows it", () => {
-    const known = { ...timing(1000), currentSongLength: 75 };
-    assert.equal(currentSongSecondsLeft(known, 21_000), 55);
-    assert.equal(
-      currentSongSecondsLeft({ ...known, currentSongStartedAt: null }, 0),
-      75,
-    );
-  });
-
-  test("counts down while it plays, never below 0", () => {
-    assert.equal(currentSongSecondsLeft(timing(1000), 1000), 60);
-    assert.equal(currentSongSecondsLeft(timing(1000), 21_400), 40);
-    assert.equal(currentSongSecondsLeft(timing(1000), 200_000), 0);
-  });
-
-  test("leaves out the pauses, and stops while paused", () => {
-    // 10 s of earlier pauses.
-    assert.equal(currentSongSecondsLeft(timing(1000, 10_000), 21_000), 50);
-    // Paused since 21 s: 20 s played, however long the pause.
-    assert.equal(currentSongSecondsLeft(timing(1000, 0, 21_000), 90_000), 40);
   });
 });
 

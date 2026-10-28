@@ -218,14 +218,14 @@ export interface LiveState {
   // Its playtime is its video's length, in whole seconds, once the display
   // knows it (reportSongPosition).
   currentSong: SharedQueueItem | null;
-  // When currentSong started (ms since the epoch, by the server's clock;
-  // null while none plays), how long it was paused before, and since when it
-  // is paused now (null while it isn't). How far into the song the party is:
-  // now - startedAt - pausedMs - (now - pausedSince, while paused). The
-  // display's reports of where its video is keep it right after a seek or a
-  // stall.
+  // The current song's clock, from the display's reports of where its video
+  // is (reportSongPosition): when it would have started had it played
+  // straight through (ms since the epoch, by the server's clock; null while
+  // none plays, or until the display has loaded it), and since when it is
+  // paused or stalled (null while it plays). How far into the song the party
+  // is: (pausedSince ?? now) - startedAt (secondsPlayed in
+  // src/common/currentSong.ts).
   currentSongStartedAt: number | null;
-  currentSongPausedMs: number;
   currentSongPausedSince: number | null;
   // The songs after currentSong. Clients work out ETAs from playtime and the
   // timing above.
