@@ -10,7 +10,7 @@ import { hashAdminPassword } from "../common/adminPassword";
 import type { PlaybackState, QueueItem } from "../common/api";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
-import type { HubMessage } from "./live";
+import { shareQueueItem, type HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
 import {
   adhocLyricsKey,
@@ -459,13 +459,30 @@ describe("admin checks", () => {
       streamingUrlIdx: 0,
     };
 
-    test("comes with its streaming URLs and scoring data", async () => {
+    test("comes with both streaming URLs of each vocal type and scoring data", async () => {
       const api = makeApi();
       store.update((state) => state.songQueue.push(damSong));
       assert.deepEqual(await api.popSong({}, display), {
         ...damSong,
-        streamingUrls: ["https://dam/high0", "https://dam/high1"],
+        streamingUrls: [
+          { high: "https://dam/high0", low: "low0" },
+          { high: "https://dam/high1", low: "low1" },
+        ],
+        startWithLowBitrate: false,
         scoringData: [1, 2, 3],
+      });
+    });
+
+    test("says to start low when config.yaml asks for the low bitrate", async () => {
+      const api = makeApi({ useLowBitrateUrl: true });
+      store.update((state) => state.songQueue.push(damSong));
+      const popped = await api.popSong({}, display);
+      assert.ok(popped?.kind === "dam");
+      assert.equal(popped.startWithLowBitrate, true);
+      // Both still come.
+      assert.deepEqual(popped.streamingUrls[0], {
+        high: "https://dam/high0",
+        low: "low0",
       });
     });
 
@@ -493,6 +510,7 @@ describe("admin checks", () => {
         assert.deepEqual(await api.popSong({}, display), {
           ...damSong,
           streamingUrls: [],
+          startWithLowBitrate: false,
           scoringData: [],
         });
         assert.ok(Date.now() - started < 2000);
@@ -902,6 +920,29 @@ describe("queueSong", () => {
     const [item] = store.getState().songQueue;
     assert.equal(item.nameYomi, "コイ");
     assert.equal(item.artistNameYomi, "ホシノゲン");
+  });
+
+  test("passes the queuer's readings mode on to the item, everyone sees it", async () => {
+    const api = makeApi();
+    await api.queueSong(
+      {
+        kind: "nico",
+        songId: "sm9",
+        name: "恋",
+        artistName: "星野源",
+        readingsMode: "romaji",
+      },
+      alice,
+    );
+    await api.queueSong(
+      { kind: "nico", songId: "sm10", name: "x", artistName: "y" },
+      bob,
+    );
+    const [romaji, written] = store.getState().songQueue;
+    assert.equal(romaji.readingsMode, "romaji");
+    assert.equal("readingsMode" in written, false);
+    // In the live state too, for the display and the other phones.
+    assert.equal(shareQueueItem(romaji, "bob-device").readingsMode, "romaji");
   });
 
   test("keeps a YouTube song's adhoc lyrics", async () => {
@@ -1480,6 +1521,19 @@ describe("validators", () => {
     assert.equal("nameYomi" in validators.queueSong(dam), false);
     invalid("queueSong", { ...dam, nameYomi: 1 });
     invalid("queueSong", { ...dam, artistNameYomi: "ア".repeat(201) });
+  });
+
+  test("queueSong takes a readings mode if given, one of the three", () => {
+    const nico = { kind: "nico", songId: "sm9", name: "x", artistName: "y" };
+    for (const readingsMode of ["written", "kana", "romaji"]) {
+      assert.equal(
+        validators.queueSong({ ...nico, readingsMode }).readingsMode,
+        readingsMode,
+      );
+    }
+    assert.equal("readingsMode" in validators.queueSong(nico), false);
+    invalid("queueSong", { ...nico, readingsMode: "both" });
+    invalid("queueSong", { ...nico, readingsMode: null });
   });
 
   test("queueSong refuses bad input", () => {

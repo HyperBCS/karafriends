@@ -37,16 +37,18 @@ describe("createConfigStore at launch", () => {
     assert.deepEqual(store.atLaunch, DEFAULT_CONFIG);
   });
 
-  test("reads the file, drops the old admin lists and writes it back", () => {
+  test("reads the file, drops the old admin lists and proxy and writes it back", () => {
     fs.writeFileSync(
       filePath,
-      "damUsername: me\nadminDeviceIds:\n  - abc\nsupervisedMode: true\n",
+      "damUsername: me\nadminDeviceIds:\n  - abc\nsupervisedMode: true\n" +
+        "proxyEnable: true\nproxyHost: proxy.example.jp\nproxyPass: secret\n",
     );
     const store = open();
     assert.equal(store.get().damUsername, "me");
     assert.equal(store.get().supervisedMode, true);
     assert.equal("adminDeviceIds" in onDisk(), false);
     assert.equal(onDisk().remoconPort, 8080);
+    assert.doesNotMatch(fs.readFileSync(filePath, "utf8"), /proxy|secret/);
   });
 
   test("keeps a broken file aside and uses the defaults", () => {

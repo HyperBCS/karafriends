@@ -1253,15 +1253,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/tunnel@npm:^0":
-  version: 0.0.7
-  resolution: "@types/tunnel@npm:0.0.7"
-  dependencies:
-    "@types/node": "npm:*"
-  checksum: 10/73ca8f5c843f89dd4add909e99c93bb01c1283ebf030257a49c8c6d1e0e9fadf695256a464b252cf403f4c72d6842051450c97a03f7af8fd61e9df1fd38ae4cf
-  languageName: node
-  linkType: hard
-
 "@types/youtube-player@npm:5.5.11":
   version: 5.5.11
   resolution: "@types/youtube-player@npm:5.5.11"
@@ -2627,7 +2618,6 @@ __metadata:
     "@types/qrcode": "npm:1.5.6"
     "@types/react": "npm:19.2.17"
     "@types/react-dom": "npm:19.2.3"
-    "@types/tunnel": "npm:^0"
     "@types/youtube-player": "npm:5.5.11"
     "@vitejs/plugin-react": "npm:6.1.2"
     cargo-cp-artifact: "npm:0.1.9"
@@ -2660,7 +2650,6 @@ __metadata:
     sass: "npm:1.106.1"
     ts-invariant: "npm:0.10.3"
     tsx: "npm:4.23.15"
-    tunnel: "npm:0.0.6"
     typescript: "npm:6.0.3"
     uuid: "npm:14.0.2"
     vite: "npm:8.3.5"
@@ -4132,13 +4121,6 @@ __metadata:
   bin:
     tsx: dist/cli.mjs
   checksum: 10/f531aca9143a8ba08cf3053bd403a8b036d7bfffacc83c611486215d8cd41febad754d89f02c0bf92e55b747518b9ea124bfe76b55262b40be850f3ee938e4ff
-  languageName: node
-  linkType: hard
-
-"tunnel@npm:0.0.6":
-  version: 0.0.6
-  resolution: "tunnel@npm:0.0.6"
-  checksum: 10/cf1ffed5e67159b901a924dbf94c989f20b2b3b65649cfbbe4b6abb35955ce2cf7433b23498bdb2c5530ab185b82190fce531597b3b4a649f06a907fc8702405
   languageName: node
   linkType: hard
 

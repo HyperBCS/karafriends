@@ -93,7 +93,7 @@ describe("getSettings", () => {
     const { api, store } = setup();
     store.update({
       ...LOGINS,
-      proxyPass: "",
+      joysoundPassword: "",
       adminPasswordSalt: "00ff",
       adminPasswordHash: "abcd",
     });
@@ -101,9 +101,8 @@ describe("getSettings", () => {
     assert.equal(settings.damUsername, "dam-user");
     assert.equal(settings.damPassword, MASKED_PASSWORD);
     assert.equal(settings.joysoundEmail, "joy@example.com");
-    assert.equal(settings.joysoundPassword, MASKED_PASSWORD);
     // Empty stays empty.
-    assert.equal(settings.proxyPass, "");
+    assert.equal(settings.joysoundPassword, "");
     assert.equal(settings.adminPasswordSet, true);
     assert.equal("adminPasswordHash" in settings, false);
     assert.equal("adminPasswordSalt" in settings, false);
@@ -122,17 +121,14 @@ describe("getSettings", () => {
     assert.equal((await api.getSettings({}, display)).isFirstRun, false);
   });
 
-  test("needsRestart once the port or a proxy setting changed", async () => {
+  test("needsRestart once the port changed", async () => {
     const { api } = setup();
     assert.deepEqual(
       await api.setSettings({ settings: { supervisedMode: true } }, display),
       { ok: true, needsRestart: false },
     );
     assert.deepEqual(
-      await api.setSettings(
-        { settings: { proxyHost: "proxy.example.jp" } },
-        display,
-      ),
+      await api.setSettings({ settings: { remoconPort: 8081 } }, display),
       { ok: true, needsRestart: true },
     );
     assert.equal((await api.getSettings({}, display)).needsRestart, true);
@@ -197,7 +193,6 @@ describe("setSettings", () => {
     assert.equal(store.get().damUsername, "new-user");
     assert.equal(store.get().damPassword, "dam-pw");
     assert.equal(store.get().joysoundPassword, "joy-pw");
-    assert.equal(store.get().proxyPass, DEFAULT_CONFIG.proxyPass);
   });
 
   test("refuses bad values, all or none", async () => {
@@ -208,7 +203,6 @@ describe("setSettings", () => {
           settings: {
             supervisedMode: true,
             remoconPort: 0,
-            proxyPort: 65536,
             paxSongQueueLimit: -1,
             useLowBitrateUrl: "yes" as never,
           },
@@ -219,7 +213,6 @@ describe("setSettings", () => {
         ok: false,
         problems: [
           "remoconPort must be a whole number from 1 to 65535",
-          "proxyPort must be a whole number from 1 to 65535",
           "paxSongQueueLimit must be a whole number from 0 to 1000",
           "useLowBitrateUrl must be true or false",
         ],
@@ -239,8 +232,10 @@ describe("setSettings", () => {
     invalid({ futureSetting: 1 });
     invalid([]);
     invalid(undefined);
-    assert.deepEqual(validators.setSettings({ settings: { proxyPort: 1 } }), {
-      settings: { proxyPort: 1 },
+    // An old setting is no setting.
+    invalid({ proxyPort: 1 });
+    assert.deepEqual(validators.setSettings({ settings: { remoconPort: 1 } }), {
+      settings: { remoconPort: 1 },
     });
   });
 });
@@ -299,7 +294,7 @@ describe("testLogin", () => {
       ok: false,
       reason:
         "Joysound answered 403: this usually means no Japanese IP address. " +
-        "Connect through a VPN or proxy in Japan.",
+        "Connect through a VPN to Japan.",
     });
     assert.deepEqual(await api.testLogin({ service: "dam" }, display), {
       ok: false,
@@ -367,21 +362,23 @@ describe("exportConfig and importConfig", () => {
     });
   });
 
-  test("an old config.yaml: no version line, admin lists dropped and listed", async () => {
-    const { api, store } = setup();
+  test("an old config.yaml: no version line, admin lists and proxy dropped and listed", async () => {
+    const { api, store, onDisk } = setup();
     const result = await api.importConfig(
       {
         yaml:
           "damUsername: dam-user\ndamPassword: dam-pw\nsupervisedMode: true\n" +
-          "adminDeviceIds:\n  - 4f1c\nadminNicks:\n  - host\n",
+          "adminDeviceIds:\n  - 4f1c\nadminNicks:\n  - host\n" +
+          "proxyEnable: true\nproxyHost: proxy.example.jp\nproxyPort: 3128\n" +
+          "proxyUser: user\nproxyPass: secret\n",
       },
       display,
     );
     assert.deepEqual(result, {
       ok: true,
       problems: [
-        "Dropped adminDeviceIds: it no longer does anything. Phones become admins with the admin password.",
-        "Dropped adminNicks: it no longer does anything. Phones become admins with the admin password.",
+        "Dropped adminDeviceIds and adminNicks: the admin lists are gone. Phones become admins with the admin password.",
+        "Dropped proxyEnable, proxyHost, proxyPort, proxyUser and proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
         "DAM login works.",
         "No Joysound login is set: enter the email and password first.",
       ],
@@ -390,6 +387,10 @@ describe("exportConfig and importConfig", () => {
     assert.equal(store.get().supervisedMode, true);
     // What the file leaves out stays as it was.
     assert.equal(store.get().remoconPort, DEFAULT_CONFIG.remoconPort);
+    assert.doesNotMatch(
+      JSON.stringify(onDisk()),
+      /proxy|secret|admin(Nicks|Dev)/,
+    );
   });
 
   test("a 0.1.0 config.yaml's placeholders are imported as empty", async () => {
@@ -407,6 +408,7 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(result, {
       ok: true,
       problems: [
+        "Dropped proxyHost, proxyUser and proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
         "No DAM login is set: enter the username and password first.",
         "No Joysound login is set: enter the email and password first.",
       ],
@@ -417,9 +419,6 @@ describe("exportConfig and importConfig", () => {
       "damPassword",
       "joysoundEmail",
       "joysoundPassword",
-      "proxyHost",
-      "proxyUser",
-      "proxyPass",
     ] as const) {
       assert.equal(saved[key], "", key);
     }

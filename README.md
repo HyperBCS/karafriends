@@ -21,11 +21,11 @@ Download the zip for your computer from the [Releases page](https://github.com/H
 
 Open Settings with the gear on the idle screen, or press `S`. Escape or Close puts it away. Each field saves when you leave it.
 
-- **DAM login** and **Joysound login**: your username (for Joysound, your email) and password. Test login signs in once and says whether it worked. DAM and Joysound only answer from a Japanese IP address: outside Japan, run a VPN to Japan on this computer, or set a proxy in Japan below. Without a login, only YouTube and Niconico songs work.
+- **DAM login** and **Joysound login**: your username (for Joysound, your email) and password. Test login signs in once and says whether it worked. DAM and Joysound only answer from a Japanese IP address: outside Japan, run a VPN to Japan on this computer. Without a login, only YouTube and Niconico songs work.
 - **Admin password**: a guest who types it on the phone's profile screen becomes an admin. Changing or clearing it signs every phone out. With none set, no phone can be an admin; the display always is one.
 - **Queue**: supervised mode (only a song's singer or an admin can pause, skip or remove it), and how many songs each phone may have queued at once (0 for no limit).
 - **Everyone is an admin** (under Queue): every phone can reorder, remove any song, pause, skip and change the key with no password. It overrides supervised mode; the per-phone song limit still applies (set it to 0 for none), and Settings stay on the display.
-- **Remote port and proxy**: the port phones connect to (8080 unless you change it), and a proxy for DAM and Joysound. These take effect after a restart, and Settings shows a Restart button once you change one. If another program already uses the port, the display says phones can't connect; pick another port.
+- **Remote port**: the port phones connect to (8080 unless you change it). A new port takes effect after a restart, and Settings shows a Restart button once you change it. If another program already uses the port, the display says phones can't connect; pick another port.
 - **QR code address**: what the QR code on the idle screen points at. If a phone can't open `karafriends.local`, pick this computer's IP address here and scan again.
 - **Microphones**: pick each microphone and its channel. Clear mics removes them all.
 - **Tools**: the yt-dlp and ffmpeg versions in use. When the display says YouTube downloads are failing, press Update tools: it downloads both again, which takes a few minutes. To use your own copy instead (a newer yt-dlp, say), set `KARAFRIENDS_YTDLP_PATH` or `KARAFRIENDS_FFMPEG_PATH` to the program's full path before starting the app; karafriends then never downloads that tool.

@@ -6,7 +6,6 @@ import { app } from "electron";
 import { promisify } from "util";
 
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
-import { envWithoutHttpProxy } from "../../common/childEnv";
 import {
   DownloadFailure,
   REASONS,
@@ -180,7 +179,6 @@ async function lookUpNicoVideoInfo(
     nicoWatchUrl(videoId),
   ]);
   const { stdout } = await execFileAsync(command.file, command.args, {
-    env: envWithoutHttpProxy(),
     timeout: 30000,
     maxBuffer: 16 * 1024 * 1024,
     windowsHide: true,

@@ -27,16 +27,6 @@ export interface KarafriendsConfig {
   supervisedMode: boolean;
   // Every phone is an admin, no password needed. Overrides supervisedMode.
   everyoneIsAdmin: boolean;
-  // Whether to use a HTTP proxy (for outgoing connections)
-  proxyEnable: boolean;
-  // hostname or address of the HTTP proxy to use
-  proxyHost: string;
-  // port of the HTTP proxy to use
-  proxyPort: number;
-  // HTTP Basic username of the HTTP proxy to use
-  proxyUser: string;
-  // HTTP Basic password of the HTTP proxy to use
-  proxyPass: string;
 }
 
 export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
@@ -51,11 +41,6 @@ export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
   adminPasswordSalt: "",
   supervisedMode: false,
   everyoneIsAdmin: false,
-  proxyEnable: false,
-  proxyHost: "",
-  proxyPort: 1234,
-  proxyUser: "",
-  proxyPass: "",
 };
 
 // What older versions wrote into a fresh config.yaml where nothing was set.
@@ -66,9 +51,6 @@ const PLACEHOLDERS: Partial<Record<keyof KarafriendsConfig, string>> = {
   damPassword: "YOUR_PASSWORD_HERE",
   joysoundEmail: "YOUR_EMAIL_HERE",
   joysoundPassword: "YOUR_PASSWORD_HERE",
-  proxyHost: "PROXY_HOST_HERE",
-  proxyUser: "PROXY_USER_HERE",
-  proxyPass: "PROXY_PASS_HERE",
 };
 
 // Empties, in place, each value that is its placeholder.
@@ -78,10 +60,45 @@ export function clearPlaceholders(values: Record<string, unknown>): void {
   }
 }
 
-// Keys older versions read, which no longer do anything. The admin password
-// replaced both: anyone can take a nickname, and device IDs were awkward to
-// collect.
-export const OBSOLETE_KEYS = ["adminDeviceIds", "adminNicks"] as const;
+// Keys older versions read, which no longer do anything, and why. The admin
+// password replaced the admin lists: anyone can take a nickname, and device
+// IDs were awkward to collect. The proxy went because a VPN on the computer
+// does its job for every request, the display's DAM streams included.
+const ADMIN_LISTS_GONE =
+  "the admin lists are gone. Phones become admins with the admin password.";
+const PROXY_GONE =
+  "karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan " +
+  "on this computer.";
+const OBSOLETE_KEYS: Readonly<Record<string, string>> = {
+  adminDeviceIds: ADMIN_LISTS_GONE,
+  adminNicks: ADMIN_LISTS_GONE,
+  proxyEnable: PROXY_GONE,
+  proxyHost: PROXY_GONE,
+  proxyPort: PROXY_GONE,
+  proxyUser: PROXY_GONE,
+  proxyPass: PROXY_GONE,
+};
+
+// Deletes, in place, each obsolete key in values. Returns one note per
+// reason: the keys it dropped for it, as a list ("a, b and c"), and why.
+export function dropObsoleteKeys(
+  values: Record<string, unknown>,
+): { keys: string; why: string }[] {
+  const byReason = new Map<string, string[]>();
+  for (const key of Object.keys(values)) {
+    if (!Object.hasOwn(OBSOLETE_KEYS, key)) continue;
+    const why = OBSOLETE_KEYS[key];
+    byReason.set(why, [...(byReason.get(why) ?? []), key]);
+    delete values[key];
+  }
+  return [...byReason].map(([why, keys]) => ({
+    keys:
+      keys.length === 1
+        ? keys[0]
+        : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`,
+    why,
+  }));
+}
 
 // The config from a parsed config.yaml (a mapping, or null for an empty
 // file; configStore.ts sets anything else aside): the defaults, with the
@@ -96,13 +113,9 @@ export function configFromFile(parsed: object | null | undefined): {
 
   clearPlaceholders(local);
 
-  const obsolete = OBSOLETE_KEYS.filter((key) => Object.hasOwn(local, key));
-  for (const key of obsolete) delete local[key];
-  if (obsolete.length > 0) {
+  for (const { keys, why } of dropObsoleteKeys(local)) {
     problems.push(
-      `Ignoring ${obsolete.join(" and ")} in config.yaml: they no longer make ` +
-        "anyone an admin, and are removed from the file. Phones become admins " +
-        "with the admin password instead (adminPasswordHash; see README).",
+      `Ignoring ${keys} in config.yaml (removed from the file): ${why}`,
     );
   }
 
@@ -149,11 +162,6 @@ export const CONFIG_RULES: {
   adminPasswordSalt: TEXT,
   supervisedMode: { type: "boolean" },
   everyoneIsAdmin: { type: "boolean" },
-  proxyEnable: { type: "boolean" },
-  proxyHost: TEXT,
-  proxyPort: PORT,
-  proxyUser: TEXT,
-  proxyPass: TEXT,
 };
 
 export type ConfigKey = keyof KarafriendsConfig;
@@ -202,24 +210,14 @@ export function configProblems(values: Record<string, unknown>): string[] {
 }
 
 // The settings that only take effect after a restart: the phones' server
-// listens once, and the display window's proxy is set as it opens.
-export const RESTART_KEYS: readonly ConfigKey[] = [
-  "remoconPort",
-  "proxyEnable",
-  "proxyHost",
-  "proxyPort",
-  "proxyUser",
-  "proxyPass",
-];
+// listens once.
+export const RESTART_KEYS: readonly ConfigKey[] = ["remoconPort"];
 
 export const DAM_LOGIN_KEYS = ["damUsername", "damPassword"] as const;
 export const JOYSOUND_LOGIN_KEYS = [
   "joysoundEmail",
   "joysoundPassword",
 ] as const;
-export const PROXY_KEYS: readonly ConfigKey[] = RESTART_KEYS.filter(
-  (key) => key !== "remoconPort",
-);
 
 // Whether a login is filled in: both fields set. (Placeholders were read as
 // empty.)

@@ -204,7 +204,7 @@ export default function Settings(props: {
   // A whole number, or a message saying it isn't one.
   const saveNumber = (
     section: Section,
-    key: "paxSongQueueLimit" | "remoconPort" | "proxyPort",
+    key: "paxSongQueueLimit" | "remoconPort",
     label: string,
     value: string,
   ) => {
@@ -444,11 +444,11 @@ export default function Settings(props: {
         </SettingsSection>
 
         <SettingsSection
-          title="Remote port and proxy"
+          title="Remote port"
           message={messages.network ?? undefined}
         >
           <p className="settingsNote">
-            Changes here take effect when karafriends restarts.
+            A new port takes effect when karafriends restarts.
           </p>
           <div className="settingsFields">
             <TextSetting
@@ -460,40 +460,9 @@ export default function Settings(props: {
               }
             />
           </div>
-          <Checkbox
-            label="Use a proxy for DAM and Joysound"
-            checked={settings.proxyEnable}
-            onChange={(checked) => save("network", { proxyEnable: checked })}
-          />
-          <div className="settingsFields">
-            <TextSetting
-              label="Proxy host"
-              value={settings.proxyHost}
-              onCommit={(value) => save("network", { proxyHost: value })}
-            />
-            <TextSetting
-              label="Proxy port"
-              type="number"
-              value={String(settings.proxyPort)}
-              onCommit={(value) =>
-                saveNumber("network", "proxyPort", "Proxy port", value)
-              }
-            />
-            <TextSetting
-              label="Proxy username"
-              value={settings.proxyUser}
-              onCommit={(value) => save("network", { proxyUser: value })}
-            />
-            <TextSetting
-              label="Proxy password"
-              type="password"
-              value={settings.proxyPass}
-              onCommit={(value) => save("network", { proxyPass: value })}
-            />
-          </div>
           {loaded.needsRestart ? (
             <div className="settingsRestart">
-              <p>Restart karafriends to use the new port or proxy.</p>
+              <p>Restart karafriends to use the new port.</p>
               <button
                 type="button"
                 className="kfButton primary"

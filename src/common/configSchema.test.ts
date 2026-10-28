@@ -51,6 +51,25 @@ describe("configFromFile", () => {
     );
   });
 
+  test("ignores the old proxy settings, says so once, and drops them", () => {
+    const { config, problems } = configFromFile(
+      parse(
+        "damUsername: me\nadminNicks: []\nproxyEnable: true\n" +
+          "proxyHost: proxy.example.jp\nproxyPort: 3128\nproxyUser: user\n" +
+          "proxyPass: secret\n",
+      ),
+    );
+    assert.deepEqual(problems, [
+      "Ignoring adminNicks in config.yaml (removed from the file): the " +
+        "admin lists are gone. Phones become admins with the admin password.",
+      "Ignoring proxyEnable, proxyHost, proxyPort, proxyUser and proxyPass " +
+        "in config.yaml (removed from the file): karafriends no longer uses " +
+        "a proxy. Outside Japan, run a VPN to Japan on this computer.",
+    ]);
+    assert.equal(config.damUsername, "me");
+    assert.doesNotMatch(stringify(config), /proxy|secret/);
+  });
+
   test("keeps other keys it doesn't know", () => {
     const { config } = configFromFile({ futureSetting: 1 });
     assert.equal(
@@ -74,8 +93,7 @@ describe("configProblems", () => {
   test("accepts good values", () => {
     assert.deepEqual(
       configProblems({
-        remoconPort: 1,
-        proxyPort: 65535,
+        remoconPort: 65535,
         paxSongQueueLimit: 0,
         supervisedMode: true,
         damUsername: "me",
@@ -90,7 +108,6 @@ describe("configProblems", () => {
     assert.deepEqual(
       configProblems({
         remoconPort: 0,
-        proxyPort: 65536,
         paxSongQueueLimit: 1.5,
         supervisedMode: "yes",
         damUsername: 42,
@@ -98,7 +115,6 @@ describe("configProblems", () => {
       }),
       [
         "remoconPort must be a whole number from 1 to 65535",
-        "proxyPort must be a whole number from 1 to 65535",
         "paxSongQueueLimit must be a whole number from 0 to 1000",
         "supervisedMode must be true or false",
         "damUsername must be text of at most 1000 characters",

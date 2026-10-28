@@ -55,6 +55,11 @@ export interface PageInput {
 
 export type QueueItemKind = "dam" | "joysound" | "youtube" | "nico";
 
+// How a phone shows titles and artists (its profile's Readings): as written,
+// or as the kana reading or its romaji.
+export const READINGS_MODES = ["written", "kana", "romaji"] as const;
+export type ReadingsMode = (typeof READINGS_MODES)[number];
+
 interface QueueItemBase {
   songId: string;
   name: string;
@@ -63,6 +68,9 @@ interface QueueItemBase {
   // songs queued from this version on.
   nameYomi?: string;
   artistNameYomi?: string;
+  // How the phone that queued it reads, so the display shows the song that
+  // way too. Missing: as written.
+  readingsMode?: ReadingsMode;
   // Seconds, when known.
   playtime: number | null;
   // When it was queued: Date.now() as a string. With songId it identifies an
@@ -123,8 +131,11 @@ export type SharedQueueItem = Shared<QueueItem>;
 // to play and score it, as far as DAM answered in time: either list may be
 // empty.
 export interface PoppedDamSong extends DamQueueItem {
-  // For a song that isn't downloaded.
-  streamingUrls: string[];
+  // For a song that isn't downloaded: one per vocal type (streamingUrlIdx
+  // picks), at both bitrates.
+  streamingUrls: { high: string; low: string }[];
+  // Which bitrate to start with: config.yaml's useLowBitrateUrl.
+  startWithLowBitrate: boolean;
   scoringData: number[];
 }
 
@@ -138,6 +149,7 @@ interface SongToQueueBase {
   artistName: string;
   nameYomi?: string;
   artistNameYomi?: string;
+  readingsMode?: ReadingsMode;
   playtime?: number | null;
   // Admins only; anyone else's song goes to the end, as before.
   tryHeadOfQueue?: boolean;
@@ -312,8 +324,8 @@ export type LookupResult<T> =
 // back as "unchanged".
 export const MASKED_PASSWORD = "••••••";
 
-// config.yaml as the settings screen sees it. damPassword, joysoundPassword
-// and proxyPass are MASKED_PASSWORD when not empty. The admin password's
+// config.yaml as the settings screen sees it. damPassword and
+// joysoundPassword are MASKED_PASSWORD when not empty. The admin password's
 // hash and salt never leave the main process: adminPasswordSet says whether
 // there is one.
 export type Settings = Omit<
@@ -451,8 +463,8 @@ export interface Api {
 
   // isFirstRun: neither a DAM nor a Joysound login is filled in.
   // needsRestart: a setting that only takes effect after a restart
-  // (remoconPort, the proxy) is saved with a value other than the one the
-  // app started with.
+  // (remoconPort) is saved with a value other than the one the app started
+  // with.
   getSettings: {
     input: Record<string, never>;
     output: { settings: Settings; isFirstRun: boolean; needsRestart: boolean };
@@ -493,7 +505,7 @@ export interface Api {
     output:
       { ok: true; problems: string[] } | { ok: false; problems: string[] };
   };
-  // Restarts the app, for remoconPort and the proxy. Answers first.
+  // Restarts the app, for remoconPort. Answers first.
   restartApp: {
     input: Record<string, never>;
     output: Record<string, never>;

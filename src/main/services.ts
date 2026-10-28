@@ -8,7 +8,6 @@ import { app } from "electron";
 import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
-import { PROXY_KEYS } from "../common/configSchema";
 import { toolsStatus, updateTools } from "../common/externalResources";
 import {
   downloadDamVideo,
@@ -26,7 +25,6 @@ import {
 import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
-import { setProxy } from "./http";
 import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
 import { createSettingsHandlers } from "./settings";
@@ -67,16 +65,10 @@ const credentials = createCredentialProviders({
   joysoundLogin: (email, password) => JoysoundAPI.login(email, password),
 });
 
-// The clients' requests go through config.yaml's proxy, if it enables one.
-setProxy(karafriendsConfig);
-
 configStore.onChange(({ keys }) => {
   // The phones' live state shows supervisedMode and everyoneIsAdmin.
   if (keys.includes("supervisedMode") || keys.includes("everyoneIsAdmin"))
     hub.refresh();
-  // For DAM and Joysound requests from now on. (The display's own proxy,
-  // for DAM streams, changes on restart.)
-  if (keys.some((key) => PROXY_KEYS.includes(key))) setProxy(karafriendsConfig);
 });
 
 // The clients keep no per-request state, so every request shares one of each.

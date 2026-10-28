@@ -15,6 +15,7 @@ import type {
   JoysoundQueueItem,
   NicoQueueItem,
   NicoVideoInfo,
+  PoppedDamSong,
   PoppedSong,
   QueueItem,
   UserIdentity,
@@ -301,10 +302,12 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     queueFailed(item)(reason);
   };
 
+  // One per vocal type, at both bitrates.
   const streamingUrls = async (songId: string) =>
-    (await deps.minsei.getMusicStreamingUrls(songId)).list.map((info) =>
-      config.useLowBitrateUrl ? info.lowBitrateUrl : info.highBitrateUrl,
-    );
+    (await deps.minsei.getMusicStreamingUrls(songId)).list.map((info) => ({
+      high: info.highBitrateUrl,
+      low: info.lowBitrateUrl,
+    }));
 
   const toDamSong = (song: {
     requestNo: string;
@@ -571,6 +574,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         ...(input.artistNameYomi !== undefined && {
           artistNameYomi: input.artistNameYomi,
         }),
+        ...(input.readingsMode !== undefined && {
+          readingsMode: input.readingsMode,
+        }),
         playtime: input.playtime ?? null,
         timestamp: now().toString(),
         user,
@@ -591,7 +597,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
                 throw new Error(`no streaming URL ${item.streamingUrlIdx}`);
               }
               deps.downloads.dam(
-                url,
+                config.useLowBitrateUrl ? url.low : url.high,
                 item.songId,
                 item.streamingUrlIdx.toString(),
               );
@@ -845,7 +851,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       const timeoutMs = deps.damPopTimeoutMs ?? DAM_POP_TIMEOUT_MS;
       const [urls, scoringData] = await Promise.all([
         withTimeout(streamingUrls(song.songId), timeoutMs).catch(
-          (err): string[] => {
+          (err): PoppedDamSong["streamingUrls"] => {
             console.error(`No streaming URLs for ${song.songId}:`, err);
             return [];
           },
@@ -857,7 +863,12 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             return [];
           }),
       ]);
-      const popped: PoppedSong = { ...song, streamingUrls: urls, scoringData };
+      const popped: PoppedSong = {
+        ...song,
+        streamingUrls: urls,
+        startWithLowBitrate: config.useLowBitrateUrl,
+        scoringData,
+      };
       return popped;
     },
 

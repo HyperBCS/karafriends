@@ -63,7 +63,6 @@ export interface ToolRun {
   // Gets the tool's output. Appended to, unless freshLog.
   logFilename: string;
   freshLog?: boolean;
-  env?: NodeJS.ProcessEnv;
   stdin?: Buffer | string | null;
   onStdout?: (text: string) => void;
   onStderr?: (text: string) => void;
@@ -122,7 +121,6 @@ export function runTool(run: ToolRun): Promise<void> {
     let proc: ChildProcess;
     try {
       proc = spawn(command.file, command.args, {
-        env: run.env,
         stdio: [run.stdin ? "pipe" : "ignore", "pipe", "pipe"],
         // Its own process group, for killTree. (On Windows it would open a
         // console.)

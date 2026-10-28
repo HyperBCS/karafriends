@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { type Candidate, normalize, rank } from "./rank";
+import { normalize } from "../common/readings";
+import { type Candidate, rank } from "./rank";
 
 const song = (
   name: string,

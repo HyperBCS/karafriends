@@ -13,7 +13,7 @@ import type {
   QueueSongInput,
   SettingsChanges,
 } from "../common/api";
-import { LYRICS_MODES, PLAYBACK_STATES } from "../common/api";
+import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
 import { ApiError } from "./api";
 import { SETTABLE_KEYS } from "./settings";
@@ -150,6 +150,7 @@ const QUEUE_FIELDS = [
   "artistName",
   "nameYomi",
   "artistNameYomi",
+  "readingsMode",
   "playtime",
   "tryHeadOfQueue",
 ];
@@ -186,6 +187,9 @@ function queueSong(raw: unknown): QueueSongInput {
     }),
     ...(input.artistNameYomi !== undefined && {
       artistNameYomi: string(input, "artistNameYomi", 200),
+    }),
+    ...(input.readingsMode !== undefined && {
+      readingsMode: oneOf(input, "readingsMode", READINGS_MODES),
     }),
     playtime:
       input.playtime === undefined || input.playtime === null

@@ -4,13 +4,13 @@ The mobile round ([`PLAN-mobile.md`](PLAN-mobile.md)) is merged and its review f
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                                                         | State       | Branch / commit | Notes |
-| ---------------------------------------------------------------------------- | ----------- | --------------- | ----- |
-| P1: no proxy; DAM songs carry both stream URLs                               | not started |                 |       |
-| P2: remote: top bar, bottom bar, now-playing bar, melody slider, light theme | not started |                 |       |
-| P3: display: A/V offset, UI scale, DAM low-bitrate fallback                  | not started |                 |       |
-| P4: review and fixes                                                         | not started |                 |       |
-| Final: iPhone and TV check by the user                                       | not started |                 |       |
+| Step                                                                         | State                            | Branch / commit                    | Notes |
+| ---------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ----- |
+| P1: no proxy; DAM songs carry both stream URLs                               | done in worktree, awaiting merge | `worktree-agent-a6fae4c9538e38784` |       |
+| P2: remote: top bar, bottom bar, now-playing bar, melody slider, light theme | not started                      |                                    |       |
+| P3: display: A/V offset, UI scale, DAM low-bitrate fallback                  | not started                      |                                    |       |
+| P4: review and fixes                                                         | not started                      |                                    |       |
+| Final: iPhone and TV check by the user                                       | not started                      |                                    |       |
 
 ## The list (2026-10-27) and the decisions from Q&A
 

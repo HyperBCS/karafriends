@@ -8,7 +8,6 @@ import path from "path";
 
 import type { JoysoundQueueItem } from "../../common/api";
 import { isCaptionCode } from "../../common/captionCode";
-import { envWithoutHttpProxy } from "../../common/childEnv";
 import {
   DownloadFailure,
   REASONS,
@@ -320,7 +319,6 @@ async function downloadJoysoundYoutubeVideoPromise(
     ],
     logFilename: `${paths.folder}/yt-${youtubeVideoId}.log`,
     freshLog: true,
-    env: envWithoutHttpProxy(),
     onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
     reasonForExit: ytdlpFailureReason,
     signal,
@@ -764,7 +762,6 @@ export async function youtubeJob(
       ],
       logFilename: ytdlpLogFilename,
       freshLog: true,
-      env: envWithoutHttpProxy(),
       onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
       reasonForExit: ytdlpFailureReason,
     });
@@ -824,7 +821,6 @@ export async function nicoJob(
       ],
       logFilename: ytdlpLogFilename,
       freshLog: true,
-      env: envWithoutHttpProxy(),
       onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
       reasonForExit: ytdlpFailureReason,
     });
