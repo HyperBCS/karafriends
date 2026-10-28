@@ -750,6 +750,61 @@ test.describe("a long queue", () => {
       remote.getByRole("button", { name: "Show emotes" }),
     ).toBeInViewport();
   });
+
+  // iOS before 16 ignores overscroll-behavior, so the remote stops the
+  // touch drags that would bounce the page. Synthetic touches, from the
+  // middle of target: whether the remote stopped the move.
+  const touchDragStopped = (target: Locator, dx: number, dy: number) =>
+    target.evaluate(
+      (el, [dx, dy]) => {
+        const { left, top, width, height } = el.getBoundingClientRect();
+        const [x, y] = [left + width / 2, top + height / 2];
+        const touch = (x: number, y: number) =>
+          new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+        const event = (type: string, x: number, y: number) =>
+          new TouchEvent(type, {
+            touches: [touch(x, y)],
+            bubbles: true,
+            cancelable: true,
+          });
+        el.dispatchEvent(event("touchstart", x, y));
+        const move = event("touchmove", x + dx, y + dy);
+        el.dispatchEvent(move);
+        return move.defaultPrevented;
+      },
+      [dx, dy],
+    );
+
+  test("stops touch drags that would bounce the page", async ({ remote }) => {
+    // (Playwright's WebKit has no Touch constructor.)
+    const canTouch = await remote.evaluate(() => {
+      try {
+        return !!new Touch({ identifier: 1, target: document.body });
+      } catch {
+        return false;
+      }
+    });
+    test.skip(!canTouch, "No Touch constructor");
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const queue = remote.getByRole("region", { name: "Queue" });
+    await expect(queue.getByRole("listitem")).toHaveCount(12);
+    const row = queue.getByRole("listitem").nth(1);
+
+    // The queue at its top: up scrolls it, down would bounce.
+    expect(await touchDragStopped(row, 0, -20)).toBe(false);
+    expect(await touchDragStopped(row, 0, 20)).toBe(true);
+    // Sideways, it's not a scroll.
+    expect(await touchDragStopped(row, 20, 5)).toBe(false);
+    // Scrolled to the bottom: the other way round.
+    await queue.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const last = queue.getByRole("listitem").last();
+    expect(await touchDragStopped(last, 0, -20)).toBe(true);
+    expect(await touchDragStopped(last, 0, 20)).toBe(false);
+    // The top bar, outside every scroller.
+    expect(await touchDragStopped(remote.getByRole("banner"), 0, 20)).toBe(
+      true,
+    );
+  });
 });
 
 test("a title search ranks both catalogs' results together, best match first", async ({
