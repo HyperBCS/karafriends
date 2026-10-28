@@ -169,10 +169,7 @@ fn input_device__new(
 fn input_device__get_pitch(mut cx: FunctionContext) -> JsResult<JsObject> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     let mut device = device.borrow_mut();
-    let (midi_number, confidence) = match device.get_pitch() {
-        Ok((midi_number, confidence)) => (midi_number, confidence),
-        Err(e) => return cx.throw_error(e.to_string()),
-    };
+    let (midi_number, confidence) = device.get_pitch();
     let js_object = JsObject::new(&mut cx);
     let midi_number = cx.number(midi_number);
     let confidence = cx.number(confidence);

@@ -79,7 +79,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use neon::prelude::Finalize;
-use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::traits::{Producer, Split};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::Resampler;
 
@@ -680,9 +680,7 @@ pub struct InputDevice {
     lost: Arc<AtomicU32>,
     // Whether its callbacks stopped (see Stall).
     stall: Mutex<Stall>,
-    pitch_rx: ringbuf::HeapCons<f32>,
-    pitch_sample_count: usize,
-    pitch_detector: pitch_detector::PitchDetector,
+    pitch: pitch_detector::PitchWindow,
 }
 
 impl Finalize for InputDevice {}
@@ -895,12 +893,9 @@ impl InputDevice {
         Sample: cpal::Sample + Copy + 'static,
         f32: cpal::FromSample<Sample>,
     {
-        let pitch_sample_count = input_config.sample_rate.div_ceil(40) as usize;
-        let (pitch_tx, pitch_rx) = ringbuf::HeapRb::new(pitch_sample_count).split();
+        let (pitch_tx, pitch) = pitch_detector::PitchWindow::new(input_config.sample_rate);
         let (output_tx, output_rx) =
             ringbuf::HeapRb::new(mixer::ring_capacity(output_rate)).split();
-        let pitch_detector =
-            pitch_detector::PitchDetector::new(input_config.sample_rate as f32, pitch_sample_count);
         let levels = Arc::new(Levels::new(1.0, 0.4));
         let meters = Arc::new(Meters::default());
 
@@ -935,9 +930,7 @@ impl InputDevice {
             realtime,
             lost: Arc::default(),
             stall: Mutex::new(Stall::new(Instant::now())),
-            pitch_rx,
-            pitch_sample_count,
-            pitch_detector,
+            pitch,
         })
     }
 
@@ -1008,10 +1001,10 @@ impl InputDevice {
         Err("exclusive mode is for Windows only".into())
     }
 
-    pub fn get_pitch(&mut self) -> Result<(f32, f32)> {
-        let mut samples = vec![0.0; self.pitch_sample_count];
-        self.pitch_rx.pop_slice(&mut samples);
-        Ok(self.pitch_detector.detect(samples))
+    // The pitch of its newest 1/40 s, as a MIDI number, and how sure that
+    // is (0 to 1); see PitchWindow.
+    pub fn get_pitch(&mut self) -> (f32, f32) {
+        self.pitch.pitch()
     }
 
     // Linear, 0 to 2: multiplies the dry signal before the reverb.
@@ -1559,6 +1552,7 @@ fn _output_name(device: &cpal::Device, device_type: &DeviceType) -> Result<Strin
 mod tests {
     use super::*;
     use pitch_detector::{freq2midi, PitchDetector};
+    use ringbuf::traits::Consumer;
     use wavegen::{sine, wf};
 
     fn config(sample_rate: cpal::SampleRate) -> cpal::StreamConfig {
@@ -1741,7 +1735,7 @@ mod tests {
         .unwrap();
         let pitch_sample_count = output_rate.div_ceil(40) as usize;
         let pd = PitchDetector::new(output_rate as f32, pitch_sample_count);
-        let (midi_number, confidence) = pd.detect(output[..pitch_sample_count].to_vec());
+        let (midi_number, confidence) = pd.detect(&output[..pitch_sample_count]);
         assert!((midi_number - freq2midi(185.0)).abs() < 0.001);
         assert!(confidence > 0.999);
         assert_eq!(pitch, samples);
@@ -1755,6 +1749,66 @@ mod tests {
     #[test]
     fn test_input_callback_downsampling() {
         assert_resampled_pitch(96000, 44100);
+    }
+
+    // The pitch is found in the newest 1/40 s of the mic, however its
+    // callbacks and the polls fall (PianoRoll asks every 25 ms; WASAPI calls
+    // back every 10 ms): never in a window part empty, or in an old one when
+    // a poll comes late.
+    #[test]
+    fn test_the_pitch_is_the_newest_window() -> Result<()> {
+        let rate = 48000;
+        const LOW: f32 = 95.0;
+        let (pitch_tx, mut pitch) = pitch_detector::PitchWindow::new(rate);
+        let (output_tx, _output_rx) = ringbuf::HeapRb::new(rate as usize).split();
+        let mut callback = InputDevice::input_data_callback::<f32>(
+            &config(rate),
+            rate,
+            0,
+            Arc::new(Levels::new(1.0, 0.4)),
+            Arc::default(),
+            pitch_tx,
+            output_tx,
+        )?;
+        let tone = |freq: f32, ms: usize| -> Vec<f32> {
+            wf!(f32, rate as f32, sine!(freq, 1.0_f32, 0.0_f32))
+                .iter()
+                .take(rate as usize * ms / 1000)
+                .collect()
+        };
+        let low = tone(LOW, 500);
+        let mut rest = &low[..];
+        // 20 ms: not a whole window yet, so no pitch.
+        let (first, next) = rest.split_at(960);
+        callback(first);
+        assert_eq!(pitch.pitch(), (0.0, 0.0));
+        rest = next;
+        // Then 30 ms and 20 ms in turn, a poll after each.
+        for ms in [30, 20].iter().cycle().take(12) {
+            let (part, next) = rest.split_at(rate as usize * ms / 1000);
+            callback(part);
+            rest = next;
+            let (midi_number, confidence) = pitch.pitch();
+            assert!(
+                (midi_number - freq2midi(LOW)).abs() < 0.05,
+                "after {ms} ms: {midi_number}, not {}",
+                freq2midi(LOW)
+            );
+            assert!(confidence > 0.9);
+        }
+        // Nothing new since: no pitch.
+        assert_eq!(pitch.pitch(), (0.0, 0.0));
+        // A poll 50 ms late finds the newest 25 ms.
+        let mut late = tone(100.0, 25);
+        late.extend(tone(150.0, 25));
+        callback(&late);
+        let (midi_number, _) = pitch.pitch();
+        assert!(
+            (midi_number - freq2midi(150.0)).abs() < 0.05,
+            "{midi_number}, not {}",
+            freq2midi(150.0)
+        );
+        Ok(())
     }
 
     // The meter sees the mic before the gain, and starts over once read.

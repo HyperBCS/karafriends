@@ -1,6 +1,66 @@
 use std::sync::Arc;
 
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use ringbuf::traits::{Consumer, Observer, Split};
+
+// How many windows the ring between a mic's callback and the polls holds:
+// 200 ms, more than any callback (mixer::MAX_BUFFER) or a late poll needs.
+const RING_WINDOWS: usize = 8;
+
+// The newest 1/40 s of a mic's sound, where its pitch is found. The mic's
+// callback fills a ring; each poll (PianoRoll asks every 25 ms) takes what
+// came since the last, keeps the newest window of it, and finds its pitch.
+// So the pitch is never found in a window part empty (a poll after 20 ms of
+// sound) or an old one (a poll that comes late).
+pub struct PitchWindow {
+    rx: ringbuf::HeapCons<f32>,
+    window: Vec<f32>,
+    // How much of the window is sound, up to all of it.
+    filled: usize,
+    detector: PitchDetector,
+}
+
+impl PitchWindow {
+    // The callback's end of the ring, and the window.
+    pub fn new(sample_rate: u32) -> (ringbuf::HeapProd<f32>, Self) {
+        let sample_count = sample_rate.div_ceil(40) as usize;
+        let (tx, rx) = ringbuf::HeapRb::new(sample_count * RING_WINDOWS).split();
+        let window = PitchWindow {
+            rx,
+            window: vec![0.0; sample_count],
+            filled: 0,
+            detector: PitchDetector::new(sample_rate as f32, sample_count),
+        };
+        (tx, window)
+    }
+
+    // The pitch (a MIDI number) of the newest window, and how sure it is (0
+    // to 1); (0, 0) when nothing came since the last poll, or a whole window
+    // hasn't yet.
+    pub fn pitch(&mut self) -> (f32, f32) {
+        let new = self.rx.occupied_len();
+        // A ring that went unasked a while (no pitch bars) filled up and
+        // dropped the newest: what it holds is old.
+        if self.rx.is_full() {
+            self.rx.skip(new);
+            self.filled = 0;
+            return (0.0, 0.0);
+        }
+        if new == 0 {
+            return (0.0, 0.0);
+        }
+        let n = self.window.len();
+        let take = new.min(n);
+        self.rx.skip(new - take);
+        self.window.copy_within(take.., 0);
+        self.rx.pop_slice(&mut self.window[n - take..]);
+        self.filled = (self.filled + take).min(n);
+        if self.filled < n {
+            return (0.0, 0.0);
+        }
+        self.detector.detect(&self.window)
+    }
+}
 
 pub struct PitchDetector {
     sample_rate: f32,
@@ -17,7 +77,9 @@ impl PitchDetector {
         }
     }
 
-    pub fn detect(&self, mut samples: Vec<f32>) -> (f32, f32) {
+    pub fn detect(&self, samples: &[f32]) -> (f32, f32) {
+        // The FFT works in its input.
+        let mut samples = samples.to_vec();
         let B = samples.len();
         let W = samples.len() / 2;
 
@@ -143,10 +205,37 @@ mod tests {
             .iter()
             .take(sample_count)
             .collect::<Vec<_>>();
-            let (midi_number, confidence) = pd.detect(samples);
+            let (midi_number, confidence) = pd.detect(&samples);
 
             assert_eq!(midi_number.round(), freq2midi(freq as f32).round());
             assert!(confidence > 0.99);
         }
+    }
+
+    fn tone(freq: f32, count: usize) -> Vec<f32> {
+        wf!(f32, 48000.0_f32, sine!(freq, 1.0_f32, 0.0_f32))
+            .iter()
+            .take(count)
+            .collect()
+    }
+
+    // A window part empty gives no pitch; a ring that filled up while no
+    // one asked is old, dropped whole, and the window starts again.
+    #[test]
+    fn test_the_window_is_whole_and_new() {
+        use ringbuf::traits::Producer;
+        let (mut tx, mut window) = PitchWindow::new(48000);
+        let n = 1200;
+        tx.push_slice(&tone(200.0, n - 1));
+        assert_eq!(window.pitch(), (0.0, 0.0));
+        tx.push_slice(&tone(200.0, 1));
+        assert!((window.pitch().0 - freq2midi(200.0)).abs() < 0.05);
+
+        tx.push_slice(&tone(300.0, n * RING_WINDOWS + 100));
+        assert_eq!(window.pitch(), (0.0, 0.0));
+        tx.push_slice(&tone(400.0, n / 2));
+        assert_eq!(window.pitch(), (0.0, 0.0));
+        tx.push_slice(&tone(400.0, n));
+        assert!((window.pitch().0 - freq2midi(400.0)).abs() < 0.05);
     }
 }
