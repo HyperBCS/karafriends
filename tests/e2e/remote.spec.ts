@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 import type { Locator, Page, Route } from "@playwright/test";
 
 import {
@@ -7,9 +10,39 @@ import {
   expect,
   fakeJoysoundDownload,
   liveState,
+  MAIN_ENTRY,
   NICKNAME,
   test,
 } from "./fixtures";
+
+// The remote's build is for phones back to iOS 15 (REMOCON_TARGET in
+// electron.vite.config.ts), read from build/prod without starting the app:
+// its CSS keeps the -webkit-user-select iOS Safari needs (Chromium doesn't,
+// so a Chromium target drops it), and no JS it loads has a class static
+// block, which Safari only runs from 16.4.
+test("the remote's build is for iOS 15", () => {
+  const web = path.join(path.dirname(MAIN_ENTRY), "..", "web");
+  const page = fs.readFileSync(path.join(web, "remocon", "index.html"), "utf8");
+  const assets = (pattern: RegExp, text: string) =>
+    [...text.matchAll(pattern)].map((match) => path.basename(match[1]));
+  const css = assets(/href="\.\.\/assets\/([^"]+\.css)"/g, page);
+  expect(css).toHaveLength(1);
+  const cssText = fs.readFileSync(path.join(web, "assets", css[0]), "utf8");
+  expect(
+    cssText.match(/-webkit-user-select:none/g)?.length ?? 0,
+    "-webkit-user-select in the remote's CSS",
+  ).toBeGreaterThan(0);
+  // The entry, and every chunk it imports.
+  const scripts = assets(/src="\.\.\/assets\/([^"]+\.js)"/g, page);
+  expect(scripts).toHaveLength(1);
+  for (let i = 0; i < scripts.length; i++) {
+    const js = fs.readFileSync(path.join(web, "assets", scripts[i]), "utf8");
+    expect(js, scripts[i]).not.toMatch(/\bstatic\s*\{/);
+    for (const chunk of assets(/["']\.\/([\w.-]+\.js)["']/g, js)) {
+      if (!scripts.includes(chunk)) scripts.push(chunk);
+    }
+  }
+});
 
 test("the remote opens on the search screen", async ({ remote }) => {
   await expect(
