@@ -14,9 +14,6 @@ import WithReading from "../WithReading";
 import * as styles from "./NowPlayingSheet.module.scss";
 import useDragReorder from "./useDragReorder";
 
-// The grip a queued row is dragged by: Material Design's drag indicator,
-// copied from react-icons 5.7.0 as the icons in ../../icons are.
-
 // The singer's initial, before each row.
 const Initial = ({ nickname }: { nickname: string }) => (
   <span className={styles.initial} aria-hidden="true">

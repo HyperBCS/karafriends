@@ -883,30 +883,11 @@ test.describe("dragging the queue", () => {
     },
   });
 
-  // The queue's song names in the server's live state: the first event of
-  // a fresh /api/events stream.
-  async function liveQueue(remoconUrl: string): Promise<string[]> {
-    const controller = new AbortController();
-    const res = await fetch(new URL("api/events", remoconUrl), {
-      signal: controller.signal,
-    });
-    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-    let text = "";
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) throw new Error(`The stream ended early: ${text}`);
-        text += value;
-        const data = text.match(/^data: (.*)$/m);
-        if (data) {
-          const { state } = JSON.parse(data[1]);
-          return state.queue.map((item: { name: string }) => item.name);
-        }
-      }
-    } finally {
-      controller.abort();
-    }
-  }
+  // The queue's song names in the server's live state.
+  const liveQueue = async (remoconUrl: string): Promise<string[]> =>
+    (await liveState(remoconUrl)).queue.map(
+      (item: { name: string }) => item.name,
+    );
 
   // Opens the queue once song 1 has started (within 5 seconds): its queued
   // rows, each with a handle, a song's handle, and a check of the order on
