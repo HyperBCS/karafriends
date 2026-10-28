@@ -1,5 +1,4 @@
-import formatDuration from "format-duration";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import {
   LYRICS_MODES,
@@ -9,14 +8,12 @@ import {
   type QueueSongInput,
   type VocalType,
 } from "../../common/api";
+import { useApiMutation } from "../../common/apiQueries";
 import { getItem, setItem } from "../../common/storage";
-import useDownloadButtonText, {
-  DOWNLOADING,
-  downloadButtonLabel,
-  QUEUED,
-  WAITING_FOR_SERVER,
-} from "../hooks/useDownloadButtonText";
-import useQueueSong from "../hooks/useQueueSong";
+import useQueueButtonStatus, {
+  statusLabel,
+} from "../hooks/useQueueButtonStatus";
+import useReadings from "../hooks/useReadings";
 import { t } from "../i18n";
 import { Button, SegmentedControl, type ButtonVariant } from "./ui";
 import * as styles from "./QueueButtons.module.scss";
@@ -30,9 +27,9 @@ interface QueueButtonProps {
   onBusyChange?: (busy: boolean) => void;
 }
 
-// Queues one song and says how it went: waiting for the server, the wait
-// (DAM), the download's progress, or why it couldn't (A1's failures, or the
-// server's reason, such as the song already being queued).
+// Queues one song (the queueSong method) and says how it went: waiting for
+// the server, the wait, the download's progress, or why it couldn't (A1's
+// failures, or the server's reason, such as the queue limit).
 export const QueueButton = ({
   label,
   song,
@@ -40,37 +37,44 @@ export const QueueButton = ({
   disabled,
   onBusyChange,
 }: QueueButtonProps) => {
-  const [text, setText] = useDownloadButtonText(
-    label,
-    {
-      kind: song.kind,
-      songId: song.songId,
-      suffix: song.kind === "joysound" ? song.youtubeVideoId : null,
-    },
-    () => onBusyChange?.(false),
-  );
-  // A DAM song joins the queue at once (it downloads in the background);
-  // the others download first.
-  const queueSong = useQueueSong(setText, (eta) =>
-    song.kind === "dam"
-      ? `${QUEUED}: ${formatDuration(eta * 1000)}`
-      : DOWNLOADING,
-  );
+  const [status, setStatus] = useQueueButtonStatus({
+    kind: song.kind,
+    songId: song.songId,
+    suffix: song.kind === "joysound" ? song.youtubeVideoId : null,
+  });
+  const busy = status.is !== "idle";
+  useEffect(() => onBusyChange?.(busy), [busy]);
+
+  const { mutate } = useApiMutation("queueSong", {
+    onSuccess: (result) =>
+      setStatus(
+        !result.ok
+          ? { is: "error", reason: result.reason }
+          : // A DAM song joins the queue at once (it downloads in the
+            // background); the others download first.
+            song.kind === "dam"
+            ? { is: "queued", eta: result.eta }
+            : { is: "downloading", progress: null, eta: result.eta },
+      ),
+    onError: (err) => setStatus({ is: "error", reason: err.message }),
+  });
+  // The song shows on the TV the way this phone reads it.
+  const readingsMode = useReadings();
 
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    onBusyChange?.(true);
-    setText(WAITING_FOR_SERVER);
-    queueSong(song, e);
+    setStatus({ is: "waiting" });
+    // Holding shift asks to put it next (only an admin's request does).
+    mutate({ ...song, tryHeadOfQueue: e.shiftKey, readingsMode });
   };
 
   return (
     <Button
       variant={variant}
       full
-      disabled={disabled || text !== label}
+      disabled={disabled || busy}
       onClick={onClick}
     >
-      {downloadButtonLabel(text)}
+      {statusLabel(status, label)}
     </Button>
   );
 };
