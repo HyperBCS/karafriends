@@ -15,6 +15,7 @@ import {
   deleteJoysoundTempFiles,
   joysoundJob,
   nicoJob,
+  queueDownloadedJoysoundSong,
   youtubeJob,
   type JobPaths,
 } from "./jobs";
@@ -299,6 +300,25 @@ test("a Joysound background left half-done by a crash goes before it's downloade
     ),
     "half-done",
   );
+});
+
+test("a Joysound video left half-written isn't queued", () => {
+  for (const name of [
+    "joysound-123456-default.mp4",
+    "joysound-123456-default.mp4.tmp",
+    "joysound-123456.joy_02",
+  ]) {
+    fs.writeFileSync(path.join(folder, name), "x");
+  }
+  const queued: JoysoundQueueItem[] = [];
+  assert.equal(
+    queueDownloadedJoysoundSong(folder, joysoundItem(null), (item) =>
+      queued.push(item),
+    ),
+    false,
+  );
+  assert.deepEqual(queued, []);
+  assert.deepEqual(files(), []);
 });
 
 test("a Joysound download whose song data fails stops its background download", async () => {

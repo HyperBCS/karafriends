@@ -533,14 +533,25 @@ function joysoundFiles(
 }
 
 // If the song was downloaded before, queues it with pushSongToQueue and
-// returns true. A video without its lyrics, or one that can't be used, goes.
+// returns true. A video without its lyrics, one half-written when the app
+// stopped, or one that can't be used, goes.
 export function queueDownloadedJoysoundSong(
   folder: string,
   queueItem: JoysoundQueueItem,
   pushSongToQueue: (queueItem: JoysoundQueueItem) => void,
 ): boolean {
-  const { telopFilename, videoFilename } = joysoundFiles(folder, queueItem);
+  const { telopFilename, videoFilename, tempFilename } = joysoundFiles(
+    folder,
+    queueItem,
+  );
   if (!fs.existsSync(videoFilename)) return false;
+  // The marker of a download that never finished. (downloadJoysoundData has
+  // checked that none is running.)
+  if (fs.existsSync(tempFilename)) {
+    console.error(`${videoFilename} is half-done; downloading it again`);
+    deleteJoysoundTempFiles(folder, queueItem);
+    return false;
+  }
   if (fs.existsSync(telopFilename)) {
     console.info(`${videoFilename} already exists, not redownloading`);
     try {
