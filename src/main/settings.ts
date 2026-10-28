@@ -268,8 +268,17 @@ export function createSettingsHandlers(
         }
       }
 
+      const before = store.saved();
       const problems = save(values);
       if (problems.length > 0) return { ok: false, problems };
+      const after = store.saved();
+      if (
+        after.adminPasswordHash !== before.adminPasswordHash ||
+        after.adminPasswordSalt !== before.adminPasswordSalt
+      ) {
+        // services.ts ends their sessions.
+        notes.push("Phones signed in as admins must sign in again.");
+      }
 
       const results = await Promise.all(
         (["dam", "joysound"] as const).map(async (service) => {

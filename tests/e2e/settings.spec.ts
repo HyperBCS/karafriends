@@ -278,6 +278,7 @@ test.describe("export, then import on a second launch", () => {
     expect(result).toEqual({
       ok: true,
       problems: [
+        "Phones signed in as admins must sign in again.",
         "No DAM login is set: enter the username and password first.",
         "No Joysound login is set: enter the email and password first.",
       ],

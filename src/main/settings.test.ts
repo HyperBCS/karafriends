@@ -336,7 +336,11 @@ describe("exportConfig and importConfig", () => {
     const second = setup({ name: "second.yaml" });
     assert.deepEqual(await second.api.importConfig({ yaml }, display), {
       ok: true,
-      problems: ["DAM login works.", "Joysound login works."],
+      problems: [
+        "Phones signed in as admins must sign in again.",
+        "DAM login works.",
+        "Joysound login works.",
+      ],
     });
     assert.deepEqual(second.store.saved(), first.store.saved());
     assert.deepEqual(second.onDisk(), first.onDisk());
@@ -349,6 +353,11 @@ describe("exportConfig and importConfig", () => {
       (await second.api.getSettings({}, display)).needsRestart,
       true,
     );
+    // The same admin password again signs nobody out.
+    assert.deepEqual(await second.api.importConfig({ yaml }, display), {
+      ok: true,
+      problems: ["DAM login works.", "Joysound login works."],
+    });
   });
 
   test("an old config.yaml: no version line, admin lists dropped and listed", async () => {
