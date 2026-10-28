@@ -5,6 +5,7 @@ import type { Page } from "../../common/api";
 import { call } from "../../common/apiClient";
 import { t } from "../i18n";
 import { rank } from "../rank";
+import songLink, { artistLink, sourceName } from "../songLink";
 import Loader from "./Loader";
 import MoreButton from "./MoreButton";
 import * as styles from "./SearchResults.module.scss";
@@ -31,11 +32,6 @@ interface Found {
   artistNameYomi?: string;
   songCount?: number;
 }
-
-const PAGES = {
-  dam: { title: "/song/", artist: "/artist/" },
-  joysound: { title: "/joysoundSong/", artist: "/joysoundArtist/" },
-};
 
 // One catalog's results, a page at a time. Not a suspending lookup: each
 // catalog loads and fails on its own, so a host with one login (or a
@@ -76,9 +72,6 @@ const SearchResults = ({ query, by, source }: Props) => {
   const catalogs = (["dam", "joysound"] as const).filter(
     (catalog) => source === "all" || source === catalog,
   );
-  const sourceName = (catalog: Catalog) =>
-    t(catalog === "dam" ? "source.dam" : "source.joysound");
-
   // Each catalog's loaded pages, without the repeats a shifting catalog
   // can put on a later page.
   const found = catalogs.map((catalog) => {
@@ -104,7 +97,11 @@ const SearchResults = ({ query, by, source }: Props) => {
             )
       }
       source={sourceName(item.catalog)}
-      to={`${PAGES[item.catalog][by]}${item.id}`}
+      to={
+        by === "title"
+          ? songLink({ kind: item.catalog, songId: item.id })
+          : artistLink(item.catalog, item.id)
+      }
       state={{ artistNameYomi: item.artistNameYomi }}
     />
   ));

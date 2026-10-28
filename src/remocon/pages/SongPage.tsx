@@ -11,6 +11,7 @@ import WithReading from "../components/WithReading";
 import useReadings from "../hooks/useReadings";
 import { t } from "../i18n";
 import { reading } from "../../common/readings";
+import songLink, { sourceName } from "../songLink";
 import { searchLink } from "./SearchPage";
 import * as styles from "./SongPage.module.scss";
 import { youtubeVideoId as parseYoutubeVideoId } from "../videoLink";
@@ -63,7 +64,7 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
           />
         </Link>
         <p className={styles.source}>
-          {t(kind === "dam" ? "source.dam" : "source.joysound")}
+          {sourceName(kind)}
           {song.tieUp && ` · ${song.tieUp}`}
         </p>
       </div>
@@ -71,9 +72,9 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
       {dam ? (
         <QueueButtons kind="dam" song={dam} />
       ) : (
-        // Keyed, so another song's page starts without this one's video.
+        // App.tsx keys the page by the song's id, so another song's page
+        // starts without this one's video.
         <JoysoundQueue
-          key={song.id}
           song={song as JoysoundSongDetail}
           initialVideoId={params.youtubeVideoId ?? ""}
         />
@@ -103,9 +104,10 @@ const JoysoundQueue = ({
     setCheckedVideoId("");
     // Through the router, which keeps its place in the history (the top
     // bar's back button needs it).
-    navigate(`/joysoundSong/${song.id}${id ? `/${id}` : ""}`, {
-      replace: true,
-    });
+    navigate(
+      songLink({ kind: "joysound", songId: song.id, youtubeVideoId: id }),
+      { replace: true },
+    );
   };
 
   const onSubmit = (e: React.FormEvent) => {

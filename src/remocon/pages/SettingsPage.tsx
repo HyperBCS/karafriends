@@ -325,10 +325,15 @@ const Mics = () => {
 
 // Signing in and out as an admin with the password the host set. Signed
 // in, the admin's controls: the song volume, the guide melody's level and
-// the mics' levels.
+// the mics' levels. While the host has made everyone an admin, it says so,
+// and Sign out shows only for a phone that signed in (it would do nothing
+// for one that didn't).
 const Admin = () => {
   const { adminToken } = useUserIdentity();
   const isAdmin = useIsAdmin();
+  const everyoneIsAdmin = useLiveState(
+    (state) => state?.config.everyoneIsAdmin ?? false,
+  );
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -360,18 +365,20 @@ const Admin = () => {
     return (
       <>
         <p className={styles.text} role="status">
-          {t("settings.signedIn")}
+          {t(everyoneIsAdmin ? "settings.everyoneAdmin" : "settings.signedIn")}
         </p>
         <div className={styles.setting}>
           <SongVolumeSlider />
         </div>
         <GuideMelodySlider />
         <Mics />
-        <div className={styles.setting}>
-          <Button variant="secondary" disabled={pending} onClick={leave}>
-            {t("settings.signOut")}
-          </Button>
-        </div>
+        {adminToken !== null && (
+          <div className={styles.setting}>
+            <Button variant="secondary" disabled={pending} onClick={leave}>
+              {t("settings.signOut")}
+            </Button>
+          </div>
+        )}
       </>
     );
   }

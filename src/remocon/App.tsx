@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from "react";
+import React, { Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import {
   HashRouter,
   Link,
@@ -7,6 +7,8 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useNavigationType,
+  useParams,
 } from "react-router";
 
 import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
@@ -22,6 +24,7 @@ import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SongPage from "./pages/SongPage";
 import YouTubePage from "./pages/YouTubePage";
+import { ARTIST_PAGES, SONG_PAGES, sourceName } from "./songLink";
 
 import * as styles from "./App.module.scss";
 
@@ -90,10 +93,53 @@ interface ScreenProps {
   children: React.ReactNode;
 }
 
+// Where each entry in the history left its screen scrolled, by
+// react-router's key for the entry. Every route's Screen is the same one
+// <main>, so without this a screen opened at the last one's place, and
+// Back landed at the top of a long list of results.
+const scrolledTo = new Map<string, number>();
+
+// Keeps the <main> scroller's place per history entry: a new screen opens
+// at its top, Back and Forward find a screen where it was left, and a
+// change in place (typing a search, a Joysound song's background) leaves
+// it be.
+function useScrollMemory(): {
+  ref: React.RefObject<HTMLElement | null>;
+  onScroll: (event: React.UIEvent<HTMLElement>) => void;
+} {
+  const ref = useRef<HTMLElement>(null);
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const last = useRef(location);
+
+  useLayoutEffect(() => {
+    const main = ref.current;
+    const before = last.current;
+    last.current = location;
+    if (!main || before.key === location.key) return;
+    if (navigationType === "REPLACE" && before.pathname === location.pathname) {
+      // The same entry under a new key.
+      scrolledTo.set(location.key, main.scrollTop);
+      return;
+    }
+    main.scrollTop =
+      navigationType === "POP" ? (scrolledTo.get(location.key) ?? 0) : 0;
+    scrolledTo.set(location.key, main.scrollTop);
+  }, [location.key]);
+
+  return {
+    ref,
+    // The rendered entry's: while another loads, this one is still shown.
+    onScroll: (event) =>
+      scrolledTo.set(location.key, event.currentTarget.scrollTop),
+  };
+}
+
 // One screen: the top bar (back, the title, and History, Settings and Home)
 // and the screen's content below it.
 const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   const navigate = useNavigate();
+  const scroll = useScrollMemory();
   // react-router counts the entries it pushed: back stays in the remote.
   const canGoBack = (window.history.state?.idx ?? 0) > 0;
   let back: string | (() => void) | undefined;
@@ -137,9 +183,30 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
           })}
         />
       </header>
-      <main className={styles.main}>{children}</main>
+      <main ref={scroll.ref} className={styles.main} onScroll={scroll.onScroll}>
+        {children}
+      </main>
     </>
   );
+};
+
+// Each song, video or artist gets a page of its own. One opened from another
+// of the same kind (song to song, through Now playing) mounts afresh, with
+// its own spinner and no earlier error or button state, rather than the
+// last one staying on screen, live, while the new one loads. Keyed by the
+// id alone, so picking a Joysound song's background (a second param, in
+// the address in place) keeps the page.
+const PerId = ({
+  page,
+  param,
+  children,
+}: {
+  page: string;
+  param: string;
+  children: React.ReactNode;
+}) => {
+  const id = useParams()[param];
+  return <React.Fragment key={`${page}/${id}`}>{children}</React.Fragment>;
 };
 
 // The remote's screens above the now-playing sheet. A phone without a
@@ -179,55 +246,65 @@ const Shell = () => {
           }
         />
         <Route
-          path="/song/:id"
+          path={`${SONG_PAGES.dam}/:id`}
           element={
-            <Screen title={t("source.dam")}>
-              <SongPage kind="dam" />
+            <Screen title={sourceName("dam")}>
+              <PerId page="dam" param="id">
+                <SongPage kind="dam" />
+              </PerId>
             </Screen>
           }
         />
-        {["/joysoundSong/:id", "/joysoundSong/:id/:youtubeVideoId"].map(
-          (path) => (
-            <Route
-              key={path}
-              path={path}
-              element={
-                <Screen title={t("source.joysound")}>
+        {[":id", ":id/:youtubeVideoId"].map((path) => (
+          <Route
+            key={path}
+            path={`${SONG_PAGES.joysound}/${path}`}
+            element={
+              <Screen title={sourceName("joysound")}>
+                <PerId page="joysound" param="id">
                   <SongPage kind="joysound" />
-                </Screen>
-              }
-            />
-          ),
-        )}
+                </PerId>
+              </Screen>
+            }
+          />
+        ))}
         <Route
-          path="/artist/:id"
+          path={`${ARTIST_PAGES.dam}/:id`}
           element={
             <Screen title={t("search.artist")}>
-              <ArtistPage key="dam" kind="dam" />
+              <PerId page="damArtist" param="id">
+                <ArtistPage kind="dam" />
+              </PerId>
             </Screen>
           }
         />
         <Route
-          path="/joysoundArtist/:id"
+          path={`${ARTIST_PAGES.joysound}/:id`}
           element={
             <Screen title={t("search.artist")}>
-              <ArtistPage key="joysound" kind="joysound" />
+              <PerId page="joysoundArtist" param="id">
+                <ArtistPage kind="joysound" />
+              </PerId>
             </Screen>
           }
         />
         <Route
-          path="/search/youtube/:videoId"
+          path={`${SONG_PAGES.youtube}/:videoId`}
           element={
-            <Screen title={t("source.youtube")}>
-              <YouTubePage />
+            <Screen title={sourceName("youtube")}>
+              <PerId page="youtube" param="videoId">
+                <YouTubePage />
+              </PerId>
             </Screen>
           }
         />
         <Route
-          path="/search/niconico/:videoId"
+          path={`${SONG_PAGES.nico}/:videoId`}
           element={
-            <Screen title={t("source.niconico")}>
-              <NiconicoPage />
+            <Screen title={sourceName("nico")}>
+              <PerId page="nico" param="videoId">
+                <NiconicoPage />
+              </PerId>
             </Screen>
           }
         />
@@ -235,7 +312,9 @@ const Shell = () => {
           path="/adhocLyrics/:id"
           element={
             <Screen title={t("lyrics.heading")}>
-              <AdhocLyricsPage />
+              <PerId page="adhocLyrics" param="id">
+                <AdhocLyricsPage />
+              </PerId>
             </Screen>
           }
         />

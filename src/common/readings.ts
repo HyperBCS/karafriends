@@ -1,4 +1,4 @@
-import { isRomaji, toHiragana, toKatakana, toRomaji } from "wanakana";
+import { toHiragana, toKatakana, toRomaji } from "wanakana";
 
 import { READINGS_MODES, type ReadingsMode } from "./api";
 
@@ -26,19 +26,22 @@ export function pickReadings(saved: string | null): ReadingsMode {
   return READINGS_MODES.find((mode) => mode === saved) ?? "written";
 }
 
+// Kana or kanji anywhere: a name without them (Café, LOVE☆, Don’t) is
+// already in letters a guest can read, whatever symbols it has.
+const JAPANESE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
 // What to show instead of a title or an artist's name, given its kana
 // reading: the kana, or the romaji. Null when it shows as written: as
-// written, no reading (Joysound gives none), a name already in Latin
-// letters, or kana that only repeat a name written in kana. The kana are
-// hiragana, as furigana are: DAM's search gives hiragana, its song details
-// katakana.
+// written, no reading (Joysound gives none), a name with no kana or kanji,
+// or kana that only repeat a name written in kana. The kana are hiragana,
+// as furigana are: DAM's search gives hiragana, its song details katakana.
 export function reading(
   written: string,
   yomi: string | undefined,
   mode: ReadingsMode,
 ): string | null {
   if (mode === "written" || !yomi?.trim()) return null;
-  if (isRomaji(written.normalize("NFKC"))) return null;
+  if (!JAPANESE.test(written.normalize("NFKC"))) return null;
   if (mode === "kana") {
     return normalize(yomi) === normalize(written)
       ? null

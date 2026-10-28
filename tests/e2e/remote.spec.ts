@@ -617,6 +617,119 @@ test("Home on a song page goes to the search screen", async ({
   expect(new URL(remote.url()).hash).toBe("#/");
 });
 
+// The details a DAM song's page asks for, for song n.
+const damSongDetail = (n: number) => ({
+  ...damSong(n),
+  lyricsPreview: null,
+  vocalTypes: ["NORMAL"],
+  tieUp: null,
+  playtime: 200,
+});
+
+test("another song's page starts afresh: its own spinner, not the last song or its error", async ({
+  karafriends,
+  remote,
+}) => {
+  // Song 1 fails, song 3 waits until let go.
+  let letGo = () => {};
+  const held = new Promise<void>((resolve) => (letGo = resolve));
+  await remote.route("**/api/damSong", async (route) => {
+    const n = Number(route.request().postDataJSON().id.replace("e2e-", ""));
+    if (n === 1) {
+      return route.fulfill({ status: 502, json: { error: "DAM is down" } });
+    }
+    if (n === 3) await held;
+    return route.fulfill({ json: damSongDetail(n) });
+  });
+  const main = remote.getByRole("main");
+  await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
+  await expect(main.getByRole("alert")).toContainText("DAM is down");
+
+  // As the now-playing link does: another page of the same kind. Song 2
+  // is asked for at once, without a tap on Try again.
+  await remote.evaluate(() => (window.location.hash = "#/song/e2e-2"));
+  await expect(
+    remote.getByRole("heading", { name: songName(2) }),
+  ).toBeVisible();
+  await expect(main.getByRole("alert")).toHaveCount(0);
+
+  // While song 3 loads, the spinner shows, not song 2 and its buttons.
+  await remote.evaluate(() => (window.location.hash = "#/song/e2e-3"));
+  await expect(main.getByRole("status", { name: "Loading" })).toBeVisible();
+  await expect(remote.getByRole("heading", { name: songName(2) })).toHaveCount(
+    0,
+  );
+  await expect(
+    remote.getByRole("button", { name: "Queue song", exact: true }),
+  ).toHaveCount(0);
+  letGo();
+  await expect(
+    remote.getByRole("heading", { name: songName(3) }),
+  ).toBeVisible();
+});
+
+test("each screen keeps its own scroll: Back lands where it was, a new screen opens at the top", async ({
+  remote,
+}) => {
+  await remote.route("**/api/damSearchSongs", (route) =>
+    fakePages(route, PAGE_SIZE, damSong),
+  );
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: damSongDetail(
+        Number(route.request().postDataJSON().id.replace("e2e-", "")),
+      ),
+    }),
+  );
+  await remote.route("**/api/history", (route) =>
+    route.fulfill({ json: { items: [], nextOffset: null } }),
+  );
+  await pickSource(remote, "DAM");
+  const search = remote.getByRole("searchbox", { name: "Search" });
+  await search.fill("E2E");
+  const main = remote.getByRole("main");
+  const songs = main.getByRole("link", { name: /E2E DAM song/ });
+  await expect(songs).toHaveCount(PAGE_SIZE);
+  await search.blur();
+
+  await scrollDown(remote, main);
+  await expect.poll(() => scrollTop(main)).toBeGreaterThan(500);
+  // Settled (WebKit's scroll into view can still be moving).
+  let left = -1;
+  await expect
+    .poll(async () => {
+      const now = await scrollTop(main);
+      const settled = now === left;
+      left = now;
+      return settled;
+    })
+    .toBe(true);
+
+  // A row in the middle of the screen, as a finger would tap it.
+  const box = (await main.boundingBox())!;
+  await remote.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(remote).toHaveURL(/#\/song\//);
+  await expect(
+    remote.getByRole("button", { name: "Queue song", exact: true }),
+  ).toBeVisible();
+  expect(await scrollTop(main)).toBe(0);
+
+  await remote.getByRole("button", { name: "Back" }).click();
+  await expect(songs).toHaveCount(PAGE_SIZE);
+  await expect.poll(() => scrollTop(main)).toBe(left);
+
+  // A screen opened from there starts at its top too.
+  await remote.getByRole("link", { name: "Settings" }).click();
+  await expect(remote.getByRole("textbox", { name: "Nickname" })).toBeVisible();
+  // (Tall enough that it could have opened part way down.)
+  expect(
+    await main.evaluate((el) => el.scrollHeight - el.clientHeight),
+  ).toBeGreaterThan(0);
+  expect(await scrollTop(main)).toBe(0);
+  await remote.getByRole("button", { name: "Back" }).click();
+  await expect.poll(() => scrollTop(main)).toBe(left);
+});
+
 test("an artist search from both catalogs takes turns on equal matches, and More loads both", async ({
   remote,
 }) => {
@@ -686,25 +799,51 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
     "Couldn't get this video: E2E offline",
   );
 
-  // A bare ID could be half typed ("sm1" of "sm12345"): the pause in typing
-  // searches for it, and Enter or leaving the field opens it.
+  // A bare ID could be half typed ("sm1" of "sm12345"), or a title that
+  // only looks like one ("OneLastKiss"): it's searched for, Enter and
+  // leaving the field stay on the results, and a row above them opens the
+  // video.
   for (const method of ["damSearchSongs", "joysoundSearchSongs"]) {
     await remote.route(`**/api/${method}`, (route) =>
       route.fulfill({ json: { items: [], nextOffset: null } }),
     );
   }
+  const byId = remote.getByRole("list", {
+    name: "Open the video with this ID",
+  });
   await remote.getByRole("button", { name: "Back" }).click();
   await search.fill("sm9");
   await expect(remote).toHaveURL(/q=sm9/);
   await search.press("Enter");
+  await expect(remote.getByText("No results found")).toBeVisible();
+  await expect(remote).toHaveURL(/q=sm9/);
+  await expect(byId.getByRole("link")).toContainText("sm9");
+  await expect(byId.getByRole("link")).toContainText("Niconico");
+  await byId.getByRole("link").click();
   await expect(remote).toHaveURL(/#\/search\/niconico\/sm9$/);
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
 
   await remote.getByRole("button", { name: "Back" }).click();
-  await search.fill("jNQXAC9IVRw");
-  await expect(remote).toHaveURL(/q=jNQXAC9IVRw/);
-  await search.blur();
+  for (const title of ["OneLastKiss", "jNQXAC9IVRw"]) {
+    await search.fill(title);
+    await expect(remote).toHaveURL(new RegExp(`q=${title}`));
+    await search.press("Enter");
+    await search.focus();
+    await search.blur();
+    await expect(remote.getByText("No results found")).toBeVisible();
+    await expect(remote).toHaveURL(new RegExp(`q=${title}`));
+    await expect(byId.getByRole("link")).toContainText(title);
+    await expect(byId.getByRole("link")).toContainText("YouTube");
+  }
+  await byId.getByRole("link").click();
   await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
+
+  // A title is just searched for, with no row.
+  await remote.getByRole("button", { name: "Back" }).click();
+  await search.fill("Butterflies");
+  await expect(remote).toHaveURL(/q=Butterflies/);
+  await expect(remote.getByText("No results found")).toBeVisible();
+  await expect(byId).toHaveCount(0);
 });
 
 test("the sheet's toolbar: the switch, the transport and the key, in that order", async ({
@@ -1104,6 +1243,45 @@ test("a song already queued says why it wasn't queued again", async ({
   ).toBeEnabled();
 });
 
+test.describe("with everyone an admin", () => {
+  const PASSWORD = "e2e everyone";
+  test.use({
+    appConfig: { ...adminPasswordConfig(PASSWORD), everyoneIsAdmin: true },
+  });
+
+  test("the settings say so, and Sign out shows only for a phone that signed in", async ({
+    display,
+    remote,
+  }) => {
+    const admin = remote.getByRole("region", { name: "Admin" });
+    const signOut = admin.getByRole("button", { name: "Sign out" });
+    await remote.getByRole("link", { name: "Settings" }).click();
+    await expect(admin.getByRole("status")).toHaveText(
+      "Everyone is an admin right now",
+    );
+    await expect(
+      admin.getByRole("slider", { name: "Song volume" }),
+    ).toBeVisible();
+    await expect(signOut).toHaveCount(0);
+
+    // Off, a guest signs in as before, and can sign out.
+    const setEveryoneIsAdmin = (everyoneIsAdmin: boolean) =>
+      displayCall(display, "setSettings", { settings: { everyoneIsAdmin } });
+    await setEveryoneIsAdmin(false);
+    await admin.getByLabel("Admin password").fill(PASSWORD);
+    await admin.getByRole("button", { name: "Sign in" }).click();
+    await expect(admin.getByRole("status")).toHaveText("You're an admin");
+    await expect(signOut).toBeVisible();
+
+    // On again, the phone that signed in still can.
+    await setEveryoneIsAdmin(true);
+    await expect(admin.getByRole("status")).toHaveText(
+      "Everyone is an admin right now",
+    );
+    await expect(signOut).toBeVisible();
+  });
+});
+
 // The server answers 409 when the host set no admin password (403 is a
 // wrong one). Made up here, so this tests what the remote says.
 test("signing in without an admin password says there is none", async ({
@@ -1257,6 +1435,11 @@ test.describe("history", () => {
     await expect(
       remote.getByRole("main").getByRole("listitem").first(),
     ).toContainText(NICKNAME);
+    // The time is when it was queued, and says so: when it was sung isn't
+    // kept.
+    await expect(
+      remote.getByRole("main").getByRole("listitem").first().locator("time"),
+    ).toHaveText(/^Queued /);
 
     await remote.getByRole("button", { name: "More" }).click();
     await expect(songs).toHaveCount(HISTORY_LENGTH);

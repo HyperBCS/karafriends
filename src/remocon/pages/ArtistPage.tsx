@@ -7,6 +7,7 @@ import MoreButton from "../components/MoreButton";
 import { List, ListRow, Marquee } from "../components/ui";
 import WithReading from "../components/WithReading";
 import { t } from "../i18n";
+import songLink, { sourceName } from "../songLink";
 import * as styles from "./SongPage.module.scss";
 
 function useDamArtist(id: string) {
@@ -39,15 +40,13 @@ function useJoysoundArtist(id: string) {
   };
 }
 
-const SONG_PAGES = { dam: "/song/", joysound: "/joysoundSong/" };
-
-// A DAM or Joysound artist's songs. (Render it with key={kind}: the kind
-// picks the lookup.)
+// A DAM or Joysound artist's songs. (App.tsx keys it by kind and id: the
+// kind picks the lookup.)
 const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
   const { id } = useParams<{ id: string }>();
   const useArtist = kind === "dam" ? useDamArtist : useJoysoundArtist;
   const { name, nameYomi, songCount, paged } = useArtist(id!);
-  const source = t(kind === "dam" ? "source.dam" : "source.joysound");
+  const source = sourceName(kind);
 
   return (
     <>
@@ -76,7 +75,7 @@ const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
               />
             }
             source={source}
-            to={`${SONG_PAGES[kind]}${song.id}`}
+            to={songLink({ kind, songId: song.id })}
             state={{ artistNameYomi: nameYomi }}
           />
         ))}

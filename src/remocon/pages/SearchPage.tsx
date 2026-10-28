@@ -6,10 +6,10 @@ import SearchResults, {
   type SearchSource,
 } from "../components/SearchResults";
 import SourceMenu from "../components/SourceMenu";
-import { SegmentedControl, TextField } from "../components/ui";
+import { List, ListRow, SegmentedControl, TextField } from "../components/ui";
 import { t } from "../i18n";
 import { MdSearch } from "../icons";
-import songLink from "../songLink";
+import songLink, { sourceName } from "../songLink";
 import { videoLink } from "../videoLink";
 import * as styles from "./SearchPage.module.scss";
 
@@ -26,8 +26,13 @@ export function searchLink(
   return `/?${new URLSearchParams({ q: query, by, source })}`;
 }
 
+// A pasted link: anything with a dot or a slash. A bare ID is only ever
+// a row to tap (see SearchPage).
+const isLink = (text: string) => /[./]/.test(text);
+
 // One search box for DAM and Joysound, by title or artist, from either or
-// both. A pasted YouTube or Niconico link or ID opens that video's page.
+// both. A pasted YouTube or Niconico link opens that video's page; a bare
+// ID gets a row above the results that opens it.
 const SearchPage = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -54,9 +59,11 @@ const SearchPage = () => {
     if (text.trim() !== query) update({ q: text.trim() });
   };
 
-  // A video link or ID opens its page; anything else is searched for.
+  // A video link opens its page; anything else is searched for. A bare ID
+  // is searched for too: an 11-letter title ("OneLastKiss") looks just like
+  // a YouTube ID, so the guest picks the video's row if that's what it was.
   const commit = () => {
-    const link = videoLink(text);
+    const link = isLink(text) ? videoLink(text) : null;
     if (link) {
       navigate(songLink({ kind: link.kind, songId: link.videoId }));
     } else {
@@ -64,13 +71,13 @@ const SearchPage = () => {
     }
   };
 
-  // While typing, a pasted link opens at once. A bare ID ("sm1", on its
-  // way to "sm12345") opens only on Enter or on leaving the field; until
-  // then it's searched for like any text.
+  // While typing, a pasted link opens at once.
   useEffect(() => {
-    const timer = setTimeout(/[./]/.test(text) ? commit : search, DEBOUNCE_MS);
+    const timer = setTimeout(commit, DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [text]);
+
+  const byId = query && !isLink(query) ? videoLink(query) : null;
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -119,6 +126,16 @@ const SearchPage = () => {
           />
         </div>
       </div>
+      {byId && (
+        <List label={t("search.videoById")}>
+          <ListRow
+            title={byId.videoId}
+            subtitle={t("search.videoById")}
+            source={sourceName(byId.kind)}
+            to={songLink({ kind: byId.kind, songId: byId.videoId })}
+          />
+        </List>
+      )}
       {query ? (
         <SearchResults query={query} by={by} source={source} />
       ) : (

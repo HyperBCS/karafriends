@@ -41,6 +41,7 @@ export const ja: Messages = {
   "search.sourceAll": "すべて",
   "search.sourceButton": "機種：{source}",
   "search.results": "検索結果",
+  "search.videoById": "このIDの動画を開く",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
   "search.failed": "{source}を検索できませんでした：{reason}",
@@ -105,6 +106,7 @@ export const ja: Messages = {
 
   "history.heading": "履歴",
   "history.empty": "履歴はありません",
+  "history.queuedAt": "{time}に予約",
 
   "settings.heading": "設定",
   "settings.you": "あなた",
@@ -121,6 +123,7 @@ export const ja: Messages = {
   "settings.signIn": "ログイン",
   "settings.signOut": "ログアウト",
   "settings.signedIn": "管理者としてログイン中",
+  "settings.everyoneAdmin": "今は全員が管理者です",
   "settings.wrongPassword": "パスワードが違います。ホストに確認してください。",
   "settings.noPassword": "管理者パスワードは設定されていません。",
   "settings.tooManyTries":

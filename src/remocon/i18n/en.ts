@@ -46,6 +46,9 @@ export const en = {
   // The source's button, which names the source.
   "search.sourceButton": "Source: {source}",
   "search.results": "Results",
+  // A query that could be a video's ID: a row to open it, above the
+  // results, since a title can look like one ("OneLastKiss").
+  "search.videoById": "Open the video with this ID",
   "search.noResults": "No results found",
   "search.songCount": "{count} songs",
   "search.failed": "Couldn't search {source}: {reason}",
@@ -118,6 +121,8 @@ export const en = {
   // History.
   "history.heading": "History",
   "history.empty": "No history",
+  // When a sung song was queued (the server doesn't keep when it was sung).
+  "history.queuedAt": "Queued {time}",
 
   // Settings: the phone's nickname and choices, the TV's lyrics, and
   // signing in as an admin. A group's heading, then its settings.
@@ -136,6 +141,8 @@ export const en = {
   "settings.signIn": "Sign in",
   "settings.signOut": "Sign out",
   "settings.signedIn": "You're an admin",
+  // The host's "everyone is an admin": every phone is one, signed in or not.
+  "settings.everyoneAdmin": "Everyone is an admin right now",
   "settings.wrongPassword": "Wrong password. Ask the host for it.",
   "settings.noPassword": "The host hasn't set an admin password.",
   "settings.tooManyTries": "Too many tries. Wait a minute, then try again.",

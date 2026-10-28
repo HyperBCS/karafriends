@@ -5,7 +5,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-width: 9em;
+  // "Queued 7:35 PM" on one line.
+  max-width: 10em;
   padding-left: $kf-space-2;
   line-height: 1.35;
   text-align: right;

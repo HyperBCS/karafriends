@@ -90,6 +90,14 @@ describe("rank", () => {
     assert.deepEqual(rank("koi", [[ai, koi]]), [koi, ai]);
   });
 
+  test("full-width romaji, or a full-width space, is romaji too", () => {
+    const koi = song("恋", "", "コイ");
+    const ai = song("愛", "", "アイ");
+    assert.deepEqual(rank("ｋｏｉ", [[ai, koi]]), [koi, ai]);
+    const uta = song("恋のうた", "", "コイノウタ");
+    assert.deepEqual(rank("koi\u3000no uta", [[ai, uta]]), [uta, ai]);
+  });
+
   test("an artist match counts for less than a title match", () => {
     const byLemon = song("Something", "Lemon");
     const lemon = song("Lemonade", "Someone");
