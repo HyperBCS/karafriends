@@ -10,6 +10,9 @@ const VIDEO_TITLE = "Me at the zoo";
 test.describe("YouTube", { tag: "@net" }, () => {
   test.use({ mediaTools: "installed" });
   test.describe.configure({
+    // One at a time, not in parallel: more lookups at once from this
+    // computer could only make YouTube's bot check likelier.
+    mode: "default",
     // Looking up and downloading the video can take a while.
     timeout: 180_000,
     // YouTube sometimes keeps answering one app session's lookups with "Sign

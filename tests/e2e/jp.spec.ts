@@ -61,6 +61,9 @@ async function removeFromQueue(remote: Page, title: string) {
 
 test.describe("DAM and Joysound", { tag: "@jp" }, () => {
   test.use({ realCredentials: true });
+  // One at a time, not in parallel: they all sign in to the same DAM and
+  // Joysound accounts.
+  test.describe.configure({ mode: "default" });
 
   for (const catalog of CATALOGS) {
     test(`a ${catalog} title search finds Lemon`, async ({ remote }) => {

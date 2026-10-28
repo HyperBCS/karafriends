@@ -11,10 +11,10 @@ const runWebKit = process.env.KARAFRIENDS_E2E_WEBKIT === "1";
 
 export default defineConfig({
   testDir: "tests/e2e",
-  // Every test launches its own copy of the app, whose display window opens
-  // fullscreen, so run them one at a time.
-  workers: 1,
-  fullyParallel: false,
+  // Every test launches its own copy of the app, with its own profile, temp
+  // directory and port, and its display window hidden (see fixtures.ts), so
+  // tests run in parallel: as many at once as half the CPU's cores.
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
