@@ -537,6 +537,9 @@ export default function PianoRoll(props: {
 
     function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
       if (!mic || !props.videoRef.current) return;
+      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
+        return;
+      }
       const { midiNumber, confidence } = mic.getPitch();
       if (
         confidence >= 0.8 &&
@@ -586,6 +589,12 @@ export default function PianoRoll(props: {
 
     const draw = () => {
       if (!canvasRef.current || !props.videoRef.current) return;
+      // No stream yet (the low-bitrate switch, before its seek): the time
+      // reads 0, so keep the last frame rather than flash the song's start.
+      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
+        animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+        return;
+      }
 
       const time = drawTime(
         props.videoRef.current.currentTime,
