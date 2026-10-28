@@ -10,6 +10,13 @@
   src: url("./fonts/NotoSerifKR-SemiBold.otf");
 }
 
+/* Every size is in rem (tokens.css), so the display scales with its window:
+   16px at 1080p, 32px at 2160p, and no smaller than 10px in a small dev
+   window. */
+html {
+  font-size: clamp(10px, 1.48vh, 32px);
+}
+
 html,
 body,
 #root {
