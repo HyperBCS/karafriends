@@ -39,6 +39,11 @@ export default function Settings(
   // Why getSettings failed, if it did (loaded.loadProblem is why
   // config.yaml didn't load, with the settings the app runs on).
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Whether it opened on a first run, from the first load: the save that
+  // completes a login keeps the banner until Settings closes, so nothing
+  // under it moves (the blur-save runs on the mouse down of a click on
+  // Test login, and would move the button from under the pointer).
+  const [firstRun, setFirstRun] = useState(false);
   const [messages, setMessages] = useState<
     Partial<Record<Section, Message | null>>
   >({});
@@ -56,16 +61,21 @@ export default function Settings(
   const report = (section: Section, problem: string | null) =>
     say(section, problem === null ? null : { text: problem, tone: "problem" });
 
-  const [actions] = useState(() =>
-    createSettingsActions({
+  const [actions] = useState(() => {
+    let firstLoad = true;
+    return createSettingsActions({
       call,
       files: window.karafriends,
       say,
-      setLoaded,
+      setLoaded: (next) => {
+        if (firstLoad) setFirstRun(next.isFirstRun);
+        firstLoad = false;
+        setLoaded(next);
+      },
       onImported: (changed) =>
         setUnseen((tabs) => new Set([...tabs, ...changed])),
-    }),
-  );
+    });
+  });
   const tools = useTools(say);
 
   useEffect(() => {
@@ -163,6 +173,7 @@ export default function Settings(
           {props.tab === "accounts" ? (
             <AccountsTab
               loaded={loaded}
+              firstRun={firstRun}
               messages={messages}
               actions={actions}
             />

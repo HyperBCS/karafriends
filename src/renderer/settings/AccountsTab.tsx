@@ -14,6 +14,8 @@ import { Checkbox, SettingsSection, TextSetting } from "./controls";
 // launch, a note over them.
 export default function AccountsTab(props: {
   loaded: Loaded;
+  // Whether Settings opened on a first run (see Settings).
+  firstRun: boolean;
   messages: Partial<Record<Section, Message | null>>;
   actions: SettingsActions;
 }) {
@@ -68,7 +70,7 @@ export default function AccountsTab(props: {
 
   return (
     <>
-      {props.loaded.isFirstRun ? (
+      {props.firstRun ? (
         <p className="settingsBanner">
           Add your DAM or Joysound login to search their catalogs. YouTube works
           without one.

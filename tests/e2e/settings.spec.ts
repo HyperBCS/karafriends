@@ -232,6 +232,41 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(settings).toHaveCount(0);
 });
 
+test("on first launch, the save that completes a login leaves the banner up, so Test login stays where it was", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const banner = settings.getByText("Add your DAM or Joysound login", {
+    exact: false,
+  });
+  const dam = settings.getByRole("region", { name: "DAM login" });
+  const testLogin = dam.getByRole("button", { name: "Test login" });
+  await expect(banner).toBeVisible();
+  const before = await testLogin.boundingBox();
+
+  await dam.getByLabel("Username").fill("e2e-first-user");
+  await dam.getByLabel("Username").press("Enter");
+  await expect(dam.getByRole("status")).toHaveText("Saved.");
+  await dam.getByLabel("Password").fill("e2e-first-password");
+  await dam.getByLabel("Password").press("Enter");
+  // Saved, and loaded again: the password shows masked.
+  await expect
+    .poll(async () => (await output(display, "getSettings")).isFirstRun)
+    .toBe(false);
+  await openTab(display, "Party");
+  await openTab(display, "Accounts");
+  await expect(dam.getByLabel("Password")).toHaveValue(MASK);
+  await expect(banner).toBeVisible();
+  expect(await testLogin.boundingBox()).toEqual(before);
+
+  // Gone the next time Settings opens.
+  await display.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await display.keyboard.press("s");
+  await expect(dam.getByLabel("Username")).toHaveValue("e2e-first-user");
+  await expect(banner).toHaveCount(0);
+});
+
 test("leaving Settings saves the field being edited: Escape keeps it, and Close stays open to say why one was refused", async ({
   display,
 }) => {
