@@ -7,7 +7,7 @@ import process from "process";
 import { promisify } from "util";
 
 import sevenBin from "7zip-bin";
-import fetch from "node-fetch";
+import promiseRetry from "promise-retry";
 
 // The large media binaries are downloaded lazily at runtime and cached on the
 // user's machine (see src/common/externalResources.ts), so they are no longer
@@ -19,9 +19,9 @@ import fetch from "node-fetch";
 const execFileAsync = promisify(execFile);
 
 const pathTo7zip = sevenBin.path7za;
-// 7zip-bin ships the unix `7za` without the executable bit under Yarn PnP, so
-// spawning it fails with EACCES. Restore the executable bit. (No-op on Windows,
-// and harmless for versions that already set it.)
+// 7zip-bin's macOS `7za` binaries ship without the executable bit, so
+// spawning one (packager.js zips with it) fails with EACCES. Restore the
+// executable bit. (No-op on Windows, and harmless where it's already set.)
 if (process.platform !== "win32") {
   try {
     fs.chmodSync(pathTo7zip, 0o755);
@@ -33,37 +33,30 @@ if (process.platform !== "win32") {
 const extraResourcesDir = `${process.cwd()}/extraResources`;
 const buildResourcesDir = `${process.cwd()}/buildResources`;
 
-async function fetchWithRetries(url, retries) {
-  let lastError;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    if (attempt > 0) {
-      // Exponential backoff between attempts. Some hosts (e.g. CDNs that
-      // rate-limit CI IPs) reset the connection instead of returning an HTTP
-      // error, so we must retry on thrown network errors too, not just on
-      // non-ok responses.
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
-    }
-    try {
-      const res = await fetch(url);
-      if (res.ok) {
-        return res;
-      }
-      lastError = new Error(String(res.status));
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
+// How long one try at a download may take, body included. Without it, a
+// server that accepts the connection and then goes quiet hangs the build.
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
+// Downloads url to dest, with Node's fetch, retried with backoff. Some
+// hosts reset the connection instead of answering with an error, so a
+// thrown error is retried too: promise-retry by itself only retries what is
+// passed to retry(). A write error (a full disk, say) fails at once.
 async function downloadFile(url, dest) {
-  const res = await fetchWithRetries(url, 5);
-  const fileStream = fs.createWriteStream(dest);
-  await new Promise((resolve, reject) => {
-    res.body.pipe(fileStream);
-    res.body.on("error", reject);
-    fileStream.on("finish", resolve);
-  });
+  const body = await promiseRetry(
+    async (retry) => {
+      try {
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+        });
+        if (!res.ok) throw new Error(`${res.status} from ${url}`);
+        return Buffer.from(await res.arrayBuffer());
+      } catch (err) {
+        return retry(err);
+      }
+    },
+    { retries: 5, factor: 2, minTimeout: 1000 },
+  );
+  fs.writeFileSync(dest, body);
 }
 
 // Copy the archive extractor into extraResources/ so it ships with the app and
