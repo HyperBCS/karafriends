@@ -15,11 +15,8 @@ import ipAddresses from "../common/ipAddresses";
 let inputDeviceCount = 0;
 const inputDevices: { [deviceId: number]: any } = {};
 
-// Calls fn the first time it's needed, and gives that answer from then on.
-function once<T>(fn: () => T): () => T {
-  let result: { value: T } | undefined;
-  return () => (result ??= { value: fn() }).value;
-}
+// The inputs as last listed (see inputDevices below).
+let inputList: [string, string, number][] | null = null;
 
 // The phones' server port, from the main process (see index.ts).
 const remoconPort = Number(
@@ -89,24 +86,38 @@ ipcRenderer
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
 // endpoint ids, and labels) and two fake outputs, and every call is kept,
 // for the tests to read with window.karafriendsFakeAudio.calls().
+// KARAFRIENDS_FAKE_AUDIO=linux: the same, as on Linux with PipeWire.
 type FakeAudioCall = [string, ...unknown[]];
+const fakeAudio = process.env.KARAFRIENDS_FAKE_AUDIO;
 const fakeAudioCalls: FakeAudioCall[] | null =
-  process.env.KARAFRIENDS_FAKE_AUDIO === "1" ? [] : null;
+  fakeAudio === "1" || fakeAudio === "linux" ? [] : null;
 
 function fakeNativeAudio(calls: FakeAudioCall[]) {
-  let nextDeviceId = 0;
-  let exclusive = false;
-  const fake =
-    <T>(name: string, answer: (...args: any[]) => T) =>
+  return fakeAudio === "linux"
+    ? fakeLinuxAudio(calls)
+    : fakeWindowsAudio(calls);
+}
+
+// Records each call of a fake, then answers it.
+function faker(calls: FakeAudioCall[]) {
+  return <T>(name: string, answer: (...args: any[]) => T) =>
     (...args: unknown[]): T => {
       calls.push([name, ...args]);
       return answer(...args);
     };
+}
+
+function fakeWindowsAudio(calls: FakeAudioCall[]) {
+  let nextDeviceId = 0;
+  let exclusive = false;
+  const fake = faker(calls);
   return {
     inputDevices: fake("inputDevices", (): [string, string, number][] => [
       ["{0.0.1.00000000}.{e2e-mic} (USB)", "E2E Mic (USB)", 1],
       ["{0.0.1.00000000}.{e2e-interface} (USB)", "E2E Interface (USB)", 2],
     ]),
+    refreshInputDevices: fake("refreshInputDevices", () => undefined),
+    linuxAudio: fake("linuxAudio", () => null),
     outputDevices: fake("outputDevices", () => [
       "E2E Speakers (Windows)",
       "E2E Interface (ASIO)",
@@ -142,6 +153,59 @@ function fakeNativeAudio(calls: FakeAudioCall[]) {
   };
 }
 
+// As on Linux with PipeWire: the system default mic, no exclusive mode and
+// no ASIO, and a buffer size for the mics. A USB mic "plugged in" after
+// launch shows once Settings opens a second time and lists them again.
+type FakeInput = [string, string, number];
+const LINUX_DEFAULT_MIC: FakeInput = [
+  "pipewire:input_default (Linux)",
+  "System default (Linux)",
+  2,
+];
+const LINUX_USB_MIC: FakeInput = [
+  "pipewire:alsa_input.usb-e2e (Linux)",
+  "E2E USB Mic (Linux)",
+  1,
+];
+
+function fakeLinuxAudio(calls: FakeAudioCall[]) {
+  const fake = faker(calls);
+  let nextDeviceId = 0;
+  let bufferSize: number | null = null;
+  let listings = 0;
+  const windows = fakeWindowsAudio(calls);
+  return {
+    ...windows,
+    inputDevices: fake("inputDevices", (): FakeInput[] =>
+      listings > 1 ? [LINUX_DEFAULT_MIC, LINUX_USB_MIC] : [LINUX_DEFAULT_MIC],
+    ),
+    refreshInputDevices: fake("refreshInputDevices", () => {
+      listings++;
+    }),
+    outputDevices: fake("outputDevices", () => ["E2E Speakers (Linux)"]),
+    asioStatus: fake("asioStatus", () => "ASIO isn't in this build"),
+    outputOptions: fake("outputOptions", () => null),
+    outputFormat: fake(
+      "outputFormat",
+      () => `48 kHz, ${bufferSize ?? 128} samples`,
+    ),
+    setMicMode: fake("setMicMode", (_: boolean, size: number | null) => {
+      bufferSize = size;
+    }),
+    exclusiveAvailable: fake("exclusiveAvailable", () => false),
+    linuxAudio: fake("linuxAudio", () => ({
+      status: "Sound system: PipeWire 1.6.2",
+      bufferSizes: [64, 128, 256, 512, 1024],
+      defaultBufferSize: 128,
+    })),
+    inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
+    inputDevice_format: fake(
+      "inputDevice_format",
+      () => `PipeWire, 48 kHz, ${bufferSize ?? 128} samples`,
+    ),
+  };
+}
+
 if (fakeAudioCalls) {
   contextBridge.exposeInMainWorld("karafriendsFakeAudio", {
     calls: (): FakeAudioCall[] => fakeAudioCalls,
@@ -167,8 +231,13 @@ contextBridge.exposeInMainWorld("karafriends", {
     : {
         // Repeatedly asking CPAL for input devices seems to cause unexpected
         // breakages, like the default output device being released. Let's avoid
-        // that.
-        inputDevices: once(nativeAudio.inputDevices),
+        // that: they're listed once. Except on Linux, where Settings lists
+        // them again as it opens, for a mic plugged in since (PipeWire and
+        // PulseAudio list them without opening any).
+        inputDevices: () => (inputList ??= nativeAudio.inputDevices()),
+        refreshInputDevices() {
+          if (process.platform === "linux") inputList = null;
+        },
         // Outputs are listed again each time Settings opens, so an interface
         // switched on after launch can be picked.
         outputDevices: nativeAudio.outputDevices,
@@ -187,6 +256,7 @@ contextBridge.exposeInMainWorld("karafriends", {
           return nativeAudio.setMicMode(exclusive, bufferSize);
         },
         exclusiveAvailable: nativeAudio.exclusiveAvailable,
+        linuxAudio: nativeAudio.linuxAudio,
         inputDevice_new(name: string, channelSelection: number) {
           console.debug(
             `preload: creating input device ${inputDeviceCount}: ${name}`,

@@ -660,6 +660,89 @@ test.describe("the microphones", () => {
   });
 });
 
+test.describe("the microphones on Linux", () => {
+  // The fake as on Linux with PipeWire (src/preload/index.ts).
+  test.use({ appEnv: { KARAFRIENDS_FAKE_AUDIO: "linux" } });
+
+  const DEFAULT_MIC = "System default (Linux), channel 1";
+
+  test("the sound system shows instead of ASIO; one buffer for the mics, reopening them, kept on the display; a mic plugged in since shows", async ({
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const section = settings.getByRole("region", { name: "Microphones" });
+    await expect(
+      section.getByText("Sound system: PipeWire 1.6.2"),
+    ).toBeVisible();
+    await expect(section.getByText("ASIO isn't in this build")).toHaveCount(0);
+    await expect(section.getByLabel("Windows mics")).toHaveCount(0);
+
+    // Each channel of each mic, by its name.
+    const add = section.getByLabel("Add a microphone");
+    await expect(add.locator("option")).toHaveText([
+      "Select a microphone",
+      DEFAULT_MIC,
+      "System default (Linux), channel 2",
+    ]);
+    await add.selectOption(DEFAULT_MIC);
+    const mic = section.getByRole("group", { name: DEFAULT_MIC });
+    await expect(
+      mic.getByText("In use: PipeWire, 48 kHz, 128 samples"),
+    ).toBeVisible();
+
+    // The buffer: the default until one is picked; a new one reopens the
+    // mic at it.
+    const buffer = section.getByLabel("Mic buffer");
+    await expect(buffer).toHaveValue("");
+    await expect(buffer.locator("option")).toHaveText([
+      "Default (128 samples)",
+      "64 samples",
+      "128 samples",
+      "256 samples",
+      "512 samples",
+      "1024 samples",
+    ]);
+    await buffer.selectOption("256 samples");
+    await expect(
+      mic.getByText("In use: PipeWire, 48 kHz, 256 samples"),
+    ).toBeVisible();
+    const calls = await fakeAudioCalls(display);
+    const modeAt = calls.findIndex(
+      (call) => JSON.stringify(call) === '["setMicMode",false,256]',
+    );
+    expect(modeAt).toBeGreaterThan(-1);
+    expect(calls.slice(modeAt)).toEqual(
+      expect.arrayContaining([
+        ["inputDevice_stop", 0],
+        ["inputDevice_new", "pipewire:input_default (Linux)", 0],
+      ]),
+    );
+
+    // Kept: the next launch sets it before the mic opens.
+    await display.reload();
+    await expect(buffer).toHaveValue("256");
+    const relaunched = await fakeAudioCalls(display);
+    expect(
+      relaunched.findIndex(
+        (call) => JSON.stringify(call) === '["setMicMode",false,256]',
+      ),
+    ).toBeLessThan(
+      relaunched.findIndex(([name]) => name === "inputDevice_new"),
+    );
+
+    // Settings lists the mics again as it opens: one plugged in since
+    // shows.
+    await expect(add.locator("option")).toHaveCount(3);
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    await display.keyboard.press("s");
+    await expect(settings).toBeVisible();
+    await expect(add.locator("option")).toContainText([
+      "E2E USB Mic (Linux), channel 1",
+    ]);
+  });
+});
+
 test("a phone gets 403 for getSettings, even signed in as nobody special", async ({
   karafriends,
 }) => {

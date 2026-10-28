@@ -5,6 +5,7 @@ import {
   channelLabel,
   exclusiveAvailable,
   InputDevice,
+  type LinuxAudio,
   type MicMode,
   type MicOutput,
   outputFormat,
@@ -180,12 +181,25 @@ export function MicOutputSetting(props: {
 // The buffer sizes an exclusive mic can ask for, above its smallest.
 const EXCLUSIVE_BUFFERS = [128, 256, 512];
 
-// Shared or Exclusive for the Windows mics, and an exclusive mic's buffer.
+const samples = (frames: number) => `${frames} samples`;
+
+// Shared or Exclusive for the Windows mics, and an exclusive mic's buffer;
+// on Linux (`linux` set) the buffer of the mics and their output.
 export function MicModeSetting(props: {
   mode: MicMode;
+  linux: LinuxAudio | null;
   onChange: (mode: MicMode) => void;
 }) {
   const [available] = useState(exclusiveAvailable);
+  if (props.linux) {
+    return (
+      <LinuxBufferSetting
+        linux={props.linux}
+        mode={props.mode}
+        onChange={props.onChange}
+      />
+    );
+  }
   if (!available) return null;
   const { mode } = props;
   return (
@@ -212,7 +226,7 @@ export function MicModeSetting(props: {
             label="Mic buffer"
             value={mode.bufferSize}
             choices={EXCLUSIVE_BUFFERS}
-            show={(frames) => `${frames} samples`}
+            show={samples}
             own="Smallest"
             onChange={(bufferSize) => props.onChange({ ...mode, bufferSize })}
           />
@@ -224,6 +238,39 @@ export function MicModeSetting(props: {
         Sound settings, open the mic&apos;s Properties, Advanced, and tick
         &quot;Allow applications to take exclusive control of this device&quot;.
         A mic Windows won&apos;t give stays shared, and says why.
+      </p>
+    </>
+  );
+}
+
+// The Linux mics' buffer: one size for every mic and the mic output, so
+// all of them run in step (PipeWire runs them in the same cycle).
+function LinuxBufferSetting(props: {
+  linux: LinuxAudio;
+  mode: MicMode;
+  onChange: (mode: MicMode) => void;
+}) {
+  const { linux, mode } = props;
+  if (linux.bufferSizes.length < 2) return null;
+  return (
+    <>
+      <div className="settingsFields">
+        <NumberSelect
+          label="Mic buffer"
+          value={mode.bufferSize}
+          choices={linux.bufferSizes}
+          show={samples}
+          own={`Default (${samples(linux.defaultBufferSize)})`}
+          onChange={(bufferSize) =>
+            props.onChange({ exclusive: false, bufferSize })
+          }
+        />
+      </div>
+      <p className="settingsNote">
+        The mics and the mic output use this buffer. A smaller one means less
+        delay; if the mics crackle, pick a bigger one. With PipeWire, every
+        program&apos;s sound runs at the smallest buffer any of them asks for,
+        so while a mic is open, songs and other programs run at it too.
       </p>
     </>
   );

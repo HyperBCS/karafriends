@@ -25,8 +25,9 @@ export function setOutputDevice(output: MicOutput) {
 
 // How the mics open on Windows: shared with other programs (Windows
 // mixes, in 10 ms buffers), or exclusive, for less delay, with a buffer
-// size in samples (null for the smallest the mic takes). Mics opened
-// after it is set use it.
+// size in samples (null for the smallest the mic takes). On Linux only the
+// buffer size counts, for the mics and their output alike (null for
+// linuxAudio's default). Mics opened after it is set use it.
 export interface MicMode {
   exclusive: boolean;
   bufferSize: number | null;
@@ -39,6 +40,25 @@ export function setMicMode(mode: MicMode) {
 // Whether there is an exclusive mode (Windows only).
 export function exclusiveAvailable(): boolean {
   return native.exclusiveAvailable();
+}
+
+// On Linux: the sound system the mics use ("Sound system: PipeWire
+// 1.6.2"), the buffer sizes in samples it takes for the mics and their
+// output, and the one used until one is picked. Null elsewhere.
+export interface LinuxAudio {
+  status: string;
+  bufferSizes: number[];
+  defaultBufferSize: number;
+}
+
+export function linuxAudio(): LinuxAudio | null {
+  return native.linuxAudio();
+}
+
+// On Linux, the inputs are listed again when next asked for, so a mic
+// plugged in since shows. Elsewhere they're listed once.
+export function refreshInputDevices() {
+  native.refreshInputDevices();
 }
 
 // The rates and buffer sizes an ASIO output takes; null for other outputs.
