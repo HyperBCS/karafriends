@@ -32,12 +32,13 @@ async function call(
   return { status: res.status, body: await res.json() };
 }
 
-// The first event of a fresh /api/events stream: the live state.
-async function liveState(remoconUrl: string) {
+// The first event of a fresh /api/events stream: the live state, as the
+// phone with deviceId (if given) sees it.
+async function liveState(remoconUrl: string, deviceId?: string) {
   const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
+  const url = new URL("api/events", remoconUrl);
+  if (deviceId) url.searchParams.set("deviceId", deviceId);
+  const res = await fetch(url, { signal: controller.signal });
   expect(res.headers.get("content-type")).toContain("text/event-stream");
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let text = "";
@@ -224,6 +225,7 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       queue: [],
       playbackState: expect.any(String),
       pitchShiftSemis: 0,
+      guideMelodyLevel: 0,
       adhocLyrics: [],
       downloads: [],
       config: { supervisedMode: false, everyoneIsAdmin: false },
@@ -763,5 +765,40 @@ test.describe("supervised mode", () => {
         ]);
       });
     });
+  });
+});
+
+test.describe("the guide melody level", () => {
+  test.use({ appConfig: ADMIN_CONFIG });
+
+  test("a guest can't set it; an admin can, and every phone sees it", async ({
+    karafriends,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const set = (level: number, headers: Record<string, string>) =>
+      call(remoconUrl, "setGuideMelodyLevel", { level }, headers);
+
+    expect(await set(0.7, REMOTE_HEADERS)).toMatchObject({ status: 403 });
+    expect((await liveState(remoconUrl)).state.guideMelodyLevel).toBe(0);
+
+    const login = await call(
+      remoconUrl,
+      "adminLogin",
+      { password: ADMIN_PASSWORD },
+      REMOTE_HEADERS,
+    );
+    const admin = {
+      ...REMOTE_HEADERS,
+      "X-Karafriends-Admin-Token": login.body.token,
+    };
+    expect(await set(1.5, admin)).toMatchObject({ status: 400 });
+    expect(await set(0.7, admin)).toEqual({ status: 200, body: true });
+
+    // The admin's own phone, another phone, and one that says nothing.
+    for (const deviceId of [DEVICE_ID, "e2e-other-device", undefined]) {
+      expect(
+        (await liveState(remoconUrl, deviceId)).state.guideMelodyLevel,
+      ).toBe(0.7);
+    }
   });
 });

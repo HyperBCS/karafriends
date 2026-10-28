@@ -506,6 +506,45 @@ describe("moveSong", () => {
   });
 });
 
+describe("setGuideMelodyLevel", () => {
+  test("only an admin may set it, in supervised mode or not", async () => {
+    for (const supervisedMode of [false, true]) {
+      const api = makeApi({ supervisedMode });
+      await rejectsWith(api.setGuideMelodyLevel({ level: 1 }, bob), 403);
+      await rejectsWith(
+        api.setGuideMelodyLevel({ level: 1 }, phone(ADMIN_DEVICE, ADMIN_NICK)),
+        403,
+      );
+      await rejectsWith(api.setGuideMelodyLevel({ level: 1 }, anonymous), 403);
+      assert.equal(store.getState().guideMelodyLevel, 0);
+    }
+    const api = makeApi({ supervisedMode: true });
+    assert.equal(
+      await api.setGuideMelodyLevel({ level: 0.7 }, admin("x")),
+      true,
+    );
+    assert.equal(store.getState().guideMelodyLevel, 0.7);
+    assert.equal(await api.setGuideMelodyLevel({ level: 0 }, display), true);
+    assert.equal(store.getState().guideMelodyLevel, 0);
+    // Saved to queue.json, unlike the pitch.
+    assert.equal(
+      await api.setGuideMelodyLevel({ level: 0.4 }, admin("x")),
+      true,
+    );
+    assert.equal(
+      createStateStore(path.join(dir, "queue.json")).getState()
+        .guideMelodyLevel,
+      0.4,
+    );
+  });
+
+  test("while everyone is an admin, any phone may set it", async () => {
+    const api = makeApi({ supervisedMode: true, everyoneIsAdmin: true });
+    assert.equal(await api.setGuideMelodyLevel({ level: 1 }, bob), true);
+    assert.equal(store.getState().guideMelodyLevel, 1);
+  });
+});
+
 describe("admin sign-in", () => {
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
@@ -1343,6 +1382,18 @@ describe("validators", () => {
     invalid("setPlaybackState", { playbackState: "paused" });
     invalid("setPitchShiftSemis", { semis: 99 });
     invalid("setPitchShiftSemis", { semis: "1" });
+    assert.deepEqual(validators.setGuideMelodyLevel({ level: 0.7 }), {
+      level: 0.7,
+    });
+    assert.deepEqual(validators.setGuideMelodyLevel({ level: 1 }), {
+      level: 1,
+    });
+    invalid("setGuideMelodyLevel", {});
+    invalid("setGuideMelodyLevel", { level: 1.5 });
+    invalid("setGuideMelodyLevel", { level: -0.1 });
+    invalid("setGuideMelodyLevel", { level: "0.5" });
+    invalid("setGuideMelodyLevel", { level: NaN });
+    invalid("setGuideMelodyLevel", { level: 0.5, semis: 1 });
     assert.deepEqual(validators.damSearchSongs({ query: "a", limit: 30 }), {
       query: "a",
       offset: undefined,

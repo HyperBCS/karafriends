@@ -36,6 +36,7 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   queue: [song(1), song(2)],
   playbackState: "WAITING",
   pitchShiftSemis: 0,
+  guideMelodyLevel: 0,
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },

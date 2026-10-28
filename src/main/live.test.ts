@@ -76,6 +76,7 @@ describe("toLiveState", () => {
       });
       failDownload(state.downloadQueue, failed, "Video unavailable");
       state.toolsProblem = { message: "Update the tools", since: 5 };
+      state.guideMelodyLevel = 0.5;
     });
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
@@ -88,6 +89,7 @@ describe("toLiveState", () => {
       everyoneIsAdmin: true,
     });
     assert.equal(live.toolsProblem, "Update the tools");
+    assert.equal(live.guideMelodyLevel, 0.5);
     assert.deepEqual(live.queue, [shared(false)]);
     const [download, failed] = store.getState().downloadQueue;
     assert.deepEqual(live.downloads, [

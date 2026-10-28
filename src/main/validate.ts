@@ -66,6 +66,19 @@ function integer(input: Fields, key: string, min: number, max: number) {
   return value as number;
 }
 
+function number(input: Fields, key: string, min: number, max: number) {
+  const value = input[key];
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < min ||
+    value > max
+  ) {
+    fail(`"${key}" must be a number from ${min} to ${max}`);
+  }
+  return value;
+}
+
 function optionalInteger(
   input: Fields,
   key: string,
@@ -194,15 +207,7 @@ function queueSong(raw: unknown): QueueSongInput {
       };
     }
     case "youtube": {
-      const gainValue = input.gainValue;
-      if (
-        typeof gainValue !== "number" ||
-        !Number.isFinite(gainValue) ||
-        gainValue < 0 ||
-        gainValue > 100
-      ) {
-        fail(`"gainValue" must be a number from 0 to 100`);
-      }
+      const gainValue = number(input, "gainValue", 0, 100);
       // Refused here, since the download that uses it starts after the
       // phone has its answer.
       const captionCode = stringOrNull(input, "captionCode", 16);
@@ -264,6 +269,9 @@ export const validators: {
   }),
   setPitchShiftSemis: (raw) => ({
     semis: integer(fields(raw, ["semis"]), "semis", -24, 24),
+  }),
+  setGuideMelodyLevel: (raw) => ({
+    level: number(fields(raw, ["level"]), "level", 0, 1),
   }),
   pushAdhocLyrics: (raw) => ({
     lyricIndex: integer(fields(raw, ["lyricIndex"]), "lyricIndex", 0, 100_000),

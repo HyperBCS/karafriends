@@ -727,6 +727,16 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       return true;
     },
 
+    async setGuideMelodyLevel({ level }, caller) {
+      if (!isAdmin(caller)) {
+        throw new ApiError(403, "Only an admin can change the guide melody");
+      }
+      store.update((state) => {
+        state.guideMelodyLevel = level;
+      });
+      return true;
+    },
+
     async pushAdhocLyrics({ lyricIndex }, caller) {
       const { currentSong, currentSongAdhocLyrics } = store.getState();
       const lyrics = adhocLyricsOf(currentSong);
