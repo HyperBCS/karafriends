@@ -222,7 +222,8 @@ export function createSettingsHandlers(
       requireDisplay(caller);
       let parsed: unknown;
       try {
-        parsed = parse(yaml);
+        // No warnings: the parser prints them with the line, as below.
+        parsed = parse(yaml, { logLevel: "error" });
       } catch (err) {
         // Not the parser's message: it quotes the line, which may hold a
         // password.

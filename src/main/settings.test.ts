@@ -474,6 +474,13 @@ describe("exportConfig and importConfig", () => {
     assert.equal(result.ok, false);
     assert.doesNotMatch(result.problems.join(" "), /secret-pw/);
   });
+
+  test("a YAML warning isn't printed: it would quote the line", async (t) => {
+    const warned = t.mock.method(process, "emitWarning", () => {});
+    const { api } = setup();
+    await api.importConfig({ yaml: "damPassword: !foo secret-pw\n" }, display);
+    assert.equal(warned.mock.callCount(), 0);
+  });
 });
 
 describe("getToolsStatus and updateTools", () => {

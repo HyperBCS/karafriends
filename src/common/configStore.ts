@@ -5,7 +5,7 @@
 // No Electron imports, so unit tests can load this file under plain Node.
 import fs from "fs";
 import path from "path";
-import { parse, stringify } from "yaml";
+import { parse, stringify, YAMLParseError } from "yaml";
 
 import {
   configFromFile,
@@ -49,8 +49,12 @@ function loadAtLaunch(filePath: string): KarafriendsConfig {
   let config: KarafriendsConfig = { ...DEFAULT_CONFIG };
   if (fs.existsSync(filePath)) {
     try {
+      // No warnings: the parser prints them with the line they're about,
+      // which may hold a password.
       const result = configFromFile(
-        parse(fs.readFileSync(filePath, { encoding: "utf8" })),
+        parse(fs.readFileSync(filePath, { encoding: "utf8" }), {
+          logLevel: "error",
+        }),
       );
       for (const problem of result.problems) console.warn(problem);
       config = result.config;
@@ -65,11 +69,16 @@ function loadAtLaunch(filePath: string): KarafriendsConfig {
       } catch (copyErr) {
         console.error(`Failed to copy ${filePath} to ${copy}:`, copyErr);
       }
+      // Not the parser's message: it quotes the line, which may hold a
+      // password.
+      const why =
+        err instanceof YAMLParseError
+          ? `line ${err.linePos?.[0]?.line ?? "?"} isn't valid YAML`
+          : String(err);
       console.error(
-        `Failed to parse ${filePath}; using defaults for this session. ` +
-          `A copy is in ${copy}. Fix the YAML and relaunch to restore your ` +
-          "settings:",
-        err,
+        `Failed to parse ${filePath} (${why}); using defaults for this ` +
+          `session. A copy is in ${copy}. Fix the YAML and relaunch to ` +
+          "restore your settings.",
       );
       return config;
     }
