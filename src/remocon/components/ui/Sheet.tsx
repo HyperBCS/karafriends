@@ -1,4 +1,3 @@
-import classnames from "classnames";
 import React, { useId } from "react";
 
 import { t } from "../../i18n";
@@ -16,7 +15,6 @@ interface Props {
   children: React.ReactNode;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
-  className?: string;
 }
 
 // The now-playing panel at the bottom of the remote, lifted over the
@@ -33,12 +31,11 @@ export const Sheet = ({
   children,
   expanded,
   onExpandedChange,
-  className,
 }: Props) => {
   const bodyId = useId();
 
   return (
-    <section aria-label={label} className={classnames(styles.sheet, className)}>
+    <section aria-label={label} className={styles.sheet}>
       <div className={styles.bar}>
         <div className={styles.barContent}>{header}</div>
         <button

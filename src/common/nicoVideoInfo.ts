@@ -1,15 +1,7 @@
 // Pure helpers for Niconico video info from yt-dlp. They have no electron or
 // filesystem dependencies so they can be unit tested directly.
 
-export interface NicoVideoMetadata {
-  author: string;
-  channelId: string;
-  description: string;
-  lengthSeconds: number;
-  title: string;
-  thumbnailUrl: string;
-  viewCount: number;
-}
+import type { NicoVideoInfo } from "./api";
 
 // The fields we read from `yt-dlp --dump-single-json` for a Niconico video.
 interface YtDlpNicoInfo {
@@ -110,7 +102,7 @@ export function limitLookups<T>(
   };
 }
 
-export function parseNicoVideoInfo(ytDlpJson: string): NicoVideoMetadata {
+export function parseNicoVideoInfo(ytDlpJson: string): NicoVideoInfo {
   const info: YtDlpNicoInfo = JSON.parse(ytDlpJson);
   if (typeof info.title !== "string") {
     throw new Error("yt-dlp returned no title");

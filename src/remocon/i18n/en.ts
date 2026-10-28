@@ -43,14 +43,14 @@ export const en = {
   "search.artist": "Artist",
   "search.sourceLabel": "Source",
   "search.sourceAll": "All",
-  // The source's button, which names the source.
-  "search.sourceButton": "Source: {source}",
   "search.results": "Results",
   // A query that could be a video's ID: a row to open it, above the
   // results, since a title can look like one ("OneLastKiss").
   "search.videoById": "Open the video with this ID",
   "search.noResults": "No results found",
+  // A count's singular is its key with ".one" (countKey in index.ts).
   "search.songCount": "{count} songs",
+  "search.songCount.one": "{count} song",
   "search.failed": "Couldn't search {source}: {reason}",
   "search.moreFailed": "Couldn't load more from {source}: {reason}",
 
@@ -63,6 +63,7 @@ export const en = {
 
   // A video's page.
   "video.views": "{count} views",
+  "video.views.one": "{count} view",
   "video.infoFailed": "Couldn't get this video: {reason}",
   "video.niconicoSlow": "Niconico videos take a while to download.",
 
@@ -73,7 +74,7 @@ export const en = {
   "lyrics.adhoc": "Your own lyrics",
   "lyrics.adhocPlaceholder": "Paste the lyrics here, one line per line.",
   "lyrics.adhocHelp":
-    "While your song plays, tap it in the queue to show these line by line.",
+    "When your song starts, this page turns into the controls that show these line by line. From another page, open Now playing and tap your song.",
   "lyrics.sendLine": "Tap here to show the next line",
 
   // Queueing a song, and the download that comes before it.
@@ -90,6 +91,33 @@ export const en = {
   "queueButton.failed": "Couldn't download: {reason}",
   "queueButton.error": "Not queued: {reason}",
 
+  // The reasons the server gives in English (reasons.ts), inside
+  // "Couldn't download: {reason}" and the like. Downloads first, as
+  // src/common/downloadFailure.ts words them.
+  "reason.unavailable": "Video unavailable",
+  "reason.private": "Private video",
+  "reason.ageRestricted": "Age-restricted video",
+  "reason.membersOnly": "Members-only video",
+  "reason.liveOrPaid": "Live, upcoming or paid video",
+  "reason.geoBlocked": "Not available in this country",
+  "reason.botCheck": "YouTube blocked the download",
+  "reason.timedOut": "Download timed out",
+  "reason.joysound": "Couldn't get the song from Joysound",
+  "reason.noTools": "Couldn't get the download tools",
+  "reason.toolFailedToStart": "Couldn't start the downloader",
+  "reason.videoProcessing": "Couldn't put the video together",
+  "reason.damSample": "DAM sent a sample, not the song",
+  "reason.diskFull": "The karaoke PC's disk is full",
+  "reason.other": "Download failed",
+  "reason.alreadyAdding": "Someone is already adding this song",
+  "reason.nicoInfo": "Maybe the video ID is wrong.",
+  "reason.tooManyLyrics":
+    "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
+  "reason.queueLimit":
+    "{nickname} already has {count} songs in the queue or downloading",
+  "reason.queueLimit.one":
+    "{nickname} already has {count} song in the queue or downloading",
+
   // The now-playing sheet and the queue in it.
   "sheet.nowPlaying": "Now playing",
   "sheet.nothingPlaying": "Nothing playing",
@@ -97,8 +125,6 @@ export const en = {
   "sheet.hideQueue": "Hide queue",
   "sheet.showEmotes": "Show emotes",
   "sheet.showControls": "Show playback controls",
-  // The song's progress line, for screen readers: "1 minute 12 seconds of
-  // 4 minutes 5 seconds".
   "queue.label": "Queue",
   "queue.upNext": "Up next",
   "queue.empty": "The queue is empty",

@@ -9,6 +9,7 @@ import useQueue, { useWait, withETAs } from "../../../common/hooks/useQueue";
 import { reading } from "../../../common/readings";
 import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
+import { reasonText } from "../../i18n/reasons";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import { sourceName } from "../../songLink";
 import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
@@ -17,7 +18,7 @@ import * as styles from "./NowPlayingSheet.module.scss";
 import useDragReorder from "./useDragReorder";
 
 // The singer's initial, before each row.
-const Initial = ({ nickname }: { nickname: string }) => (
+export const Initial = ({ nickname }: { nickname: string }) => (
   <span className={styles.initial} aria-hidden="true">
     {Array.from(nickname)[0]?.toUpperCase()}
   </span>
@@ -182,7 +183,7 @@ const QueueList = () => {
     <>
       {moveError && (
         <InlineError>
-          {t("queue.moveFailed", { reason: moveError })}
+          {t("queue.moveFailed", { reason: reasonText(moveError) })}
         </InlineError>
       )}
       {queue.length > 0 ? (

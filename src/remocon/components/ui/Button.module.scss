@@ -72,17 +72,7 @@
   }
 }
 
-.danger {
-  background-color: $kf-danger;
-  color: $kf-on-accent;
-  box-shadow: $kf-shadow-raise;
-
-  @include kf-pressed {
-    background-color: $kf-danger-pressed;
-  }
-}
-
-// Every variant looks the same when it can't be pressed: flat, outlined,
+// Both variants look the same when it can't be pressed: flat, outlined,
 // in muted text.
 .button:disabled {
   border-color: $kf-border-strong;
@@ -111,12 +101,6 @@
   &[aria-disabled="true"] {
     pointer-events: none;
   }
-}
-
-// The action that matters most in a row of icons, or a toggle that is on.
-.accent,
-.iconButton[aria-pressed="true"] {
-  color: $kf-accent;
 }
 
 // Beside a filled one, quieter: restart and skip beside play.

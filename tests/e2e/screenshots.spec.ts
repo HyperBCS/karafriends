@@ -687,7 +687,7 @@ test.describe("phase U4", () => {
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
-    const source = remote.getByRole("button", { name: /^Source:/ });
+    const source = remote.getByRole("combobox", { name: "Source" });
 
     for (const theme of ["light", "dark"] as const) {
       await remote.emulateMedia({ colorScheme: theme });
@@ -702,14 +702,12 @@ test.describe("phase U4", () => {
       ).toBeVisible();
       await shoot(remote, name("search"));
 
-      // On DAM, so the button names it, and open again.
-      await source.click();
-      await remote.getByRole("menuitemradio", { name: "DAM" }).click();
-      await expect(source).toHaveText("DAM");
-      await source.click();
-      await expect(remote.getByRole("menu")).toBeVisible();
-      await shoot(remote, name("search-menu"));
-      await remote.getByRole("menuitemradio", { name: "All" }).click();
+      // On DAM, so the button names it. (The menu itself is the phone's
+      // own picker, which a screenshot doesn't show.)
+      await source.selectOption({ label: "DAM" });
+      await expect(source.locator("..")).toContainText("DAM");
+      await shoot(remote, name("search-source"));
+      await source.selectOption({ label: "All" });
 
       await remote.getByRole("link", { name: "Settings" }).click();
       await expect(

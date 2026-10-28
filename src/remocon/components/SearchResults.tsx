@@ -1,9 +1,9 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import React from "react";
+import React, { memo, useMemo } from "react";
 
 import type { Page } from "../../common/api";
 import { call } from "../../common/apiClient";
-import { t } from "../i18n";
+import { countKey, t } from "../i18n";
 import { rank } from "../rank";
 import songLink, { artistLink, sourceName } from "../songLink";
 import Loader from "./Loader";
@@ -74,24 +74,33 @@ const SearchResults = ({ query, by, source }: Props) => {
   );
   // Each catalog's loaded pages, without the repeats a shifting catalog
   // can put on a later page.
-  const found = catalogs.map((catalog) => {
-    const seen = new Set<string>();
-    return (searches[catalog].data?.pages ?? [])
-      .flatMap((page) => page.items)
-      .filter((item) => {
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-      })
-      .map((item) => ({ ...item, catalog }));
-  });
-  const rows = rank(query, found).map((item) => (
+  // Ranked again only when a page comes in (or the query changes).
+  const damPages = searches.dam.data?.pages;
+  const joysoundPages = searches.joysound.data?.pages;
+  const ranked = useMemo(() => {
+    const pages = { dam: damPages, joysound: joysoundPages };
+    const found = catalogs.map((catalog) => {
+      const seen = new Set<string>();
+      return (pages[catalog] ?? [])
+        .flatMap((page) => page.items)
+        .filter((item) => {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        })
+        .map((item) => ({ ...item, catalog }));
+    });
+    return rank(query, found);
+  }, [query, source, damPages, joysoundPages]);
+  const rows = ranked.map((item) => (
     <ListRow
       key={`${item.catalog}_${item.id}`}
       title={<WithReading text={item.name} yomi={item.nameYomi} />}
       subtitle={
         item.songCount !== undefined
-          ? t("search.songCount", { count: item.songCount })
+          ? t(countKey("search.songCount", item.songCount), {
+              count: item.songCount,
+            })
           : item.artistName && (
               <WithReading text={item.artistName} yomi={item.artistNameYomi} />
             )
@@ -158,4 +167,6 @@ const SearchResults = ({ query, by, source }: Props) => {
   );
 };
 
-export default SearchResults;
+// Its props are three strings, so typing in the search box (before the
+// debounced query changes) doesn't render the results again.
+export default memo(SearchResults);

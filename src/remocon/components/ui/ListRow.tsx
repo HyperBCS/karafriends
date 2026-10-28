@@ -11,15 +11,14 @@ interface ListProps {
   // Just the rows, for a list on a layer of its own (the sheet's queue),
   // rather than a card on the page.
   plain?: boolean;
-  className?: string;
   children: React.ReactNode;
 }
 
 // A list of ListRows: a <ul>, as a card inset from the screen's sides.
-export const List = ({ label, plain, className, children }: ListProps) => (
+export const List = ({ label, plain, children }: ListProps) => (
   <ul
     aria-label={label}
-    className={classnames(styles.list, { [styles.plain]: plain }, className)}
+    className={classnames(styles.list, { [styles.plain]: plain })}
   >
     {children}
   </ul>
@@ -47,14 +46,11 @@ export type ListRowProps = RowContent &
     // After the text, outside the pressable part, so it can hold its own
     // buttons: an ETA, "Remove", "Move to top".
     trailing?: React.ReactNode;
-    // The current item (the song playing), in the accent.
-    current?: boolean;
     // For a row whose press shows more of it (onPress): whether it does now.
     expanded?: boolean;
     // Replaces the title and subtitle as the pressable part's accessible
     // name.
     "aria-label"?: string;
-    className?: string;
   };
 
 const Content = ({ title, subtitle, source, leading }: RowContent) => (
@@ -84,12 +80,10 @@ export const ListRow = ({
   source,
   leading,
   trailing,
-  current,
   expanded,
   to,
   state,
   onPress,
-  className,
   "aria-label": ariaLabel,
 }: ListRowProps) => {
   const content = (
@@ -100,9 +94,6 @@ export const ListRow = ({
       leading={leading}
     />
   );
-  // For the current row, says so to screen readers too.
-  const currentProps = current ? { "aria-current": true as const } : {};
-
   let main: React.ReactNode;
   if (to !== undefined) {
     main = (
@@ -111,7 +102,6 @@ export const ListRow = ({
         state={state}
         className={styles.main}
         aria-label={ariaLabel}
-        {...currentProps}
       >
         {content}
       </Link>
@@ -124,27 +114,16 @@ export const ListRow = ({
         className={styles.main}
         aria-label={ariaLabel}
         aria-expanded={expanded}
-        {...currentProps}
       >
         {content}
       </button>
     );
   } else {
-    main = (
-      <div className={styles.main} {...currentProps}>
-        {content}
-      </div>
-    );
+    main = <div className={styles.main}>{content}</div>;
   }
 
   return (
-    <li
-      className={classnames(
-        styles.row,
-        { [styles.current]: current },
-        className,
-      )}
-    >
+    <li className={styles.row}>
       {main}
       {trailing && <div className={styles.trailing}>{trailing}</div>}
     </li>

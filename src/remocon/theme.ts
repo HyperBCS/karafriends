@@ -3,19 +3,16 @@
 // localStorage ("theme"), auto until the guest picks. It shows as
 // data-theme="light" | "dark" on <html>, which picks the tokens' colors
 // (tokens.scss).
+import { getItem, setItem } from "../common/storage";
+
 export type Theme = "light" | "dark" | "auto";
 export const THEMES: readonly Theme[] = ["light", "dark", "auto"];
 const THEME_KEY = "theme";
 
 const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
-let current: Theme = "auto";
-try {
-  const saved = localStorage.getItem(THEME_KEY);
-  current = THEMES.find((theme) => theme === saved) ?? "auto";
-} catch {
-  // Storage blocked: auto.
-}
+const saved = getItem(THEME_KEY);
+let current: Theme = THEMES.find((theme) => theme === saved) ?? "auto";
 
 function apply() {
   document.documentElement.dataset.theme =
@@ -25,11 +22,7 @@ function apply() {
 export const currentTheme = (): Theme => current;
 
 export function saveTheme(theme: Theme) {
-  try {
-    localStorage.setItem(THEME_KEY, theme);
-  } catch {
-    // Not saved; it still applies until the page reloads.
-  }
+  setItem(THEME_KEY, theme);
   current = theme;
   apply();
 }

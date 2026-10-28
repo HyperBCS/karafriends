@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { Link } from "react-router";
 
+import type { SharedQueueItem } from "../../../common/api";
 import { useLiveState } from "../../../common/apiClient";
+import { getItem, setItem } from "../../../common/storage";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
 import songLink from "../../songLink";
@@ -15,13 +17,11 @@ import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
 // so it stays as it was across a reload.
 function useStoredFlag(key: string): [boolean, (value: boolean) => void] {
-  const [value, setValue] = useState(
-    () => localStorage.getItem(key) === "true",
-  );
+  const [value, setValue] = useState(() => getItem(key) === "true");
   return [
     value,
     (next) => {
-      localStorage.setItem(key, String(next));
+      setItem(key, String(next));
       setValue(next);
     },
   ];
@@ -38,8 +38,12 @@ interface NowPlayingProps {
 // text only, and a tap on it goes to the sheet's toggle. Open, the title
 // and artist are a link to the song's page (for adhoc lyrics, its singer's
 // controls), with the song's source by the artist, as a queue row has it.
-const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
-  const currentSong = useLiveState((state) => state?.currentSong ?? null);
+// (/dev/ui shows it with a sample song.)
+export const NowPlayingBar = ({
+  currentSong,
+  expanded,
+  onOpenSong,
+}: NowPlayingProps & { currentSong: SharedQueueItem | null }) => {
   if (!currentSong) {
     return <span className={styles.nothing}>{t("sheet.nothingPlaying")}</span>;
   }
@@ -84,6 +88,14 @@ const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
     </div>
   );
 };
+
+// The bar for the song playing now.
+const NowPlaying = (props: NowPlayingProps) => (
+  <NowPlayingBar
+    currentSong={useLiveState((state) => state?.currentSong ?? null)}
+    {...props}
+  />
+);
 
 // Switches the sheet's toolbar between the playback controls and the
 // emotes: one button, both icons side by side in a pill, the one showing

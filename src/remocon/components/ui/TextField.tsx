@@ -1,4 +1,3 @@
-import classnames from "classnames";
 import React, { useId, useRef } from "react";
 
 import { t } from "../../i18n";
@@ -8,7 +7,7 @@ import * as styles from "./TextField.module.scss";
 
 export interface TextFieldProps extends Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
-  "value" | "onChange" | "defaultValue" | "size"
+  "value" | "onChange" | "defaultValue" | "size" | "className"
 > {
   // Always given, and read by screen readers; shown unless hideLabel.
   label: string;
@@ -31,7 +30,6 @@ export const TextField = ({
   onValueChange,
   clearable,
   icon,
-  className,
   id,
   type = "text",
   ...rest
@@ -41,7 +39,7 @@ export const TextField = ({
   const input = useRef<HTMLInputElement>(null);
 
   return (
-    <div className={classnames(styles.field, className)}>
+    <div className={styles.field}>
       <label
         htmlFor={inputId}
         className={hideLabel ? styles.visuallyHidden : styles.label}

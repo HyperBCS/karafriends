@@ -14,9 +14,10 @@ const queryClient = createQueryClient();
 
 // iOS before 16 ignores overscroll-behavior (index.scss): a drag up or down
 // that the scroller under the finger can't take any further would bounce
-// the page, the bars with it. Stop those; pinches, sideways drags and
-// sliders go through. (The touchstart listener also makes iOS Safari show
-// :active, the buttons' pressed state.)
+// the page, the bars with it. Stop those there; pinches, sideways drags and
+// sliders go through. Every other phone keeps scrolling without waiting
+// for this script. (The touchstart listener, on every phone, also makes iOS
+// Safari show :active, the buttons' pressed state.)
 let last = { clientX: 0, clientY: 0 };
 const passive = { passive: true };
 document.addEventListener("touchstart", (e) => (last = e.touches[0]), passive);
@@ -38,7 +39,9 @@ const onTouchMove = (e: TouchEvent) => {
   }
   e.preventDefault();
 };
-document.addEventListener("touchmove", onTouchMove, { passive: false });
+if (!CSS.supports("overscroll-behavior", "none")) {
+  document.addEventListener("touchmove", onTouchMove, { passive: false });
+}
 
 const container = document.getElementById("root");
 const root = createRoot(container!);

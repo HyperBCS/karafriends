@@ -19,6 +19,7 @@ import React, {
   useState,
 } from "react";
 
+import { getItem, setItem } from "../../common/storage";
 import { en } from "./en";
 import { ja } from "./ja";
 
@@ -70,20 +71,33 @@ export function translate<K extends MessageKey>(
   );
 }
 
-function initialLanguage(): Language {
-  let saved: string | null = null;
-  try {
-    saved = globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
-  } catch {
-    // Storage blocked (a private tab on an old iPhone): use the phone's.
-  }
-  return pickLanguage(saved, globalThis.navigator?.language);
-}
+let current: Language = pickLanguage(
+  getItem(STORAGE_KEY),
+  globalThis.navigator?.language,
+);
 
-let current: Language = initialLanguage();
+export const currentLanguage = (): Language => current;
 
 export function t<K extends MessageKey>(key: K, ...vars: VarsArg<K>): string {
   return translate(current, key, ...vars);
+}
+
+// The keys with a singular form, "<key>.one": "{count} song" beside
+// "{count} songs". (Japanese has none, so its two are the same.)
+export type CountedKey = {
+  [K in MessageKey]: `${K}.one` extends MessageKey ? K : never;
+}[MessageKey];
+
+// The form of key for count in language: t(countKey("search.songCount", n),
+// { count: n }).
+export function countKey<K extends CountedKey>(
+  key: K,
+  count: number,
+  language: Language = current,
+): K | `${K}.one` {
+  return new Intl.PluralRules(language).select(count) === "one"
+    ? `${key}.one`
+    : key;
 }
 
 type LanguageState = {
@@ -97,11 +111,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setState] = useState(current);
 
   const setLanguage = useCallback((next: Language) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Not saved; it still applies until the page reloads.
-    }
+    setItem(STORAGE_KEY, next);
     // Before the render, so t() returns the new language during it.
     current = next;
     setState(next);

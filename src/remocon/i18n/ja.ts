@@ -39,11 +39,11 @@ export const ja: Messages = {
   "search.artist": "歌手名",
   "search.sourceLabel": "機種",
   "search.sourceAll": "すべて",
-  "search.sourceButton": "機種：{source}",
   "search.results": "検索結果",
   "search.videoById": "このIDの動画を開く",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
+  "search.songCount.one": "{count}曲",
   "search.failed": "{source}を検索できませんでした：{reason}",
   "search.moreFailed": "{source}の続きを読み込めませんでした：{reason}",
 
@@ -54,6 +54,7 @@ export const ja: Messages = {
   "song.removeBackground": "背景動画を外す",
 
   "video.views": "{count}回再生",
+  "video.views.one": "{count}回再生",
   "video.infoFailed": "動画の情報を取得できませんでした：{reason}",
   "video.niconicoSlow": "ニコニコの動画はダウンロードに時間がかかります。",
 
@@ -64,7 +65,7 @@ export const ja: Messages = {
   "lyrics.adhocPlaceholder":
     "ここに歌詞を貼り付けてください（1行ずつ表示します）",
   "lyrics.adhocHelp":
-    "演奏中に予約リストの自分の曲をタップすると、1行ずつ表示できます。",
+    "曲が始まると、このページが歌詞を1行ずつ表示する操作画面に変わります。ほかのページからは、「演奏中」を開いて自分の曲をタップしてください。",
   "lyrics.sendLine": "タップして次の行を表示",
 
   "queueButton.song": "予約する",
@@ -79,6 +80,30 @@ export const ja: Messages = {
   "queueButton.queued": "予約しました（あと{eta}）",
   "queueButton.failed": "ダウンロードできませんでした：{reason}",
   "queueButton.error": "予約できませんでした：{reason}",
+
+  "reason.unavailable": "再生できない動画です",
+  "reason.private": "非公開の動画です",
+  "reason.ageRestricted": "年齢制限のある動画です",
+  "reason.membersOnly": "メンバー限定の動画です",
+  "reason.liveOrPaid": "ライブ配信・公開前・有料の動画です",
+  "reason.geoBlocked": "この国では再生できません",
+  "reason.botCheck": "YouTubeにダウンロードを止められました",
+  "reason.timedOut": "ダウンロードがタイムアウトしました",
+  "reason.joysound": "JOYSOUNDから曲を取得できませんでした",
+  "reason.noTools": "ダウンロード用のツールを取得できませんでした",
+  "reason.toolFailedToStart": "ダウンローダーを起動できませんでした",
+  "reason.videoProcessing": "動画を作成できませんでした",
+  "reason.damSample": "DAMから曲ではなく試聴版が届きました",
+  "reason.diskFull": "カラオケPCのディスクがいっぱいです",
+  "reason.other": "ダウンロードに失敗しました",
+  "reason.alreadyAdding": "ほかの人がこの曲を予約しているところです",
+  "reason.nicoInfo": "動画IDが正しくないかもしれません。",
+  "reason.tooManyLyrics":
+    "予約リストの歌詞が多すぎます。何曲か終わってから、または歌詞なしで予約してください。",
+  "reason.queueLimit":
+    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
+  "reason.queueLimit.one":
+    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
 
   "sheet.nowPlaying": "演奏中",
   "sheet.nothingPlaying": "演奏中の曲はありません",

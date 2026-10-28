@@ -1,4 +1,3 @@
-import classnames from "classnames";
 import React, { useId, useRef } from "react";
 
 import { MdCheck } from "../../icons";
@@ -21,7 +20,6 @@ interface Props<Id extends string> {
   // Small separate chips, lighter than the row: the search's Title and
   // Artist.
   small?: boolean;
-  className?: string;
 }
 
 // One choice out of a few, such as Light, Dark or Auto: a rounded row with
@@ -34,7 +32,6 @@ export function SegmentedControl<Id extends string>({
   selected,
   onSelect,
   small,
-  className,
 }: Props<Id>) {
   const labelId = useId();
   const group = useRef<HTMLDivElement>(null);
@@ -63,7 +60,7 @@ export function SegmentedControl<Id extends string>({
   };
 
   return (
-    <div className={classnames(styles.field, className)}>
+    <div className={styles.field}>
       {!hideLabel && (
         <span id={labelId} className={styles.label}>
           {label}

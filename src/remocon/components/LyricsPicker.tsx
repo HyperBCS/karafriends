@@ -1,7 +1,7 @@
 import classnames from "classnames";
 import React, { useEffect, useRef } from "react";
 
-import { t } from "../../i18n";
+import { t } from "../i18n";
 import * as styles from "./AdhocLyricsControls.module.scss";
 
 // The height of a line, as $line-height in AdhocLyricsControls.module.scss.

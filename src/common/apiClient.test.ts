@@ -10,6 +10,7 @@ import {
   adminSignOut,
   ApiCallError,
   call,
+  deviceId,
   eventsUrl,
   liveStore,
   mergeLiveState,
@@ -21,6 +22,7 @@ import {
   storedAdminToken,
 } from "./apiClient";
 import type { ApiResponse, DisplayApi } from "./ipc";
+import { removeItem, setItem } from "./storage";
 
 const song = (n: number, playtime: number | null = 60): SharedQueueItem => ({
   kind: "nico",
@@ -93,14 +95,43 @@ describe("call", () => {
     });
   });
 
-  test("asks anonymously without localStorage", async () => {
-    let headers: unknown;
+  test("makes a new phone's device ID on its first request, and keeps it", async () => {
+    const storage = fakeStorage();
+    const headers: Record<string, string>[] = [];
     globalThis.fetch = async (_url, init) => {
-      headers = init!.headers;
+      headers.push(init!.headers as Record<string, string>);
       return Response.json(true);
     };
     await call("removeSong", { songId: "sm1", timestamp: "1" });
-    assert.deepEqual(headers, { "Content-Type": "application/json" });
+    await call("removeSong", { songId: "sm1", timestamp: "1" });
+    const id = storage.items.deviceId;
+    assert.match(id, /^[0-9a-f-]{36}$/);
+    assert.deepEqual(headers, [
+      { "Content-Type": "application/json", "X-Karafriends-Device-Id": id },
+      { "Content-Type": "application/json", "X-Karafriends-Device-Id": id },
+    ]);
+    assert.equal(eventsUrl(deviceId()), `/api/events?deviceId=${id}`);
+  });
+
+  test("with storage blocked, keeps one device ID and nickname while the page is open", async () => {
+    const blocked = () => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    };
+    g.localStorage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+    setItem("nickname", "ken");
+    const headers: Record<string, string>[] = [];
+    globalThis.fetch = async (_url, init) => {
+      headers.push(init!.headers as Record<string, string>);
+      return Response.json(true);
+    };
+    await call("removeSong", { songId: "sm1", timestamp: "1" });
+    await call("removeSong", { songId: "sm1", timestamp: "1" });
+    assert.equal(headers.length, 2);
+    assert.equal(headers[0]["X-Karafriends-Nickname"], "ken");
+    assert.match(headers[0]["X-Karafriends-Device-Id"], /^[0-9a-f-]{36}$/);
+    assert.deepEqual(headers[1], headers[0]);
+    removeItem("nickname");
+    removeItem("deviceId");
   });
 
   test("throws the server's message on an error status", async () => {
@@ -268,7 +299,7 @@ describe("admin sign-in", () => {
       adminSignIn("guess"),
       (err) => err instanceof ApiCallError && err.status === 403,
     );
-    assert.deepEqual(storage.items, {});
+    assert.equal(storage.items.adminToken, undefined);
   });
 
   test("sign-out forgets the token even when the server can't be reached", async (t) => {
@@ -278,7 +309,7 @@ describe("admin sign-in", () => {
       throw new TypeError("Failed to fetch");
     };
     await adminSignOut();
-    assert.deepEqual(storage.items, {});
+    assert.equal(storage.items.adminToken, undefined);
   });
 });
 

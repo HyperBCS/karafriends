@@ -1,4 +1,3 @@
-import classnames from "classnames";
 import React from "react";
 import { Link } from "react-router";
 
@@ -14,14 +13,13 @@ interface Props {
   // A back button: a path in the remote (a link), or what to do (a button).
   // None on the home screen.
   back?: string | (() => void);
-  // The History, Settings and Home buttons, or the language control.
+  // The History, Settings and Home buttons.
   trailing?: React.ReactNode;
-  className?: string;
 }
 
 // The remote's one header bar: back, title, and trailing controls.
-export const TopBar = ({ title, back, trailing, className }: Props) => (
-  <div className={classnames(styles.topBar, className)}>
+export const TopBar = ({ title, back, trailing }: Props) => (
+  <div className={styles.topBar}>
     {typeof back === "string" && (
       <Link to={back} className={styles.back} aria-label={t("common.back")}>
         <MdArrowBack />

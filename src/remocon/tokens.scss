@@ -4,8 +4,9 @@
 // remote comes from here (see the design brief in notes/PLAN-product.md).
 //
 // Use them in a module with `@use "<relative path>/tokens" as *;`. This file
-// emits no CSS by itself; index.scss puts the values on :root as custom
-// properties (--kf-*) with the mixins below.
+// emits no CSS by itself; index.scss puts the colors and shadows on :root as
+// custom properties (--kf-*) with the color mixins below. Sizes, spaces and
+// type are Sass values only.
 //
 // Colors come in two sets, a dark theme and a light one, chosen by
 // data-theme="dark" | "light" on <html> (theme.ts; without it, before
@@ -21,7 +22,6 @@
 //   Level 2, the top bar: the page's color, a hairline and a short shadow.
 //   Level 3, the now-playing sheet: lighter again, a light top edge and a
 //     long shadow upward.
-//   Level 4, menus: the sheet's color and the strongest shadow.
 // Fields, tracks and the sheet's queue sit below the surface they're on
 // (sunken: darker, with an inner shadow); the picked choice, the play
 // button and buttons sit above it (raised: a small shadow). Near black a
@@ -74,13 +74,11 @@ $kf-tint: var(--kf-tint);
 $kf-tint-edge: var(--kf-tint-edge);
 // Destructive actions and errors.
 $kf-danger: var(--kf-danger);
-$kf-danger-pressed: var(--kf-danger-pressed);
 
 // Shadows, one per level (see Depth above).
 $kf-shadow-card: var(--kf-shadow-card);
 $kf-shadow-bar: var(--kf-shadow-bar);
 $kf-shadow-sheet: var(--kf-shadow-sheet);
-$kf-shadow-menu: var(--kf-shadow-menu);
 // A fill raised off its surface: the picked choice, play, the primary
 // button.
 $kf-shadow-raise: var(--kf-shadow-raise);
@@ -138,7 +136,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // 7.0:1 as text (6.4:1 on a card, 5.0:1 on the sheet). Pressed on the
   // sheet, 4.2:1: icons only there.
   --kf-danger: #ff6b6b;
-  --kf-danger-pressed: #e65c5c; // 5.6:1 under the dark text
 
   --kf-shadow-card:
     inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.55),
@@ -147,9 +144,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   --kf-shadow-sheet:
     inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 -10px 28px rgba(0, 0, 0, 0.6),
     0 -2px 6px rgba(0, 0, 0, 0.45);
-  --kf-shadow-menu:
-    inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 32px rgba(0, 0, 0, 0.7),
-    0 2px 8px rgba(0, 0, 0, 0.5);
   --kf-shadow-raise:
     0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
   --kf-shadow-button:
@@ -206,7 +200,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // Icons and the error bar: 3.7:1 (4.3:1 on a card, 3.3:1 pressed in the
   // well), with 4.6:1 for the dark text on it.
   --kf-danger: #d84848;
-  --kf-danger-pressed: #e25a5a; // 5.4:1 under the dark text
 
   --kf-shadow-card:
     0 0 0 1px #{color.change($shade, $alpha: 0.04)},
@@ -218,10 +211,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
     0 0 0 1px #{color.change($shade, $alpha: 0.04)},
     0 -10px 28px #{color.change($shade, $alpha: 0.14)},
     0 -2px 6px #{color.change($shade, $alpha: 0.08)};
-  --kf-shadow-menu:
-    0 0 0 1px #{color.change($shade, $alpha: 0.06)},
-    0 12px 32px #{color.change($shade, $alpha: 0.18)},
-    0 2px 8px #{color.change($shade, $alpha: 0.1)};
   --kf-shadow-raise:
     0 1px 2px #{color.change($shade, $alpha: 0.18)},
     0 1px 4px #{color.change($shade, $alpha: 0.1)};
@@ -254,7 +243,9 @@ $kf-card-inset: $kf-space-3;
 // Tap targets.
 $kf-tap: 44px;
 
-// Type. The system stack covers Japanese on iOS and Android.
+// Type. The phone's own fonts, with no web fonts to wait for: the system
+// stack covers Japanese on iOS and Android, and the phone's CJK font fills
+// in where system-ui has no kanji.
 $kf-font:
   system-ui,
   -apple-system,
@@ -320,26 +311,4 @@ $kf-line-height: 1.35;
   line-height: 1.2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-// The other tokens as custom properties, for inline styles and anything
-// outside Sass; index.scss includes this under :root.
-@mixin custom-properties {
-  --kf-space-1: #{$kf-space-1};
-  --kf-space-2: #{$kf-space-2};
-  --kf-space-3: #{$kf-space-3};
-  --kf-space-4: #{$kf-space-4};
-  --kf-space-5: #{$kf-space-5};
-  --kf-space-6: #{$kf-space-6};
-  --kf-radius: #{$kf-radius};
-  --kf-radius-control: #{$kf-radius-control};
-  --kf-radius-card: #{$kf-radius-card};
-  --kf-radius-sheet: #{$kf-radius-sheet};
-  --kf-tap: #{$kf-tap};
-  --kf-font: #{$kf-font};
-  --kf-text-label: #{$kf-text-label};
-  --kf-text-body: #{$kf-text-body};
-  --kf-text-title: #{$kf-text-title};
-  --kf-text-control: #{$kf-text-control};
-  --kf-text-icon: #{$kf-text-icon};
 }

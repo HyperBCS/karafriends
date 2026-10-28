@@ -31,24 +31,6 @@
   }
 }
 
-// The current item (the song playing): an accent edge and title. The edge
-// is drawn over the row, so the row's text doesn't move.
-.current {
-  &::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 4px;
-    background-color: $kf-accent;
-  }
-
-  .title {
-    color: $kf-accent;
-  }
-}
-
 // The pressable part: everything but the trailing slot.
 .main {
   display: flex;

@@ -28,8 +28,8 @@ test("the remote opens on the search screen", async ({ remote }) => {
   const by = remote.getByRole("radiogroup", { name: "Search by" });
   await expect(by.getByRole("radio")).toHaveText(["Title", "Artist"]);
   await expect(by.getByRole("radio", { name: "Title" })).toBeChecked();
-  const source = remote.getByRole("button", { name: "Source: All" });
-  await expect(source).toHaveAttribute("aria-haspopup", "menu");
+  const source = remote.getByRole("combobox", { name: "Source" });
+  await expect(source).toHaveValue("all");
   const [main, fieldBox, byBox, sourceBox] = await Promise.all(
     [remote.getByRole("main"), field, by, source].map(
       async (locator) => (await locator.boundingBox())!,
@@ -53,14 +53,12 @@ async function pickSource(
   remote: Page,
   source: "All" | "DAM" | "Joysound",
 ): Promise<void> {
-  await remote.getByRole("button", { name: /^Source:/ }).click();
   await remote
-    .getByRole("menu", { name: "Source" })
-    .getByRole("menuitemradio", { name: source, exact: true })
-    .click();
+    .getByRole("combobox", { name: "Source" })
+    .selectOption({ label: source });
 }
 
-test("the search's source is picked from a menu, and the button names it", async ({
+test("the search's source is picked from the phone's own menu, and the button names it", async ({
   remote,
 }) => {
   const searched: string[] = [];
@@ -70,74 +68,45 @@ test("the search's source is picked from a menu, and the button names it", async
       return route.fulfill({ json: { items: [], nextOffset: null } });
     });
   }
-  const button = remote.getByRole("button", { name: /^Source:/ });
-  const menu = remote.getByRole("menu", { name: "Source" });
-  const items = menu.getByRole("menuitemradio");
-  // On All, the button shows only its icon.
-  await expect(button).toHaveAccessibleName("Source: All");
-  await expect(button).toHaveText("");
-  await expect(button).toHaveAttribute("aria-expanded", "false");
-  await expect(menu).toHaveCount(0);
-
-  // Open: the three sources, the picked one ticked and focused.
-  await button.click();
-  await expect(button).toHaveAttribute("aria-expanded", "true");
-  await expect(items).toHaveText(["All", "DAM", "Joysound"]);
-  await expect(menu.getByRole("menuitemradio", { checked: true })).toHaveText(
-    "All",
+  // A native <select>, unseen over the button's look.
+  const select = remote.getByRole("combobox", { name: "Source" });
+  const button = select.locator("..");
+  const shown = button.locator(":scope > span");
+  await expect(select.locator("option")).toHaveText(["All", "DAM", "Joysound"]);
+  await expect(select).toHaveValue("all");
+  await expect(select).toHaveCSS("opacity", "0");
+  // At least 16px, so iOS doesn't zoom in on it.
+  await expect(select).toHaveCSS("font-size", "16px");
+  // On All, the button shows only its icons.
+  await expect(shown).toHaveText(["", ""]);
+  // The select covers the whole button, and a 44px target.
+  const [selectBox, buttonBox] = await Promise.all(
+    [select, button].map(async (locator) => (await locator.boundingBox())!),
   );
-  await expect(items.first().locator("svg")).toHaveCount(1);
-  await expect(items.nth(1).locator("svg")).toHaveCount(0);
-  await expect(items.first()).toBeFocused();
+  expect(selectBox.x).toBeLessThanOrEqual(buttonBox.x);
+  expect(selectBox.x + selectBox.width).toBeGreaterThanOrEqual(
+    buttonBox.x + buttonBox.width,
+  );
+  expect(selectBox.height).toBeGreaterThanOrEqual(44);
 
-  // A pick closes it, puts the focus back on the button, and the button
-  // names the source.
-  await items.nth(1).click();
-  await expect(menu).toHaveCount(0);
-  await expect(button).toBeFocused();
-  await expect(button).toHaveAttribute("aria-expanded", "false");
-  await expect(button).toHaveAccessibleName("Source: DAM");
-  await expect(button).toHaveText("DAM");
+  // A pick: the button names the source, and the search uses it.
+  await pickSource(remote, "DAM");
+  await expect(select).toHaveValue("dam");
+  await expect(shown).toHaveText(["", "DAM", ""]);
   await expect(remote).toHaveURL(/[?&]source=dam(&|$)/);
   await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
   await expect(remote.getByText("No results found")).toBeVisible();
   expect(searched).toEqual(["dam"]);
 
-  // From the keyboard: the arrow keys go round the menu, and Escape closes
-  // it as it was.
-  await button.focus();
-  await remote.keyboard.press("Enter");
-  await expect(items.nth(1)).toBeFocused();
-  await remote.keyboard.press("ArrowDown");
-  await expect(items.nth(2)).toBeFocused();
-  await remote.keyboard.press("ArrowDown");
-  await expect(items.nth(0)).toBeFocused();
-  await remote.keyboard.press("ArrowUp");
-  await expect(items.nth(2)).toBeFocused();
-  await remote.keyboard.press("Escape");
-  await expect(menu).toHaveCount(0);
-  await expect(button).toBeFocused();
-  await expect(button).toHaveAccessibleName("Source: DAM");
+  // From the keyboard: Tab reaches it, and the button shows the focus.
+  await remote.getByRole("radio", { name: "Title" }).focus();
+  await remote.keyboard.press("Tab");
+  await expect(select).toBeFocused();
+  await expect(button).toHaveCSS("outline-style", "solid");
 
-  // Enter picks.
-  await remote.keyboard.press("Enter");
-  await remote.keyboard.press("End");
-  await expect(items.nth(2)).toBeFocused();
-  await remote.keyboard.press("Enter");
-  await expect(menu).toHaveCount(0);
-  await expect(button).toBeFocused();
-  await expect(button).toHaveText("Joysound");
-
-  // A tap anywhere else closes it, changing nothing.
-  await button.click();
-  await expect(menu).toBeVisible();
-  await remote.getByRole("heading", { name: "Find a song" }).click();
-  await expect(menu).toHaveCount(0);
-  await expect(button).toHaveAccessibleName("Source: Joysound");
-
-  // Back on All, the icon alone again.
+  // Back on All, the icons alone again.
   await pickSource(remote, "All");
-  await expect(button).toHaveText("");
+  await expect(shown).toHaveText(["", ""]);
   await expect(remote).toHaveURL(/[?&]source=all(&|$)/);
 });
 
@@ -248,6 +217,32 @@ test("History in the top bar opens the history", async ({ remote }) => {
   await expect(
     remote.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
+});
+
+test("a phone with site storage blocked still gets in, until it reloads", async ({
+  karafriends,
+  page,
+}) => {
+  // As Chrome with site data blocked: reading localStorage throws.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    });
+  });
+  const errors: Error[] = [];
+  page.on("pageerror", (err) => errors.push(err));
+  await page.goto(karafriends.remoconUrl);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page.getByLabel("Nickname").fill("ken");
+  await page.getByRole("button", { name: "Start" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Show queue" }).click();
+  await expect(page.getByRole("region", { name: "Queue" })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("a new phone picks a nickname before anything else", async ({
@@ -956,6 +951,34 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
   await expect(play).toBeVisible();
 });
 
+test.describe("in supervised mode", () => {
+  test.use({ appConfig: { supervisedMode: true } });
+
+  test("dimmed controls do nothing from the keyboard either", async ({
+    remote,
+  }) => {
+    const sent: string[] = [];
+    for (const method of ["setPlaybackState", "setPitchShiftSemis"]) {
+      await remote.route(`**/api/${method}`, (route) => {
+        sent.push(method);
+        return route.fulfill({ json: null });
+      });
+    }
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    // Someone else's song, so the transport and the key are dimmed.
+    for (const name of ["Restart", "Play", "Skip", "Lower the key"]) {
+      const control = remote.getByRole("button", { name, exact: true });
+      await expect(control).toHaveAttribute("aria-disabled", "true");
+      await control.focus();
+      await expect(control).toBeFocused();
+      await remote.keyboard.press("Enter");
+      await remote.keyboard.press("Space");
+    }
+    await remote.waitForTimeout(300);
+    expect(sent).toEqual([]);
+  });
+});
+
 test.describe("the now-playing bar", () => {
   const NICKNAME_LONG = "someone with a really very long nickname";
   test.use({
@@ -1202,6 +1225,44 @@ test("a DAM queue button is ready again while the live state keeps changing", as
     changing = false;
     await changes;
   }
+});
+
+test("a video's line says 1 view, and leaves out a count it doesn't have", async ({
+  karafriends,
+  remote,
+}) => {
+  let info: Record<string, unknown> = { lengthSeconds: 320, viewCount: 1 };
+  await remote.route("**/api/nicoInfo", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        info: {
+          title: "千本桜",
+          author: "黒うさP",
+          channelId: "4",
+          description: "",
+          thumbnailUrl: "data:,",
+          ...info,
+        },
+      },
+    }),
+  );
+  await remote.goto(
+    new URL("#/search/niconico/sm9", karafriends.remoconUrl).href,
+  );
+  await expect(remote.getByText("Niconico · 5:20 · 1 view")).toBeVisible();
+
+  // NaN and undefined arrive as null and as no key at all.
+  info = { lengthSeconds: null };
+  await remote.goto(
+    new URL("#/search/niconico/sm10", karafriends.remoconUrl).href,
+  );
+  await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
+  // No length and no views: the line is just the source.
+  await expect(remote.getByText(/ · |views?$/)).toHaveCount(0);
+  await expect(
+    remote.getByRole("button", { name: "Queue video" }),
+  ).toBeEnabled();
 });
 
 test("a song already queued says why it wasn't queued again", async ({
@@ -1545,8 +1606,8 @@ test.describe("a long queue", () => {
       [dx, dy],
     );
 
-  test("stops touch drags that would bounce the page", async ({ remote }) => {
-    // (Playwright's WebKit has no Touch constructor.)
+  // (Playwright's WebKit has no Touch constructor.)
+  const skipWithoutTouch = async (remote: Page) => {
     const canTouch = await remote.evaluate(() => {
       try {
         return !!new Touch({ identifier: 1, target: document.body });
@@ -1555,6 +1616,33 @@ test.describe("a long queue", () => {
       }
     });
     test.skip(!canTouch, "No Touch constructor");
+  };
+
+  test("leaves touch scrolling to the browser where overscroll-behavior works", async ({
+    remote,
+  }) => {
+    await skipWithoutTouch(remote);
+    const queue = await openQueue(remote);
+    const row = queue.getByRole("listitem").nth(1);
+    expect(await touchDragStopped(row, 0, 20)).toBe(false);
+    expect(await touchDragStopped(remote.getByRole("banner"), 0, 20)).toBe(
+      false,
+    );
+  });
+
+  test("on iOS 15, stops touch drags that would bounce the page", async ({
+    remote,
+  }) => {
+    await skipWithoutTouch(remote);
+    // As iOS before 16, which ignores overscroll-behavior.
+    await remote.addInitScript(() => {
+      const supports = CSS.supports.bind(CSS);
+      CSS.supports = (...args: [string, string?]) =>
+        args[0] === "overscroll-behavior"
+          ? false
+          : supports(...(args as [string, string]));
+    });
+    await remote.reload();
     const queue = await openQueue(remote);
     const row = queue.getByRole("listitem").nth(1);
 
