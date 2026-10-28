@@ -108,6 +108,7 @@ export const en = {
   "playback.pause": "Pause",
   "playback.restart": "Restart",
   "playback.skip": "Skip",
+  "playback.singerOnly": "Only its singer or an admin can control this song.",
   "pitch.key": "Key",
   "pitch.lower": "Lower the key",
   "pitch.raise": "Raise the key",

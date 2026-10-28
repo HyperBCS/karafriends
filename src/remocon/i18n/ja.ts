@@ -96,6 +96,7 @@ export const ja: Messages = {
   "playback.pause": "一時停止",
   "playback.restart": "最初から",
   "playback.skip": "スキップ",
+  "playback.singerOnly": "この曲を操作できるのは、歌う人と管理者だけです。",
   "pitch.key": "キー",
   "pitch.lower": "キーを下げる",
   "pitch.raise": "キーを上げる",

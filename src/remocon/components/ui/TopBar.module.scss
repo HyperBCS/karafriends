@@ -1,13 +1,17 @@
 @use "../../tokens" as *;
 
+// Level 2: the page's color, with a hairline and a short shadow over the
+// screen scrolling under it.
 .topBar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: $kf-space-1;
   min-height: 56px;
   padding: 0 $kf-space-1;
-  border-bottom: 1px solid $kf-border;
   background-color: $kf-bg;
+  box-shadow: $kf-shadow-bar;
 }
 
 .back {
@@ -16,13 +20,13 @@
   justify-content: center;
   min-width: $kf-tap;
   min-height: $kf-tap;
-  border-radius: $kf-radius;
+  border-radius: $kf-radius-control;
   color: $kf-text;
   font-size: $kf-text-icon;
   touch-action: manipulation;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   @include kf-focus-visible;

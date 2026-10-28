@@ -1,4 +1,4 @@
-/* Over the (empty) video, so the whole screen is black. */
+/* Over the (empty) video, the whole screen: the page. */
 .idleScreen {
   position: absolute;
   inset: 0;

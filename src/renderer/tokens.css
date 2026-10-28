@@ -1,42 +1,97 @@
 /* The display's design tokens (see the design brief in
-   notes/PLAN-product.md). The colors match the phone remote's
-   (src/remocon/tokens.scss) except the background: pure black behind the
-   video, and a surface just above it for panels.
+   notes/PLAN-product.md). The colors are the phone remote's dark theme
+   (src/remocon/tokens.scss, "Graphite"), with pure black behind the video.
+
+   Depth, as on the phone: the page (level 0) is flat and the darkest;
+   cards (level 1: settings sections, the idle screen's queue) sit on it
+   with a soft shadow and a faint light top edge; the corner cards over the
+   video (level 2) have a longer shadow; the Settings header has a hairline
+   and a short shadow under it, and the Up next strip a light top edge and
+   a shadow upward. Fields, meters and slider tracks are sunken (darker,
+   with an inner shadow); buttons and the picked tab's bar stand above.
 
    Sizes are for a screen viewed from 3 m: nothing a guest reads is under
    2rem, which is 32px on a 1080p screen. They are all in rem, and the root
    size follows the window's height (index.css), so the screen looks the same
-   at 720p and at 4K; only the 1px hairlines stay px. Contrast ratios are
-   WCAG 2 ratios against --kf-bg. */
+   at 720p and at 4K; only the 1px hairlines and light edges stay px.
+   Contrast ratios are WCAG 2 ratios against --kf-bg unless noted. */
 
 :root {
   color-scheme: dark;
 
-  /* Behind the video, and the idle screen. */
-  --kf-bg: #000000;
-  /* The one lighter surface: panels, the settings screen, notices. */
-  --kf-surface: #141414;
-  --kf-surface-pressed: #262626;
-  /* Hairlines between rows and around fields (decorative). */
-  --kf-border: #3a3a3a;
-  /* The edge of a field or an outlined button (3.9:1). */
-  --kf-border-strong: #6b6b6b;
-  /* A slider's track past its value: 3.5:1 on the surface, and the accent
-     filling the rest is 2.3:1 against it. */
-  --kf-track: #6b6b6b;
-  /* Text, 19.3:1. */
-  --kf-text: #f5f5f5;
-  /* Secondary text: artists, singers, ETAs. 8.3:1 (7.3:1 on the surface). */
-  --kf-muted: #a3a3a3;
-  /* The accent: the fill of the app icon's circle (icon.png), sampled as its
-     most common opaque pixel. The current song and the primary action only.
-     8.9:1 as text. White text on it is 2.4:1, so text on it is
-     --kf-on-accent. */
-  --kf-accent: #1cb3ff;
-  --kf-accent-pressed: #1590cc;
-  --kf-on-accent: #121212;
-  /* Errors and destructive actions. 6.9:1 as text. */
-  --kf-danger: #ff5c5c;
+  /* Behind the video. */
+  --kf-black: #000000;
+  /* The page: the idle screen, Settings, the Up next strip. 1.08:1 on
+     black. */
+  --kf-bg: #0c0d0f;
+  /* Cards on the page and over the video: 1.09:1 (1.18:1 on black). */
+  --kf-surface: #16181b;
+  /* A button's fill, a step above a card (1.29:1 on one). */
+  --kf-raised: #2a2d33;
+  /* A solid step above that: the singer's initial. */
+  --kf-pressed: #33373e;
+  /* Fields, meters and tracks, below the card they're on. */
+  --kf-field: #08090a;
+  /* Anything pressed: the text color, faint, over whatever it's on. */
+  --kf-press: color-mix(in srgb, var(--kf-text) 6%, transparent);
+  /* Hairlines, 1.5:1 (1.4:1 on a card): they part rows and sections; they
+     don't mark a control's edge. */
+  --kf-border: #2f333a;
+  /* The same, softer, between rows on a card. */
+  --kf-line: color-mix(in srgb, var(--kf-border) 65%, transparent);
+  /* A field's edge, 1.7:1 on a card: with the field's darker fill, its
+     inner shadow and its label, it's plainly a field; focused, the accent
+     (7.1:1 on a card) takes its place. */
+  --kf-border-strong: #3a3e46;
+  /* A slider's track past its value: the field's color, a groove in the
+     card (1.1:1, with a hairline and the inner shadow round it); the
+     accent filling it to the value is 8.0:1 against it. */
+  --kf-track: #08090a;
+  /* Text, 15.5:1 (16.8:1 on black, 14.2:1 on a card, 11.0:1 on a
+     button). */
+  --kf-text: #e4e6e9;
+  /* Secondary text: artists, singers, ETAs, the tabs not picked. 7.6:1
+     (8.3:1 on black, 7.0:1 on a card). */
+  --kf-muted: #9ca3ad;
+  /* The accent: the app icon's blue (#1cb3ff), calmer. The current song
+     and the primary action only. 7.8:1 as text (7.1:1 on a card). Text on
+     it is --kf-on-accent. */
+  --kf-accent: #43aee6;
+  --kf-accent-pressed: #3597cc;
+  /* Text on the accent, 7.8:1 (6.0:1 pressed). */
+  --kf-on-accent: #0c0d0f;
+  /* The accent as a tint behind text: the picked Settings tab (its text
+     12.3:1 on it). */
+  --kf-tint: color-mix(in srgb, var(--kf-accent) 16%, transparent);
+  /* Errors and destructive actions. 7.0:1 as text (6.4:1 on a card). */
+  --kf-danger: #ff6b6b;
+
+  /* Shadows, one per level. */
+  --kf-shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0.0625rem 0.125rem rgba(0, 0, 0, 0.55),
+    0 0.125rem 0.5rem rgba(0, 0, 0, 0.35);
+  /* A card over the video, which may be bright. */
+  --kf-shadow-float:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0.0625rem 0.25rem rgba(0, 0, 0, 0.5), 0 0.25rem 1.5rem rgba(0, 0, 0, 0.6);
+  --kf-shadow-bar:
+    0 1px 0 var(--kf-border), 0 0.25rem 0.75rem rgba(0, 0, 0, 0.4);
+  /* Along the bottom, over the video: the strip. */
+  --kf-shadow-up:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 -0.375rem 1.125rem rgba(0, 0, 0, 0.6);
+  /* A fill raised off its surface: the primary button, a slider's thumb. */
+  --kf-shadow-raise:
+    0 0.0625rem 0.125rem rgba(0, 0, 0, 0.55),
+    0 0.125rem 0.375rem rgba(0, 0, 0, 0.3);
+  /* A raised button: the light edge and the raise. */
+  --kf-shadow-button:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--kf-shadow-raise);
+  --kf-shadow-sunken: inset 0 0.0625rem 0.1875rem rgba(0, 0, 0, 0.55);
+  /* A slider's track or a meter: a hairline round it and the inner
+     shadow. */
+  --kf-shadow-track: inset 0 0 0 1px var(--kf-border), var(--kf-shadow-sunken);
 
   --kf-space-1: 0.25rem;
   --kf-space-2: 0.5rem;
@@ -45,10 +100,11 @@
   --kf-space-5: 1.5rem;
   --kf-space-6: 2rem;
 
-  /* One radius; borders and spacing instead of shadows. */
+  /* Small labels keep the small radius; fields, buttons and tabs are
+     rounder, and cards rounder still. */
   --kf-radius: 0.25rem;
-  /* The one shadow, for a bottom sheet only. */
-  --kf-shadow-sheet: 0 -0.125rem 0.75rem rgba(0, 0, 0, 0.6);
+  --kf-radius-control: 0.625rem;
+  --kf-radius-card: 1rem;
 
   /* UI text uses the system stack; lyrics keep the bundled Noto fonts. */
   --kf-font:

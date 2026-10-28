@@ -1,3 +1,5 @@
+@use "sass:color";
+
 // The phone remote's design tokens. Every color, size and space in the
 // remote comes from here (see the design brief in notes/PLAN-product.md).
 //
@@ -7,123 +9,250 @@
 //
 // Colors come in two sets, a dark theme and a light one, chosen by
 // data-theme="dark" | "light" on <html> (theme.ts; without it, before
-// theme.ts runs, the phone's mode picks). So a color here is the custom property, var(--kf-*), never a value:
-// every component that uses $kf-text follows the theme by itself.
+// theme.ts runs, the phone's mode picks). So a color here is the custom
+// property, var(--kf-*), never a value: every component that uses $kf-text
+// follows the theme by itself.
+//
+// Depth: the screen is built in layers, each a step lighter (in the dark
+// theme) and with more shadow than the one under it.
+//   Level 0, the page: flat, the darkest.
+//   Level 1, cards: lists and settings groups, rounded, inset from the
+//     screen's edges, with a soft shadow and a faint light top edge.
+//   Level 2, the top bar: the page's color, a hairline and a short shadow.
+//   Level 3, the now-playing sheet: lighter again, a light top edge and a
+//     long shadow upward.
+//   Level 4, menus: the sheet's color and the strongest shadow.
+// Fields, tracks and the sheet's queue sit below the surface they're on
+// (sunken: darker, with an inner shadow); the picked choice, the play
+// button and buttons sit above it (raised: a small shadow). Near black a
+// shadow alone hardly shows, so the light top edge does much of the work.
 //
 // Contrast ratios are WCAG 2 ratios against the page unless noted.
+// "Pressed" is a layer with $kf-press over it.
 
 // Colors.
 
-// Three greys, each a layer above the last: the page, the surface of lists
-// and fields, and the now-playing sheet (the panel), lifted over both.
+// The layers: the page, the cards on it, and the sheet over both.
 $kf-bg: var(--kf-bg);
 $kf-surface: var(--kf-surface);
 $kf-panel: var(--kf-panel);
-// A surface while pressed.
-$kf-surface-pressed: var(--kf-surface-pressed);
-// The panel while pressed. Inside the sheet it is the pressed surface too
-// (Sheet.module.scss).
-$kf-panel-pressed: var(--kf-panel-pressed);
-// Hairlines between rows and around lists.
+// The well the sheet's queue sits in, below the sheet.
+$kf-well: var(--kf-well);
+// Text fields and the choices' track, below the surface they're on.
+$kf-field: var(--kf-field);
+// Anything pressed, on any layer: the text color, faint, over it
+// (kf-press-overlay below).
+$kf-press: var(--kf-press);
+// A solid step above the sheet: the singer's initial, a queue row while
+// it's dragged.
+$kf-pressed: var(--kf-pressed);
+// A raised button's fill (and the switch's knob): a step above a card or
+// the page.
+$kf-raised: var(--kf-raised);
+// Hairlines between rows, inside a card or the well.
+$kf-line: var(--kf-line);
+// The color the hairlines come from, and the edge of the top bar and the
+// sheet's controls.
 $kf-border: var(--kf-border);
-// The edge of a field or an outlined button.
+// The edge of a field or an outlined control.
 $kf-border-strong: var(--kf-border-strong);
 // A slider's track past its value.
 $kf-track: var(--kf-track);
 $kf-text: var(--kf-text);
 // Secondary text: artists, ETAs, labels.
 $kf-muted: var(--kf-muted);
+// A control that can't be used now: there, but plainly off.
+$kf-disabled: var(--kf-disabled);
 // The accent: the primary action or the current item, as text, an icon, an
 // edge, an underline, a slider's fill or the focus ring.
 $kf-accent: var(--kf-accent);
-// The accent as the fill of the primary button, under $kf-on-accent.
+// The accent as a fill (the primary button, the picked choice, play),
+// under $kf-on-accent.
 $kf-accent-fill: var(--kf-accent-fill);
 $kf-accent-pressed: var(--kf-accent-pressed);
 $kf-on-accent: var(--kf-on-accent);
+// The accent as a tint behind text, and its edge: a picked chip.
+$kf-tint: var(--kf-tint);
+$kf-tint-edge: var(--kf-tint-edge);
 // Destructive actions and errors.
 $kf-danger: var(--kf-danger);
 $kf-danger-pressed: var(--kf-danger-pressed);
-// The one shadow, for the bottom sheet only.
-$kf-shadow-sheet: var(--kf-shadow-sheet);
 
-// The dark theme, for the dim room the remote is mostly used in.
+// Shadows, one per level (see Depth above).
+$kf-shadow-card: var(--kf-shadow-card);
+$kf-shadow-bar: var(--kf-shadow-bar);
+$kf-shadow-sheet: var(--kf-shadow-sheet);
+$kf-shadow-menu: var(--kf-shadow-menu);
+// A fill raised off its surface: the picked choice, play, the primary
+// button.
+$kf-shadow-raise: var(--kf-shadow-raise);
+// A raised button in $kf-raised: the light edge and the raise.
+$kf-shadow-button: var(--kf-shadow-button);
+// Below the surface: a field, a track, the well.
+$kf-shadow-sunken: var(--kf-shadow-sunken);
+// A slider's track: a hairline round it and the inner shadow.
+$kf-shadow-track: var(--kf-shadow-track);
+// The raise as a filter, for a shape a box-shadow wouldn't follow (a
+// slider's dot).
+$kf-drop-raise: var(--kf-drop-raise);
+// The sheet's controls, a toolbar under the queue: a hairline and a short
+// shadow upward.
+$kf-shadow-toolbar: var(--kf-shadow-toolbar);
+
+// The dark theme, for the dim room the remote is mostly used in: near
+// black and cool greys ("Graphite"), the app icon's blue a touch calmer.
 @mixin dark-colors {
-  // Three greys, each a step lighter. The page is near-black, not pure
-  // black, so the surface reads against it. The surface is 1.5:1 against
-  // the page so a list reads as one block in a dim room. The panel, the
-  // sheet, is 1.4:1 above the surface, so the queue in it doesn't look
-  // like the list behind it; it's as light as it can be with secondary
-  // text still at 4.5:1 on it. A pressed surface is a step lighter, as
-  // light as it can be with secondary text at 4.5:1 on it (a pressed row);
-  // the pressed panel is a step darker, for the same reason.
-  --kf-bg: #121212;
-  --kf-surface: #343434; // 1.5:1
-  --kf-panel: #4a4a4a; // 2.1:1 (1.4:1 against the surface)
-  --kf-surface-pressed: #444444; // 1.9:1 (1.28:1 against the surface)
-  --kf-panel-pressed: #3d3d3d; // 1.7:1 (1.23:1 against the panel)
-  // 3.2:1, the 3:1 a component's boundary needs (2.1:1 on the surface; on
-  // the panel, 1.5:1, it only parts rows).
-  --kf-border: #646464;
-  --kf-border-strong: #6b6b6b; // 3.5:1 (2.3:1 on the surface)
-  // 2.3:1 on the surface, and the accent filling the rest is 2.3:1 against
-  // it.
-  --kf-track: #6b6b6b;
-  --kf-text: #f5f5f5; // 17.2:1 (11.4:1 on the surface, 8.1:1 on the panel)
-  // 10.0:1 (6.6:1 on the surface, 5.2:1 pressed; 4.7:1 on the panel, 5.8:1
-  // pressed)
-  --kf-muted: #bdbdbd;
-  // The fill of the app icon's circle (icon.png), sampled as its most common
-  // opaque pixel, #1cb3ff. 8.0:1 as text on the page, 5.3:1 on the surface,
-  // 4.2:1 pressed. 3.8:1 on the panel: icons, edges and the focus ring
-  // only there, no text. White text on it is only 2.4:1, so text on the
-  // accent is --kf-on-accent.
-  --kf-accent: #1cb3ff;
-  --kf-accent-fill: #1cb3ff;
-  --kf-accent-pressed: #1590cc;
-  // Text on the accent (8.0:1) and on the danger color (6.8:1).
-  --kf-on-accent: #121212;
-  // 6.8:1 as text. Icons only on the surface (4.49:1) and the panel (3.2:1,
-  // 3.9:1 pressed).
+  $text: #e4e6e9;
+  $accent: #43aee6;
+  $border: #2f333a;
+
+  // The page is near black, not pure black, so a card reads on it; a card
+  // is 1.09:1 on it, the sheet 1.41:1 (1.29:1 on a card): the light top
+  // edges and the shadows mark the layers more than the greys do.
+  --kf-bg: #0c0d0f;
+  --kf-surface: #16181b; // 1.09:1
+  --kf-panel: #2a2d33; // 1.41:1
+  --kf-well: #16181b; // the cards' grey: 1.29:1 under the sheet
+  --kf-field: #08090a; // 1.02:1, darker than the page
+  --kf-press: #{color.change($text, $alpha: 0.06)};
+  --kf-pressed: #33373e; // 1.63:1 (1.15:1 on the sheet)
+  --kf-raised: #2a2d33; // the sheet's grey: 1.29:1 on a card
+  --kf-line: #{color.change($border, $alpha: 0.65)};
+  // Hairlines, 1.5:1 (1.4:1 on a card): they part rows; they don't mark a
+  // control's edge.
+  --kf-border: #{$border};
+  // A field's edge, 1.8:1 (1.7:1 on a card): with the field's darker fill,
+  // its inner shadow and its label, it's plainly a field; focused, the
+  // accent (7.8:1) takes its place.
+  --kf-border-strong: #3a3e46;
+  // The field's color: the slider is a groove in the card (1.1:1, with a
+  // hairline and the inner shadow round it), and the accent filling it to
+  // the value is 8.0:1 against it.
+  --kf-track: #08090a;
+  // 15.5:1 (14.2:1 on a card, 11.0:1 on the sheet, 9.4:1 pressed there)
+  --kf-text: #{$text};
+  // 7.6:1 (7.0:1 on a card or in the well, 6.1:1 pressed; 5.4:1 on the
+  // sheet, 4.6:1 pressed; 4.7:1 on a held queue row)
+  --kf-muted: #9ca3ad;
+  // 3.0:1 (2.1:1 on the sheet): an icon that's off.
+  --kf-disabled: #585e67;
+  // The app icon's blue (#1cb3ff), calmer. 7.8:1 as text (7.1:1 on a card,
+  // 5.5:1 on the sheet, 4.7:1 pressed there).
+  --kf-accent: #{$accent};
+  --kf-accent-fill: #{$accent};
+  --kf-accent-pressed: #3597cc; // 6.0:1 under the dark text
+  // Text on the accent (7.8:1) and on the danger color (7.0:1).
+  --kf-on-accent: #0c0d0f;
+  // The text on it: 12.3:1 (10.9:1 on a card).
+  --kf-tint: #{color.change($accent, $alpha: 0.16)};
+  --kf-tint-edge: #{color.change($accent, $alpha: 0.55)};
+  // 7.0:1 as text (6.4:1 on a card, 5.0:1 on the sheet). Pressed on the
+  // sheet, 4.2:1: icons only there.
   --kf-danger: #ff6b6b;
-  --kf-danger-pressed: #e04848;
-  --kf-shadow-sheet: 0 -4px 16px rgba(0, 0, 0, 0.7);
+  --kf-danger-pressed: #e65c5c; // 5.6:1 under the dark text
+
+  --kf-shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  --kf-shadow-bar: 0 1px 0 #{$border}, 0 4px 12px rgba(0, 0, 0, 0.4);
+  --kf-shadow-sheet:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 -10px 28px rgba(0, 0, 0, 0.6),
+    0 -2px 6px rgba(0, 0, 0, 0.45);
+  --kf-shadow-menu:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 32px rgba(0, 0, 0, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  --kf-shadow-raise:
+    0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --kf-shadow-button:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+  --kf-shadow-sunken: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  --kf-shadow-track:
+    inset 0 0 0 1px #{$border}, inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  --kf-shadow-toolbar:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -1px 0 rgba(0, 0, 0, 0.45),
+    0 -4px 10px rgba(0, 0, 0, 0.25);
+  --kf-drop-raise: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
-// The light theme: the same type, spacing, radius and accent, for a
-// bright room or a phone in light mode. The same three layers, each a
-// step lighter: a light grey page, near-white lists and fields, and a
-// white sheet over them.
+// The light theme ("Graphite light"), for a bright room or a phone in
+// light mode: the same layers, type, spacing and shapes. A cool light grey
+// page, white cards and a white sheet over them, told apart by their
+// shadows, which are softer than the dark theme's.
 @mixin light-colors {
-  --kf-bg: #ebebeb;
-  --kf-surface: #f5f5f5; // 1.09:1
-  --kf-panel: #ffffff; // 1.19:1 (1.09:1 against the surface)
-  --kf-surface-pressed: #e0e0e0; // 1.11:1 (1.21:1 against the surface)
-  --kf-panel-pressed: #ebebeb; // 1.19:1 against the panel
-  // 3.1:1, the 3:1 a component's boundary needs (3.4:1 on the surface,
-  // 3.7:1 on the panel).
-  --kf-border: #858585;
-  --kf-border-strong: #7a7a7a; // 3.6:1 (3.9:1 on the surface, 4.3:1 panel)
-  // Lighter than the borders, so the darker accent filling the rest stands
-  // out against it (2.6:1); 1.9:1 on the surface.
-  --kf-track: #b3b3b3;
-  --kf-text: #1a1a1a; // 14.6:1 (16.0:1 on the surface, 17.4:1 on the panel)
-  // 5.2:1 (5.7:1 on the surface, 4.7:1 pressed; 6.2:1 on the panel, 5.2:1
-  // pressed)
-  --kf-muted: #616161;
-  // The icon's #1cb3ff is only 2.0:1 on the page, too faint for text, an
-  // icon or the focus ring, so those take the same blue a step darker:
-  // 4.6:1 (5.0:1 on the surface, 4.1:1 pressed, 5.5:1 on the panel, 4.6:1
-  // pressed). The primary button keeps the icon's own fill, with the dark
-  // text on it (8.0:1).
-  --kf-accent: #006fa8;
-  --kf-accent-fill: #1cb3ff;
-  --kf-accent-pressed: #1590cc; // 5.3:1 under the dark text
-  --kf-on-accent: #121212;
-  // Icons and the error bar: 3.4:1 (3.7:1 on the surface, 4.1:1 on the
-  // panel), with 4.6:1 for the dark text on it.
-  --kf-danger: #e04848;
-  --kf-danger-pressed: #cc4444;
-  --kf-shadow-sheet: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  $text: #1a1c1f;
+  $accent: #0b6aa0;
+  $border: #d5d9df;
+  $shade: #141a22;
+
+  --kf-bg: #edeff2;
+  --kf-surface: #ffffff; // 1.15:1
+  --kf-panel: #ffffff; // 1.15:1, over the cards by its shadow
+  --kf-well: #edeff2; // the page's grey: 1.15:1 under the sheet
+  --kf-field: #f4f5f7; // 1.06:1, a touch darker than a card
+  --kf-press: #{color.change($text, $alpha: 0.06)};
+  --kf-pressed: #e4e7eb; // 1.08:1
+  --kf-raised: #ffffff; // with a hairline round it (--kf-shadow-button)
+  --kf-line: #{color.change($border, $alpha: 0.65)};
+  // Hairlines, 1.2:1 (1.4:1 on a card): they part rows.
+  --kf-border: #{$border};
+  // A field's edge: 3.3:1, the 3:1 a component's boundary needs (3.8:1 on
+  // a card, 3.5:1 on a field's fill).
+  --kf-border-strong: #7d848e;
+  // A grey groove, 1.3:1 on a card (with a hairline and the inner shadow
+  // round it); the accent filling it to the value is 4.6:1 against it.
+  --kf-track: #e2e5e9;
+  // 14.8:1 (17.1:1 on a card or the sheet, 15.1:1 pressed)
+  --kf-text: #{$text};
+  // 5.3:1 (6.2:1 on a card or the sheet, 5.5:1 pressed; 5.3:1 in the well,
+  // 4.7:1 pressed there)
+  --kf-muted: #5b626c;
+  // 2.1:1 (2.4:1 on a card): an icon that's off.
+  --kf-disabled: #a3a9b1;
+  // The dark theme's blue is only 2.2:1 here, too faint for text, an icon
+  // or the focus ring, so those take a darker blue: 5.1:1 (5.9:1 on a card,
+  // 5.2:1 pressed; 4.5:1 pressed in the well). The fills keep the light
+  // blue, with the dark text on it (7.8:1).
+  --kf-accent: #{$accent};
+  --kf-accent-fill: #43aee6;
+  --kf-accent-pressed: #3597cc; // 6.0:1 under the dark text
+  --kf-on-accent: #0c0d0f;
+  // The text on it: 11.9:1 (13.5:1 on a card).
+  --kf-tint: #{color.change($accent, $alpha: 0.16)};
+  --kf-tint-edge: #{color.change($accent, $alpha: 0.55)};
+  // Icons and the error bar: 3.7:1 (4.3:1 on a card, 3.3:1 pressed in the
+  // well), with 4.6:1 for the dark text on it.
+  --kf-danger: #d84848;
+  --kf-danger-pressed: #e25a5a; // 5.4:1 under the dark text
+
+  --kf-shadow-card:
+    0 0 0 1px #{color.change($shade, $alpha: 0.04)},
+    0 1px 2px #{color.change($shade, $alpha: 0.08)},
+    0 2px 8px #{color.change($shade, $alpha: 0.06)};
+  --kf-shadow-bar:
+    0 1px 0 #{$border}, 0 4px 12px #{color.change($shade, $alpha: 0.06)};
+  --kf-shadow-sheet:
+    0 0 0 1px #{color.change($shade, $alpha: 0.04)},
+    0 -10px 28px #{color.change($shade, $alpha: 0.14)},
+    0 -2px 6px #{color.change($shade, $alpha: 0.08)};
+  --kf-shadow-menu:
+    0 0 0 1px #{color.change($shade, $alpha: 0.06)},
+    0 12px 32px #{color.change($shade, $alpha: 0.18)},
+    0 2px 8px #{color.change($shade, $alpha: 0.1)};
+  --kf-shadow-raise:
+    0 1px 2px #{color.change($shade, $alpha: 0.18)},
+    0 1px 4px #{color.change($shade, $alpha: 0.1)};
+  --kf-shadow-button:
+    0 0 0 1px #{color.change($shade, $alpha: 0.12)},
+    0 1px 2px #{color.change($shade, $alpha: 0.12)},
+    0 1px 4px #{color.change($shade, $alpha: 0.08)};
+  --kf-shadow-sunken: inset 0 1px 2px #{color.change($shade, $alpha: 0.12)};
+  --kf-shadow-track:
+    inset 0 0 0 1px #{color.change($shade, $alpha: 0.1)},
+    inset 0 1px 2px #{color.change($shade, $alpha: 0.12)};
+  --kf-shadow-toolbar:
+    0 -1px 0 #{$border}, 0 -4px 10px #{color.change($shade, $alpha: 0.05)};
+  --kf-drop-raise: drop-shadow(0 1px 2px #{color.change($shade, $alpha: 0.3)});
 }
 
 // Spacing.
@@ -134,10 +263,14 @@ $kf-space-4: 16px;
 $kf-space-5: 24px;
 $kf-space-6: 32px;
 
-// Shape. One radius everywhere; borders and spacing instead of shadows.
+// Shape. Small labels keep the small radius; fields and buttons are
+// rounder, cards rounder still, and the sheet's top corners most.
 $kf-radius: 4px;
-// The sheet's top corners only, so it reads as a layer over the screen.
-$kf-radius-sheet: 12px;
+$kf-radius-control: 10px;
+$kf-radius-card: 12px;
+$kf-radius-sheet: 16px;
+// How far a card sits in from the screen's sides.
+$kf-card-inset: $kf-space-3;
 
 // Tap targets.
 $kf-tap: 44px;
@@ -182,6 +315,34 @@ $kf-line-height: 1.35;
   }
 }
 
+// The pressed look on any layer: $kf-press over the element's own fill.
+@mixin kf-press-overlay {
+  background-image: linear-gradient($kf-press, $kf-press);
+}
+
+// Level 1: a card. Rows inside it have no fill of their own.
+@mixin kf-card {
+  border-radius: $kf-radius-card;
+  background-color: $kf-surface;
+  box-shadow: $kf-shadow-card;
+}
+
+// Below the surface: a field or a track.
+@mixin kf-sunken {
+  background-color: $kf-field;
+  box-shadow: $kf-shadow-sunken;
+}
+
+// A heading over a card or a block: small muted caps.
+@mixin kf-caps-label {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 // The other tokens as custom properties, for inline styles and anything
 // outside Sass; index.scss includes this under :root.
 @mixin custom-properties {
@@ -192,6 +353,8 @@ $kf-line-height: 1.35;
   --kf-space-5: #{$kf-space-5};
   --kf-space-6: #{$kf-space-6};
   --kf-radius: #{$kf-radius};
+  --kf-radius-control: #{$kf-radius-control};
+  --kf-radius-card: #{$kf-radius-card};
   --kf-radius-sheet: #{$kf-radius-sheet};
   --kf-tap: #{$kf-tap};
   --kf-font: #{$kf-font};

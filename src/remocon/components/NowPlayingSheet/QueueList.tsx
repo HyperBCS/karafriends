@@ -140,8 +140,8 @@ const QueueRow = memo(function QueueRow({
   );
 });
 
-// The songs waiting, under "Up next", each with its wait (the current song
-// is on the now-playing bar only). An admin's moves show at once, until the
+// The songs waiting (the sheet's "Up next"), each with its wait (the
+// current song is on the now-playing bar only). An admin's moves show at once, until the
 // live state has them (or the server says why not, and the queue goes
 // back). The order comes from useQueue(false), which changes only with the
 // queue, not every second.
@@ -180,14 +180,13 @@ const QueueList = () => {
 
   return (
     <>
-      <h2 className={styles.heading}>{t("queue.upNext")}</h2>
       {moveError && (
         <InlineError>
           {t("queue.moveFailed", { reason: moveError })}
         </InlineError>
       )}
       {queue.length > 0 ? (
-        <List label={t("queue.upNext")}>
+        <List label={t("queue.upNext")} plain>
           {queue.map(([item, eta], index) => (
             <QueueRow
               key={`${item.songId}_${item.timestamp}`}

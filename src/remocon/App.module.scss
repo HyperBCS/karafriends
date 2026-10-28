@@ -31,14 +31,14 @@
   justify-content: center;
   width: $kf-tap;
   height: $kf-tap;
-  border-radius: $kf-radius;
+  border-radius: $kf-radius-control;
   color: $kf-text;
   font-size: $kf-text-icon;
   touch-action: manipulation;
 
   &:not([aria-current]) {
     @include kf-pressed {
-      background-color: $kf-surface-pressed;
+      @include kf-press-overlay;
     }
   }
 
@@ -49,7 +49,7 @@
 
   // On a first visit, until there's a nickname.
   &[aria-disabled="true"] {
-    color: $kf-border-strong;
+    color: $kf-disabled;
     pointer-events: none;
   }
 

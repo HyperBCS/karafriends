@@ -45,7 +45,7 @@ function signInError(err: unknown): string {
   return t("common.offline");
 }
 
-// A few settings under one heading, on the lists' surface.
+// A few settings under one heading, in a card.
 const Group = ({
   heading,
   children,
@@ -401,12 +401,16 @@ const Admin = () => {
         <p className={styles.text} role="status">
           {t("settings.signedIn")}
         </p>
-        <SongVolumeSlider />
+        <div className={styles.setting}>
+          <SongVolumeSlider />
+        </div>
         <GuideMelodySlider />
         <Mics />
-        <Button variant="secondary" disabled={pending} onClick={leave}>
-          {t("settings.signOut")}
-        </Button>
+        <div className={styles.setting}>
+          <Button variant="secondary" disabled={pending} onClick={leave}>
+            {t("settings.signOut")}
+          </Button>
+        </div>
       </>
     );
   }

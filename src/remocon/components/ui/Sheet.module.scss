@@ -1,19 +1,20 @@
 @use "../../tokens" as *;
 
-// The bottom panel, a layer above the screen: lighter than the lists, with
-// rounded top corners and the only shadow. Inside it, a surface is the
-// sheet itself: its rows have no fill of their own, and a pressed row or
-// button takes the sheet's pressed color.
+// The bottom panel, level 3: lighter than the cards, with rounded top
+// corners, a light top edge and a long shadow over the screen. Inside it, a
+// surface is the sheet itself: an error or a button there sits on the
+// sheet's color.
 .sheet {
   --kf-surface: #{$kf-panel};
-  --kf-surface-pressed: #{$kf-panel-pressed};
+  // Its shadow over the screen's rows.
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   // Of the screen as it shows now: on iOS, vh is the screen with Safari's
   // bars hidden (dvh needs Safari 15.4; older ones keep 80vh).
   max-height: 80vh;
   max-height: 80dvh;
-  border-top: 1px solid $kf-border;
   border-radius: $kf-radius-sheet $kf-radius-sheet 0 0;
   background-color: $kf-panel;
   box-shadow: $kf-shadow-sheet;
@@ -92,7 +93,7 @@
 
   @include kf-pressed {
     &::after {
-      background-color: $kf-surface-pressed;
+      background-color: $kf-press;
     }
   }
 
@@ -120,7 +121,6 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid $kf-border;
 
   &[hidden] {
     display: none;

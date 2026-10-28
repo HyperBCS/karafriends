@@ -17,7 +17,7 @@
   border: 1px solid $kf-border-strong;
   border-radius: $kf-tap;
   background: none;
-  color: $kf-text;
+  color: $kf-muted;
   font: inherit;
   font-size: $kf-text-body;
   font-weight: 600;
@@ -34,11 +34,11 @@
   }
 
   &[aria-expanded="true"] {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   @include kf-focus-visible;
@@ -49,6 +49,7 @@
   font-size: 24px;
 }
 
+// Level 4: the sheet's color and the strongest shadow, over everything.
 .menu {
   position: absolute;
   top: calc(100% + #{$kf-space-1});
@@ -58,9 +59,10 @@
   flex-direction: column;
   min-width: 180px;
   padding: $kf-space-1 0;
-  border: 1px solid $kf-border-strong;
-  border-radius: $kf-radius;
-  background-color: $kf-surface;
+  overflow: hidden;
+  border-radius: $kf-radius-card;
+  background-color: $kf-panel;
+  box-shadow: $kf-shadow-menu;
 }
 
 .item {
@@ -80,7 +82,7 @@
   touch-action: manipulation;
 
   @include kf-pressed {
-    background-color: $kf-surface-pressed;
+    @include kf-press-overlay;
   }
 
   // An inset ring: the items run edge to edge.

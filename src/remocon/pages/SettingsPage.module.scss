@@ -7,8 +7,8 @@
   padding-top: $kf-space-4;
 }
 
-// A group: its heading on the page, then its settings on the lists'
-// surface, edge to edge as a list is.
+// A group: its heading in small caps on the page, then its settings in a
+// card, each setting parted from the last by a hairline.
 .group {
   display: flex;
   flex-direction: column;
@@ -16,20 +16,23 @@
 }
 
 .heading {
-  padding: 0 $kf-space-4;
-  color: $kf-text;
-  font-size: $kf-text-title;
-  font-weight: 700;
+  @include kf-caps-label;
+  padding: 0 calc(#{$kf-card-inset} + #{$kf-space-1});
 }
 
 .settings {
+  @include kf-card;
   display: flex;
   flex-direction: column;
-  gap: $kf-space-5;
-  padding: $kf-space-4;
-  border-top: 1px solid $kf-border;
-  border-bottom: 1px solid $kf-border;
-  background-color: $kf-surface;
+  margin: 0 $kf-card-inset;
+
+  > * {
+    padding: $kf-space-4;
+  }
+
+  > * + * {
+    border-top: 1px solid $kf-line;
+  }
 }
 
 // One setting: its control, then a button or help text for it.
@@ -37,18 +40,9 @@
   display: flex;
   flex-direction: column;
   gap: $kf-space-2;
-}
 
-.settings,
-.setting {
   > button {
     align-self: flex-start;
-
-    // A button that can't be pressed yet is filled with the surface: on
-    // the surface, its outline still shows it's a button.
-    &:disabled {
-      border-color: $kf-border;
-    }
   }
 }
 
@@ -108,11 +102,13 @@ $dot-inset: calc(($kf-tap - $dot) / 2);
   border-radius: 50%;
   background-color: $kf-text;
   background-clip: padding-box;
+  // Raised: a shadow on the dot (a box-shadow would ring the tap target).
+  filter: $kf-drop-raise;
   appearance: none;
 }
 
-// The slider: a track filled with the accent up to the value, which
-// --kf-fill gives as a percent, and a solid thumb. Drawn here in full:
+// The slider: a sunken track filled with the accent up to the value, which
+// --kf-fill gives as a percent, and a solid, raised thumb. Drawn here in full:
 // iOS's own thumb is glass unless the input and its thumb both have
 // appearance: none.
 //
@@ -132,12 +128,14 @@ $dot-inset: calc(($kf-tap - $dot) / 2);
     right: $dot-inset;
     left: $dot-inset;
     height: $track;
-    border-radius: $kf-radius;
+    border-radius: calc($track / 2);
     background: linear-gradient(
       to right,
       $kf-accent var(--kf-fill),
       $kf-track var(--kf-fill)
     );
+    // Sunk into the card, as a field is.
+    box-shadow: $kf-shadow-track;
   }
 
   input {

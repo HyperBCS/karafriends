@@ -174,7 +174,7 @@ test.describe("live state", () => {
       await raise.click();
       for (const phone of [alice, bob]) {
         await expect(phone.getByRole("status", { name: "Key" })).toHaveText(
-          "2",
+          "+2",
         );
       }
 

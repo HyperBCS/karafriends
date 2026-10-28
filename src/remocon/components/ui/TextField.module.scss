@@ -21,13 +21,14 @@
   white-space: nowrap;
 }
 
+// Sunk into what it's on.
 .box {
   display: flex;
   align-items: center;
   min-height: 48px;
   border: 1px solid $kf-border-strong;
-  border-radius: $kf-radius;
-  background-color: $kf-surface;
+  border-radius: $kf-radius-control;
+  @include kf-sunken;
 
   &:focus-within,
   [data-demo="focus"] & {
