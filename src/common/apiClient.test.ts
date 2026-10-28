@@ -10,6 +10,7 @@ import {
   adminSignOut,
   ApiCallError,
   call,
+  CLOCK_SAMPLES,
   eventsUrl,
   liveStore,
   mergeLiveState,
@@ -17,6 +18,7 @@ import {
   onAdminTokenChange,
   openLiveStream,
   parseLiveEvent,
+  resetClockOffset,
   serverNow,
   storedAdminToken,
 } from "./apiClient";
@@ -361,5 +363,30 @@ describe("serverNow", () => {
     // One held up for 9 s (a phone asleep) changes nothing.
     noteStateSentAt(3_000_000, 3_014_000);
     close(serverNow(), Date.now() - 5020);
+  });
+
+  const close = (a: number, b: number) =>
+    assert.ok(Math.abs(a - b) < 50, `${a} is not about ${b}`);
+
+  test("follows a backward step of the server's clock, within the last 20 events", () => {
+    resetClockOffset();
+    noteStateSentAt(1_000_000, 1_000_020);
+    close(serverNow(), Date.now() - 20);
+    // The host's clock is put back 4 s: every event now looks 4 s later.
+    for (let i = 1; i < CLOCK_SAMPLES; i++) {
+      noteStateSentAt(2_000_000, 2_004_030);
+      close(serverNow(), Date.now() - 20);
+    }
+    noteStateSentAt(2_000_000, 2_004_030);
+    close(serverNow(), Date.now() - 4030);
+  });
+
+  test("starts over when the stream opens again", () => {
+    resetClockOffset();
+    noteStateSentAt(1_000_000, 1_000_020);
+    resetClockOffset();
+    close(serverNow(), Date.now());
+    noteStateSentAt(2_000_000, 2_004_030);
+    close(serverNow(), Date.now() - 4030);
   });
 });
