@@ -3,23 +3,30 @@ import React from "react";
 import { Link } from "react-router";
 
 import * as styles from "./ListRow.module.scss";
+import { Marquee } from "./Marquee";
 
 interface ListProps {
   // Names the list for screen readers: "Queue", "Search results".
   label?: string;
+  // Just the rows, for a list on a layer of its own (the sheet's queue),
+  // rather than a card on the page.
+  plain?: boolean;
   className?: string;
   children: React.ReactNode;
 }
 
-// A list of ListRows: a <ul>.
-export const List = ({ label, className, children }: ListProps) => (
-  <ul aria-label={label} className={classnames(styles.list, className)}>
+// A list of ListRows: a <ul>, as a card inset from the screen's sides.
+export const List = ({ label, plain, className, children }: ListProps) => (
+  <ul
+    aria-label={label}
+    className={classnames(styles.list, { [styles.plain]: plain }, className)}
+  >
     {children}
   </ul>
 );
 
 interface RowContent {
-  // One line each; longer text ends in an ellipsis.
+  // One line each; longer text slides to show the rest (Marquee).
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   // Where the song comes from, already translated: "DAM", "YouTube".
@@ -54,11 +61,13 @@ const Content = ({ title, subtitle, source, leading }: RowContent) => (
   <>
     {leading && <span className={styles.leading}>{leading}</span>}
     <span className={styles.text}>
-      <span className={styles.title}>{title}</span>
+      <Marquee className={styles.title}>{title}</Marquee>
       {(subtitle || source) && (
         <span className={styles.subtitleLine}>
           {source && <span className={styles.source}>{source}</span>}
-          {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
+          {subtitle && (
+            <Marquee className={styles.subtitle}>{subtitle}</Marquee>
+          )}
         </span>
       )}
     </span>

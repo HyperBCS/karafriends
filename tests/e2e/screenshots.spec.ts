@@ -56,12 +56,11 @@ const song = (
   user: { deviceId: `e2e-screenshot-${nickname}`, nickname },
 });
 
-// The artist on the now-playing bar's second line, once the song plays.
+// The artist on the now-playing bar's second line, once the song plays
+// (the queue in the sheet holds only the songs after it).
 const nowPlaying = (page: Page, artist: string) =>
   page
     .getByRole("region", { name: "Now playing" })
-    .getByRole("button")
-    .first()
     .getByText(artist, { exact: true });
 
 // Phases B and C took their shots as a Pixel 7; with
@@ -359,7 +358,7 @@ test.describe("phase C", () => {
       ).toBeVisible();
       await shoot(remote, `c-history-${language}`);
 
-      await open("/profile");
+      await open("/settings");
       await expect(remote.getByRole("status").last()).toBeVisible();
       await shoot(remote, `c-profile-${language}`);
 
@@ -413,7 +412,7 @@ test.describe("phase M2", () => {
     await remote.getByRole("button", { name: "Show queue" }).click();
     await expect(
       remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
-    ).toHaveCount(7);
+    ).toHaveCount(6);
     await shoot(remote, `m-queue-${browserName}`);
     await remote.getByRole("button", { name: "Hide queue" }).click();
 
@@ -483,10 +482,10 @@ test.describe("phase M7", () => {
     browserName,
   }) => {
     await fakeCatalogs(remote);
-    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("link", { name: "Settings" }).click();
     await remote
-      .getByRole("tablist", { name: "Readings" })
-      .getByRole("tab", { name: "Romaji", exact: true })
+      .getByRole("radiogroup", { name: "Readings" })
+      .getByRole("radio", { name: "Romaji", exact: true })
       .click();
     await remote.getByRole("button", { name: "Back" }).click();
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
@@ -527,12 +526,12 @@ test.describe("phase P2", () => {
   }) => {
     await fakeCatalogs(remote);
     // A real-looking nickname, romaji, and signed in as an admin.
-    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Nickname").fill("Ken");
     await remote.getByRole("button", { name: "Save nickname" }).click();
     await remote
-      .getByRole("tablist", { name: "Readings" })
-      .getByRole("tab", { name: "Romaji" })
+      .getByRole("radiogroup", { name: "Readings" })
+      .getByRole("radio", { name: "Romaji" })
       .click();
     await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
@@ -542,10 +541,10 @@ test.describe("phase P2", () => {
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
-    const bar = remote
+    // The sheet's toggle, the arrow at the end of the bar.
+    const toggle = remote
       .getByRole("region", { name: "Now playing" })
-      .getByRole("button")
-      .first();
+      .getByRole("button", { name: /^(Show|Hide) queue$/ });
     const top = (name: string) =>
       remote.getByRole("banner").getByRole("link", { name, exact: true });
 
@@ -562,12 +561,12 @@ test.describe("phase P2", () => {
       ).toBeVisible();
       await shoot(remote, name("search"));
 
-      await bar.click();
+      await toggle.click();
       await expect(
         remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
-      ).toHaveCount(5);
+      ).toHaveCount(4);
       await shoot(remote, name("sheet"));
-      await bar.click();
+      await toggle.click();
 
       // DAM's 恋, the first result.
       await remote
@@ -580,13 +579,14 @@ test.describe("phase P2", () => {
       ).toBeVisible();
       await shoot(remote, name("song"));
 
-      await top("Profile").click();
-      // Scrolled down to the theme, then the admin's slider.
+      await top("Settings").click();
+      // Scrolled down to the theme. (The admin's sliders below it fit on
+      // a Pixel 7, not on an iPhone 15.)
       await remote
-        .getByRole("heading", { name: "Theme" })
+        .getByText("Theme", { exact: true })
         .evaluate((el) => el.scrollIntoView({ block: "start" }));
       await expect(
-        remote.getByRole("slider", { name: "Guide melody" }),
+        remote.getByRole("radiogroup", { name: "Theme" }),
       ).toBeInViewport();
       await shoot(remote, name("profile"));
       await top("Home").click();
@@ -634,7 +634,7 @@ test.describe("phase R1", () => {
       });
     }
     // A real-looking nickname, signed in as an admin.
-    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Nickname").fill("Ken");
     await remote.getByRole("button", { name: "Save nickname" }).click();
     await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
@@ -651,10 +651,72 @@ test.describe("phase R1", () => {
       await remote
         .getByRole("heading", { name: "Admin" })
         .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      // Its top: the whole section is taller than an iPhone 15's screen.
       await expect(
-        remote.getByRole("button", { name: "Sign out" }),
+        remote.getByRole("slider", { name: "Song volume" }),
       ).toBeInViewport();
       await shoot(remote, `n-remote-admin-${theme}-${browserName}`);
+    }
+  });
+});
+
+// The UI round's U4, the same way with -g "phase U4": the search's one row
+// of options, with the source menu open, and the settings' groups, in the
+// light and the dark theme: u4-<screen>-<theme>-<browser>.png.
+test.describe("phase U4", () => {
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: QUEUE,
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("the search's source menu and the settings in both themes", async ({
+    remote,
+    browserName,
+  }) => {
+    await fakeCatalogs(remote);
+    // A real-looking nickname.
+    await remote.getByRole("link", { name: "Settings" }).click();
+    await remote.getByLabel("Nickname").fill("Ken");
+    await remote.getByRole("button", { name: "Save nickname" }).click();
+    await remote.getByRole("link", { name: "Home" }).click();
+    // The display starts the first song within 5 seconds.
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
+      timeout: 15_000,
+    });
+    const source = remote.getByRole("button", { name: /^Source:/ });
+
+    for (const theme of ["light", "dark"] as const) {
+      await remote.emulateMedia({ colorScheme: theme });
+      await expect(remote.locator("html")).toHaveAttribute("data-theme", theme);
+      const name = (screen: string) => `u4-${screen}-${theme}-${browserName}`;
+
+      const search = remote.getByRole("searchbox", { name: "Search" });
+      await search.fill("恋");
+      await search.blur();
+      await expect(
+        remote.getByRole("link", { name: /恋愛裁判/ }),
+      ).toBeVisible();
+      await shoot(remote, name("search"));
+
+      // On DAM, so the button names it, and open again.
+      await source.click();
+      await remote.getByRole("menuitemradio", { name: "DAM" }).click();
+      await expect(source).toHaveText("DAM");
+      await source.click();
+      await expect(remote.getByRole("menu")).toBeVisible();
+      await shoot(remote, name("search-menu"));
+      await remote.getByRole("menuitemradio", { name: "All" }).click();
+
+      await remote.getByRole("link", { name: "Settings" }).click();
+      await expect(
+        remote.getByRole("radiogroup", { name: "Theme" }),
+      ).toBeVisible();
+      await shoot(remote, name("settings"));
+      await remote.getByRole("link", { name: "Home" }).click();
     }
   });
 });

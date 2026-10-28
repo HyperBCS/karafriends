@@ -5,6 +5,7 @@
 // (tests/fixtures/bin/yt-dlp-downloads-video) or an empty file the display
 // can't play (yt-dlp-downloads).
 import path from "path";
+import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
@@ -228,5 +229,194 @@ test.describe("a queued song whose files are missing", () => {
       "E2E next song 1",
       "E2E missing song",
     ]);
+  });
+});
+
+test.describe("where the song really is", () => {
+  // Song 1 was queued as 100 s long, but its video (the fixture's black
+  // one) is a minute. Song 2 waits behind it.
+  const nico = (n: number, playtime: number) => ({
+    kind: "nico",
+    songId: `sm8100${n}`,
+    name: `E2E timed song ${n}`,
+    artistName: "E2E artist",
+    playtime,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-someone", nickname: "someone" },
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [nico(1, 100), nico(2, 60)],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  // Song 1's video's length, in whole seconds, once it plays and the phones
+  // have it in place of the 100 s it was queued with.
+  async function songLength(display: Page, remoconUrl: string) {
+    const video = display.locator("video");
+    await expect
+      .poll(() => video.evaluate((v: HTMLVideoElement) => v.duration || 0), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const length = Math.round(
+      await video.evaluate((v: HTMLVideoElement) => v.duration),
+    );
+    expect(length).toBeLessThan(100);
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).currentSong?.playtime)
+      .toBe(length);
+    return length;
+  }
+
+  // The host moves the display's video to seconds in.
+  const seek = (display: Page, seconds: number) =>
+    display.locator("video").evaluate((v: HTMLVideoElement, to) => {
+      v.currentTime = to;
+    }, seconds);
+
+  test("the waits follow the video's length, a seek and its own pause", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    // A first launch opens Settings; close it, so Up next shows.
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+
+    const video = display.locator("video");
+    const next = display
+      .getByRole("region", { name: "Up next" })
+      .getByRole("listitem")
+      .first();
+    // Song 2's wait on the TV, in seconds: "in 0:58".
+    const wait = async () => {
+      const [, minutes, seconds] = (await next.innerText()).match(
+        /in (\d+):(\d\d)/,
+      )!;
+      return Number(minutes) * 60 + Number(seconds);
+    };
+    // How far the phones' reckoning of song 1 is from its video, in seconds.
+    const drift = async () => {
+      const state = await liveState(remoconUrl);
+      const position = await video.evaluate(
+        (v: HTMLVideoElement) => v.currentTime,
+      );
+      const played =
+        (state.currentSongPausedSince ?? Date.now()) -
+        state.currentSongStartedAt -
+        state.currentSongPausedMs;
+      return Math.abs(played / 1000 - position);
+    };
+
+    // Song 1 plays, and the TV counts from its video's length.
+    const length = await songLength(display, remoconUrl);
+    await expect(next).toHaveText(/E2E timed song 2/);
+    await expect.poll(wait).toBeLessThanOrEqual(length);
+
+    // The host seeks to halfway: the wait drops to what is left.
+    await seek(display, length / 2);
+    await expect.poll(wait).toBeLessThanOrEqual(length / 2 + 1);
+    expect(await wait()).toBeGreaterThanOrEqual(length / 2 - 3);
+    expect(await drift()).toBeLessThan(1);
+    // A song queued now waits for that, and song 2.
+    const queued = await queueNico(remoconUrl, "E2E queued song");
+    expect(queued).toMatchObject({ ok: true });
+    expect(Math.abs(queued.eta - ((await wait()) + 60))).toBeLessThanOrEqual(2);
+
+    // The host pauses the video itself, not from a phone: the wait stops.
+    await video.evaluate((v: HTMLVideoElement) => v.pause());
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).currentSongPausedSince)
+      .not.toBeNull();
+    const paused = await wait();
+    await display.waitForTimeout(2_000);
+    expect(await wait()).toBe(paused);
+    expect(await drift()).toBeLessThan(1);
+
+    // It plays on, and back near the start the wait goes up again.
+    await video.evaluate((v: HTMLVideoElement) => void v.play());
+    await seek(display, 5);
+    await expect.poll(wait).toBeGreaterThanOrEqual(length - 8);
+    expect(await wait()).toBeLessThanOrEqual(length - 4);
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).currentSongPausedSince)
+      .toBeNull();
+    expect(await drift()).toBeLessThan(1);
+  });
+
+  test("a phone's up-soon notification counts from where the song is", async ({
+    karafriends,
+    display,
+    remote,
+  }) => {
+    const { remoconUrl } = karafriends;
+    // The phone allows notifications (as far as the page can tell; the
+    // emulated phone denies them), and notes what it would show.
+    await remote.addInitScript(() => {
+      const shown: string[] = [];
+      Object.assign(window, { shownNotifications: shown });
+      Object.defineProperty(Notification, "permission", {
+        get: () => "granted",
+      });
+      navigator.serviceWorker.register = async () =>
+        ({
+          showNotification: async (
+            _title: string,
+            options?: { body?: string },
+          ) => {
+            shown.push(options?.body ?? "");
+          },
+        }) as unknown as ServiceWorkerRegistration;
+    });
+    await remote.reload();
+    const shown = () =>
+      remote.evaluate(
+        () =>
+          (window as unknown as { shownNotifications: string[] })
+            .shownNotifications,
+      );
+
+    const length = await songLength(display, remoconUrl);
+    await seek(display, length / 2);
+    await expect
+      .poll(async () => {
+        const state = await liveState(remoconUrl);
+        return (Date.now() - state.currentSongStartedAt) / 1000;
+      })
+      .toBeGreaterThanOrEqual(length / 2);
+
+    // The phone queues a song: it waits for half of song 1, and song 2.
+    const deviceId = await remote.evaluate(() =>
+      localStorage.getItem("deviceId"),
+    );
+    const res = await fetch(new URL("api/queueSong", remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Device-Id": deviceId!,
+        "X-Karafriends-Nickname": "e2e",
+      },
+      body: JSON.stringify({
+        kind: "nico",
+        songId: "sm9",
+        name: "E2E my song",
+        artistName: "E2E artist",
+        playtime: 60,
+      }),
+    });
+    expect(await res.json()).toMatchObject({ ok: true });
+    await expect.poll(shown).toHaveLength(1);
+    const [, minutes, seconds] = (await shown())[0].match(
+      /^E2E my song is up in about (\d+):(\d\d)\.$/,
+    )!;
+    const eta = Number(minutes) * 60 + Number(seconds);
+    expect(eta).toBeLessThanOrEqual(length / 2 + 60);
+    expect(eta).toBeGreaterThanOrEqual(length / 2 + 60 - 5);
   });
 });

@@ -175,6 +175,11 @@ const MAX_ADHOC_CHARS_QUEUED = 1_000_000;
 const totalLength = (lines: readonly string[]) =>
   lines.reduce((sum, line) => sum + line.length, 0);
 
+// How far the display's report of where the song is may be from the
+// server's reckoning and change nothing: about the trip over IPC, and not
+// worth a new live state for every phone every 10 seconds.
+const POSITION_SLACK_MS = 500;
+
 // Song and video IDs end up in file names and yt-dlp arguments.
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -760,7 +765,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         // The current song's timing, for the countdowns. popSong clears it
         // and the display's PLAYING, sent once it starts the song, starts
         // the clock: not popSong, which may wait for DAM first. A skip
-        // leaves it: the next popSong starts over.
+        // leaves it: the next popSong starts over. The display's
+        // reportSongPosition then puts it where the video really is.
         const at = now();
         if (state.currentSongStartedAt === null) {
           // Not started yet, or no song: nothing to time until then.
@@ -785,6 +791,43 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           state.currentSongPausedSince = null;
         }
         state.playbackState = playbackState;
+      });
+      return true;
+    },
+
+    async reportSongPosition(
+      { songId, timestamp, position, length, playing },
+      caller,
+    ) {
+      requireDisplay(caller);
+      const state = store.getState();
+      const song = state.currentSong;
+      // The song before's, sent as this one started.
+      if (song?.songId !== songId || song.timestamp !== timestamp) return false;
+      const at = now();
+      const positionMs = Math.round(position * 1000);
+      const startedAt = state.currentSongStartedAt;
+      const pausedSince = state.currentSongPausedSince;
+      const inStep =
+        startedAt !== null &&
+        (pausedSince === null) === playing &&
+        Math.abs(
+          (pausedSince ?? at) -
+            startedAt -
+            state.currentSongPausedMs -
+            positionMs,
+        ) < POSITION_SLACK_MS;
+      const songLength =
+        length === null ? state.currentSongLength : Math.round(length);
+      if (inStep && songLength === state.currentSongLength) return true;
+      store.update((state) => {
+        state.currentSongLength = songLength;
+        if (inStep) return;
+        // The same timing, from scratch: position played by now, and
+        // paused since now unless it's moving.
+        state.currentSongStartedAt = at - positionMs;
+        state.currentSongPausedMs = 0;
+        state.currentSongPausedSince = playing ? null : at;
       });
       return true;
     },
@@ -930,6 +973,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         state.currentSongStartedAt = null;
         state.currentSongPausedMs = 0;
         state.currentSongPausedSince = null;
+        state.currentSongLength = null;
 
         if (next) {
           const last = state.songHistory[0]?.song;

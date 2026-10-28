@@ -15,7 +15,7 @@ export function normalize(text: string): string {
   return toHiragana(katakana, options).replace(/[\s\p{P}\p{S}]/gu, "");
 }
 
-// How this phone shows song titles and artists (the profile's Readings): as
+// How this phone shows song titles and artists (the settings' Readings): as
 // written, or in place of that, the kana reading DAM gives, or that reading
 // in romaji. Kept in localStorage ("readings"); "written" until the guest
 // picks, and for a choice this version no longer has (an older "both").

@@ -55,7 +55,7 @@ export interface PageInput {
 
 export type QueueItemKind = "dam" | "joysound" | "youtube" | "nico";
 
-// How a phone shows titles and artists (its profile's Readings): as written,
+// How a phone shows titles and artists (its Settings' Readings): as written,
 // or as the kana reading or its romaji.
 export const READINGS_MODES = ["written", "kana", "romaji"] as const;
 export type ReadingsMode = (typeof READINGS_MODES)[number];
@@ -215,11 +215,15 @@ export interface MicInfo {
 // passes its own as GET /api/events?deviceId=..., and isMine is worked out on
 // the server.
 export interface LiveState {
+  // Its playtime is its video's length, in whole seconds, once the display
+  // knows it (reportSongPosition).
   currentSong: SharedQueueItem | null;
-  // When currentSong started (ms since the epoch, by the display's clock;
+  // When currentSong started (ms since the epoch, by the server's clock;
   // null while none plays), how long it was paused before, and since when it
   // is paused now (null while it isn't). How far into the song the party is:
-  // now - startedAt - pausedMs - (now - pausedSince, while paused).
+  // now - startedAt - pausedMs - (now - pausedSince, while paused). The
+  // display's reports of where its video is keep it right after a seek or a
+  // stall.
   currentSongStartedAt: number | null;
   currentSongPausedMs: number;
   currentSongPausedSince: number | null;
@@ -250,9 +254,11 @@ export interface LiveState {
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"
 // event comes first on every (re)connect, and again whenever the state
-// changes (at most about 4 a second).
+// changes (at most about 4 a second). Its sentAt is the server's clock when
+// it was made (ms since the epoch), so a phone can tell how far off its own
+// clock is.
 export type LiveEvent =
-  | { type: "state"; state: LiveState }
+  | { type: "state"; state: LiveState; sentAt: number }
   | { type: "emote"; emote: string; user: PublicUser }
   | { type: "queueAdded"; item: SharedQueueItem }
   // A song's download failed, so it won't join the queue. Only the phone
@@ -467,6 +473,22 @@ export interface Api {
 
   // The display only: start the next song, or null if the queue is empty.
   popSong: { input: Record<string, never>; output: PoppedSong | null };
+  // The display only (a phone gets 403): where the current song's video
+  // really is, for the countdowns: position seconds in, of length seconds
+  // (null until it knows), and whether it is moving (false while paused or
+  // stalled). The display sends it as the song loads, starts, pauses,
+  // stalls, seeks and resumes, and every 10 seconds. False if songId and
+  // timestamp aren't the current song (any more).
+  reportSongPosition: {
+    input: {
+      songId: string;
+      timestamp: string;
+      position: number;
+      length: number | null;
+      playing: boolean;
+    };
+    output: boolean;
+  };
   // The display only (a phone gets 403): the mics it has open, whenever one
   // is added, removed or its levels change on the display.
   setMics: { input: { mics: MicInfo[] }; output: boolean };

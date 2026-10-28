@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
@@ -12,11 +12,16 @@ import { useApiMutation } from "../../common/apiQueries";
 import useGuideMelodyLevel from "../../common/hooks/useGuideMelodyLevel";
 import useOptimisticValue from "../../common/hooks/useOptimisticValue";
 import {
-  LyricsModeTabs,
+  LyricsModeChoice,
   saveLyricsMode,
   savedLyricsMode,
 } from "../components/QueueButtons";
-import { Button, InlineError, Tabs, TextField } from "../components/ui";
+import {
+  Button,
+  InlineError,
+  SegmentedControl,
+  TextField,
+} from "../components/ui";
 import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
@@ -26,19 +31,38 @@ import {
   type ReadingsMode,
 } from "../../common/api";
 import { currentTheme, saveTheme, THEMES, type Theme } from "../theme";
-import * as styles from "./ProfilePage.module.scss";
+import * as styles from "./SettingsPage.module.scss";
 
 // What to tell a guest whose sign-in failed.
 function signInError(err: unknown): string {
   if (err instanceof ApiCallError) {
-    if (err.status === 403) return t("profile.wrongPassword");
-    if (err.status === 409) return t("profile.noPassword");
-    if (err.status === 429) return t("profile.tooManyTries");
-    return t("profile.signInFailed", { reason: err.message });
+    if (err.status === 403) return t("settings.wrongPassword");
+    if (err.status === 409) return t("settings.noPassword");
+    if (err.status === 429) return t("settings.tooManyTries");
+    return t("settings.signInFailed", { reason: err.message });
   }
   // fetch() itself failed: no connection.
   return t("common.offline");
 }
+
+// A few settings under one heading, in a card.
+const Group = ({
+  heading,
+  children,
+}: {
+  heading: string;
+  children: React.ReactNode;
+}) => {
+  const id = useId();
+  return (
+    <section className={styles.group} aria-labelledby={id}>
+      <h2 id={id} className={styles.heading}>
+        {heading}
+      </h2>
+      <div className={styles.settings}>{children}</div>
+    </section>
+  );
+};
 
 const Nickname = ({ firstVisit }: { firstVisit: boolean }) => {
   const navigate = useNavigate();
@@ -56,10 +80,10 @@ const Nickname = ({ firstVisit }: { firstVisit: boolean }) => {
   };
 
   return (
-    <form className={styles.section} onSubmit={submit}>
-      {firstVisit && <p className={styles.text}>{t("profile.firstVisit")}</p>}
+    <form className={styles.setting} onSubmit={submit}>
+      {firstVisit && <p className={styles.text}>{t("settings.firstVisit")}</p>}
       <TextField
-        label={t("profile.nickname")}
+        label={t("settings.nickname")}
         value={draft}
         onValueChange={setDraft}
         autoFocus={firstVisit}
@@ -72,7 +96,7 @@ const Nickname = ({ firstVisit }: { firstVisit: boolean }) => {
         variant={firstVisit ? "primary" : "secondary"}
         disabled={trimmed === "" || trimmed === nickname}
       >
-        {t(firstVisit ? "profile.start" : "profile.saveNickname")}
+        {t(firstVisit ? "settings.start" : "settings.saveNickname")}
       </Button>
     </form>
   );
@@ -81,15 +105,12 @@ const Nickname = ({ firstVisit }: { firstVisit: boolean }) => {
 const LanguagePicker = () => {
   const { language, setLanguage } = useLanguage();
   return (
-    <div className={styles.section}>
-      <h2 className={styles.heading}>{t("language.label")}</h2>
-      <Tabs<Language>
-        label={t("language.label")}
-        tabs={LANGUAGES.map((id) => ({ id, label: t(`language.${id}`) }))}
-        selected={language}
-        onSelect={setLanguage}
-      />
-    </div>
+    <SegmentedControl<Language>
+      label={t("language.label")}
+      choices={LANGUAGES.map((id) => ({ id, label: t(`language.${id}`) }))}
+      selected={language}
+      onSelect={setLanguage}
+    />
   );
 };
 
@@ -99,15 +120,15 @@ const LanguagePicker = () => {
 const ReadingsPicker = () => {
   const readings = useReadings();
   return (
-    <div className={styles.section}>
-      <h2 className={styles.heading}>{t("readings.label")}</h2>
-      <Tabs<ReadingsMode>
-        label={t("readings.label")}
-        tabs={READINGS_MODES.map((id) => ({ id, label: t(`readings.${id}`) }))}
-        selected={readings}
-        onSelect={saveReadings}
-      />
-    </div>
+    <SegmentedControl<ReadingsMode>
+      label={t("readings.label")}
+      choices={READINGS_MODES.map((id) => ({
+        id,
+        label: t(`readings.${id}`),
+      }))}
+      selected={readings}
+      onSelect={saveReadings}
+    />
   );
 };
 
@@ -115,18 +136,15 @@ const ReadingsPicker = () => {
 const ThemePicker = () => {
   const [theme, setTheme] = useState(currentTheme);
   return (
-    <div className={styles.section}>
-      <h2 className={styles.heading}>{t("theme.label")}</h2>
-      <Tabs<Theme>
-        label={t("theme.label")}
-        tabs={THEMES.map((id) => ({ id, label: t(`theme.${id}`) }))}
-        selected={theme}
-        onSelect={(next) => {
-          saveTheme(next);
-          setTheme(next);
-        }}
-      />
-    </div>
+    <SegmentedControl<Theme>
+      label={t("theme.label")}
+      choices={THEMES.map((id) => ({ id, label: t(`theme.${id}`) }))}
+      selected={theme}
+      onSelect={(next) => {
+        saveTheme(next);
+        setTheme(next);
+      }}
+    />
   );
 };
 
@@ -141,8 +159,8 @@ const Notifications = () => {
   if (!supported) return null;
 
   return (
-    <div className={styles.section}>
-      <h2 className={styles.heading}>{t("profile.notifications")}</h2>
+    <div className={styles.setting}>
+      <h3 className={styles.label}>{t("settings.notifications")}</h3>
       {permission === "default" ? (
         <Button
           variant="secondary"
@@ -150,14 +168,14 @@ const Notifications = () => {
             setPermission(await Notification.requestPermission())
           }
         >
-          {t("profile.notificationsOn")}
+          {t("settings.notificationsOn")}
         </Button>
       ) : (
         <p className={styles.text}>
           {t(
             permission === "granted"
-              ? "profile.notificationsAllowed"
-              : "profile.notificationsBlocked",
+              ? "settings.notificationsAllowed"
+              : "settings.notificationsBlocked",
           )}
         </p>
       )}
@@ -213,9 +231,11 @@ const LevelSlider = ({
     return () => el.removeEventListener("change", send);
   });
 
+  const shown = held ?? value;
+
   return (
     <label className={styles.slider}>
-      {`${label} ${Math.round((held ?? value) * scale)}%`}
+      {`${label} ${Math.round(shown * scale)}%`}
       <input
         ref={input}
         aria-label={name}
@@ -223,7 +243,7 @@ const LevelSlider = ({
         min={min}
         max={max}
         step={step}
-        value={held ?? value}
+        value={shown}
         onChange={(e) => setHeld(Number(e.target.value))}
         onPointerDown={(e) => (start.current = e.currentTarget.value)}
         onPointerUp={(e) => {
@@ -240,7 +260,7 @@ const LevelSlider = ({
 const GuideMelodySlider = () => {
   const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
   return (
-    <>
+    <div className={styles.setting}>
       <LevelSlider
         label={t("guideMelody.label")}
         scale={100}
@@ -250,8 +270,8 @@ const GuideMelodySlider = () => {
         value={guideMelodyLevel}
         onSend={setGuideMelodyLevel}
       />
-      <p className={styles.text}>{t("guideMelody.help")}</p>
-    </>
+      <p className={styles.help}>{t("guideMelody.help")}</p>
+    </div>
   );
 };
 
@@ -319,8 +339,8 @@ const NO_MICS: MicInfo[] = [];
 const Mics = () => {
   const mics = useLiveState((state) => state?.mics ?? NO_MICS);
   return (
-    <>
-      <h3 className={styles.heading}>{t("mics.label")}</h3>
+    <div className={styles.setting}>
+      <h3 className={styles.label}>{t("mics.label")}</h3>
       {mics.length === 0 ? (
         <p className={styles.text}>{t("mics.none")}</p>
       ) : (
@@ -334,7 +354,7 @@ const Mics = () => {
           ))}
         </ul>
       )}
-    </>
+    </div>
   );
 };
 
@@ -373,25 +393,27 @@ const Admin = () => {
 
   if (isAdmin === true) {
     return (
-      <div className={styles.section}>
-        <h2 className={styles.heading}>{t("profile.admin")}</h2>
+      <>
         <p className={styles.text} role="status">
-          {t("profile.signedIn")}
+          {t("settings.signedIn")}
         </p>
-        <SongVolumeSlider />
+        <div className={styles.setting}>
+          <SongVolumeSlider />
+        </div>
         <GuideMelodySlider />
         <Mics />
-        <Button variant="secondary" disabled={pending} onClick={leave}>
-          {t("profile.signOut")}
-        </Button>
-      </div>
+        <div className={styles.setting}>
+          <Button variant="secondary" disabled={pending} onClick={leave}>
+            {t("settings.signOut")}
+          </Button>
+        </div>
+      </>
     );
   }
   return (
-    <form className={styles.section} onSubmit={submit}>
-      <h2 className={styles.heading}>{t("profile.admin")}</h2>
+    <form className={styles.setting} onSubmit={submit}>
       <TextField
-        label={t("profile.adminPassword")}
+        label={t("settings.adminPassword")}
         type="password"
         autoComplete="current-password"
         value={password}
@@ -402,7 +424,7 @@ const Admin = () => {
         variant="secondary"
         disabled={password === "" || pending || confirming}
       >
-        {t("profile.signIn")}
+        {t("settings.signIn")}
       </Button>
       {error && <InlineError>{error}</InlineError>}
     </form>
@@ -414,37 +436,50 @@ const Admin = () => {
 const LyricsOnTheTv = () => {
   const [mode, setMode] = useState(savedLyricsMode);
   return (
-    <div className={styles.section}>
-      <h2 className={styles.heading}>{t("lyricsMode.label")}</h2>
-      <LyricsModeTabs
+    <div className={styles.setting}>
+      <LyricsModeChoice
+        label={t("settings.tvLyrics")}
         selected={mode}
         onSelect={(next) => {
           saveLyricsMode(next);
           setMode(next);
         }}
       />
-      <p className={styles.text}>{t("lyricsMode.help")}</p>
+      <p className={styles.help}>{t("lyricsMode.help")}</p>
     </div>
   );
 };
 
-// The phone's nickname, language, readings, theme, notifications, and the
+// The phone's settings in groups: its nickname; its language, readings,
+// theme and notifications; the lyrics its songs show on the TV; and the
 // admin sign-in and controls. On a first visit, just the nickname (and the
 // language, to read the rest in).
-const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
-  <div className={styles.profile}>
-    <Nickname firstVisit={firstVisit} />
-    <LanguagePicker />
+const SettingsPage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
+  <div className={styles.page}>
+    <Group heading={t("settings.you")}>
+      <Nickname firstVisit={firstVisit} />
+    </Group>
+    <Group heading={t("settings.thisPhone")}>
+      <LanguagePicker />
+      {!firstVisit && (
+        <>
+          <ReadingsPicker />
+          <ThemePicker />
+          <Notifications />
+        </>
+      )}
+    </Group>
     {!firstVisit && (
       <>
-        <ReadingsPicker />
-        <ThemePicker />
-        <Notifications />
-        <Admin />
-        <LyricsOnTheTv />
+        <Group heading={t("settings.onTheTv")}>
+          <LyricsOnTheTv />
+        </Group>
+        <Group heading={t("settings.admin")}>
+          <Admin />
+        </Group>
       </>
     )}
   </div>
 );
 
-export default ProfilePage;
+export default SettingsPage;

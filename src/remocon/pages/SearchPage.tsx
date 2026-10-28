@@ -5,7 +5,8 @@ import SearchResults, {
   type SearchBy,
   type SearchSource,
 } from "../components/SearchResults";
-import { Tabs, TextField } from "../components/ui";
+import SourceMenu from "../components/SourceMenu";
+import { SegmentedControl, TextField } from "../components/ui";
 import { t } from "../i18n";
 import { MdSearch } from "../icons";
 import songLink from "../songLink";
@@ -39,8 +40,8 @@ const SearchPage = () => {
   const [text, setText] = useState(query);
 
   // From the address as it is now: a render's params can be a change
-  // behind (react-router renders navigations in a transition), and a tab
-  // pressed while typing would be lost.
+  // behind (react-router renders navigations in a transition), and a choice
+  // made while typing would be lost.
   const update = (changes: Record<string, string>) => {
     const next = new URLSearchParams(window.location.hash.split("?")[1]);
     for (const [key, value] of Object.entries(changes)) {
@@ -100,25 +101,23 @@ const SearchPage = () => {
             clearable
           />
         </form>
-        <Tabs<SearchBy>
-          label={t("search.byLabel")}
-          tabs={[
-            { id: "title", label: t("search.title") },
-            { id: "artist", label: t("search.artist") },
-          ]}
-          selected={by}
-          onSelect={(id) => update({ by: id })}
-        />
-        <Tabs<SearchSource>
-          label={t("search.sourceLabel")}
-          tabs={[
-            { id: "all", label: t("search.sourceAll") },
-            { id: "dam", label: t("source.dam") },
-            { id: "joysound", label: t("source.joysound") },
-          ]}
-          selected={source}
-          onSelect={(id) => update({ source: id })}
-        />
+        <div className={styles.options}>
+          <SegmentedControl<SearchBy>
+            label={t("search.byLabel")}
+            hideLabel
+            small
+            choices={[
+              { id: "title", label: t("search.title") },
+              { id: "artist", label: t("search.artist") },
+            ]}
+            selected={by}
+            onSelect={(id) => update({ by: id })}
+          />
+          <SourceMenu
+            source={source}
+            onSelect={(id) => update({ source: id })}
+          />
+        </div>
       </div>
       {query ? (
         <SearchResults query={query} by={by} source={source} />

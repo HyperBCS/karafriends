@@ -31,7 +31,7 @@ export const en = {
   // Header and navigation.
   "nav.home": "Home",
   "nav.history": "History",
-  "nav.profile": "Profile",
+  "nav.settings": "Settings",
 
   // Search.
   "search.heading": "Find a song",
@@ -43,6 +43,8 @@ export const en = {
   "search.artist": "Artist",
   "search.sourceLabel": "Source",
   "search.sourceAll": "All",
+  // The source's button, which names the source.
+  "search.sourceButton": "Source: {source}",
   "search.results": "Results",
   "search.noResults": "No results found",
   "search.songCount": "{count} songs",
@@ -92,7 +94,10 @@ export const en = {
   "sheet.hideQueue": "Hide queue",
   "sheet.showEmotes": "Show emotes",
   "sheet.showControls": "Show playback controls",
+  // The song's progress line, for screen readers: "1 minute 12 seconds of
+  // 4 minutes 5 seconds".
   "queue.label": "Queue",
+  "queue.upNext": "Up next",
   "queue.empty": "The queue is empty",
   "queue.queuedBy": "Queued by {nickname}",
   "queue.remove": "Remove from queue",
@@ -103,6 +108,7 @@ export const en = {
   "playback.pause": "Pause",
   "playback.restart": "Restart",
   "playback.skip": "Skip",
+  "playback.singerOnly": "Only its singer or an admin can control this song.",
   "pitch.key": "Key",
   "pitch.lower": "Lower the key",
   "pitch.raise": "Raise the key",
@@ -117,34 +123,39 @@ export const en = {
   "history.heading": "History",
   "history.empty": "No history",
 
-  // Profile, and signing in as an admin.
-  "profile.heading": "Profile",
-  "profile.firstVisit":
+  // Settings: the phone's nickname and choices, the TV's lyrics, and
+  // signing in as an admin. A group's heading, then its settings.
+  "settings.heading": "Settings",
+  "settings.you": "You",
+  "settings.thisPhone": "This phone",
+  "settings.onTheTv": "On the TV",
+  "settings.tvLyrics": "Lyrics",
+  "settings.firstVisit":
     "Pick a nickname. It shows next to the songs you queue.",
-  "profile.nickname": "Nickname",
-  "profile.start": "Start",
-  "profile.saveNickname": "Save nickname",
-  "profile.notifications": "Notifications",
-  "profile.notificationsOn": "Turn on notifications",
-  "profile.notificationsAllowed":
+  "settings.nickname": "Nickname",
+  "settings.start": "Start",
+  "settings.saveNickname": "Save nickname",
+  "settings.notifications": "Notifications",
+  "settings.notificationsOn": "Turn on notifications",
+  "settings.notificationsAllowed":
     "On: this phone tells you when your song is up soon.",
-  "profile.notificationsBlocked": "Off. Allow them in the browser's settings.",
-  "profile.admin": "Admin",
-  "profile.adminPassword": "Admin password",
-  "profile.signIn": "Sign in",
-  "profile.signOut": "Sign out",
-  "profile.signedIn": "You're an admin",
-  "profile.wrongPassword": "Wrong password. Ask the host for it.",
-  "profile.noPassword": "The host hasn't set an admin password.",
-  "profile.tooManyTries": "Too many tries. Wait a minute, then try again.",
-  "profile.signInFailed": "Couldn't sign in: {reason}",
+  "settings.notificationsBlocked": "Off. Allow them in the browser's settings.",
+  "settings.admin": "Admin",
+  "settings.adminPassword": "Admin password",
+  "settings.signIn": "Sign in",
+  "settings.signOut": "Sign out",
+  "settings.signedIn": "You're an admin",
+  "settings.wrongPassword": "Wrong password. Ask the host for it.",
+  "settings.noPassword": "The host hasn't set an admin password.",
+  "settings.tooManyTries": "Too many tries. Wait a minute, then try again.",
+  "settings.signInFailed": "Couldn't sign in: {reason}",
 
   // Reordering the queue by drag.
   "queue.dragToReorder": "Drag to reorder",
   "queue.moveFailed": "Couldn't move the song: {reason}",
 
   // How a Joysound song's lyrics show on the TV: the choice on its page,
-  // and the phone's default on the profile. Also a queued row's label.
+  // and the phone's default in the settings. Also a queued row's label.
   "lyricsMode.label": "Lyrics on the TV",
   "lyricsMode.kana": "Kana",
   "lyricsMode.romaji": "Romaji",
@@ -152,11 +163,11 @@ export const en = {
   "lyricsMode.help":
     "For Joysound songs. You can change it for one song on its page.",
 
-  // Joysound's guide melody level, on the profile for admins.
+  // Joysound's guide melody level, in the settings for admins.
   "guideMelody.label": "Guide melody",
   "guideMelody.help": "For Joysound songs.",
 
-  // The song's volume and the display's mics, on the profile for admins.
+  // The song's volume and the display's mics, in the settings for admins.
   "songVolume.label": "Song volume",
   "mics.label": "Microphones",
   "mics.none": "No microphones",
@@ -167,7 +178,7 @@ export const en = {
   "readings.kana": "Kana",
   "readings.romaji": "Romaji",
 
-  // The light or dark theme, on the profile.
+  // The light or dark theme, in the settings.
   "theme.label": "Theme",
   "theme.light": "Light",
   "theme.dark": "Dark",

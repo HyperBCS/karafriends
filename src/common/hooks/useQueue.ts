@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { LiveState, SharedQueueItem } from "../api";
-import { useLiveState } from "../apiClient";
+import { serverNow, useLiveState } from "../apiClient";
 
 // A queued song and the seconds until it's expected to start.
 export type QueueEntry = [SharedQueueItem, number];
@@ -11,15 +11,27 @@ type Timing = Pick<
   "currentSongStartedAt" | "currentSongPausedMs" | "currentSongPausedSince"
 >;
 
-// What is left of a playtime at now (ms since the epoch): the playtime less
-// the time the song has played, never below 0 or above the playtime. All of
-// it until the song starts (no startedAt: none playing, or still loading).
+// What is left of a playtime at now (ms since the epoch, by the server's
+// clock): the playtime less the time the song has played, never below 0 or
+// above the playtime. All of it until the song starts (no startedAt: none
+// playing, or still loading).
 function left(playtime: number, timing: Timing, now: number): number {
   if (timing.currentSongStartedAt == null) return playtime;
   const until = timing.currentSongPausedSince ?? now;
   const playedMs =
     until - timing.currentSongStartedAt - timing.currentSongPausedMs;
   return Math.max(0, Math.round(playtime - Math.max(0, playedMs) / 1000));
+}
+
+// How many whole seconds of a playtime have gone by at now: 0 until the song
+// starts, never more than the playtime. The countdowns take it off, and the
+// progress line shows it.
+export function secondsPlayed(
+  playtime: number,
+  timing: Timing,
+  now: number,
+): number {
+  return playtime - left(playtime, timing, now);
 }
 
 // The ETAs add up the playtimes before each song, starting with what is left
@@ -39,8 +51,10 @@ export function withETAs(
   });
 }
 
-// How many seconds of the current song's playtime have gone by, once a
-// second while it plays (live); not live, always 0.
+// How many seconds of the current song's playtime have gone by (the
+// server makes it the video's length once the display knows it): read
+// afresh on each render, which comes once a second while it plays (live) and
+// whenever its timing changes (a pause, a seek); not live, always 0.
 function usePlayed(live: boolean): number {
   const playtime = useLiveState((state) => state?.currentSong?.playtime || 0);
   const startedAt = useLiveState(
@@ -50,21 +64,20 @@ function usePlayed(live: boolean): number {
   const pausedSince = useLiveState(
     (state) => state?.currentSongPausedSince ?? null,
   );
-  const [now, setNow] = useState(Date.now);
+  const [, setTicks] = useState(0);
   const ticking = live && startedAt !== null && pausedSince === null;
   useEffect(() => {
     if (!ticking) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setTicks((ticks) => ticks + 1), 1000);
     return () => clearInterval(timer);
-  }, [ticking, startedAt]);
+  }, [ticking]);
   if (!live) return 0;
   const timing = {
     currentSongStartedAt: startedAt,
     currentSongPausedMs: pausedMs,
     currentSongPausedSince: pausedSince,
   };
-  return playtime - left(playtime, timing, now);
+  return secondsPlayed(playtime, timing, serverNow());
 }
 
 // A song's wait from useQueue(false), counting down once a second while

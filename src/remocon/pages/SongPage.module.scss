@@ -15,11 +15,11 @@
   gap: $kf-space-1;
 }
 
+// The song's or the artist's name: one line (a Marquee inside).
 .title {
   font-size: 24px;
   font-weight: 700;
   line-height: 1.25;
-  overflow-wrap: anywhere;
 }
 
 .reading,
@@ -46,7 +46,7 @@
   flex-direction: column;
   gap: $kf-space-3;
   padding-top: $kf-space-4;
-  border-top: 1px solid $kf-border;
+  border-top: 1px solid $kf-line;
 }
 
 .sectionTitle {
@@ -66,15 +66,15 @@
   gap: $kf-space-2;
 }
 
-// A native picker (captions), in the fields' look.
+// A native picker (captions), in the fields' look: sunk into the page.
 .select,
 .textarea {
   width: 100%;
   min-height: 48px;
   padding: 0 $kf-space-3;
   border: 1px solid $kf-border-strong;
-  border-radius: $kf-radius;
-  background-color: $kf-surface;
+  border-radius: $kf-radius-control;
+  @include kf-sunken;
   color: $kf-text;
   font: inherit;
   font-size: $kf-text-body;
@@ -109,11 +109,10 @@
   font-size: $kf-text-body;
 }
 
-// An embedded player or a thumbnail, as wide as the page.
+// An embedded player or a thumbnail, as wide as the page, as a card.
 .video {
   overflow: hidden;
-  border-radius: $kf-radius;
-  background-color: $kf-surface;
+  @include kf-card;
   aspect-ratio: 16 / 9;
 
   iframe,

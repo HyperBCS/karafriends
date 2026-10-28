@@ -356,6 +356,15 @@ fn error_callback(
     }
 }
 
+// What a mic's callback notes for Settings: the frames per callback, and
+// the loudest sample since Settings last asked, before the gain (f32 bits:
+// for floats of one sign the bits order as the values do).
+#[derive(Default)]
+struct Meters {
+    frames: AtomicU32,
+    peak: AtomicU32,
+}
+
 // A mic's levels, set from JS and read once per callback, as f32 bits.
 struct Levels {
     gain: AtomicU32,
@@ -377,11 +386,11 @@ pub struct InputDevice {
     // round to collecting this.
     input_stream: Option<Box<dyn Send>>,
     // How the mic is open ("Shared", "Exclusive", "ASIO"), and why not as
-    // asked if it isn't; its rate, and the frames per callback (see format).
+    // asked if it isn't; its rate (see format), and its meters.
     kind: &'static str,
     note: Option<String>,
     rate: cpal::SampleRate,
-    frames: Arc<AtomicU32>,
+    meters: Arc<Meters>,
     source_id: u64,
     levels: Arc<Levels>,
     // Why the input stream stopped, or why the mixer wants it reopened.
@@ -541,14 +550,14 @@ impl InputDevice {
         let pitch_detector =
             pitch_detector::PitchDetector::new(input_config.sample_rate as f32, pitch_sample_count);
         let levels = Arc::new(Levels::new(1.0, 0.4));
-        let frames = Arc::new(AtomicU32::new(0));
+        let meters = Arc::new(Meters::default());
 
         let callback = Self::input_data_callback::<Sample>(
             input_config,
             output_rate,
             channel_selection,
             levels.clone(),
-            frames.clone(),
+            meters.clone(),
             pitch_tx,
             output_tx,
         )?;
@@ -560,7 +569,7 @@ impl InputDevice {
             kind,
             note: None,
             rate: input_config.sample_rate,
-            frames,
+            meters,
             source_id,
             levels,
             status,
@@ -682,7 +691,7 @@ impl InputDevice {
         let mut format = format!(
             "{}, {}",
             self.kind,
-            describe(self.rate, self.frames.load(Relaxed))
+            describe(self.rate, self.meters.frames.load(Relaxed))
         );
         if let Some(note) = &self.note {
             format = format!("{format}. {note}");
@@ -691,6 +700,12 @@ impl InputDevice {
             format = format!("{format}. Not real-time: {why}");
         }
         format
+    }
+
+    // The loudest sample, 0 to 1, since the last time this was asked: what
+    // Settings' level meter shows.
+    pub fn level(&self) -> f32 {
+        f32::from_bits(self.meters.peak.swap(0, Relaxed))
     }
 
     pub fn stop(&mut self) {
@@ -710,7 +725,7 @@ impl InputDevice {
         output_rate: cpal::SampleRate,
         channel_selection: usize,
         levels: Arc<Levels>,
-        frames: Arc<AtomicU32>,
+        meters: Arc<Meters>,
         mut pitch_tx: ringbuf::HeapProd<f32>,
         mut output_tx: ringbuf::HeapProd<f32>,
     ) -> Result<impl FnMut(&[Sample]) + Send + 'static>
@@ -753,7 +768,9 @@ impl InputDevice {
         let mut error_prints = RateLimit::default();
 
         Ok(move |samples: &[Sample]| {
-            frames.store((samples.len() / input_channels) as u32, Relaxed);
+            meters
+                .frames
+                .store((samples.len() / input_channels) as u32, Relaxed);
             mono.clear();
             mono.extend(samples.chunks(input_channels).map(|frame| {
                 frame
@@ -762,6 +779,8 @@ impl InputDevice {
             }));
 
             pitch_tx.push_slice(&mono);
+            let peak = mono.iter().fold(0.0_f32, |peak, s| peak.max(s.abs()));
+            meters.peak.fetch_max(peak.to_bits(), Relaxed);
 
             let gain = f32::from_bits(levels.gain.load(Relaxed));
             let echo = f32::from_bits(levels.echo.load(Relaxed));
@@ -1280,6 +1299,29 @@ mod tests {
     #[test]
     fn test_input_callback_downsampling() {
         assert_resampled_pitch(96000, 44100);
+    }
+
+    // The meter sees the mic before the gain, and starts over once read.
+    #[test]
+    fn test_the_meter_holds_the_loudest_sample() -> Result<()> {
+        let (pitch_tx, _pitch_rx) = ringbuf::HeapRb::new(16).split();
+        let (output_tx, _output_rx) = ringbuf::HeapRb::new(16).split();
+        let meters = Arc::new(Meters::default());
+        let mut callback = InputDevice::input_data_callback::<f32>(
+            &config(48000),
+            48000,
+            0,
+            Arc::new(Levels::new(0.0, 0.0)),
+            meters.clone(),
+            pitch_tx,
+            output_tx,
+        )?;
+        callback(&[0.1, -0.5, 0.25]);
+        callback(&[0.2]);
+        assert_eq!(f32::from_bits(meters.peak.swap(0, Relaxed)), 0.5);
+        assert_eq!(f32::from_bits(meters.peak.load(Relaxed)), 0.0);
+        assert_eq!(meters.frames.load(Relaxed), 1);
+        Ok(())
     }
 
     #[test]

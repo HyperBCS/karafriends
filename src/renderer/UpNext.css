@@ -1,8 +1,6 @@
 /* A song's lines (SongLines), here and in the corner: the title, the artist
-   in grey, and the singer as an initial in a circle and the nickname in
-   grey. */
-.songTitle,
-.songArtist,
+   in grey (each slides when it doesn't fit: .kfMarquee in ui.css), and the
+   singer as an initial in a circle and the nickname in grey. */
 .songNickname {
   overflow: hidden;
   white-space: nowrap;
@@ -34,7 +32,7 @@
   height: 1.5em;
   border: 1px solid var(--kf-border-strong);
   border-radius: 50%;
-  background-color: var(--kf-surface-pressed);
+  background-color: var(--kf-pressed);
   color: var(--kf-text);
   font-weight: 600;
   line-height: 1;
@@ -51,14 +49,29 @@
   font-weight: 600;
 }
 
+/* Up next shows the singer as the initial alone. The nickname is still
+   there for screen readers, but takes no room. */
+.upNext .songNickname {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .upNextWait,
 .upNextEmpty {
   color: var(--kf-muted);
   white-space: nowrap;
 }
 
-/* The idle screen: a row per song beside the QR code, the title over the
-   artist, and the singer over the wait on the right. */
+/* Digits of one width, so the countdown doesn't nudge a sliding title. */
+.upNextWait {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The idle screen: a card beside the QR code, a row per song, the title
+   over the artist, and the singer's initial over the wait on the right. */
 .upNext-rows {
   flex: 1;
   min-width: 0;
@@ -70,14 +83,24 @@
   font-size: var(--kf-text-heading);
 }
 
+.upNext-rows .upNextList {
+  padding: 0 var(--kf-space-6);
+  border-radius: var(--kf-radius-card);
+  background-color: var(--kf-surface);
+  box-shadow: var(--kf-shadow-card);
+}
+
 .upNext-rows .upNextItem {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--kf-space-2) var(--kf-space-6);
   padding: var(--kf-space-4) 0;
-  border-top: 1px solid var(--kf-border);
   font-size: var(--kf-text-label);
+}
+
+.upNext-rows .upNextItem + .upNextItem {
+  border-top: 1px solid var(--kf-line);
 }
 
 .upNext-rows .songTitle {
@@ -100,15 +123,18 @@
 }
 
 /* While a song plays: one line along the bottom, "Up next" in its own cell,
-   then as many songs as fit, each title, artist, singer and wait, with a
-   line between songs. */
+   then as many songs as fit, each title, artist, singer's initial and
+   wait, with a line between songs. On the page's color, with a light top
+   edge and a shadow up over the video. */
 .upNext-strip {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: none;
   align-items: stretch;
   overflow: hidden;
-  border-top: 1px solid var(--kf-border-strong);
   background-color: var(--kf-bg);
+  box-shadow: var(--kf-shadow-up);
   font-size: var(--kf-text-label);
   white-space: nowrap;
 }
@@ -148,10 +174,20 @@
   border-left: 1px solid var(--kf-border-strong);
 }
 
-/* A long title or artist ends in an ellipsis; the singer and wait don't. */
+/* A song is at most 56.25rem wide: a longer title or artist slides inside
+   it instead of pushing the songs after it away. The title and the artist
+   share the room two to one, neither taking more than it needs, so a short
+   title beside a long artist stays whole. The singer and the wait keep
+   their room. */
 .upNext-strip .songTitle,
 .upNext-strip .songArtist {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: max-content;
+}
+
+.upNext-strip .songTitle {
+  flex-grow: 2;
 }
 
 .upNext-strip .songSinger,

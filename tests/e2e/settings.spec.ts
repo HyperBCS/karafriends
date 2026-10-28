@@ -10,7 +10,13 @@ import path from "path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { parse } from "yaml";
 
-import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  displayCall,
+  expect,
+  sliderFill,
+  test,
+} from "./fixtures";
 
 const MASK = "••••••";
 
@@ -45,6 +51,15 @@ async function phoneLiveState(remoconUrl: string) {
 async function configOnDisk(app: ElectronApplication) {
   const userData = await app.evaluate(({ app }) => app.getPath("userData"));
   return parse(fs.readFileSync(path.join(userData, "config.yaml"), "utf8"));
+}
+
+// Opens one of Settings' tabs, and waits for it.
+async function openTab(display: Page, name: string) {
+  const tab = display
+    .getByRole("dialog", { name: "Settings" })
+    .getByRole("tab", { name });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
 }
 
 test.describe("on a profile with logins", () => {
@@ -152,6 +167,11 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   display,
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
+  // On Accounts, with the banner.
+  await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(
     settings.getByText("Add your DAM or Joysound login", { exact: false }),
   ).toBeVisible();
@@ -160,6 +180,7 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(dam.getByLabel("Username")).toHaveValue("");
   await expect(dam.getByLabel("Password")).toHaveValue("");
 
+  await openTab(display, "Party");
   const queue = settings.getByRole("region", { name: "Queue" });
   await queue.getByLabel("Supervised mode", { exact: false }).check();
   await expect(queue.getByRole("status")).toHaveText("Saved.");
@@ -181,11 +202,11 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   });
 
   // A field saves when the host leaves it; a refused value says why.
-  const limit = queue.getByLabel("Songs each phone", { exact: false });
+  const limit = queue.getByLabel("Songs per phone");
   await limit.fill("1001");
   await limit.press("Enter");
   await expect(queue.getByRole("status")).toHaveText(
-    "paxSongQueueLimit must be a whole number from 0 to 1000",
+    "Songs per phone must be a whole number from 0 to 1000",
   );
   await limit.fill("3");
   await limit.blur();
@@ -195,35 +216,67 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   ).toBe(3);
 
   // The port takes a restart, which the screen offers.
-  const network = settings.getByRole("region", { name: "Remote port" });
+  const network = settings.getByRole("region", { name: "Phones", exact: true });
   await expect(network.getByLabel(/proxy/i)).toHaveCount(0);
+  // The dev server's port shows only under yarn dev.
+  await expect(network.getByText(/yarn dev/)).toHaveCount(0);
   await expect(network.getByRole("button", { name: "Restart" })).toHaveCount(0);
   // Not listened on until a restart, so any free-looking port will do.
-  await network.getByLabel("Port for phones").fill("18765");
-  await network.getByLabel("Port for phones").press("Enter");
+  await network.getByLabel("Port").fill("18765");
+  await network.getByLabel("Port").press("Enter");
   await expect(network.getByRole("button", { name: "Restart" })).toBeVisible();
 
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
 });
 
+test("the songs' output can be picked; a saved one that isn't connected says so", async ({
+  display,
+}) => {
+  await display.evaluate(() =>
+    localStorage.setItem(
+      "songOutput",
+      JSON.stringify({ id: "e2e-gone", label: "E2E Gone" }),
+    ),
+  );
+  await display.reload();
+  await openTab(display, "Sound");
+  const output = display
+    .getByRole("region", { name: "Sound", exact: true })
+    .getByLabel("Song output");
+  await expect(output).toHaveValue("e2e-gone");
+  await expect(output.locator("option").first()).toHaveText("System default");
+  await expect(output.locator("option:checked")).toHaveText(
+    "E2E Gone (not connected)",
+  );
+  await output.selectOption("System default");
+  await expect(output).toHaveValue("");
+  await expect
+    .poll(() => display.evaluate(() => localStorage.getItem("songOutput")))
+    .toBeNull();
+});
+
 test("the display's offset and UI scale save on the display, and the scale sizes its text", async ({
   display,
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
-  const section = settings.getByRole("region", { name: "Display" });
-  const offset = section.getByLabel("Audio/video offset");
-  const scale = section.getByLabel("UI scale");
+  const sound = settings.getByRole("region", { name: "Sound", exact: true });
+  const offset = sound.getByLabel("Audio/video offset");
+  const scale = settings
+    .getByRole("region", { name: "Display" })
+    .getByLabel("UI scale");
+  await openTab(display, "Sound");
   await expect(offset).toHaveValue("0");
+  await expect(sound).toContainText(/Output latency: \d+ ms/);
+  await offset.selectOption("-40");
+
+  await openTab(display, "Display");
   await expect(scale).toHaveValue("100");
-  await expect(section).toContainText(/Measured audio output latency: \d+ ms/);
   const rootFontSize = () =>
     display.evaluate(() =>
       parseFloat(getComputedStyle(document.documentElement).fontSize),
     );
   const unscaled = await rootFontSize();
-
-  await offset.selectOption("-40");
   await scale.selectOption("150");
   await expect.poll(rootFontSize).toBeCloseTo(unscaled * 1.5, 1);
   expect(
@@ -235,9 +288,346 @@ test("the display's offset and UI scale save on the display, and the scale sizes
 
   // Kept on the display, not in config.yaml: a reload brings them back.
   await display.reload();
-  await expect(offset).toHaveValue("-40");
+  await openTab(display, "Display");
   await expect(scale).toHaveValue("150");
   await expect.poll(rootFontSize).toBeCloseTo(unscaled * 1.5, 1);
+  await openTab(display, "Sound");
+  await expect(offset).toHaveValue("-40");
+});
+
+test("Settings is in tabs: the arrows, Home and End move through them, the panel follows, and the last one opens again", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const tablist = settings.getByRole("tablist", { name: "Sections" });
+  const tabs = tablist.getByRole("tab");
+  const tab = (name: string) => tablist.getByRole("tab", { name });
+  const panel = settings.getByRole("tabpanel");
+  await expect(tablist).toHaveAttribute("aria-orientation", "vertical");
+  await expect(tabs).toHaveText([
+    "Accounts",
+    "Party",
+    "Sound",
+    "Display",
+    "Advanced",
+  ]);
+
+  // A first launch opens on Accounts, focused, so the keys work at once.
+  // Only the open tab is in the Tab order.
+  const tabStops = () =>
+    tabs.evaluateAll((all) => all.map((t) => t.getAttribute("tabindex")));
+  await expect(tab("Accounts")).toBeFocused();
+  await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
+  await expect(panel).toHaveAccessibleName("Accounts");
+  await expect(panel.getByRole("region", { name: "DAM login" })).toBeVisible();
+  expect(await tabStops()).toEqual(["0", "-1", "-1", "-1", "-1"]);
+
+  // Each key opens the tab it moves to.
+  for (const [key, name, region] of [
+    ["ArrowDown", "Party", "Queue"],
+    ["End", "Advanced", "Tools"],
+    ["ArrowDown", "Accounts", "Joysound login"],
+    ["ArrowUp", "Advanced", "Config file"],
+    ["Home", "Accounts", "DAM login"],
+    ["ArrowUp", "Advanced", "Downloads"],
+    ["ArrowUp", "Display", "Display"],
+  ]) {
+    await display.keyboard.press(key);
+    await expect(tab(name)).toBeFocused();
+    await expect(tab(name)).toHaveAttribute("aria-selected", "true");
+    await expect(panel).toHaveAccessibleName(name);
+    await expect(panel.getByRole("region", { name: region })).toBeVisible();
+  }
+  expect(await tabStops()).toEqual(["-1", "-1", "-1", "0", "-1"]);
+  await expect(settings.getByRole("region", { name: "DAM login" })).toHaveCount(
+    0,
+  );
+  // Tab goes on into the panel.
+  await display.keyboard.press("Tab");
+  await expect(panel.getByLabel("UI scale")).toBeFocused();
+
+  // Closed, Settings opens again on the same tab, and keeps it on the
+  // display.
+  await display.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await display.keyboard.press("s");
+  await expect(tab("Display")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("Display")).toBeFocused();
+  expect(
+    await display.evaluate(() => localStorage.getItem("settingsTab")),
+  ).toBe("display");
+  await settings.getByRole("button", { name: "Close" }).click();
+  await display.getByRole("button", { name: "Settings" }).click();
+  await expect(tab("Display")).toHaveAttribute("aria-selected", "true");
+
+  // But a launch with no login opens on Accounts.
+  await display.reload();
+  await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
+  await expect(
+    settings.getByText("Add your DAM or Joysound login", { exact: false }),
+  ).toBeVisible();
+});
+
+test.describe("on a profile with a login", () => {
+  // Never tried unless asked, so Settings doesn't open by itself.
+  test.use({
+    appConfig: { damUsername: "e2e-dam-user", damPassword: "e2e-password" },
+  });
+
+  test("Settings opens on the tab it was last on, after a reload too", async ({
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    await expect(settings).toHaveCount(0);
+    await display.keyboard.press("s");
+    await openTab(display, "Sound");
+    await display.reload();
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    await display.keyboard.press("s");
+    await expect(settings.getByRole("tab", { name: "Sound" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(
+      settings.getByRole("region", { name: "Microphones" }),
+    ).toBeVisible();
+  });
+});
+
+test("a tab with something to look at gets a dot, until it's put right", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const party = settings.getByRole("tab", { name: "Party" });
+  const queue = settings.getByRole("region", { name: "Queue" });
+  await openTab(display, "Party");
+  await expect(party).not.toHaveAccessibleDescription("Needs a look");
+
+  // A refused value, saved as the host leaves for another tab.
+  await queue.getByLabel("Songs per phone").fill("1001");
+  await openTab(display, "Sound");
+  await expect(party).toHaveAccessibleDescription("Needs a look");
+  await expect(party.locator(".settingsTabDot")).toBeVisible();
+  // The open tab has none, and the message waits under its field.
+  await openTab(display, "Party");
+  await expect(party).not.toHaveAccessibleDescription("Needs a look");
+  await expect(party.locator(".settingsTabDot")).toHaveCount(0);
+  await expect(queue.getByRole("status")).toHaveText(
+    "Songs per phone must be a whole number from 0 to 1000",
+  );
+  await queue.getByLabel("Songs per phone").fill("2");
+  await queue.getByLabel("Songs per phone").press("Enter");
+  await expect(queue.getByRole("status")).toHaveText("Saved.");
+  await openTab(display, "Sound");
+  await expect(party).not.toHaveAccessibleDescription("Needs a look");
+
+  // A new port waits for a restart.
+  await openTab(display, "Party");
+  const port = settings
+    .getByRole("region", { name: "Phones", exact: true })
+    .getByLabel("Port");
+  await port.fill("18766");
+  await port.press("Enter");
+  await expect(settings.getByRole("button", { name: "Restart" })).toBeVisible();
+  await openTab(display, "Advanced");
+  await expect(party).toHaveAccessibleDescription("Needs a look");
+  for (const name of ["Accounts", "Sound", "Display", "Advanced"]) {
+    await expect(
+      settings.getByRole("tab", { name }),
+    ).not.toHaveAccessibleDescription("Needs a look");
+  }
+});
+
+test.describe("the pitch bars", () => {
+  test("a DAM song shows them; the switch in Display takes them off and back at once, kept on the display", async ({
+    karafriends,
+    display,
+  }) => {
+    // The song "downloaded" as a minute of black video, as long as the song,
+    // so it plays. Queued from a phone; without a DAM login, popSong brings
+    // no scoring data, and the roll is empty but there.
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    fs.copyFileSync(
+      path.resolve(__dirname, "..", "fixtures", "black.mp4"),
+      path.join(folder, "2345-67-0.mp4"),
+    );
+    const res = await fetch(new URL("api/queueSong", karafriends.remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Device-Id": "e2e-pitch-bars",
+        "X-Karafriends-Nickname": "e2e",
+      },
+      body: JSON.stringify({
+        kind: "dam",
+        songId: "2345-67",
+        name: "E2E DAM song",
+        artistName: "E2E artist",
+        playtime: 60,
+        streamingUrlIdx: 0,
+      }),
+    });
+    expect(await res.json()).toMatchObject({ ok: true });
+
+    const roll = display.locator("canvas.pianoRollRoll");
+    await expect(roll).toHaveCount(1, { timeout: 20_000 });
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((video: HTMLVideoElement) => video.currentTime > 0),
+      )
+      .toBe(true);
+
+    // Settings opened on the first launch, over the song.
+    await openTab(display, "Display");
+    const pitchBars = display
+      .getByRole("region", { name: "Display" })
+      .getByLabel("Pitch bars", { exact: true });
+    await expect(pitchBars).toBeChecked();
+    await expect(pitchBars).toHaveAccessibleDescription(
+      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
+    );
+    await pitchBars.uncheck();
+    await expect(roll).toHaveCount(0);
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBe("off");
+    await pitchBars.check();
+    await expect(roll).toHaveCount(1);
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBeNull();
+
+    // Off, it stays off after a reload.
+    await pitchBars.uncheck();
+    await display.reload();
+    await openTab(display, "Display");
+    await expect(pitchBars).not.toBeChecked();
+    await expect(roll).toHaveCount(0);
+  });
+
+  // A Joysound song that looks downloaded before: its video, from
+  // tests/fixtures, and lyrics without lines that the display reads without
+  // an error (empty names, a palette, no timing events).
+  function fakeJoysoundDownload(
+    folder: string,
+    songId: string,
+    video: string,
+    seconds: number,
+  ) {
+    const telop = Buffer.alloc(68);
+    telop.writeUInt32LE(18, 6); // where the names start
+    telop.writeUInt32LE(38, 10); // the lyrics: 15 colours, no lines
+    telop.writeUInt32LE(68, 14); // the timing: no events
+    for (let i = 1; i <= 7; i++) telop.writeUInt16LE(20, 18 + i * 2);
+    telop.writeUInt16LE(seconds, 18 + 18); // the playtime
+    fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
+    fs.copyFileSync(
+      path.resolve(__dirname, "..", "fixtures", video),
+      path.join(folder, `joysound-${songId}-default.mp4`),
+    );
+  }
+
+  // A call from a phone (one song in the queue each, by default).
+  async function phoneCall(
+    remoconUrl: string,
+    deviceId: string,
+    method: string,
+    input: object,
+  ) {
+    const res = await fetch(new URL(`api/${method}`, remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Device-Id": deviceId,
+        "X-Karafriends-Nickname": "e2e",
+      },
+      body: JSON.stringify(input),
+    });
+    return res.json();
+  }
+
+  test("a Joysound song shows them from its guide melody, and one without a guide shows none", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    // A minute of black video without sound: no guide channel.
+    fakeJoysoundDownload(folder, "e2e-no-guide", "black.mp4", 60);
+    // 12 s of black video whose sound is 3-channel Vorbis, as Joysound's
+    // ogg: silent left and right, so the bars can only come from the third
+    // channel, and nine sine notes there (C5 E5 G5 E5, D5 F5 A5 F5, C5, 0.9
+    // s each, from 0.5 s). Made with the app's ffmpeg:
+    //   ffmpeg -f lavfi -i "aevalsrc=exprs=0|0|0.3*sin(2*PI*t*(<each note's between(t,start,end)*Hz, summed>))*(<the same betweens, summed>):s=44100:c=3.0:d=12" -c:a libvorbis -q:a 0 guide.ogg
+    //   ffmpeg -f lavfi -i color=black:s=320x180:r=10:d=12 -i guide.ogg -c:v libx264 -pix_fmt yuv420p -c:a copy -shortest -movflags faststart joysound-guide.mp4
+    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    for (const songId of ["e2e-no-guide", "e2e-guide"]) {
+      expect(
+        await phoneCall(remoconUrl, `e2e-phone-${songId}`, "queueSong", {
+          kind: "joysound",
+          songId,
+          name: `E2E ${songId}`,
+          artistName: "E2E artist",
+          lyricsMode: "kana",
+          youtubeVideoId: null,
+        }),
+      ).toMatchObject({ ok: true });
+    }
+
+    const video = display.locator("video");
+    // The song's file, and whether it has played for a while.
+    const playing = () =>
+      video.evaluate((v: HTMLVideoElement) => ({
+        file: v.currentSrc.split("/").at(-1),
+        started: v.currentTime > 2,
+      }));
+    const roll = display.locator("canvas.pianoRollRoll");
+
+    // No guide channel: no bars, and no error.
+    await expect
+      .poll(playing, { timeout: 20_000 })
+      .toEqual({ file: "joysound-e2e-no-guide-default.mp4", started: true });
+    await expect(roll).toHaveCount(0);
+
+    // The guide melody's: the bars come once it's read, and stay while the
+    // song is paused.
+    expect(
+      await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "SKIPPING",
+      }),
+    ).toBe(true);
+    await expect(roll).toHaveCount(1, { timeout: 20_000 });
+    expect((await playing()).file).toBe("joysound-e2e-guide-default.mp4");
+    expect(
+      await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "PAUSED",
+      }),
+    ).toBe(true);
+    await expect(video).toHaveJSProperty("paused", true);
+
+    // The switch takes them off and back, at once: the melody is kept.
+    await openTab(display, "Display");
+    const pitchBars = display
+      .getByRole("region", { name: "Display" })
+      .getByLabel("Pitch bars", { exact: true });
+    await pitchBars.uncheck();
+    await expect(roll).toHaveCount(0);
+    await pitchBars.check();
+    await expect(roll).toHaveCount(1);
+
+    expect(karafriends.displayErrors).toEqual([]);
+  });
 });
 
 // The fixture's fake mics and outputs (KARAFRIENDS_FAKE_AUDIO in
@@ -255,6 +645,12 @@ function fakeAudioCalls(display: Page): Promise<unknown[][]> {
 test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
+
+  // Settings opens on Accounts on a launch with no login; the mics are on
+  // Sound.
+  test.beforeEach(async ({ display }) => {
+    await openTab(display, "Sound");
+  });
 
   // The fake inputs' ids (what is saved, opened and sent) and labels (what
   // shows), as on Windows: an endpoint id, and the device's name.
@@ -305,8 +701,8 @@ test.describe("the microphones", () => {
     ).toHaveCount(0);
     expect(await phoneMics()).toEqual([]);
 
-    // Every channel shows by its device's name, and the ASIO line says
-    // what ASIO has.
+    // Every channel shows by its device's name. The ASIO line shows only a
+    // driver that won't load.
     const add = section.getByLabel("Add a microphone");
     await expect(add.locator("option")).toHaveText([
       "Select a microphone",
@@ -314,16 +710,27 @@ test.describe("the microphones", () => {
       "E2E Interface (USB), channel 1",
       "E2E Interface (USB), channel 2",
     ]);
-    await expect(section.getByText("ASIO: E2E Interface")).toBeVisible();
+    await expect(section.getByText("ASIO: E2E Interface")).toHaveCount(0);
 
-    // Add the first, and turn it up.
+    // Add the first, and turn it up. Its meter shows its level (the fake's
+    // 0.25 is -12 dB: 0.8 of the meter's 60 dB).
     await add.selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
+    await expect(mic.getByRole("meter", { name: "Level" })).toHaveAttribute(
+      "aria-valuenow",
+      "0.80",
+    );
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
     await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+    // Each slider's track is filled to its value: gain out of 200 %, echo
+    // out of 100 %.
+    expect(await sliderFill(mic.getByLabel("Gain 100%"))).toBe(50);
+    expect(await sliderFill(mic.getByLabel("Echo 40%"))).toBe(40);
     await mic.getByLabel("Gain 100%").fill("150");
     await mic.getByLabel("Echo 40%").fill("25");
     await expect(mic.getByLabel("Gain 150%")).toBeVisible();
+    expect(await sliderFill(mic.getByLabel("Gain 150%"))).toBe(75);
+    expect(await sliderFill(mic.getByLabel("Echo 25%"))).toBe(25);
     await expect.poll(phoneMics).toEqual([{ ...MIC, gain: 150, echo: 25 }]);
     expect(await fakeAudioCalls(display)).toEqual(
       expect.arrayContaining([
@@ -377,6 +784,8 @@ test.describe("the microphones", () => {
     await display.keyboard.press("s");
     await expect(settings).toBeVisible();
     expect(await listings()).toBe(listed + 1);
+    // On Sound still.
+    await expect(section).toBeVisible();
 
     // An admin's phone changes the mic's levels.
     expect(
@@ -410,6 +819,7 @@ test.describe("the microphones", () => {
       "E2E Interface (ASIO)",
     ]);
     await display.reload();
+    await openTab(display, "Sound");
     await expect(second.getByLabel("Gain 50%")).toBeVisible();
     await expect(output).toHaveValue("E2E Interface (ASIO)");
     const calls = await fakeAudioCalls(display);
@@ -481,6 +891,7 @@ test.describe("the microphones", () => {
       localStorage.setItem("micOutput", "E2E Gone (Windows)"),
     );
     await display.reload();
+    await openTab(display, "Sound");
     const output = display
       .getByRole("region", { name: "Microphones" })
       .getByLabel("Mic output");
@@ -516,14 +927,14 @@ test.describe("the microphones", () => {
     const rate = section.getByLabel("Sample rate");
     await expect(buffer).toHaveValue("");
     await expect(buffer.locator("option")).toHaveText([
-      "Driver's setting",
+      "Default",
       "64 samples",
       "128 samples",
       "256 samples",
       "512 samples",
     ]);
     await expect(rate.locator("option")).toHaveText([
-      "Driver's setting",
+      "Default",
       "44.1 kHz",
       "48 kHz",
       "96 kHz",
@@ -550,6 +961,7 @@ test.describe("the microphones", () => {
 
     // Kept, and set again at the next launch.
     await display.reload();
+    await openTab(display, "Sound");
     await expect(buffer).toHaveValue("128");
     await expect(rate).toHaveValue("96000");
     expect(await fakeAudioCalls(display)).toContainEqual([
@@ -578,7 +990,7 @@ test.describe("the microphones", () => {
     const section = display.getByRole("region", { name: "Microphones" });
     await section.getByLabel("Add a microphone").selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
-    const mode = section.getByLabel("Windows mics");
+    const mode = section.getByLabel("Mic mode");
     await expect(mode).toHaveValue("shared");
     await expect(section.getByLabel("Mic buffer")).toHaveCount(0);
     await expect(
@@ -617,6 +1029,7 @@ test.describe("the microphones", () => {
 
     // Kept: the next launch sets it before the mic opens.
     await display.reload();
+    await openTab(display, "Sound");
     await expect(mode).toHaveValue("exclusive");
     await expect(buffer).toHaveValue("256");
     const relaunched = await fakeAudioCalls(display);
@@ -652,6 +1065,7 @@ test.describe("the microphones", () => {
       MIC_DEVICE,
     );
     await display.reload();
+    await openTab(display, "Sound");
     const mic = display
       .getByRole("region", { name: "Microphones" })
       .getByRole("group", { name: MIC.label });
@@ -666,6 +1080,10 @@ test.describe("the microphones on Linux", () => {
 
   const DEFAULT_MIC = "System default (Linux), channel 1";
 
+  test.beforeEach(async ({ display }) => {
+    await openTab(display, "Sound");
+  });
+
   test("the sound system shows instead of ASIO; one buffer for the mics, reopening them, kept on the display; a mic plugged in since shows", async ({
     display,
   }) => {
@@ -675,7 +1093,7 @@ test.describe("the microphones on Linux", () => {
       section.getByText("Sound system: PipeWire 1.6.2"),
     ).toBeVisible();
     await expect(section.getByText("ASIO isn't in this build")).toHaveCount(0);
-    await expect(section.getByLabel("Windows mics")).toHaveCount(0);
+    await expect(section.getByLabel("Mic mode")).toHaveCount(0);
 
     // Each channel of each mic, by its name.
     const add = section.getByLabel("Add a microphone");
@@ -720,6 +1138,7 @@ test.describe("the microphones on Linux", () => {
 
     // Kept: the next launch sets it before the mic opens.
     await display.reload();
+    await openTab(display, "Sound");
     await expect(buffer).toHaveValue("256");
     const relaunched = await fakeAudioCalls(display);
     expect(
@@ -737,6 +1156,7 @@ test.describe("the microphones on Linux", () => {
     await expect(settings).toHaveCount(0);
     await display.keyboard.press("s");
     await expect(settings).toBeVisible();
+    await openTab(display, "Sound");
     await expect(add.locator("option")).toContainText([
       "E2E USB Mic (Linux), channel 1",
     ]);
@@ -880,6 +1300,7 @@ test.describe("the downloads", () => {
     const settings = display.getByRole("dialog", { name: "Settings" });
     await settings.getByRole("button", { name: "Close" }).click();
     await display.getByRole("button", { name: "Settings" }).click();
+    await openTab(display, "Advanced");
     const section = settings.getByRole("region", { name: "Downloads" });
     await expect(section.getByText("2 files, 2.0 MB")).toBeVisible();
 

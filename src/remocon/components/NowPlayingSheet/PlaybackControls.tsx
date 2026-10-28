@@ -8,10 +8,99 @@ import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "../../icons";
 import { IconButton } from "../ui";
 import * as styles from "./NowPlayingSheet.module.scss";
 
-// Restart, play or pause, skip, and the key. In supervised mode they're
-// dimmed for anyone but an admin and the current singer, as the server
-// would refuse them (setPlaybackState in src/main/api.ts). (The guide
-// melody's level is on the profile, for admins.)
+// The key change with its sign: "+2", "−1" (a minus sign), "0".
+export function signedKey(semis: number): string {
+  if (semis > 0) return `+${semis}`;
+  if (semis < 0) return `−${-semis}`;
+  return "0";
+}
+
+interface TransportProps {
+  playing: boolean;
+  disabled: boolean;
+  onRestart: () => void;
+  onPlayPause: () => void;
+  onSkip: () => void;
+}
+
+// Restart, play or pause, and skip, close together in the middle of the
+// sheet's toolbar: play or pause a big raised accent circle, the other two
+// quieter beside it.
+export const Transport = ({
+  playing,
+  disabled,
+  onRestart,
+  onPlayPause,
+  onSkip,
+}: TransportProps) => (
+  <div className={styles.transport}>
+    <IconButton
+      label={t("playback.restart")}
+      icon={<MdReplay />}
+      tone="muted"
+      aria-disabled={disabled}
+      onClick={onRestart}
+    />
+    <IconButton
+      label={playing ? t("playback.pause") : t("playback.play")}
+      icon={playing ? <MdPause /> : <MdPlayArrow />}
+      tone="filled"
+      className={styles.play}
+      aria-disabled={disabled}
+      onClick={onPlayPause}
+    />
+    <IconButton
+      label={t("playback.skip")}
+      icon={<MdSkipNext />}
+      tone="muted"
+      aria-disabled={disabled}
+      onClick={onSkip}
+    />
+  </div>
+);
+
+interface KeyStepperProps {
+  semis: number;
+  disabled: boolean;
+  onChange: (semis: number) => void;
+}
+
+// The key as one control at the toolbar's end: ♭, the key with its sign
+// under a small "Key", and ♯, in one sunken pill. The key itself is a
+// status, read out as it changes.
+export const KeyStepper = ({ semis, disabled, onChange }: KeyStepperProps) => (
+  <div className={styles.key}>
+    <IconButton
+      label={t("pitch.lower")}
+      icon="♭"
+      aria-disabled={disabled}
+      onClick={() => onChange(semis - 1)}
+    />
+    <span className={styles.keyValue}>
+      <span className={styles.keyLabel} aria-hidden="true">
+        {t("pitch.key")}
+      </span>
+      <span
+        className={styles.keyNumber}
+        role="status"
+        aria-label={t("pitch.key")}
+      >
+        {signedKey(semis)}
+      </span>
+    </span>
+    <IconButton
+      label={t("pitch.raise")}
+      icon="♯"
+      aria-disabled={disabled}
+      onClick={() => onChange(semis + 1)}
+    />
+  </div>
+);
+
+// The transport and the key. In supervised mode they're dimmed for anyone
+// but an admin and the current singer, as the server would refuse them
+// (setPlaybackState in src/main/api.ts), with a line under them saying
+// so. (The guide melody's level is in Settings, for admins.)
 const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
@@ -21,50 +110,27 @@ const PlaybackControls = () => {
   const isMine = useLiveState((state) => state?.currentSong?.isMine === true);
   const isAdmin = useIsAdmin();
   const isEntitled = !supervisedMode || isAdmin === true || isMine;
-  const disabled =
-    !["PLAYING", "PAUSED"].includes(playbackState) || !isEntitled;
+  const active = ["PLAYING", "PAUSED"].includes(playbackState);
+  const disabled = !active || !isEntitled;
   const playing = playbackState === "PLAYING";
 
   return (
     <>
-      <div className={styles.group}>
-        <IconButton
-          label={t("playback.restart")}
-          icon={<MdReplay />}
-          aria-disabled={disabled}
-          onClick={() => setPlaybackState("RESTARTING")}
-        />
-        <IconButton
-          label={playing ? t("playback.pause") : t("playback.play")}
-          icon={playing ? <MdPause /> : <MdPlayArrow />}
-          tone="accent"
-          aria-disabled={disabled}
-          onClick={() => setPlaybackState(playing ? "PAUSED" : "PLAYING")}
-        />
-        <IconButton
-          label={t("playback.skip")}
-          icon={<MdSkipNext />}
-          aria-disabled={disabled}
-          onClick={() => setPlaybackState("SKIPPING")}
-        />
-      </div>
-      <div className={styles.group}>
-        <IconButton
-          label={t("pitch.lower")}
-          icon="♭"
-          aria-disabled={disabled}
-          onClick={() => setPitchShiftSemis(pitchShiftSemis - 1)}
-        />
-        <span className={styles.key} role="status" aria-label={t("pitch.key")}>
-          {pitchShiftSemis}
-        </span>
-        <IconButton
-          label={t("pitch.raise")}
-          icon="♯"
-          aria-disabled={disabled}
-          onClick={() => setPitchShiftSemis(pitchShiftSemis + 1)}
-        />
-      </div>
+      <Transport
+        playing={playing}
+        disabled={disabled}
+        onRestart={() => setPlaybackState("RESTARTING")}
+        onPlayPause={() => setPlaybackState(playing ? "PAUSED" : "PLAYING")}
+        onSkip={() => setPlaybackState("SKIPPING")}
+      />
+      <KeyStepper
+        semis={pitchShiftSemis}
+        disabled={disabled}
+        onChange={setPitchShiftSemis}
+      />
+      {active && supervisedMode && isAdmin === false && !isMine && (
+        <p className={styles.note}>{t("playback.singerOnly")}</p>
+      )}
     </>
   );
 };

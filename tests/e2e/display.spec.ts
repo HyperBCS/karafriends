@@ -1,4 +1,60 @@
+import type { Locator } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
+
+// A Marquee's text (the element getByText finds) and its box: whether it
+// slides, and the animation's settings.
+const marquee = (text: Locator) =>
+  text.evaluate((el) => {
+    const box = el.parentElement!;
+    const style = getComputedStyle(el);
+    return {
+      sliding: box.hasAttribute("data-marquee"),
+      name: style.animationName,
+      shift: parseFloat(box.style.getPropertyValue("--kf-marquee-shift")),
+      seconds: parseFloat(style.animationDuration),
+      delay: style.animationDelay,
+      iterations: style.animationIterationCount,
+      direction: style.animationDirection,
+      ellipsis: style.textOverflow === "ellipsis",
+      fits: el.getBoundingClientRect().width <= box.clientWidth + 0.5,
+      rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    };
+  });
+
+// Where a sliding text is (its x offset, px) at points of its animation,
+// which is paused there: before it starts, held at the start, halfway,
+// at the end (and how far its end is from the box's), held there on the
+// way back, and back at the start.
+const slidePath = (text: Locator) =>
+  text.evaluate((el) => {
+    const box = el.parentElement!;
+    const [animation] = el.getAnimations();
+    animation.pause();
+    const timing = animation.effect!.getComputedTiming();
+    const delay = timing.delay!;
+    const duration = timing.duration as number;
+    const hold =
+      (parseFloat(box.style.getPropertyValue("--kf-marquee-hold")) / 100) *
+      duration;
+    const at = (ms: number) => {
+      animation.currentTime = ms;
+      const transform = getComputedStyle(el).transform;
+      return transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m41;
+    };
+    const path = {
+      waiting: at(delay / 2),
+      holding: at(delay + hold / 2),
+      halfway: at(delay + duration / 2),
+      end: at(delay + duration),
+      endGap:
+        box.getBoundingClientRect().right - el.getBoundingClientRect().right,
+      holdingAtEnd: at(delay + duration + hold / 2),
+      back: at(delay + 2 * duration - hold / 2),
+    };
+    animation.play();
+    return path;
+  });
 
 test("the display opens on its idle screen without console errors", async ({
   display,
@@ -6,13 +62,18 @@ test("the display opens on its idle screen without console errors", async ({
 }) => {
   await expect(display).toHaveTitle("karafriends");
 
-  // A fresh profile has no DAM or Joysound login, so Settings opens first.
+  // A fresh profile has no DAM or Joysound login, so Settings opens first,
+  // on Accounts.
   const settings = display.getByRole("dialog", { name: "Settings" });
   await expect(
     settings.getByText(
       "Add your DAM or Joysound login to search their catalogs. YouTube works without one.",
     ),
   ).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await display.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
 
@@ -33,18 +94,20 @@ test("the display opens on its idle screen without console errors", async ({
     display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
   ).toHaveCount(0);
 
-  // S, or the gear, opens Settings: the QR code's address and the
-  // microphones are there.
+  // S, or the gear, opens Settings: the QR code's address is under Party,
+  // the microphones under Sound.
   await display.keyboard.press("s");
   await expect(settings).toBeVisible();
+  await settings.getByRole("tab", { name: "Party" }).click();
   await expect(
     settings.locator(`option[value="karafriends.local:${port}"]`),
   ).toHaveCount(1);
+  await settings.getByRole("tab", { name: "Sound" }).click();
   await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
   await display.getByRole("button", { name: "Settings" }).click();
-  await expect(settings).toBeVisible();
+  await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await display.keyboard.press("Escape");
 
   // Nothing is playing.
@@ -99,7 +162,7 @@ test.describe("while a song plays", () => {
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
   });
 
-  test("the QR code and the address stay in the corner, but not over Settings", async ({
+  test("the QR code stays in the corner, without the address, but not over Settings", async ({
     display,
     karafriends,
   }) => {
@@ -115,9 +178,10 @@ test.describe("while a song plays", () => {
       display.getByRole("region", { name: "Up next" }).getByRole("listitem"),
     ).toHaveText([/E2E strip song 2/]);
     await expect(qrCode).toBeVisible();
-    await expect(address).toBeVisible();
+    // The code alone: the address and "Scan to join" are the idle screen's.
+    await expect(address).toHaveCount(0);
     await expect(display.getByText("Scan to join")).toHaveCount(0);
-    // Small, bottom-left, above the strip.
+    // Small and top-left, clear of the lyrics along the bottom.
     const box = (await qrCode.boundingBox())!;
     const strip = (await display
       .getByRole("region", { name: "Up next" })
@@ -127,9 +191,16 @@ test.describe("while a song plays", () => {
       parseFloat(getComputedStyle(document.documentElement).fontSize),
     ]);
     expect(box.x + box.width).toBeLessThan(width / 2);
-    expect(box.y).toBeGreaterThan(strip.y / 2);
-    expect(box.y + box.height).toBeLessThan(strip.y);
-    expect(box.width).toBeCloseTo(8 * rem, 0);
+    expect(box.y + box.height).toBeLessThan(strip.y / 2);
+    // About 7.25rem square: the code and a 2-module white border, 29
+    // modules across, each a whole number of pixels, so within half a
+    // module per module of it.
+    expect(Math.abs(box.width - 7.25 * rem)).toBeLessThanOrEqual(29 / 2);
+    expect(box.height).toBeCloseTo(box.width, 0);
+    const canvasWidth = await qrCode.evaluate(
+      (canvas: HTMLCanvasElement) => canvas.width,
+    );
+    expect(canvasWidth % 29).toBe(0);
 
     await display.keyboard.press("s");
     await expect(settings).toBeVisible();
@@ -156,7 +227,8 @@ test.describe("while a song plays", () => {
       )!;
       return Number(minutes) * 60 + Number(seconds);
     };
-    // Song 1 (60 s) has started.
+    // Song 1 (60 s) has started: until then, it is up next too.
+    await expect(next).toHaveText([/E2E strip song 2/]);
     await expect.poll(wait, { timeout: 15_000 }).toBeLessThan(60);
 
     const before = await wait();
@@ -187,6 +259,135 @@ test.describe("while a song plays", () => {
     const paused = await wait();
     await display.waitForTimeout(2_000);
     expect(await wait()).toBe(paused);
+  });
+});
+
+test.describe("long names on the TV", () => {
+  // Song 1 plays first, with a long title and artist in the corner; song 2
+  // has a title too long for its place in the strip, song 3 a short title
+  // and a long artist.
+  const LONG_TITLE =
+    "残酷な天使のテーゼ (TVアニメ『新世紀エヴァンゲリオン』オープニングテーマ) E2E long title";
+  const LONG_ARTIST =
+    "E2E artist with a name far too long for one line of the corner or the strip";
+  const song = (n: number, name: string, artistName: string) => ({
+    kind: "nico",
+    songId: `sm7200${n}`,
+    name,
+    artistName,
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-mio", nickname: "Mio" },
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        song(1, `${LONG_TITLE} 1`, LONG_ARTIST),
+        song(2, `${LONG_TITLE} 2`, "E2E artist"),
+        song(3, "E2E short", LONG_ARTIST),
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("a title or artist that doesn't fit slides to its end and back; one that fits stays still", async ({
+    display,
+    karafriends,
+  }) => {
+    await display.setViewportSize({ width: 1920, height: 1080 });
+    await display.emulateMedia({ reducedMotion: "no-preference" });
+
+    // The corner: the title wraps, all of it at once (the card is up for
+    // 4 s, too short to read one sliding); the artist slides at once.
+    const corner = display
+      .getByRole("status")
+      .filter({ hasText: "Now playing" });
+    const cornerArtist = corner.getByText(LONG_ARTIST);
+    // (Measured before the first frame it shows in.)
+    await expect
+      .poll(async () => (await marquee(cornerArtist)).sliding)
+      .toBe(true);
+    expect(await marquee(cornerArtist)).toMatchObject({
+      name: "kfMarquee",
+      delay: "0s",
+    });
+    expect(await marquee(corner.getByText(`${LONG_TITLE} 1`))).toMatchObject({
+      sliding: false,
+      fits: true,
+    });
+
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    const items = display
+      .getByRole("region", { name: "Up next" })
+      .getByRole("listitem");
+    await expect(items).toHaveCount(2);
+    const title = items.nth(0).getByText(`${LONG_TITLE} 2`);
+    const short = items.nth(1).getByText("E2E short", { exact: true });
+    const artist = items.nth(1).getByText(LONG_ARTIST);
+
+    // The long title slides, one way and back, over and over, at 2rem a
+    // second (32px at 1080p) with 2 s still at each end.
+    await expect.poll(async () => (await marquee(title)).sliding).toBe(true);
+    const slide = await marquee(title);
+    expect(slide).toMatchObject({
+      sliding: true,
+      name: "kfMarquee",
+      iterations: "infinite",
+      direction: "alternate",
+      ellipsis: false,
+    });
+    expect(slide.rem).toBe(16);
+    const speed = slide.shift / (slide.seconds - 2);
+    expect(speed).toBeGreaterThan(30);
+    expect(speed).toBeLessThan(34);
+    // The short one is still; the long artist beside it slides, starting
+    // at another time than the title before it.
+    expect(await marquee(short)).toMatchObject({
+      sliding: false,
+      name: "none",
+      fits: true,
+    });
+    const artistSlide = await marquee(artist);
+    expect(artistSlide.name).toBe("kfMarquee");
+    expect(artistSlide.delay).not.toBe(slide.delay);
+
+    // Still before it starts and for a while at each end; at the end, the
+    // text's end is at the box's.
+    const path = await slidePath(title);
+    expect(path.waiting).toBeCloseTo(0, 1);
+    expect(path.holding).toBeCloseTo(0, 1);
+    expect(path.halfway).toBeCloseTo(-slide.shift / 2, 0);
+    expect(path.end).toBeCloseTo(-slide.shift, 0);
+    expect(path.endGap).toBeGreaterThanOrEqual(-0.5);
+    expect(path.endGap).toBeLessThanOrEqual(1.5);
+    expect(path.holdingAtEnd).toBeCloseTo(-slide.shift, 0);
+    expect(path.back).toBeCloseTo(0, 1);
+
+    // The long song keeps to its width, and the next one follows it on the
+    // screen.
+    const [first, second] = [
+      (await items.nth(0).boundingBox())!,
+      (await items.nth(1).boundingBox())!,
+    ];
+    expect(first.width).toBeLessThanOrEqual(56.25 * 16 + 0.5);
+    expect(second.x).toBeGreaterThanOrEqual(first.x + first.width - 1);
+    expect(second.x).toBeLessThan(1920);
+
+    // Asked for less motion, it stays still and ends in an ellipsis.
+    await display.emulateMedia({ reducedMotion: "reduce" });
+    expect(await marquee(title)).toMatchObject({
+      name: "none",
+      ellipsis: true,
+      fits: true,
+    });
+    await display.emulateMedia({ reducedMotion: "no-preference" });
+    expect((await marquee(title)).name).toBe("kfMarquee");
+
+    expect(karafriends.displayErrors).toEqual([]);
   });
 });
 
@@ -229,13 +430,17 @@ test.describe("readings and singers on the TV", () => {
   test("the corner and the strip show the queuer's reading instead of the text, and the artist apart from the singer", async ({
     display,
   }) => {
-    // The corner, for the 4 seconds it shows song 1.
+    // The corner, for the 4 seconds it shows song 1: the singer's initial
+    // and whole nickname.
     const corner = display
       .getByRole("status")
       .filter({ hasText: "Now playing" });
     await expect(corner.getByText("こい", { exact: true })).toBeVisible();
     await expect(corner.getByText("ほしのげん", { exact: true })).toBeVisible();
-    await expect(corner.getByText("Ken", { exact: true })).toBeVisible();
+    await expect(corner.getByText("K", { exact: true })).toBeVisible();
+    const cornerNickname = corner.getByText("Ken", { exact: true });
+    await expect(cornerNickname).toBeVisible();
+    expect((await cornerNickname.boundingBox())!.width).toBeGreaterThan(10);
     await expect(corner).not.toContainText("恋");
     await expect(corner).not.toContainText("·");
 
@@ -247,16 +452,23 @@ test.describe("readings and singers on the TV", () => {
       .getByRole("listitem");
     await expect(rows).toHaveCount(2);
     // Each its own element: an artist joined to the singer wouldn't match.
-    for (const text of ["senbonzakura", "kurousapii", "Ken"]) {
+    for (const text of ["senbonzakura", "kurousapii", "K"]) {
       await expect(rows.nth(0).getByText(text, { exact: true })).toBeVisible();
     }
     await expect(rows.nth(0)).not.toContainText("千本桜");
     // As written: no mode, and LiSA has no reading to give.
-    for (const text of ["紅蓮華", "LiSA", "Ken"]) {
+    for (const text of ["紅蓮華", "LiSA", "K"]) {
       await expect(rows.nth(1).getByText(text, { exact: true })).toBeVisible();
     }
     for (const row of await rows.allTextContents()) {
       expect(row).not.toContain("·");
+    }
+    // Up next shows the singer as the initial only; the nickname is there
+    // for screen readers, but takes no room.
+    for (const row of await rows.all()) {
+      await expect(row).toContainText("Ken");
+      const nickname = row.getByText("Ken", { exact: true });
+      expect((await nickname.boundingBox())!.width).toBeLessThanOrEqual(1);
     }
   });
 });

@@ -64,7 +64,7 @@ function setup() {
     publish() {},
     subscribe(listener) {
       listeners.add(listener);
-      listener({ type: "state", state: liveState });
+      listener({ type: "state", state: liveState, sentAt: 0 });
       return () => listeners.delete(listener);
     },
   };
@@ -226,7 +226,7 @@ describe("subscribeLive", () => {
     };
     emit(emote);
     assert.deepEqual(display.sent, [
-      [IPC_CHANNELS.live, { type: "state", state: liveState }],
+      [IPC_CHANNELS.live, { type: "state", state: liveState, sentAt: 0 }],
       [IPC_CHANNELS.live, emote],
     ]);
   });

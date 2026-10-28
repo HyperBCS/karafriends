@@ -1,0 +1,104 @@
+@use "../../tokens" as *;
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+}
+
+// As a text field's label.
+.label {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $kf-space-1;
+  min-width: 0;
+  min-height: $kf-tap;
+  margin: 0;
+  padding: 0 $kf-space-2;
+  border: none;
+  border-radius: $kf-tap;
+  background: none;
+  color: $kf-muted;
+  font: inherit;
+  font-size: $kf-text-body;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+
+  // Not the mixins: in /dev/ui, data-demo shows pressed on the choices not
+  // picked, and focus on the picked one.
+  &:active:not([aria-checked="true"]),
+  [data-demo="pressed"] &:not([aria-checked="true"]) {
+    @include kf-press-overlay;
+  }
+
+  &:focus-visible,
+  [data-demo="focus"] &[aria-checked="true"] {
+    @include kf-focus-ring;
+  }
+}
+
+// The settings' choices: one pill-shaped row sunk into the card, each
+// choice an equal share, the picked one raised out of it: filled in the
+// accent, with a tick.
+.row {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: $kf-tap;
+  @include kf-sunken;
+
+  .choice {
+    flex: 1 1 0;
+
+    &[aria-checked="true"] {
+      background-color: $kf-accent-fill;
+      color: $kf-on-accent;
+      box-shadow: $kf-shadow-raise;
+      cursor: default;
+    }
+  }
+}
+
+// The picked choice's tick.
+.tick {
+  display: inline-flex;
+  font-size: 18px;
+}
+
+// Small chips side by side, lighter than the row: outlined, and the picked
+// one tinted with the accent, in the text's color.
+.chips {
+  display: flex;
+  gap: $kf-space-2;
+
+  .choice {
+    position: relative;
+    min-height: 36px;
+    padding: 0 $kf-space-3;
+    border: 1px solid $kf-border-strong;
+
+    // Taps just above and below the chip count too: a 44px target.
+    &::after {
+      content: "";
+      position: absolute;
+      inset: -5px -1px;
+    }
+
+    &[aria-checked="true"] {
+      border-color: $kf-tint-edge;
+      background-color: $kf-tint;
+      color: $kf-text;
+      cursor: default;
+    }
+  }
+}

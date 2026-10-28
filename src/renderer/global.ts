@@ -69,6 +69,8 @@ declare global {
         inputDevice_status: (deviceId: number) => string;
         // How it is open: "Shared, 48 kHz, 480 samples (10.0 ms)".
         inputDevice_format: (deviceId: number) => string;
+        // The loudest sample, 0 to 1, since the last time it was asked.
+        inputDevice_level: (deviceId: number) => number;
         inputDevice_getPitch: (deviceId: number) => {
           midiNumber: number;
           confidence: number;

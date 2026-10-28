@@ -27,10 +27,10 @@ import {
 } from "./playback";
 import Player from "./Player";
 import QRCode from "./QRCode";
-import Settings from "./Settings";
+import Settings, { SETTINGS_TABS, type SettingsTab } from "./Settings";
 import UpNext from "./UpNext";
 import type { Announcement } from "./useSongPlayer";
-import KarafriendsAudio from "./webAudio";
+import KarafriendsAudio, { type SongOutput } from "./webAudio";
 
 // How long an announcement stays in the corner.
 const ANNOUNCE_MS = 4000;
@@ -75,6 +75,22 @@ function saveMicOutput({ name, rate, bufferSize }: MicOutput) {
   save(MIC_OUTPUT_BUFFER_KEY, bufferSize);
 }
 
+// The output the songs play through (an id from enumerateDevices, and
+// its name, to show while it isn't connected); not set for the system
+// default.
+const SONG_OUTPUT_KEY = "songOutput";
+
+function savedSongOutput(): SongOutput | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SONG_OUTPUT_KEY) ?? "null");
+    return typeof saved?.id === "string" && typeof saved?.label === "string"
+      ? saved
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // Windows mics: "exclusive" (not set for shared), and the buffer size an
 // exclusive mic asks for (not set for the smallest).
 const MIC_MODE_KEY = "micMode";
@@ -85,6 +101,18 @@ function savedMicMode(): MicMode {
     exclusive: localStorage.getItem(MIC_MODE_KEY) === "exclusive",
     bufferSize: savedNumber(MIC_BUFFER_KEY),
   };
+}
+
+// "off" when DAM and Joysound songs show no pitch bars (the piano roll);
+// not set for on.
+const PITCH_BARS_KEY = "pitchBars";
+
+// Settings' open tab, to open on it the next time.
+const SETTINGS_TAB_KEY = "settingsTab";
+
+function savedSettingsTab(): SettingsTab {
+  const saved = localStorage.getItem(SETTINGS_TAB_KEY);
+  return SETTINGS_TABS.find((tab) => tab === saved) ?? "accounts";
 }
 
 // How the phones tell the mics apart (MicInfo.id).
@@ -161,6 +189,7 @@ function App(props: {
   const [levels, setLevels] = useState(savedLevels);
   const [micOutput, setMicOutput] = useState(savedMicOutput);
   const [micMode, setMicModeState] = useState(savedMicMode);
+  const [songOutput, setSongOutput] = useState(savedSongOutput);
   // The mic lists this display sent with setMics lately, as levelsKey.
   const sentMics = useRef<string[]>([]);
   const seenLiveMics = useRef<MicInfo[] | undefined>(undefined);
@@ -174,8 +203,12 @@ function App(props: {
   const [hostname, setHostname] = useState(
     `${HOSTNAME}:${window.karafriends.remoconPort()}`,
   );
+  const [pitchBars, setPitchBars] = useState(
+    () => localStorage.getItem(PITCH_BARS_KEY) !== "off",
+  );
   const [upNextVisible, setUpNextVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(savedSettingsTab);
   const [announcements, setAnnouncements] = useState<
     (Announcement & { id: number })[]
   >([]);
@@ -282,6 +315,30 @@ function App(props: {
     setMicOutput(output);
   };
 
+  // The saved song output, once: one that isn't connected leaves the
+  // songs on the system default.
+  useEffect(() => {
+    const saved = savedSongOutput();
+    if (saved) {
+      props.audio.setOutput(saved.id).catch((err) => {
+        console.warn(`The song output ${saved.label} isn't there:`, err);
+      });
+    }
+  }, [props.audio]);
+
+  // Kept only once the songs play there.
+  const changeSongOutput = async (output: SongOutput | null) => {
+    try {
+      await props.audio.setOutput(output?.id ?? "");
+    } catch (err) {
+      console.error(`Couldn't switch the songs to ${output?.label}:`, err);
+      return;
+    }
+    if (output) localStorage.setItem(SONG_OUTPUT_KEY, JSON.stringify(output));
+    else localStorage.removeItem(SONG_OUTPUT_KEY);
+    setSongOutput(output);
+  };
+
   // Every mic reopens in the new mode.
   const changeMicMode = (mode: MicMode) => {
     setMicMode(mode);
@@ -299,6 +356,17 @@ function App(props: {
   const changeUiScale = (scale: number) => {
     localStorage.setItem(UI_SCALE_KEY, String(scale));
     setUiScale(scale);
+  };
+
+  // A song that's playing gains or loses them at once.
+  const changePitchBars = (on: boolean) => {
+    save(PITCH_BARS_KEY, on ? null : "off");
+    setPitchBars(on);
+  };
+
+  const changeSettingsTab = (tab: SettingsTab) => {
+    localStorage.setItem(SETTINGS_TAB_KEY, tab);
+    setSettingsTab(tab);
   };
 
   useEffect(() => props.audio.avOffset(avOffsetMs), [props.audio, avOffsetMs]);
@@ -346,11 +414,14 @@ function App(props: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // The first launch, with no DAM or Joysound login, opens Settings.
+  // The first launch, with no DAM or Joysound login, opens Settings on
+  // Accounts.
   useEffect(() => {
     call("getSettings", {}).then(
       ({ isFirstRun }) => {
-        if (isFirstRun) setSettingsOpen(true);
+        if (!isFirstRun) return;
+        setSettingsTab("accounts");
+        setSettingsOpen(true);
       },
       (err) => console.error("Couldn't load the settings:", err),
     );
@@ -380,6 +451,7 @@ function App(props: {
             audio={props.audio}
             announce={announce}
             avOffsetMs={avOffsetMs}
+            pitchBars={pitchBars}
           />
           {!idle && !settingsOpen ? (
             <QRCode hostname={hostname} corner />
@@ -396,6 +468,8 @@ function App(props: {
         <Announcements items={announcements} />
         {settingsOpen ? (
           <Settings
+            tab={settingsTab}
+            onTabChange={changeSettingsTab}
             onClose={() => setSettingsOpen(false)}
             hostname={hostname}
             onHostnameChange={setHostname}
@@ -410,10 +484,14 @@ function App(props: {
             onMicOutputChange={changeMicOutput}
             micMode={micMode}
             onMicModeChange={changeMicMode}
+            songOutput={songOutput}
+            onSongOutputChange={changeSongOutput}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}
             onUiScaleChange={changeUiScale}
+            pitchBars={pitchBars}
+            onPitchBarsChange={changePitchBars}
             audioLatencyMs={props.audio.latencyMs()}
           />
         ) : null}

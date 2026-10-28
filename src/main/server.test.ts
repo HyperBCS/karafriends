@@ -111,6 +111,7 @@ describe("POST /api/<method>", () => {
       "getSettings",
       "getToolsStatus",
       "importConfig",
+      "reportSongPosition",
       "restartApp",
       "setAdminPassword",
       "setMics",
@@ -368,6 +369,7 @@ describe("event stream limits", () => {
   const state = (pitchShiftSemis: number): LiveEvent => ({
     type: "state",
     state: { pitchShiftSemis } as LiveState,
+    sentAt: 0,
   });
   const emote: LiveEvent = {
     type: "emote",

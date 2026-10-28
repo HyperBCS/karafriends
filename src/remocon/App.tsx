@@ -13,13 +13,13 @@ import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
-import { MdHistory, MdHome, MdPerson } from "./icons";
+import { MdHistory, MdHome, MdSettings } from "./icons";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
 import HistoryPage from "./pages/HistoryPage";
 import NiconicoPage from "./pages/NiconicoPage";
-import ProfilePage from "./pages/ProfilePage";
 import SearchPage from "./pages/SearchPage";
+import SettingsPage from "./pages/SettingsPage";
 import SongPage from "./pages/SongPage";
 import YouTubePage from "./pages/YouTubePage";
 
@@ -58,7 +58,7 @@ const App = () => (
   </HashRouter>
 );
 
-type Place = "home" | "history" | "profile";
+type Place = "home" | "history" | "settings";
 
 // The top bar's three places, in the same order on every screen: Home at
 // the far right.
@@ -70,10 +70,10 @@ const PLACES = [
     icon: <MdHistory />,
   },
   {
-    place: "profile",
-    to: "/profile",
-    label: "nav.profile",
-    icon: <MdPerson />,
+    place: "settings",
+    to: "/settings",
+    label: "nav.settings",
+    icon: <MdSettings />,
   },
   { place: "home", to: "/", label: "nav.home", icon: <MdHome /> },
 ] as const;
@@ -84,13 +84,13 @@ interface ScreenProps {
   // the accent and does nothing. The search screen has nowhere to go back
   // to.
   current?: Place;
-  // The profile screen on a first visit: no back button, and the three
+  // The settings screen on a first visit: no back button, and the three
   // buttons disabled until there's a nickname.
   firstVisit?: boolean;
   children: React.ReactNode;
 }
 
-// One screen: the top bar (back, the title, and History, Profile and Home)
+// One screen: the top bar (back, the title, and History, Settings and Home)
 // and the screen's content below it.
 const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   const navigate = useNavigate();
@@ -143,7 +143,7 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
 };
 
 // The remote's screens above the now-playing sheet. A phone without a
-// nickname gets the profile screen, and nothing else, until it picks one.
+// nickname gets the settings screen, and nothing else, until it picks one.
 const Shell = () => {
   const { nickname } = useUserIdentity();
   const { pathname } = useLocation();
@@ -157,11 +157,11 @@ const Shell = () => {
   }, []);
 
   if (!nickname) {
-    if (pathname !== "/profile") return <Navigate replace to="/profile" />;
+    if (pathname !== "/settings") return <Navigate replace to="/settings" />;
     return (
       <div className={styles.app}>
-        <Screen title={t("profile.heading")} current="profile" firstVisit>
-          <ProfilePage firstVisit />
+        <Screen title={t("settings.heading")} current="settings" firstVisit>
+          <SettingsPage firstVisit />
         </Screen>
       </div>
     );
@@ -248,13 +248,15 @@ const Shell = () => {
           }
         />
         <Route
-          path="/profile"
+          path="/settings"
           element={
-            <Screen title={t("profile.heading")} current="profile">
-              <ProfilePage />
+            <Screen title={t("settings.heading")} current="settings">
+              <SettingsPage />
             </Screen>
           }
         />
+        {/* The settings' old address, from when they were the profile. */}
+        <Route path="/profile" element={<Navigate replace to="/settings" />} />
         {/* An old address (the six search pages), or a mistyped one. */}
         <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>

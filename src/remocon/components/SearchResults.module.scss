@@ -1,9 +1,6 @@
 @use "../tokens" as *;
 
+// In line with the cards.
 .error {
-  margin: $kf-space-4 $kf-space-4 0;
-}
-
-.list {
-  margin-top: $kf-space-4;
+  margin: $kf-space-3 $kf-card-inset 0;
 }

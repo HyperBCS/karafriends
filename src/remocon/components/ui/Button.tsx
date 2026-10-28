@@ -40,8 +40,10 @@ export interface IconButtonProps extends Omit<
   // What it does, for screen readers (and the e2e tests): "Pause", "Skip".
   label: string;
   icon: React.ReactNode;
-  // accent: the main control in a group, such as play. danger: removes.
-  tone?: "default" | "accent" | "danger";
+  // accent: a toggle or the action that matters most in a row of icons.
+  // filled: the main control, a raised accent circle (play). muted: a
+  // quieter one beside it (restart, skip). danger: removes.
+  tone?: "default" | "accent" | "filled" | "muted" | "danger";
 }
 
 // A 44px square button with a 28px icon and no text. Pass aria-pressed for
@@ -61,6 +63,8 @@ export const IconButton = ({
       styles.iconButton,
       {
         [styles.accent]: tone === "accent",
+        [styles.filled]: tone === "filled",
+        [styles.mutedIcon]: tone === "muted",
         [styles.dangerIcon]: tone === "danger",
       },
       className,

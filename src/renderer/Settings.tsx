@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 import {
   type ApiOutput,
   type LoginService,
+  type Settings as SavedSettings,
   type SettingsChanges,
   type ToolStatus,
   type ToolsStatus,
@@ -27,12 +28,127 @@ import {
   refreshInputDevices,
 } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
+import type { SongOutput } from "./webAudio";
 import "./Settings.css";
 
 type Loaded = ApiOutput<"getSettings">;
 
 type Section =
   LoginService | "admin" | "queue" | "network" | "tools" | "config";
+
+// The tabs down the left, in order.
+export const SETTINGS_TABS = [
+  "accounts",
+  "party",
+  "sound",
+  "display",
+  "advanced",
+] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+const TAB_NAMES: Record<SettingsTab, string> = {
+  accounts: "Accounts",
+  party: "Party",
+  sound: "Sound",
+  display: "Display",
+  advanced: "Advanced",
+};
+
+// The tab each section's messages show on.
+const SECTION_TABS: Record<Section, SettingsTab> = {
+  dam: "accounts",
+  joysound: "accounts",
+  admin: "party",
+  queue: "party",
+  network: "party",
+  tools: "advanced",
+  config: "advanced",
+};
+
+// The tab each setting is on, to mark the ones an import changed.
+const SETTING_TABS: Record<keyof SavedSettings, SettingsTab> = {
+  damUsername: "accounts",
+  damPassword: "accounts",
+  useLowBitrateUrl: "accounts",
+  joysoundEmail: "accounts",
+  joysoundPassword: "accounts",
+  adminPasswordSet: "party",
+  supervisedMode: "party",
+  everyoneIsAdmin: "party",
+  paxSongQueueLimit: "party",
+  remoconPort: "party",
+};
+
+// The place each key moves to, from the open tab's.
+const TAB_KEYS: Record<string, (at: number) => number> = {
+  ArrowUp: (at) => at - 1,
+  ArrowDown: (at) => at + 1,
+  Home: () => 0,
+  End: () => SETTINGS_TABS.length - 1,
+};
+
+// The tabs down the left. Up and Down (Home and End too) open the one
+// before or after, round the ends; only the open one is in the Tab order. A
+// dot marks one with something to look at. Focused when it appears, so the
+// keys work as soon as Settings opens.
+function SettingsTabs(props: {
+  tab: SettingsTab;
+  onChange: (tab: SettingsTab) => void;
+  needsLook: (tab: SettingsTab) => boolean;
+  tabId: (tab: SettingsTab) => string;
+  panelId: string;
+}) {
+  const buttons = useRef(new Map<SettingsTab, HTMLButtonElement>());
+  const open = useRef(props.tab);
+  useEffect(() => buttons.current.get(open.current)?.focus(), []);
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const move = TAB_KEYS[event.key];
+    if (!move || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const count = SETTINGS_TABS.length;
+    const at = move(SETTINGS_TABS.indexOf(props.tab));
+    const tab = SETTINGS_TABS[(at + count) % count];
+    props.onChange(tab);
+    buttons.current.get(tab)?.focus();
+  };
+  return (
+    <div
+      className="settingsTabs"
+      role="tablist"
+      aria-label="Sections"
+      aria-orientation="vertical"
+      onKeyDown={onKeyDown}
+    >
+      {SETTINGS_TABS.map((tab) => {
+        const selected = tab === props.tab;
+        const needsLook = !selected && props.needsLook(tab);
+        return (
+          <button
+            key={tab}
+            ref={(button) => {
+              if (button) buttons.current.set(tab, button);
+              else buttons.current.delete(tab);
+            }}
+            type="button"
+            role="tab"
+            id={props.tabId(tab)}
+            className="settingsTab"
+            aria-selected={selected}
+            aria-controls={selected ? props.panelId : undefined}
+            aria-description={needsLook ? "Needs a look" : undefined}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => props.onChange(tab)}
+          >
+            {TAB_NAMES[tab]}
+            {needsLook ? (
+              <span className="settingsTabDot" aria-hidden="true" />
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // What happened in a section, under it.
 interface Message {
@@ -41,14 +157,25 @@ interface Message {
   tone?: "busy" | "problem";
 }
 
+// A short line under a field or a group, in the muted color.
+function Hint(props: { id?: string; children: React.ReactNode }) {
+  return (
+    <p id={props.id} className="settingsHint">
+      {props.children}
+    </p>
+  );
+}
+
 // A text or number field that saves when the host leaves it or presses
-// Enter, if it changed.
+// Enter, if it changed; with a hint under it, if it needs one.
 function TextSetting(props: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
   type?: "text" | "password" | "number";
+  hint?: string;
 }) {
+  const hintId = useId();
   const [draft, setDraft] = useState(props.value);
   const [value, setValue] = useState(props.value);
   // A new saved value replaces the draft, unless the host is typing one.
@@ -59,7 +186,7 @@ function TextSetting(props: {
   const commit = () => {
     if (draft !== props.value) props.onCommit(draft);
   };
-  return (
+  const field = (
     <label className="kfLabel">
       {props.label}
       <input
@@ -68,6 +195,7 @@ function TextSetting(props: {
         value={draft}
         autoComplete="off"
         spellCheck={false}
+        aria-describedby={props.hint ? hintId : undefined}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -82,6 +210,13 @@ function TextSetting(props: {
       />
     </label>
   );
+  if (!props.hint) return field;
+  return (
+    <div className="settingsField">
+      {field}
+      <Hint id={hintId}>{props.hint}</Hint>
+    </div>
+  );
 }
 
 // A checkbox that saves at once, and shows the new state while it does.
@@ -90,7 +225,9 @@ function Checkbox(props: {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => Promise<boolean>;
+  hint?: string;
 }) {
+  const hintId = useId();
   const [checked, setChecked] = useState(props.checked);
   const [saved, setSaved] = useState(props.checked);
   if (props.checked !== saved) {
@@ -98,19 +235,27 @@ function Checkbox(props: {
     setChecked(props.checked);
   }
   return (
-    <label className="kfCheckbox">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => {
-          setChecked(event.target.checked);
-          void props.onChange(event.target.checked).then((ok) => {
-            if (!ok) setChecked(props.checked);
-          });
-        }}
-      />
-      {props.label}
-    </label>
+    <div className="settingsField">
+      <label className="kfCheckbox">
+        <input
+          type="checkbox"
+          checked={checked}
+          aria-describedby={props.hint ? hintId : undefined}
+          onChange={(event) => {
+            setChecked(event.target.checked);
+            void props.onChange(event.target.checked).then((ok) => {
+              if (!ok) setChecked(props.checked);
+            });
+          }}
+        />
+        {props.label}
+      </label>
+      {props.hint ? (
+        <p id={hintId} className="settingsHint settingsCheckboxHint">
+          {props.hint}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -188,12 +333,12 @@ function DownloadsSection() {
 
   return (
     <SettingsSection title="Downloads" message={message}>
-      <p className="settingsNote">
-        {info
-          ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
-          : "…"}
-      </p>
       <div className="settingsActions">
+        <p className="settingsValue">
+          {info
+            ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
+            : "…"}
+        </p>
         <button
           type="button"
           className="kfButton"
@@ -207,11 +352,92 @@ function DownloadsSection() {
   );
 }
 
+// Where the songs play: the system default, or an output as Chromium lists
+// it. A saved one that isn't connected shows as such.
+function SongOutputSetting(props: {
+  output: SongOutput | null;
+  onChange: (output: SongOutput | null) => void;
+}) {
+  const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(
+      (devices) =>
+        setOutputs(
+          devices
+            // "default" and "communications" are the system's choices:
+            // System default stands for them.
+            .filter(
+              ({ kind, deviceId }) =>
+                kind === "audiooutput" &&
+                deviceId !== "default" &&
+                deviceId !== "communications",
+            )
+            .map(({ deviceId, label }) => ({
+              id: deviceId,
+              label: label || "Unnamed output",
+            })),
+        ),
+      () => setOutputs([]),
+    );
+  }, []);
+  const { output } = props;
+  const missing =
+    output !== null &&
+    outputs !== null &&
+    !outputs.some(({ id }) => id === output.id);
+  return (
+    <label className="kfLabel">
+      Song output
+      <select
+        className="kfField"
+        value={output?.id ?? ""}
+        onChange={(event) =>
+          props.onChange(
+            outputs?.find(({ id }) => id === event.target.value) ?? null,
+          )
+        }
+      >
+        <option value="">System default</option>
+        {output !== null && (outputs === null || missing) ? (
+          <option value={output.id} disabled={missing}>
+            {missing ? `${output.label} (not connected)` : output.label}
+          </option>
+        ) : null}
+        {(outputs ?? []).map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
 
-// The settings screen, over everything. Every field saves as the host
-// leaves it; each section says under it what happened.
+// The app names a setting by its config.yaml key when it refuses a value;
+// this screen, by its label.
+const LABELS: Record<string, string> = {
+  paxSongQueueLimit: "Songs per phone",
+  remoconPort: "Port",
+};
+
+const labelled = (problem: string) =>
+  problem.replace(/^\w+/, (key) => LABELS[key] ?? key);
+
+// The port phones use, when it isn't the Port field's: under yarn dev, they
+// load the remote from the Vite dev server, which passes /api on to the
+// app's server (README, "yarn dev"). Never in a build.
+const devServerPort = (savedPort: number): number | null => {
+  const port = window.karafriends.remoconPort();
+  return import.meta.env.DEV && port !== savedPort ? port : null;
+};
+
+// The settings screen, over everything, in tabs. Every field saves as the
+// host leaves it; each section says under it what happened.
 export default function Settings(props: {
+  tab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
   onClose: () => void;
   hostname: string;
   onHostnameChange: (hostname: string) => void;
@@ -225,10 +451,14 @@ export default function Settings(props: {
   onMicOutputChange: (output: MicOutput) => void;
   micMode: MicMode;
   onMicModeChange: (mode: MicMode) => void;
+  songOutput: SongOutput | null;
+  onSongOutputChange: (output: SongOutput | null) => void;
   avOffsetMs: number;
   onAvOffsetChange: (offsetMs: number) => void;
   uiScale: number;
   onUiScaleChange: (scale: number) => void;
+  pitchBars: boolean;
+  onPitchBarsChange: (on: boolean) => void;
   audioLatencyMs: number;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -236,16 +466,25 @@ export default function Settings(props: {
   const [messages, setMessages] = useState<
     Partial<Record<Section, Message | null>>
   >({});
+  // Tabs an import changed, until the host opens them.
+  const [unseen, setUnseen] = useState<ReadonlySet<SettingsTab>>(new Set());
+  const tabIds = useId();
+  const tabId = (tab: SettingsTab) => `${tabIds}-${tab}`;
+  const panelId = `${tabIds}-panel`;
   const [adminDraft, setAdminDraft] = useState("");
   const [tools, setTools] = useState<ToolsStatus | null>(null);
   const [updatingTools, setUpdatingTools] = useState(false);
   // Listed each time Settings opens: the outputs, and on Linux the inputs
-  // too, so a mic or an interface switched on since can be picked.
+  // too, so a mic plugged in since can be picked.
   const [outputs] = useState(() => {
     refreshInputDevices();
     return outputDevices();
   });
-  const [asio] = useState(asioStatus);
+  // Shown only when a driver won't load or ASIO didn't start.
+  const [asioProblem] = useState(() => {
+    const status = asioStatus();
+    return /won't load|didn't start/.test(status) ? status : null;
+  });
   // On Linux, the sound system and the mics' buffer sizes; null elsewhere.
   const [linux] = useState(linuxAudio);
   // What the native side says about the output while the mics work ("ok:
@@ -259,7 +498,11 @@ export default function Settings(props: {
   const say = (section: Section, message: Message | null) =>
     setMessages((previous) => ({ ...previous, [section]: message }));
 
-  const reload = async () => setLoaded(await call("getSettings", {}));
+  const reload = async () => {
+    const settings = await call("getSettings", {});
+    setLoaded(settings);
+    return settings;
+  };
 
   useEffect(() => {
     reload().catch((err) => setLoadProblem(String(err?.message ?? err)));
@@ -288,7 +531,10 @@ export default function Settings(props: {
     return act(section, async () => {
       const result = await call("setSettings", { settings: changes });
       if (!result.ok) {
-        return { text: result.problems.join(" "), tone: "problem" };
+        return {
+          text: result.problems.map(labelled).join(" "),
+          tone: "problem",
+        };
       }
       saved = true;
       await reload();
@@ -371,12 +617,19 @@ export default function Settings(props: {
       return saved ? { text: "Exported." } : null;
     });
 
+  // The tabs whose settings it changed get a dot. Passwords show masked,
+  // so a new one alone doesn't count.
   const importConfig = () =>
     act("config", async () => {
       const yaml = await window.karafriends.openTextFile();
       if (yaml === null) return null;
+      const before = (await call("getSettings", {})).settings;
       const result = await call("importConfig", { yaml });
-      await reload();
+      const after = (await reload()).settings;
+      const changed = (Object.keys(SETTING_TABS) as (keyof SavedSettings)[])
+        .filter((key) => before[key] !== after[key])
+        .map((key) => SETTING_TABS[key]);
+      setUnseen((tabs) => new Set([...tabs, ...changed]));
       return result.ok
         ? { text: "Imported.", list: result.problems }
         : {
@@ -433,6 +686,13 @@ export default function Settings(props: {
             onCommit={(value) => save(service, { [passKey]: value })}
           />
         </div>
+        {service === "dam" ? (
+          <Checkbox
+            label="Stream at a low bitrate"
+            checked={settings.useLowBitrateUrl}
+            onChange={(checked) => save("dam", { useLowBitrateUrl: checked })}
+          />
+        ) : null}
         <div className="settingsActions">
           <button
             type="button"
@@ -446,274 +706,342 @@ export default function Settings(props: {
     );
   };
 
+  // A problem under one of its sections, a restart to do, or what an import
+  // changed.
+  const needsLook = (tab: SettingsTab) =>
+    unseen.has(tab) ||
+    (tab === "party" && loaded.needsRestart) ||
+    Object.entries(messages).some(
+      ([section, message]) =>
+        message?.tone === "problem" && SECTION_TABS[section as Section] === tab,
+    );
+
+  const openTab = (tab: SettingsTab) => {
+    props.onTabChange(tab);
+    setUnseen((tabs) => new Set([...tabs].filter((seen) => seen !== tab)));
+  };
+
+  const devPort = devServerPort(settings.remoconPort);
+
   return (
     <div className="settings" role="dialog" aria-label="Settings">
       {header}
-      <div className="settingsBody">
-        {loaded.isFirstRun ? (
-          <p className="settingsBanner">
-            Add your DAM or Joysound login to search their catalogs. YouTube
-            works without one.
-          </p>
-        ) : null}
-
-        {loginSection("dam")}
-        {loginSection("joysound")}
-
-        <SettingsSection
-          title="Admin password"
-          message={messages.admin ?? undefined}
+      <div className="settingsMain">
+        <SettingsTabs
+          tab={props.tab}
+          onChange={openTab}
+          needsLook={needsLook}
+          tabId={tabId}
+          panelId={panelId}
+        />
+        {/* A new tab starts at its top. */}
+        <div
+          key={props.tab}
+          className="settingsPanel"
+          role="tabpanel"
+          id={panelId}
+          aria-labelledby={tabId(props.tab)}
         >
-          <p className="settingsNote">
-            {settings.adminPasswordSet
-              ? "Phones that sign in with it can reorder, skip and remove any song."
-              : "None set: no phone can be an admin."}
-          </p>
-          <form
-            className="settingsInline"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (adminDraft) setAdminPassword(adminDraft);
-            }}
-          >
-            <label className="kfLabel">
-              {settings.adminPasswordSet ? "New password" : "Password"}
-              <input
-                className="kfField"
-                type="password"
-                autoComplete="new-password"
-                value={adminDraft}
-                onChange={(event) => setAdminDraft(event.target.value)}
+          {props.tab === "accounts" ? (
+            <>
+              {loaded.isFirstRun ? (
+                <p className="settingsBanner">
+                  Add your DAM or Joysound login to search their catalogs.
+                  YouTube works without one.
+                </p>
+              ) : null}
+              {loginSection("dam")}
+              {loginSection("joysound")}
+            </>
+          ) : null}
+
+          {props.tab === "party" ? (
+            <>
+              <SettingsSection
+                title="Admin password"
+                message={messages.admin ?? undefined}
+              >
+                <form
+                  className="settingsInline"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (adminDraft) setAdminPassword(adminDraft);
+                  }}
+                >
+                  <label className="kfLabel">
+                    {settings.adminPasswordSet ? "New password" : "Password"}
+                    <input
+                      className="kfField"
+                      type="password"
+                      autoComplete="new-password"
+                      value={adminDraft}
+                      onChange={(event) => setAdminDraft(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="kfButton primary"
+                    disabled={adminDraft === ""}
+                  >
+                    {settings.adminPasswordSet
+                      ? "Change password"
+                      : "Set password"}
+                  </button>
+                  {settings.adminPasswordSet ? (
+                    <button
+                      type="button"
+                      className="kfButton"
+                      onClick={() => setAdminPassword("")}
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </form>
+                <Hint>
+                  {settings.adminPasswordSet
+                    ? "Admins can reorder, skip and remove any song."
+                    : "Set one to let phones sign in as admins."}
+                </Hint>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Queue"
+                message={messages.queue ?? undefined}
+              >
+                <Checkbox
+                  label="Supervised mode"
+                  hint="Only the singer or an admin can pause, skip or remove a song."
+                  checked={settings.supervisedMode}
+                  onChange={(checked) =>
+                    save("queue", { supervisedMode: checked })
+                  }
+                />
+                <Checkbox
+                  label="Everyone is an admin"
+                  hint="Every phone gets the admin controls, no password needed."
+                  checked={settings.everyoneIsAdmin}
+                  onChange={(checked) =>
+                    save("queue", { everyoneIsAdmin: checked })
+                  }
+                />
+                <div className="settingsFields">
+                  <TextSetting
+                    label="Songs per phone"
+                    hint="Queued at once. 0 means no limit."
+                    type="number"
+                    value={String(settings.paxSongQueueLimit)}
+                    onCommit={(value) =>
+                      saveNumber(
+                        "queue",
+                        "paxSongQueueLimit",
+                        "Songs per phone",
+                        value,
+                      )
+                    }
+                  />
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Phones"
+                message={messages.network ?? undefined}
+              >
+                <div className="settingsFields">
+                  <HostnameSetting
+                    hostname={props.hostname}
+                    onChange={props.onHostnameChange}
+                  />
+                  <TextSetting
+                    label="Port"
+                    type="number"
+                    value={String(settings.remoconPort)}
+                    hint={
+                      devPort === null
+                        ? undefined
+                        : `Running with yarn dev: phones use the dev server's port, ${devPort}.`
+                    }
+                    onCommit={(value) =>
+                      saveNumber("network", "remoconPort", "Port", value)
+                    }
+                  />
+                </div>
+                <Hint>The QR code sends phones to this address.</Hint>
+                {loaded.needsRestart ? (
+                  <div className="settingsRestart">
+                    <p>Restart karafriends to use the new port.</p>
+                    <button
+                      type="button"
+                      className="kfButton primary"
+                      onClick={() =>
+                        act("network", async () => {
+                          await call("restartApp", {});
+                          return { text: "Restarting…", tone: "busy" };
+                        })
+                      }
+                    >
+                      Restart
+                    </button>
+                  </div>
+                ) : null}
+              </SettingsSection>
+            </>
+          ) : null}
+
+          {props.tab === "sound" ? (
+            <>
+              <SettingsSection title="Sound">
+                <div className="settingsFields">
+                  <SongOutputSetting
+                    output={props.songOutput}
+                    onChange={props.onSongOutputChange}
+                  />
+                  <label className="kfLabel">
+                    Audio/video offset
+                    <select
+                      className="kfField"
+                      value={props.avOffsetMs}
+                      onChange={(event) =>
+                        props.onAvOffsetChange(Number(event.target.value))
+                      }
+                    >
+                      {AV_OFFSETS.map((ms) => (
+                        <option key={ms} value={ms}>
+                          {ms > 0 ? `+${ms}` : ms} ms
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <Hint>
+                  Plus delays the sound, minus delays the lyrics. Output
+                  latency: {props.audioLatencyMs} ms.
+                </Hint>
+              </SettingsSection>
+
+              <SettingsSection title="Microphones">
+                <MicOutputSetting
+                  outputs={outputs}
+                  output={props.micOutput}
+                  onChange={props.onMicOutputChange}
+                />
+                {outputNote ? (
+                  <p className="settingsHint" role="status">
+                    {outputNote}
+                  </p>
+                ) : null}
+                {linux ? <Hint>{linux.status}</Hint> : null}
+                {asioProblem ? <Hint>{asioProblem}</Hint> : null}
+                <MicModeSetting
+                  mode={props.micMode}
+                  linux={linux}
+                  onChange={props.onMicModeChange}
+                />
+                {props.mics.map((mic, i) => (
+                  <MicrophoneSetting
+                    key={mic.deviceId}
+                    mic={mic}
+                    levels={props.micLevels(mic)}
+                    onChange={(name, channel) =>
+                      props.onChangeMic(i, name, channel)
+                    }
+                    onLevelsChange={(levels) =>
+                      props.onChangeLevels(mic, levels)
+                    }
+                    onRemove={() => props.onRemoveMic(i)}
+                  />
+                ))}
+                <AddMicrophone
+                  onAdd={(name, channel) =>
+                    props.onChangeMic(props.mics.length, name, channel)
+                  }
+                />
+              </SettingsSection>
+            </>
+          ) : null}
+
+          {props.tab === "display" ? (
+            <SettingsSection title="Display">
+              <div className="settingsFields">
+                <label className="kfLabel">
+                  UI scale
+                  <select
+                    className="kfField"
+                    value={props.uiScale}
+                    onChange={(event) =>
+                      props.onUiScaleChange(Number(event.target.value))
+                    }
+                  >
+                    {UI_SCALES.map((percent) => (
+                      <option key={percent} value={percent}>
+                        {percent}%
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <Checkbox
+                label="Pitch bars"
+                hint="On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them."
+                checked={props.pitchBars}
+                onChange={async (on) => {
+                  props.onPitchBarsChange(on);
+                  return true;
+                }}
               />
-            </label>
-            <button
-              type="submit"
-              className="kfButton primary"
-              disabled={adminDraft === ""}
-            >
-              {settings.adminPasswordSet ? "Change password" : "Set password"}
-            </button>
-            {settings.adminPasswordSet ? (
-              <button
-                type="button"
-                className="kfButton"
-                onClick={() => setAdminPassword("")}
-              >
-                Clear
-              </button>
-            ) : null}
-          </form>
-        </SettingsSection>
-
-        <SettingsSection title="Queue" message={messages.queue ?? undefined}>
-          <Checkbox
-            label="Supervised mode: only a song's singer or an admin can pause, skip or remove it"
-            checked={settings.supervisedMode}
-            onChange={(checked) => save("queue", { supervisedMode: checked })}
-          />
-          <Checkbox
-            label="Everyone is an admin: any phone can change the queue and playback, no password needed."
-            checked={settings.everyoneIsAdmin}
-            onChange={(checked) => save("queue", { everyoneIsAdmin: checked })}
-          />
-          <div className="settingsFields">
-            <TextSetting
-              label="Songs each phone may queue at once (0: no limit)"
-              type="number"
-              value={String(settings.paxSongQueueLimit)}
-              onCommit={(value) =>
-                saveNumber(
-                  "queue",
-                  "paxSongQueueLimit",
-                  "Songs each phone",
-                  value,
-                )
-              }
-            />
-          </div>
-          <Checkbox
-            label="Stream DAM songs at a low bitrate"
-            checked={settings.useLowBitrateUrl}
-            onChange={(checked) => save("queue", { useLowBitrateUrl: checked })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Remote port"
-          message={messages.network ?? undefined}
-        >
-          <p className="settingsNote">
-            A new port takes effect when karafriends restarts.
-          </p>
-          <div className="settingsFields">
-            <TextSetting
-              label="Port for phones"
-              type="number"
-              value={String(settings.remoconPort)}
-              onCommit={(value) =>
-                saveNumber("network", "remoconPort", "Port for phones", value)
-              }
-            />
-          </div>
-          {loaded.needsRestart ? (
-            <div className="settingsRestart">
-              <p>Restart karafriends to use the new port.</p>
-              <button
-                type="button"
-                className="kfButton primary"
-                onClick={() =>
-                  act("network", async () => {
-                    await call("restartApp", {});
-                    return { text: "Restarting…", tone: "busy" };
-                  })
-                }
-              >
-                Restart
-              </button>
-            </div>
+            </SettingsSection>
           ) : null}
-        </SettingsSection>
 
-        <SettingsSection title="QR code address">
-          <p className="settingsNote">
-            Pick the address phones on this network can reach.
-          </p>
-          <HostnameSetting
-            hostname={props.hostname}
-            onChange={props.onHostnameChange}
-          />
-        </SettingsSection>
+          {props.tab === "advanced" ? (
+            <>
+              <DownloadsSection />
 
-        <SettingsSection title="Display">
-          <div className="settingsFields">
-            <label className="kfLabel">
-              Audio/video offset
-              <select
-                className="kfField"
-                value={props.avOffsetMs}
-                onChange={(event) =>
-                  props.onAvOffsetChange(Number(event.target.value))
-                }
+              <SettingsSection
+                title="Tools"
+                message={messages.tools ?? undefined}
               >
-                {AV_OFFSETS.map((ms) => (
-                  <option key={ms} value={ms}>
-                    {ms > 0 ? `+${ms}` : ms} ms
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="kfLabel">
-              UI scale
-              <select
-                className="kfField"
-                value={props.uiScale}
-                onChange={(event) =>
-                  props.onUiScaleChange(Number(event.target.value))
-                }
+                <dl className="settingsTools">
+                  <dt>yt-dlp</dt>
+                  <dd>{tools ? toolLine(tools.ytdlp) : "…"}</dd>
+                  <dt>ffmpeg</dt>
+                  <dd>{tools ? toolLine(tools.ffmpeg) : "…"}</dd>
+                </dl>
+                <div className="settingsActions">
+                  <button
+                    type="button"
+                    className="kfButton"
+                    disabled={updatingTools}
+                    onClick={updateTools}
+                  >
+                    {updatingTools ? "Updating tools…" : "Update tools"}
+                  </button>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Config file"
+                message={messages.config ?? undefined}
               >
-                {UI_SCALES.map((percent) => (
-                  <option key={percent} value={percent}>
-                    {percent}%
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <p className="settingsNote">
-            A plus offset delays the sound, a minus one the Joysound lyrics and
-            the piano roll. DAM's lyrics are in the video, and YouTube captions
-            and ad-hoc lyrics don't move.
-          </p>
-          <p className="settingsNote">
-            Measured audio output latency: {props.audioLatencyMs} ms
-          </p>
-        </SettingsSection>
-
-        <DownloadsSection />
-
-        <SettingsSection title="Microphones">
-          <MicOutputSetting
-            outputs={outputs}
-            output={props.micOutput}
-            onChange={props.onMicOutputChange}
-          />
-          <p className="settingsNote">{linux ? linux.status : asio}</p>
-          {outputNote ? (
-            <p className="settingsNote" role="status">
-              {outputNote}
-            </p>
+                <div className="settingsActions">
+                  <button
+                    type="button"
+                    className="kfButton"
+                    onClick={exportConfig}
+                  >
+                    Export config
+                  </button>
+                  <button
+                    type="button"
+                    className="kfButton"
+                    onClick={importConfig}
+                  >
+                    Import config
+                  </button>
+                </div>
+                <Hint>Includes the logins and passwords.</Hint>
+              </SettingsSection>
+            </>
           ) : null}
-          {linux ? (
-            <p className="settingsNote">
-              Every mic plays through this output; songs keep playing through
-              the system default.
-            </p>
-          ) : (
-            <p className="settingsNote">
-              Every mic plays through this output; songs keep playing through
-              the system default. An ASIO interface whose driver allows one
-              program at a time can't play the songs and the mics at once
-              (FlexASIO, ASIO4ALL, RME and MOTU drivers share; many others
-              don't).
-            </p>
-          )}
-          <MicModeSetting
-            mode={props.micMode}
-            linux={linux}
-            onChange={props.onMicModeChange}
-          />
-          {props.mics.map((mic, i) => (
-            <MicrophoneSetting
-              key={mic.deviceId}
-              mic={mic}
-              levels={props.micLevels(mic)}
-              onChange={(name, channel) => props.onChangeMic(i, name, channel)}
-              onLevelsChange={(levels) => props.onChangeLevels(mic, levels)}
-              onRemove={() => props.onRemoveMic(i)}
-            />
-          ))}
-          <AddMicrophone
-            onAdd={(name, channel) =>
-              props.onChangeMic(props.mics.length, name, channel)
-            }
-          />
-        </SettingsSection>
-
-        <SettingsSection title="Tools" message={messages.tools ?? undefined}>
-          <dl className="settingsTools">
-            <dt>yt-dlp</dt>
-            <dd>{tools ? toolLine(tools.ytdlp) : "…"}</dd>
-            <dt>ffmpeg</dt>
-            <dd>{tools ? toolLine(tools.ffmpeg) : "…"}</dd>
-          </dl>
-          <div className="settingsActions">
-            <button
-              type="button"
-              className="kfButton"
-              disabled={updatingTools}
-              onClick={updateTools}
-            >
-              {updatingTools ? "Updating tools…" : "Update tools"}
-            </button>
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Config file"
-          message={messages.config ?? undefined}
-        >
-          <p className="settingsNote">
-            Everything on this screen, logins and passwords included.
-          </p>
-          <div className="settingsActions">
-            <button type="button" className="kfButton" onClick={exportConfig}>
-              Export config
-            </button>
-            <button type="button" className="kfButton" onClick={importConfig}>
-              Import config
-            </button>
-          </div>
-        </SettingsSection>
+        </div>
       </div>
     </div>
   );

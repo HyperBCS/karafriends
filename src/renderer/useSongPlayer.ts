@@ -13,20 +13,32 @@ import { call, useLiveState } from "../common/apiClient";
 import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
+import { damMelody, type Melody } from "./melody";
 import { lowBitrateFallback } from "./playback";
 import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
 const POLL_INTERVAL_MS = 5 * 1000;
+// How often the display tells the server where the song is, besides on
+// every start, pause, stall and seek.
+const POSITION_REPORT_MS = 10 * 1000;
 // XXX: Another idea is to add some gain to the DAM videos?
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
-  | { kind: "dam"; scoringData: readonly number[] }
-  // telop: the song's .joy_02 lyrics, once loaded.
-  | { kind: "joysound"; telop: ArrayBuffer | null; lyricsMode: LyricsMode }
+  // melody: the pitch bars', from DAM's scoring data.
+  | { kind: "dam"; melody: Melody }
+  // telop: the song's .joy_02 lyrics, once loaded. file: its video, whose
+  // sound holds the guide melody the pitch bars come from.
+  | {
+      kind: "joysound";
+      songId: string;
+      file: string;
+      telop: ArrayBuffer | null;
+      lyricsMode: LyricsMode;
+    }
   | { kind: "youtube"; adhocLyrics: boolean }
   | { kind: "nico" }
   | null;
@@ -45,7 +57,8 @@ export interface Announcement {
 // the next song (popSong, which only the display may call) every 5 seconds,
 // and at once when the live queue stops being empty; it loads each song by
 // kind, follows the live playback state (pause, restart, skip), the key and
-// the guide melody level, and asks again when a song ends.
+// the guide melody level, tells the server where the song really is, and
+// asks again when a song ends.
 export default function useSongPlayer({
   videoRef,
   trackRef,
@@ -169,7 +182,7 @@ export default function useSongPlayer({
   // (one downloaded before the server checked): it goes, and the song
   // streams.
   const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
-    setOverlay({ kind: "dam", scoringData: song.scoringData });
+    setOverlay({ kind: "dam", melody: damMelody(song.scoringData) });
     const fileUrl = `karafriends://local/${song.songId}-${song.streamingUrlIdx}.mp4`;
     let downloaded = false;
     try {
@@ -219,9 +232,16 @@ export default function useSongPlayer({
     video: HTMLVideoElement,
     song: Extract<PoppedSong, { kind: "joysound" }>,
   ) => {
-    setOverlay({ kind: "joysound", telop: null, lyricsMode: song.lyricsMode });
     const background = song.youtubeVideoId ?? "default";
-    video.src = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const file = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const overlay = {
+      kind: "joysound",
+      songId: song.songId,
+      file,
+      lyricsMode: song.lyricsMode,
+    } as const;
+    setOverlay({ ...overlay, telop: null });
+    video.src = file;
     let telop: ArrayBuffer;
     try {
       telop = await fetch(
@@ -234,7 +254,7 @@ export default function useSongPlayer({
     }
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
-    setOverlay({ kind: "joysound", telop, lyricsMode: song.lyricsMode });
+    setOverlay({ ...overlay, telop });
     // At the gain the previous song left, as always.
     video.play();
   };
@@ -335,6 +355,35 @@ export default function useSongPlayer({
     };
     // Only on mount: the poll keeps itself going from then on.
   }, []);
+
+  // Tells the server where the song really is, for every countdown: as it
+  // loads, starts, pauses, stalls, seeks (the video's own controls) and
+  // resumes, and every 10 s in case one went missing. Not the video before
+  // a new song's loads (it has ended), nor one that failed.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const report = () => {
+      const song = songRef.current;
+      if (!song || video.ended || video.readyState < video.HAVE_METADATA) {
+        return;
+      }
+      call("reportSongPosition", {
+        songId: song.songId,
+        timestamp: song.timestamp,
+        position: video.currentTime,
+        length: isFinite(video.duration) ? video.duration : null,
+        playing: !video.paused && video.readyState >= video.HAVE_FUTURE_DATA,
+      }).catch((err) => console.error("Couldn't report the position:", err));
+    };
+    const events = ["loadedmetadata", "playing", "pause", "waiting", "seeked"];
+    for (const event of events) video.addEventListener(event, report);
+    const timer = setInterval(report, POSITION_REPORT_MS);
+    return () => {
+      for (const event of events) video.removeEventListener(event, report);
+      clearInterval(timer);
+    };
+  }, [videoRef]);
 
   // A song queued while nothing plays starts at once, not at the next poll
   // (which stays as the fallback). Only while a poll is armed: with none,

@@ -130,11 +130,7 @@ const SearchResults = ({ query, by, source }: Props) => {
           })}
         </InlineError>
       ))}
-      {rows.length > 0 && (
-        <List label={t("search.results")} className={styles.list}>
-          {rows}
-        </List>
-      )}
+      {rows.length > 0 && <List label={t("search.results")}>{rows}</List>}
       {loading && <Loader />}
       {!loading && failed.length === 0 && rows.length === 0 && (
         <EmptyState>{t("search.noResults")}</EmptyState>

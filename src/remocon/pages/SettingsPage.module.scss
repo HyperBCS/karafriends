@@ -1,0 +1,99 @@
+@use "../tokens" as *;
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-5;
+  padding-top: $kf-space-4;
+}
+
+// A group: its heading in small caps on the page, then its settings in a
+// card, each setting parted from the last by a hairline.
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-2;
+}
+
+.heading {
+  @include kf-caps-label;
+  padding: 0 calc(#{$kf-card-inset} + #{$kf-space-1});
+}
+
+.settings {
+  @include kf-card;
+  display: flex;
+  flex-direction: column;
+  margin: 0 $kf-card-inset;
+
+  > * {
+    padding: $kf-space-4;
+  }
+
+  > * + * {
+    border-top: 1px solid $kf-line;
+  }
+}
+
+// One setting: its control, then a button or help text for it.
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-2;
+
+  > button {
+    align-self: flex-start;
+  }
+}
+
+// A label above what it names, as a text field's is.
+.label {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: normal;
+}
+
+.text {
+  color: $kf-text;
+  font-size: $kf-text-body;
+}
+
+.help {
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}
+
+// The admin's mics: each one's label, then its two sliders.
+.mics {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// An admin's level slider: the label, then the slider, a full tap target
+// tall. The labels, with their values, take one width, so the sliders
+// line up.
+.slider {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  align-items: center;
+  gap: $kf-space-3;
+  color: $kf-text;
+  font-size: $kf-text-body;
+}
+
+// The slider itself is the phone's own (on an iPhone, iOS's), tinted with
+// the accent where the browser allows, and a full tap target tall.
+.slider input {
+  min-width: 0;
+  width: 100%;
+  height: $kf-tap;
+  margin: 0;
+  accent-color: $kf-accent;
+  cursor: pointer;
+
+  @include kf-focus-visible;
+}

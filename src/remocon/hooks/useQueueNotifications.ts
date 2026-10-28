@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 import formatDuration from "format-duration";
 import type { SharedQueueItem } from "../../common/api";
-import { useLiveEvent } from "../../common/apiClient";
+import { useLiveEvent, useLiveState } from "../../common/apiClient";
 import useQueue from "../../common/hooks/useQueue";
 import { reading } from "../../common/readings";
 import { t } from "../i18n";
@@ -17,7 +17,7 @@ async function registerServiceWorker() {
 async function showNotification(
   ...args: ConstructorParameters<typeof Notification>
 ) {
-  // Until the phone allows them (on the profile screen), showing one
+  // Until the phone allows them (on the settings screen), showing one
   // only throws.
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;
@@ -37,11 +37,14 @@ const shownName = (item: SharedQueueItem) =>
 
 // Whenever the queue changes, tells this phone about its songs due within
 // ten minutes, and about its songs that couldn't be downloaded. It updates
-// with the queue, so use it in a component of its own (QueueNotifications),
-// not one with the pages under it.
+// once a second while a song plays, so use it in a component of its own
+// (QueueNotifications), not one with the pages under it.
 export default function useQueueNotifications() {
-  // Not live: a countdown would notify again every second.
-  const queue = useQueue(false);
+  // The waits from where the current song is, but only when the songs
+  // queued change: on every tick, or on the current song's length coming
+  // in, the same notifications would come again.
+  const queue = useQueue();
+  const songs = useLiveState((state) => state?.queue);
 
   // Preemptively register the service worker, once.
   useEffect(() => {
@@ -51,7 +54,7 @@ export default function useQueueNotifications() {
     );
   }, []);
 
-  useEffect(() => {
+  const notifyDue = useEffectEvent(() => {
     for (const [item, eta] of queue) {
       if (item.isMine && eta <= 10 * 60) {
         showNotification("karafriends", {
@@ -62,7 +65,10 @@ export default function useQueueNotifications() {
         }).catch((err) => console.warn("Couldn't show a notification:", err));
       }
     }
-  }, [queue]);
+  });
+  useEffect(() => {
+    if (songs) notifyDue();
+  }, [songs]);
 
   // The server sends these only to the phone that queued the song.
   useLiveEvent("queueFailed", ({ item, reason }) => {

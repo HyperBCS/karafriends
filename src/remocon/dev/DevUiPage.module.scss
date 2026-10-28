@@ -56,11 +56,29 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: $kf-surface-pressed;
+  background-color: $kf-pressed;
   font-weight: 600;
 }
 
 .nowPlaying {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nowLabel {
+  @include kf-caps-label;
+  margin-bottom: $kf-space-1;
+}
+
+.nowRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.nowSong {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -80,12 +98,4 @@
   color: $kf-muted;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.controls {
-  display: flex;
-  justify-content: center;
-  gap: $kf-space-2;
-  padding: $kf-space-2;
-  border-top: 1px solid $kf-border;
 }

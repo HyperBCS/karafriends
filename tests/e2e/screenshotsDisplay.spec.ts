@@ -125,17 +125,55 @@ test.describe("phase D, with a login", () => {
     await expect(dam.getByRole("status")).not.toHaveText("Signed in to DAM.");
     await shoot(display, "settings-test-failed");
 
-    // The rest of the screen, as it scrolls.
-    for (const [section, name] of [
-      ["Admin password", "settings-queue"],
-      ["Config file", "settings-more"],
+    // The other tabs.
+    for (const [tab, name] of [
+      ["Party", "settings-queue"],
+      ["Sound", "settings-sound"],
+      ["Display", "settings-display"],
+      ["Advanced", "settings-more"],
     ]) {
-      await settings
-        .getByRole("region", { name: section })
-        .evaluate((element) => element.scrollIntoView({ block: "start" }));
+      await settings.getByRole("tab", { name: tab }).click();
+      await expect(settings.getByRole("tabpanel")).toHaveAccessibleName(tab);
       await shoot(display, name);
     }
   });
+});
+
+// The UI round's U2: Settings in tabs, at 720p and 4K, and at 1080p with
+// the UI scale at 150% (narrower margins), on its busiest tab (Sound, with
+// two mics).
+test.describe("U2, Settings", () => {
+  test.use({ appConfig: LOGIN });
+
+  for (const [width, height, scale] of [
+    [1280, 720, 100],
+    [3840, 2160, 100],
+    [1920, 1080, 150],
+  ]) {
+    const name = scale === 100 ? `${height}` : `scale${scale}`;
+    test(`Settings at ${width}×${height}, ${scale}%`, async ({ display }) => {
+      await display.setViewportSize({ width, height });
+      if (scale !== 100) {
+        await display.evaluate(
+          (scale) => localStorage.setItem("uiScale", String(scale)),
+          scale,
+        );
+        await display.reload();
+      }
+      await expect(display.getByText("Scan to join")).toBeVisible();
+      await display.keyboard.press("s");
+      const settings = display.getByRole("dialog", { name: "Settings" });
+      await settings.getByRole("tab", { name: "Sound" }).click();
+      const add = settings.getByLabel("Add a microphone");
+      await add.selectOption("E2E Mic (USB), channel 1");
+      await add.selectOption("E2E Interface (USB), channel 2");
+      await expect(settings.getByRole("group")).toHaveCount(2);
+      await display.screenshot({
+        path: path.join(OUT_DIR, `d-settings-${name}.png`),
+        animations: "disabled",
+      });
+    });
+  }
 });
 
 // The mobile round's M9: every size follows the window's height, so the idle
@@ -218,12 +256,11 @@ test.describe("P3, four queued with readings", () => {
       animations: "disabled",
     });
 
-    // Settings' Display section.
+    // Settings' Display tab.
     await display.keyboard.press("s");
-    await display
-      .getByRole("dialog", { name: "Settings" })
-      .getByRole("region", { name: "Display" })
-      .evaluate((element) => element.scrollIntoView({ block: "start" }));
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("tab", { name: "Display" }).click();
+    await expect(settings.getByLabel("UI scale")).toBeVisible();
     await display.screenshot({
       path: path.join(OUT_DIR, "p-display-settings.png"),
       animations: "disabled",
@@ -265,9 +302,9 @@ test.describe("D1, four queued", () => {
     });
 
     await display.keyboard.press("s");
-    const section = display
-      .getByRole("dialog", { name: "Settings" })
-      .getByRole("region", { name: "Microphones" });
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("tab", { name: "Sound" }).click();
+    const section = settings.getByRole("region", { name: "Microphones" });
     await section
       .getByLabel("Add a microphone")
       .selectOption("E2E Mic (USB), channel 1");
@@ -284,6 +321,58 @@ test.describe("D1, four queued", () => {
       path: path.join(OUT_DIR, "n-display-mics.png"),
       animations: "disabled",
     });
+  });
+});
+
+// The UI round's U5: Up next shows each singer's initial only, and a title
+// that doesn't fit slides (shown here where it starts: the screenshot stops
+// the animation).
+test.describe("U5, long titles", () => {
+  const LONG = [
+    song(
+      1,
+      "残酷な天使のテーゼ (TVアニメ『新世紀エヴァンゲリオン』オープニングテーマ)",
+      "高橋洋子",
+      "Ken",
+      240,
+    ),
+    song(2, "【初音ミク】千本桜【オリジナル曲PV】", "黒うさP", "あやか", 245),
+    song(
+      3,
+      "Official髭男dism - Pretender［Official Video］",
+      "Official髭男dism",
+      "Mio",
+      327,
+    ),
+    SONGS[3],
+  ];
+  test.use({
+    appConfig: LOGIN,
+    seedQueue: {
+      currentSong: null,
+      songQueue: LONG,
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("idle, then the first playing", async ({ display }) => {
+    await expect(
+      display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+    ).toHaveCount(4);
+    await shoot(display, "u5-idle-long");
+
+    await expect(
+      display.getByRole("status").filter({ hasText: "Now playing" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((video: HTMLVideoElement) => video.currentTime > 0.5),
+      )
+      .toBe(true);
+    await shoot(display, "u5-playing-long");
   });
 });
 

@@ -12,6 +12,12 @@ declare module "*?worker&url" {
   export default url;
 }
 
+// A web worker bundled on its own (the display's guide melody reader).
+declare module "*?worker" {
+  const WorkerConstructor: new () => Worker;
+  export default WorkerConstructor;
+}
+
 // An image's URL.
 declare module "*.png" {
   const url: string;
