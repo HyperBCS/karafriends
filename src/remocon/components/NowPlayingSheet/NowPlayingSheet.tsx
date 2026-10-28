@@ -1,14 +1,16 @@
 import React, { useState } from "react";
+import { Link } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
+import songLink from "../../songLink";
 import { IconButton, Sheet } from "../ui";
 import WithReading from "../WithReading";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
-import QueueList, { nicknameOf, SingerBadge } from "./QueueList";
+import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
 
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
 // so it stays as it was across a reload.
@@ -25,28 +27,63 @@ function useStoredFlag(key: string): [boolean, (value: boolean) => void] {
   ];
 }
 
-// The current song, its artist under it and its singer on the right,
-// always showing. Inside the sheet's toggle: <span>s only.
-const NowPlaying = () => {
+interface NowPlayingProps {
+  expanded: boolean;
+  // Following the link to the song's page, which folds the sheet.
+  onOpenSong: () => void;
+}
+
+// The current song, the only place it shows: a "Now playing" label, the
+// title with the artist under it, and the singer on the right. Folded, it's
+// text only, and a tap on it goes to the sheet's toggle. Open, the title
+// and artist are a link to the song's page (for adhoc lyrics, its singer's
+// controls), with the song's source by the artist, as a queue row has it.
+const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
   if (!currentSong) {
     return <span className={styles.nothing}>{t("sheet.nothingPlaying")}</span>;
   }
-  return (
+
+  const song = (
     <>
-      <span className={styles.now}>
-        <span className={styles.nowTitle}>
-          <WithReading text={currentSong.name} yomi={currentSong.nameYomi} />
-        </span>
-        <span className={styles.nowSubtitle}>
+      <span className={styles.nowTitle}>
+        <WithReading text={currentSong.name} yomi={currentSong.nameYomi} />
+      </span>
+      <span className={styles.nowSubtitle}>
+        {expanded && (
+          <span className={styles.source}>{sourceOf(currentSong)}</span>
+        )}
+        <span className={styles.nowArtist}>
           <WithReading
             text={currentSong.artistName}
             yomi={currentSong.artistNameYomi}
           />
         </span>
       </span>
-      <SingerBadge nickname={nicknameOf(currentSong)} />
     </>
+  );
+
+  return (
+    <div className={styles.now}>
+      <span className={styles.label}>{t("sheet.nowPlaying")}</span>
+      <div className={styles.nowRow}>
+        {expanded ? (
+          <Link
+            to={songLink(currentSong)}
+            state={{ artistNameYomi: currentSong.artistNameYomi }}
+            className={styles.nowSong}
+            onClick={onOpenSong}
+          >
+            {song}
+          </Link>
+        ) : (
+          <span className={styles.nowSong}>{song}</span>
+        )}
+        <SingerBadge nickname={nicknameOf(currentSong)} />
+      </div>
+      {/* The song's progress line (SongProgress) goes here, under the
+          title row. */}
+    </div>
   );
 };
 
@@ -59,7 +96,9 @@ const NowPlayingSheet = () => {
   return (
     <Sheet
       label={t("sheet.nowPlaying")}
-      header={<NowPlaying />}
+      header={
+        <NowPlaying expanded={expanded} onOpenSong={() => setExpanded(false)} />
+      }
       expanded={expanded}
       onExpandedChange={setExpanded}
     >

@@ -56,12 +56,11 @@ const song = (
   user: { deviceId: `e2e-screenshot-${nickname}`, nickname },
 });
 
-// The artist on the now-playing bar's second line, once the song plays.
+// The artist on the now-playing bar's second line, once the song plays
+// (the queue in the sheet holds only the songs after it).
 const nowPlaying = (page: Page, artist: string) =>
   page
     .getByRole("region", { name: "Now playing" })
-    .getByRole("button")
-    .first()
     .getByText(artist, { exact: true });
 
 // Phases B and C took their shots as a Pixel 7; with
@@ -413,7 +412,7 @@ test.describe("phase M2", () => {
     await remote.getByRole("button", { name: "Show queue" }).click();
     await expect(
       remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
-    ).toHaveCount(7);
+    ).toHaveCount(6);
     await shoot(remote, `m-queue-${browserName}`);
     await remote.getByRole("button", { name: "Hide queue" }).click();
 
@@ -542,10 +541,10 @@ test.describe("phase P2", () => {
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
-    const bar = remote
+    // The sheet's toggle, the arrow at the end of the bar.
+    const toggle = remote
       .getByRole("region", { name: "Now playing" })
-      .getByRole("button")
-      .first();
+      .getByRole("button", { name: /^(Show|Hide) queue$/ });
     const top = (name: string) =>
       remote.getByRole("banner").getByRole("link", { name, exact: true });
 
@@ -562,12 +561,12 @@ test.describe("phase P2", () => {
       ).toBeVisible();
       await shoot(remote, name("search"));
 
-      await bar.click();
+      await toggle.click();
       await expect(
         remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
-      ).toHaveCount(5);
+      ).toHaveCount(4);
       await shoot(remote, name("sheet"));
-      await bar.click();
+      await toggle.click();
 
       // DAM's 恋, the first result.
       await remote

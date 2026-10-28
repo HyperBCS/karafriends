@@ -85,6 +85,7 @@ export const ja: Messages = {
   "sheet.showEmotes": "リアクションを表示",
   "sheet.showControls": "操作ボタンを表示",
   "queue.label": "予約リスト",
+  "queue.upNext": "次の曲",
   "queue.empty": "予約はありません",
   "queue.queuedBy": "{nickname}さんの予約",
   "queue.remove": "予約を取り消す",

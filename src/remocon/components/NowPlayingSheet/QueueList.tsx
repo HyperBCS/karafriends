@@ -10,7 +10,7 @@ import { reading } from "../../../common/readings";
 import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
-import songLink, { sourceName } from "../../songLink";
+import { sourceName } from "../../songLink";
 import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
 import WithReading from "../WithReading";
 import * as styles from "./NowPlayingSheet.module.scss";
@@ -27,8 +27,8 @@ export const nicknameOf = (item: SharedQueueItem) =>
   item.user.nickname || t("common.unknownUser");
 
 // Who sings the current song: the initial and the whole nickname, muted,
-// at the end of the now-playing bar and the current row. The title gives
-// way before it does; a very long nickname ends in an ellipsis.
+// at the end of the now-playing bar. The title gives way before it does; a
+// very long nickname ends in an ellipsis.
 export const SingerBadge = ({ nickname }: { nickname: string }) => (
   <span className={styles.singer}>
     <Initial nickname={nickname} />
@@ -38,7 +38,7 @@ export const SingerBadge = ({ nickname }: { nickname: string }) => (
 
 // The small label: where the song comes from, and for Joysound, how its
 // lyrics show on the TV.
-const sourceOf = (item: SharedQueueItem) =>
+export const sourceOf = (item: SharedQueueItem) =>
   item.kind === "joysound"
     ? `${sourceName(item.kind)} · ${t(`lyricsMode.${item.lyricsMode}`)}`
     : sourceName(item.kind);
@@ -140,11 +140,11 @@ const QueueRow = memo(function QueueRow({
   );
 });
 
-// The current song (accented, a link to its page: for adhoc lyrics, its
-// singer's controls), then the queue with each song's wait. An admin's
-// moves show at once, until the live state has them (or the server says
-// why not, and the queue goes back). The order comes from useQueue(false),
-// which changes only with the queue, not every second.
+// The songs waiting, under "Up next", each with its wait (the current song
+// is on the now-playing bar only). An admin's moves show at once, until the
+// live state has them (or the server says why not, and the queue goes
+// back). The order comes from useQueue(false), which changes only with the
+// queue, not every second.
 const QueueList = () => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
   const [queue, setPending, clearPending] = useOptimisticValue(useQueue(false));
@@ -180,34 +180,14 @@ const QueueList = () => {
 
   return (
     <>
+      <h2 className={styles.heading}>{t("queue.upNext")}</h2>
       {moveError && (
         <InlineError>
           {t("queue.moveFailed", { reason: moveError })}
         </InlineError>
       )}
-      {(currentSong || queue.length > 0) && (
-        <List label={t("queue.label")}>
-          {currentSong && (
-            <ListRow
-              current
-              title={
-                <WithReading
-                  text={currentSong.name}
-                  yomi={currentSong.nameYomi}
-                />
-              }
-              subtitle={
-                <WithReading
-                  text={currentSong.artistName}
-                  yomi={currentSong.artistNameYomi}
-                />
-              }
-              source={sourceOf(currentSong)}
-              to={songLink(currentSong)}
-              state={{ artistNameYomi: currentSong.artistNameYomi }}
-              trailing={<SingerBadge nickname={nicknameOf(currentSong)} />}
-            />
-          )}
+      {queue.length > 0 ? (
+        <List label={t("queue.upNext")}>
           {queue.map(([item, eta], index) => (
             <QueueRow
               key={`${item.songId}_${item.timestamp}`}
@@ -220,8 +200,9 @@ const QueueList = () => {
             />
           ))}
         </List>
+      ) : (
+        <EmptyState>{t("queue.empty")}</EmptyState>
       )}
-      {queue.length === 0 && <EmptyState>{t("queue.empty")}</EmptyState>}
     </>
   );
 };
