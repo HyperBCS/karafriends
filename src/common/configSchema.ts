@@ -95,11 +95,26 @@ export function dropObsoleteKeys(
   return notes;
 }
 
+// YAML 1.1's words for true and false, which YAML 1.2 (the parser's) reads
+// as text. An old or hand-written config.yaml may use them.
+const YAML11_TRUE = /^(y|yes|on|true)$/i;
+const YAML11_FALSE = /^(n|no|off|false)$/i;
+
 // The config from a parsed config.yaml (a mapping, or null for an empty
 // file; configStore.ts sets anything else aside): the defaults, with the
 // file's values over them. Obsolete keys are dropped, so the write-back
 // removes them, and named in `problems` with anything else worth a log line.
-export function configFromFile(parsed: object | null | undefined): {
+//
+// Each setting is checked against CONFIG_RULES. asText is the same file
+// read with every value as text (YAML's failsafe schema): a text setting
+// that YAML read as a number or true/false (damPassword: 01234567) takes
+// its text from there, so no digit is lost. yes/no/on/off are read as
+// true/false. A value that still doesn't fit is the default, and a
+// problem. A key that isn't a setting is kept, and a problem.
+export function configFromFile(
+  parsed: object | null | undefined,
+  asText?: Record<string, unknown> | null,
+): {
   config: KarafriendsConfig;
   problems: string[];
 } {
@@ -114,17 +129,54 @@ export function configFromFile(parsed: object | null | undefined): {
     );
   }
 
-  // A hand-written hash or salt that YAML read as a number (all digits, say)
-  // could never match. Clear the password and say so.
-  for (const key of ["adminPasswordHash", "adminPasswordSalt"] as const) {
-    if (local[key] !== undefined && typeof local[key] !== "string") {
+  for (const key of Object.keys(local)) {
+    if (!isConfigKey(key)) {
+      problems.push(
+        `${key} in config.yaml isn't a setting karafriends has, so it does nothing`,
+      );
+      continue;
+    }
+    let value = local[key];
+    const text = asText?.[key];
+    switch (CONFIG_RULES[key].type) {
+      case "string":
+        // An empty value ("damPassword:") is null to YAML.
+        if (value === null) value = "";
+        else if (typeof value !== "string" && typeof text === "string") {
+          value = text;
+        }
+        break;
+      case "boolean":
+        if (typeof value === "string" && YAML11_TRUE.test(value)) value = true;
+        if (typeof value === "string" && YAML11_FALSE.test(value)) {
+          value = false;
+        }
+        break;
+      case "integer":
+        if (typeof value === "string" && /^\s*\d+\s*$/.test(value)) {
+          value = Number(value);
+        }
+        break;
+    }
+    local[key] = value;
+    if (configProblems({ [key]: value }).length === 0) continue;
+
+    // A hand-written hash or salt that isn't text could never match. Clear
+    // the password and say so.
+    if (key === "adminPasswordHash" || key === "adminPasswordSalt") {
       problems.push(
         `${key} in config.yaml must be text in quotes. The admin password ` +
           "is cleared: set it again.",
       );
       local.adminPasswordHash = "";
       local.adminPasswordSalt = "";
+      continue;
     }
+    problems.push(
+      `${configProblems({ [key]: value })[0]}, in config.yaml; using ` +
+        `${JSON.stringify(DEFAULT_CONFIG[key])}, the default`,
+    );
+    local[key] = DEFAULT_CONFIG[key];
   }
 
   return {

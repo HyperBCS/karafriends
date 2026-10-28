@@ -23,12 +23,30 @@ export interface Validator {
   lastModified?: string;
 }
 
-// versions.json: each downloaded tool's validator, the version it reports
-// and when it was downloaded (ms since the epoch).
+// versions.json: each downloaded tool's validator, the version it reports,
+// when it was downloaded (ms since the epoch) and from which URL. (Versions
+// before this one didn't record the URL.)
 export type Versions = Record<
   string,
-  Validator & { version?: string; updatedAt?: number }
+  Validator & {
+    version?: string;
+    updatedAt?: number;
+    url?: string;
+    // When the server last confirmed the copy (a 304 or a download), for a
+    // tool checked only every so often (AssetPlan.checkEveryMs).
+    checkedAt?: number;
+  }
 >;
+
+// Whether the cached copy came from another URL than the plan's (an older
+// version's source, or another architecture's build): its validator then
+// says nothing about the plan's asset, and it's downloaded again.
+export function fromOtherSource(
+  stored: Versions[string] | undefined,
+  url: string,
+): boolean {
+  return stored?.url !== undefined && stored.url !== url;
+}
 
 // One extraction pass: unpack `input` (relative to the temp dir) into `outDir`
 // (relative to the temp dir). Archives that need multiple passes (e.g. .tar.xz)
@@ -36,6 +54,8 @@ export type Versions = Record<
 export interface ExtractStep {
   input: string;
   outDir: string;
+  // Only this file name, from any folder in the archive. Unset: everything.
+  only?: string;
 }
 
 export type Download =
@@ -54,6 +74,9 @@ export interface AssetPlan {
   url: string;
   dest: string;
   download: Download;
+  // Ask the server about a cached copy at most this often (Update tools
+  // always does). Unset: at every launch.
+  checkEveryMs?: number;
 }
 
 // Environment variables that point a tool at another copy (a test's fake,
@@ -115,6 +138,10 @@ export function toolStatus(
 // forever.
 export const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
+// How often a cached ffmpeg is checked for a newer build. yt-dlp has to
+// keep up with YouTube and is checked at every launch; ffmpeg doesn't.
+export const FFMPEG_CHECK_MS = STALE_MS;
+
 const YTDLP_BASE =
   "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
 
@@ -139,10 +166,12 @@ export function resourcePathsFor(
   };
 }
 
-// The downloadable assets for a platform: their URLs, final destinations, and
-// how (if at all) each download is unpacked.
+// The downloadable assets for a platform and CPU architecture (process.arch):
+// their URLs, final destinations, and how (if at all) each download is
+// unpacked.
 export function assetPlans(
   platform: Platform,
+  arch: string,
   paths: ResourcePaths,
 ): AssetPlan[] {
   switch (platform) {
@@ -161,9 +190,10 @@ export function assetPlans(
           download: {
             kind: "archive",
             archiveName: "ffmpeg.7z",
-            steps: [{ input: "ffmpeg.7z", outDir: "out" }],
+            steps: [{ input: "ffmpeg.7z", outDir: "out", only: "ffmpeg.exe" }],
             binary: path.join("out", "ffmpeg.exe"),
           },
+          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
     case "darwin":
@@ -176,29 +206,41 @@ export function assetPlans(
         },
         {
           id: "ffmpeg",
-          url: "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip",
+          // Martin Riedl's static builds of the latest FFmpeg release, one
+          // per architecture (signed, which Apple Silicon requires of
+          // arm64 code). evermeet.cx, the source before, builds for Intel
+          // only, so Apple Silicon needed Rosetta. The redirect moves with
+          // each release; its zip holds just the ffmpeg binary.
+          url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch === "arm64" ? "arm64" : "amd64"}/release/ffmpeg.zip`,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
             archiveName: "ffmpeg.zip",
-            steps: [{ input: "ffmpeg.zip", outDir: "out" }],
+            steps: [{ input: "ffmpeg.zip", outDir: "out", only: "ffmpeg" }],
             binary: path.join("out", "ffmpeg"),
           },
+          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
     default:
       return [
         {
           id: "ytdlp",
-          url: YTDLP_BASE,
+          // The standalone build, which brings its own Python. The plain
+          // yt-dlp is a zipapp run by the system's python3, and it needs
+          // 3.11 or later: Ubuntu 22.04 has 3.10, and some hosts have none.
+          // The file keeps the name yt-dlp.
+          url: `${YTDLP_BASE}_linux${arch === "arm64" ? "_aarch64" : ""}`,
           dest: paths.ytdlp,
           download: { kind: "binary" },
         },
         {
           id: "ffmpeg",
-          // GitHub-hosted static build; johnvansickle.com resets connections
-          // from some IPs. Flat extraction still yields the ffmpeg binary.
-          url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+          // BtbN's GitHub-hosted static build (johnvansickle.com resets
+          // connections from some IPs). It's rebuilt from FFmpeg's master
+          // about daily, so its etag changes daily: checkEveryMs keeps it
+          // from being downloaded again (157 MB) at nearly every launch.
+          url: `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux${arch === "arm64" ? "arm64" : "64"}-gpl.tar.xz`,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
@@ -206,10 +248,16 @@ export function assetPlans(
             // .tar.xz needs two passes: first to the .tar, then to the contents.
             steps: [
               { input: "ffmpeg.tar.xz", outDir: "tar" },
-              { input: path.join("tar", "ffmpeg.tar"), outDir: "out" },
+              // Just bin/ffmpeg: not ffprobe, ffplay and the docs too.
+              {
+                input: path.join("tar", "ffmpeg.tar"),
+                outDir: "out",
+                only: "ffmpeg",
+              },
             ],
             binary: path.join("out", "ffmpeg"),
           },
+          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
   }
@@ -252,4 +300,19 @@ export function canSkipUnvalidated(
   stale: boolean,
 ): boolean {
   return exists && !hasValidator(stored) && !stale;
+}
+
+// Whether a tool checked only every checkEveryMs was confirmed by its server
+// recently enough to skip asking at this launch. The time is the last 304 or
+// download, or the file's time before those were recorded. A copy whose
+// source wasn't recorded is asked once, so a changed source is noticed.
+export function checkedRecently(
+  stored: Versions[string] | undefined,
+  mtimeMs: number,
+  nowMs: number,
+  checkEveryMs: number | undefined,
+): boolean {
+  if (checkEveryMs === undefined || stored?.url === undefined) return false;
+  const last = stored.checkedAt ?? stored.updatedAt ?? mtimeMs;
+  return nowMs - last < checkEveryMs;
 }

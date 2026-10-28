@@ -538,9 +538,17 @@ export interface Api {
   // needsRestart: a setting that only takes effect after a restart
   // (remoconPort) is saved with a value other than the one the app started
   // with.
+  // loadProblem: why config.yaml couldn't be read at launch, so the
+  // defaults are in use ("config.yaml couldn't be read (line 3 isn't valid
+  // YAML)..."), or null.
   getSettings: {
     input: Record<string, never>;
-    output: { settings: Settings; isFirstRun: boolean; needsRestart: boolean };
+    output: {
+      settings: Settings;
+      isFirstRun: boolean;
+      needsRestart: boolean;
+      loadProblem: string | null;
+    };
   };
   // Changes the given settings, all or none: ok: false lists what's wrong
   // ("remoconPort must be a whole number from 1 to 65535") and changes

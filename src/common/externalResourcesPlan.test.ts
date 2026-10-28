@@ -7,6 +7,8 @@ import { describe, test } from "node:test";
 import {
   assetPlans,
   canSkipUnvalidated,
+  checkedRecently,
+  FFMPEG_CHECK_MS,
   conditionalHeaders,
   extractorFileName,
   hasValidator,
@@ -53,7 +55,10 @@ const EXPECT: Record<
     ytdlp: "yt-dlp_macos",
     ytdlpUrl:
       "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
-    ffmpegUrl: "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip",
+    // Martin Riedl's signed static builds, the latest FFmpeg release: Intel
+    // here, arm64 on Apple Silicon (see "by architecture").
+    ffmpegUrl:
+      "https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip",
     archiveName: "ffmpeg.zip",
     steps: 1,
     binary: ["out", "ffmpeg"],
@@ -62,8 +67,10 @@ const EXPECT: Record<
     extractor: "7za",
     ffmpeg: "ffmpeg",
     ytdlp: "yt-dlp",
+    // The standalone build: the plain yt-dlp is a Python zipapp that needs
+    // Python 3.11 or later, which Ubuntu 22.04 doesn't have.
     ytdlpUrl:
-      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp",
+      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
     ffmpegUrl:
       "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
     archiveName: "ffmpeg.tar.xz",
@@ -130,7 +137,7 @@ describe("assetPlans", () => {
   for (const platform of PLATFORMS) {
     const expected = EXPECT[platform];
     const paths = resourcePathsFor(platform, path.join("cache", "dir"));
-    const plans = assetPlans(platform, paths);
+    const plans = assetPlans(platform, "x64", paths);
 
     test(`${platform}: has a ytdlp binary asset and an ffmpeg archive asset`, () => {
       assert.deepEqual(
@@ -181,6 +188,55 @@ describe("assetPlans", () => {
       }
     });
   }
+});
+
+describe("assetPlans by architecture", () => {
+  const plan = (platform: Platform, arch: string, id: "ytdlp" | "ffmpeg") =>
+    assetPlans(
+      platform,
+      arch,
+      resourcePathsFor(platform, path.join("cache", "dir")),
+    ).find((p) => p.id === id)!;
+
+  test("linux arm64 gets the aarch64 standalone yt-dlp, under the same name", () => {
+    const ytdlp = plan("linux", "arm64", "ytdlp");
+    assert.equal(
+      ytdlp.url,
+      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
+    );
+    assert.equal(path.basename(ytdlp.dest), "yt-dlp");
+  });
+
+  test("Apple Silicon gets an arm64 ffmpeg, not an Intel one", () => {
+    assert.equal(
+      plan("darwin", "arm64", "ffmpeg").url,
+      "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip",
+    );
+    // yt-dlp_macos is a universal binary.
+    assert.equal(
+      plan("darwin", "arm64", "ytdlp").url,
+      plan("darwin", "x64", "ytdlp").url,
+    );
+  });
+
+  test("no macOS ffmpeg is pinned to a version", () => {
+    for (const arch of ["x64", "arm64"]) {
+      assert.match(
+        plan("darwin", arch, "ffmpeg").url,
+        /\/latest\/.*\/release\//,
+      );
+    }
+  });
+
+  test("linux arm64 gets BtbN's arm64 ffmpeg", () => {
+    assert.match(plan("linux", "arm64", "ffmpeg").url, /-linuxarm64-gpl\./);
+  });
+
+  test("no Linux plan downloads the Python zipapp", () => {
+    for (const arch of ["x64", "arm64"]) {
+      assert.match(plan("linux", arch, "ytdlp").url, /\/yt-dlp_linux/);
+    }
+  });
 });
 
 describe("conditionalHeaders", () => {
@@ -241,6 +297,61 @@ describe("canSkipUnvalidated", () => {
   test("does not skip when a validator exists (a conditional request is cheap)", () => {
     assert.equal(canSkipUnvalidated(true, { etag: "abc" }, false), false);
     assert.equal(canSkipUnvalidated(true, { etag: "abc" }, true), false);
+  });
+});
+
+describe("checkEveryMs", () => {
+  for (const platform of PLATFORMS) {
+    test(`${platform}: ffmpeg is checked weekly, yt-dlp at every launch`, () => {
+      const plans = assetPlans(
+        platform,
+        "x64",
+        resourcePathsFor(platform, "cache"),
+      );
+      const byId = Object.fromEntries(plans.map((p) => [p.id, p]));
+      assert.equal(byId.ffmpeg.checkEveryMs, FFMPEG_CHECK_MS);
+      assert.equal(byId.ytdlp.checkEveryMs, undefined);
+    });
+  }
+});
+
+describe("checkedRecently", () => {
+  const url = "https://example.com/ffmpeg";
+  const now = 100 * STALE_MS;
+
+  test("is never true for a tool checked at every launch", () => {
+    assert.equal(
+      checkedRecently({ url, checkedAt: now }, now, now, undefined),
+      false,
+    );
+  });
+
+  test("is true within the window after the last check", () => {
+    assert.equal(
+      checkedRecently({ url, checkedAt: now - 1 }, 0, now, STALE_MS),
+      true,
+    );
+    assert.equal(
+      checkedRecently({ url, checkedAt: now - STALE_MS }, 0, now, STALE_MS),
+      false,
+    );
+  });
+
+  test("falls back to the download's time, then the file's", () => {
+    assert.equal(
+      checkedRecently({ url, updatedAt: now - 1 }, 0, now, STALE_MS),
+      true,
+    );
+    assert.equal(checkedRecently({ url }, now - 1, now, STALE_MS), true);
+    assert.equal(checkedRecently({ url }, 0, now, STALE_MS), false);
+  });
+
+  test("asks once about a copy whose source wasn't recorded", () => {
+    assert.equal(
+      checkedRecently({ checkedAt: now }, now, now, STALE_MS),
+      false,
+    );
+    assert.equal(checkedRecently(undefined, now, now, STALE_MS), false);
   });
 });
 
