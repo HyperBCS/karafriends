@@ -125,6 +125,8 @@ export const en = {
   // History.
   "history.heading": "History",
   "history.empty": "No history",
+  // When a sung song was queued (the server doesn't keep when it was sung).
+  "history.queuedAt": "Queued {time}",
 
   // Settings: the phone's nickname and choices, the TV's lyrics, and
   // signing in as an admin. A group's heading, then its settings.

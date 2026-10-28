@@ -1434,6 +1434,11 @@ test.describe("history", () => {
     await expect(
       remote.getByRole("main").getByRole("listitem").first(),
     ).toContainText(NICKNAME);
+    // The time is when it was queued, and says so: when it was sung isn't
+    // kept.
+    await expect(
+      remote.getByRole("main").getByRole("listitem").first().locator("time"),
+    ).toHaveText(/^Queued /);
 
     await remote.getByRole("button", { name: "More" }).click();
     await expect(songs).toHaveCount(HISTORY_LENGTH);

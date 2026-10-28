@@ -14,8 +14,25 @@ import * as styles from "./HistoryPage.module.scss";
 const historyKey = (song: SharedQueueItem) =>
   `${song.kind}_${song.songId}_${song.timestamp}`;
 
-// The songs sung so far, newest first: when, and who queued each. Tapping
-// one opens its page, to queue it again.
+// When a song was queued: the time, and the date too if not today.
+function queuedAt(timestamp: number, language: string): string {
+  const when = new Date(timestamp);
+  // The time in one piece ("7:35 PM"): a line may break before it.
+  const time = when
+    .toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" })
+    .replace(/\s/g, " ");
+  if (when.toDateString() === new Date().toDateString()) return time;
+  const date = when.toLocaleDateString(language, {
+    month: "numeric",
+    day: "numeric",
+  });
+  return `${date} ${time}`;
+}
+
+// The songs sung so far, newest first: when and by whom each was queued.
+// (When it was sung isn't kept, so the time says "Queued": with a long
+// queue, or one reordered, it's well before, and out of order.) Tapping one
+// opens its page, to queue it again.
 const HistoryPage = () => {
   const { language } = useLanguage();
   // The history grows as songs play, so coming back shows what was here at
@@ -43,11 +60,8 @@ const HistoryPage = () => {
             trailing={
               <span className={styles.when}>
                 <time dateTime={new Date(Number(song.timestamp)).toISOString()}>
-                  {new Date(Number(song.timestamp)).toLocaleString(language, {
-                    month: "numeric",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
+                  {t("history.queuedAt", {
+                    time: queuedAt(Number(song.timestamp), language),
                   })}
                 </time>
                 <span className={styles.who}>
