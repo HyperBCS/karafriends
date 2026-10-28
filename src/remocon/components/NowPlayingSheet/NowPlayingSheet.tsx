@@ -10,7 +10,6 @@ import WithReading from "../WithReading";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
-import SongProgress from "./SongProgress";
 import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
 
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
@@ -82,7 +81,6 @@ const NowPlaying = ({ expanded, onOpenSong }: NowPlayingProps) => {
         )}
         <SingerBadge nickname={nicknameOf(currentSong)} />
       </div>
-      <SongProgress />
     </div>
   );
 };

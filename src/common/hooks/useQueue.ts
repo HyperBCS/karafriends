@@ -87,15 +87,6 @@ export function useWait(eta: number): number {
   return eta - usePlayed(true);
 }
 
-// Where the current song is, in seconds of its length, by the same clock as
-// the waits: once a second while it plays, still while it's paused. Null
-// while none plays or its length isn't known.
-export function useSongProgress(): { position: number; length: number } | null {
-  const length = useLiveState((state) => state?.currentSong?.playtime || 0);
-  const position = usePlayed(true);
-  return length > 0 ? { position, length } : null;
-}
-
 const EMPTY: SharedQueueItem[] = [];
 
 // The songs after the current one, with ETAs that count down once a second
