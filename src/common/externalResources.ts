@@ -28,6 +28,7 @@ import {
   toolStatus,
   Versions,
 } from "./externalResourcesPlan";
+import { writeFileAtomic } from "./writeFileAtomic";
 
 // External runtime binaries are downloaded lazily on the user's machine and
 // cached here so they are fetched once and reused across launches, instead of
@@ -132,9 +133,10 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     }
   };
 
-  const writeVersions = async (versions: Versions): Promise<void> => {
-    await fsp.mkdir(cacheDir, { recursive: true });
-    await fsp.writeFile(versionsFile, JSON.stringify(versions, null, 2));
+  // Through a flushed temp file: a torn versions.json would lose every
+  // validator, and the tools would be downloaded again.
+  const writeVersions = (versions: Versions): void => {
+    writeFileAtomic(versionsFile, JSON.stringify(versions, null, 2));
   };
 
   // A GET that answers 200 (changed, or a first download) or 304
@@ -371,7 +373,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     ]);
 
     if (changed) {
-      await writeVersions(versions);
+      writeVersions(versions);
     }
 
     for (const result of results) {

@@ -131,6 +131,12 @@ describe("createToolsManager", () => {
     assert.equal(stored.ytdlp.version, "2026.10.26");
     assert.equal(stored.ffmpeg.version, "9.0.2");
     assert.notEqual(manager.status().lastCheck, null);
+    // Written through a temp file, renamed into place.
+    assert.deepEqual(fs.readdirSync(path.join(dir, "cache")).sort(), [
+      "ffmpeg",
+      "versions.json",
+      "ytdlp",
+    ]);
   });
 
   test("concurrent and repeat calls share one check", async () => {
