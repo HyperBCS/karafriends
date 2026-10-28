@@ -1488,6 +1488,8 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(0.7);
     await expect(slider).toHaveValue("0.7");
+    // Its label shows the level in percent.
+    await expect(remote.getByText("Guide melody 70%")).toBeVisible();
 
     // Dragged down across several steps, it sends the level once, when
     // let go.
@@ -1559,6 +1561,7 @@ test.describe("the song volume and mic sliders", () => {
       .poll(async () => (await liveState(karafriends.remoconUrl)).songVolume)
       .toBe(40);
     await expect(volume).toHaveValue("40");
+    await expect(remote.getByText("Song volume 40%")).toBeVisible();
   });
 
   test("a slider dragged back to where it started follows the live level again", async ({
@@ -1658,6 +1661,9 @@ test.describe("the song volume and mic sliders", () => {
     await expect(slider(mics[0], "Echo")).toHaveValue("40");
     await expect(slider(mics[1], "Gain")).toHaveValue("123");
     await expect(slider(mics[1], "Echo")).toHaveValue("0");
+    // The labels show the levels, as the display's do.
+    await expect(remote.getByText("Gain 123%")).toBeVisible();
+    await expect(remote.getByText("Echo 40%")).toBeVisible();
 
     await slider(mics[1], "Echo").fill("63");
     await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);

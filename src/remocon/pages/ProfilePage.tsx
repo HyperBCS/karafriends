@@ -167,8 +167,11 @@ const Notifications = () => {
 
 interface LevelSliderProps {
   label: string;
-  // The slider's accessible name, when the label alone doesn't say whose.
+  // The slider's accessible name: the label without the value, or one that
+  // says whose when the label alone doesn't.
   name?: string;
+  // What the value is multiplied by to show as a percent.
+  scale?: number;
   min: number;
   max: number;
   step: number;
@@ -181,9 +184,11 @@ interface LevelSliderProps {
 // the level once, so the echo of an earlier step can't pull the thumb back
 // or settle on a stale level. A drag that ends where it started fires no
 // change, so letting go there lets the thumb follow the live level again.
+// The label shows the level in percent, as the display does.
 const LevelSlider = ({
   label,
-  name,
+  name = label,
+  scale = 1,
   min,
   max,
   step,
@@ -210,7 +215,7 @@ const LevelSlider = ({
 
   return (
     <label className={styles.slider}>
-      {label}
+      {`${label} ${Math.round((held ?? value) * scale)}%`}
       <input
         ref={input}
         aria-label={name}
@@ -238,6 +243,7 @@ const GuideMelodySlider = () => {
     <>
       <LevelSlider
         label={t("guideMelody.label")}
+        scale={100}
         min={0}
         max={1}
         step={0.1}
