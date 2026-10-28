@@ -38,10 +38,33 @@
     animation-iteration-count: infinite;
     animation-direction: alternate;
   }
+
+  // Safari before 17.2 (the iPhones on iOS 15 and 16) and Chrome before 113
+  // have no linear() easing; with var() in it the whole value is dropped,
+  // and the text would slide back and forth with no rest. There the holds
+  // are keyframes instead: a fixed part of the slide, so about 1 s at each
+  // end for a typical title rather than exactly 2 s.
+  @supports not (animation-timing-function: linear(0, 1)) {
+    .marquee[data-marquee] > .text {
+      animation-name: slide-held;
+      animation-timing-function: linear;
+    }
+  }
 }
 
 @keyframes slide {
   to {
+    transform: translateX(calc(-1 * var(--kf-marquee-shift)));
+  }
+}
+
+@keyframes slide-held {
+  0%,
+  15% {
+    transform: none;
+  }
+  85%,
+  100% {
     transform: translateX(calc(-1 * var(--kf-marquee-shift)));
   }
 }
