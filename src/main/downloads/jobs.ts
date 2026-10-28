@@ -15,6 +15,7 @@ import {
   ytdlpFailureReason,
 } from "../../common/downloadFailure";
 import { getSongDuration } from "../../common/joysoundParser";
+import { nicoWatchUrl } from "../../common/nicoVideoInfo";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
 import { probeDuration, runTool, type ToolRun } from "./run";
@@ -721,15 +722,24 @@ export async function joysoundJob(
   return { ...queueItem, playtime: Math.floor(data.songPlaytime / 1000) };
 }
 
-// Downloads a YouTube video to yt-<videoId>.mp4, and its captions to
-// yt-<videoId>.vtt if captionCode.
-export async function youtubeJob(
+// Downloads a YouTube or Niconico video (item's kind and songId) with
+// yt-dlp to yt-<videoId>.mp4 or nico-<videoId>.mp4, and a YouTube video's
+// captions to yt-<videoId>.vtt if captionCode. yt-dlp is always told where
+// the app's ffmpeg is: it isn't on PATH, and without it yt-dlp can't merge
+// a video with its audio (every Niconico video needs that), leaves the
+// parts, and still exits 0.
+export async function ytdlpVideoJob(
   paths: JobPaths,
   downloadQueueItem: DownloadQueueItem,
-  videoId: string,
   captionCode: string | null,
 ): Promise<void> {
-  const filenamePrefix = `yt-${videoId}`;
+  const { kind, songId: videoId } = downloadQueueItem;
+  if (kind !== "youtube" && kind !== "nico") {
+    throw new DownloadFailure(REASONS.other, `yt-dlp doesn't download ${kind}`);
+  }
+  const youtube = kind === "youtube";
+  const site = youtube ? "YouTube" : "Niconico";
+  const filenamePrefix = `${youtube ? "yt" : "nico"}-${videoId}`;
   const writeBasePath = `${paths.folder}/${filenamePrefix}`;
 
   const videoFilename = `${writeBasePath}.mp4`;
@@ -740,7 +750,7 @@ export async function youtubeJob(
 
   // validate.ts already refuses these; this keeps a bad code off yt-dlp's
   // command line whoever calls.
-  if (captionCode !== null && !isCaptionCode(captionCode)) {
+  if (captionCode !== null && !(youtube && isCaptionCode(captionCode))) {
     throw new DownloadFailure(
       REASONS.other,
       `${captionCode} is not a valid caption code`,
@@ -751,30 +761,30 @@ export async function youtubeJob(
     deleteTempFiles(paths.folder, filenamePrefix),
   );
 
-  console.info(`Downloading YouTube video to ${videoFilename}`);
+  console.info(`Downloading ${site} video to ${videoFilename}`);
 
   const captionArgs = captionCode
     ? ["--write-subs", "--sub-langs", captionCode]
     : [];
+  const formatArgs = youtube
+    ? ["-S", "res:720,ext:mp4:m4a", "--recode", "mp4"]
+    : [];
 
   try {
     await runTool({
-      label: `yt-dlp (YouTube ${videoId})`,
+      label: `yt-dlp (${site} ${videoId})`,
       bin: paths.ytdlp,
       args: [
         ...captionArgs,
-        "-S",
-        "res:720,ext:mp4:m4a",
-        "--recode",
-        "mp4",
+        ...formatArgs,
         "-N",
         "4",
         "--ffmpeg-location",
         paths.ffmpeg,
         "-o",
-        `${videoFilename}`,
+        videoFilename,
         "--",
-        videoId,
+        youtube ? videoId : nicoWatchUrl(videoId),
       ],
       logFilename: ytdlpLogFilename,
       freshLog: true,
@@ -800,54 +810,5 @@ export async function youtubeJob(
         `Error trying to rename caption file ${writeBasePath}.${captionCode}.vtt to ${writeBasePath}.vtt: ${fsError}`,
       );
     }
-  }
-}
-
-// Downloads a Niconico video to nico-<videoId>.mp4.
-export async function nicoJob(
-  paths: JobPaths,
-  downloadQueueItem: DownloadQueueItem,
-  videoId: string,
-): Promise<void> {
-  const filenamePrefix = `nico-${videoId}`;
-  const writeBasePath = `${paths.folder}/${filenamePrefix}`;
-
-  const videoFilename = `${writeBasePath}.mp4`;
-  const ytdlpLogFilename = `${writeBasePath}.log`;
-
-  const tempFilename = `${videoFilename}.tmp`;
-
-  prepareTempFile(paths.folder, tempFilename, () =>
-    deleteTempFiles(paths.folder, filenamePrefix),
-  );
-
-  console.info(`Downloading Niconico video to ${videoFilename}`);
-
-  try {
-    await runTool({
-      label: `yt-dlp (Niconico ${videoId})`,
-      bin: paths.ytdlp,
-      args: [
-        "-N",
-        "4",
-        "-o",
-        `${videoFilename}`,
-        "--",
-        `https://www.nicovideo.jp/watch/${videoId}`,
-      ],
-      logFilename: ytdlpLogFilename,
-      freshLog: true,
-      onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-      reasonForExit: ytdlpFailureReason,
-    });
-  } finally {
-    safeUnlink(tempFilename);
-  }
-
-  if (!fs.existsSync(videoFilename)) {
-    throw new DownloadFailure(
-      REASONS.other,
-      `yt-dlp exited 0 but left no ${videoFilename}; log=${ytdlpLogFilename}`,
-    );
   }
 }

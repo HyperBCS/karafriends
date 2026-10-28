@@ -35,9 +35,8 @@ import {
   damJob,
   deleteJoysoundTempFiles,
   joysoundJob,
-  nicoJob,
   queueDownloadedJoysoundSong,
-  youtubeJob,
+  ytdlpVideoJob,
   type JobPaths,
 } from "./jobs";
 import { alreadyDownloading, runDownload } from "./queue";
@@ -162,7 +161,7 @@ export function downloadYoutubeVideo(
     downloadQueue,
     { ...key, userIdentity },
     description,
-    async (item) => youtubeJob(await jobPaths(), item, videoId, captionCode),
+    async (item) => ytdlpVideoJob(await jobPaths(), item, captionCode),
     onComplete,
     () => {},
     onFailed,
@@ -186,7 +185,7 @@ export function downloadNicoVideo(
     downloadQueue,
     { ...key, userIdentity },
     description,
-    async (item) => nicoJob(await jobPaths(), item, videoId),
+    async (item) => ytdlpVideoJob(await jobPaths(), item, null),
     onComplete,
     () => {},
     onFailed,

@@ -15,9 +15,8 @@ import {
   damJob,
   deleteJoysoundTempFiles,
   joysoundJob,
-  nicoJob,
   queueDownloadedJoysoundSong,
-  youtubeJob,
+  ytdlpVideoJob,
   type JobPaths,
 } from "./jobs";
 import { runDownload, YTDLP_SLOTS } from "./queue";
@@ -61,7 +60,7 @@ type Outcome<T> =
 // failed. cleanUp is what services.ts passes for its kind.
 function download<T>(
   queue: DownloadQueueItem[],
-  kind: DownloadQueueItem["kind"],
+  kind: DownloadQueueItem["kind"] | [DownloadQueueItem["kind"], string],
   job: (item: DownloadQueueItem) => Promise<T>,
   cleanUp: () => void = () => {},
 ): Promise<Outcome<T>> {
@@ -69,7 +68,12 @@ function download<T>(
     let item!: DownloadQueueItem;
     runDownload(
       queue,
-      { kind, songId: "song", suffix: null, userIdentity: USER },
+      {
+        kind: Array.isArray(kind) ? kind[0] : kind,
+        songId: Array.isArray(kind) ? kind[1] : "song",
+        suffix: null,
+        userIdentity: USER,
+      },
       `test ${kind} download`,
       (started) => {
         item = started;
@@ -86,8 +90,8 @@ const files = () => fs.readdirSync(folder).sort();
 
 test("a YouTube download reports its progress and leaves its video", async () => {
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, "youtube", (item) =>
-    youtubeJob(paths, item, "jNQXAC9IVRw", null),
+  const outcome = await download(queue, ["youtube", "jNQXAC9IVRw"], (item) =>
+    ytdlpVideoJob(paths, item, null),
   );
 
   assert.equal(outcome.ok, true);
@@ -141,8 +145,8 @@ test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", 
 
 test("a Niconico download leaves its video", async () => {
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, "nico", (item) =>
-    nicoJob(paths, item, "sm9"),
+  const outcome = await download(queue, ["nico", "sm9"], (item) =>
+    ytdlpVideoJob(paths, item, null),
   );
 
   assert.equal(outcome.ok, true);
