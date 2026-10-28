@@ -1,15 +1,15 @@
 // The admin password, as config.yaml keeps it: adminPasswordSalt (random,
 // one per install) and adminPasswordHash, the scrypt hash of the password
-// with that salt. README's "Running a party" has a one-line `node -e` that
-// computes the same two values, so keep its parameters in step with these.
+// with that salt. Changing the parameters below makes every saved password
+// wrong.
 //
 // No Electron imports: the app, the unit tests and the e2e fixture all use
 // this file.
 import crypto from "crypto";
 import { promisify } from "util";
 
-// Node's scrypt defaults, spelled out so the README's snippet can match them.
-export const ADMIN_PASSWORD_SCRYPT = {
+// Node's scrypt defaults, spelled out so they can't change under us.
+const ADMIN_PASSWORD_SCRYPT = {
   keyLength: 64,
   options: { N: 16384, r: 8, p: 1 },
 } as const;
