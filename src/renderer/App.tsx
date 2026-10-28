@@ -103,7 +103,8 @@ function savedMicMode(): MicMode {
   };
 }
 
-// "off" when DAM songs show no pitch bars (the piano roll); not set for on.
+// "off" when DAM and Joysound songs show no pitch bars (the piano roll);
+// not set for on.
 const PITCH_BARS_KEY = "pitchBars";
 
 // Settings' open tab, to open on it the next time.
@@ -357,7 +358,7 @@ function App(props: {
     setUiScale(scale);
   };
 
-  // A DAM song that's playing gains or loses them at once.
+  // A song that's playing gains or loses them at once.
   const changePitchBars = (on: boolean) => {
     save(PITCH_BARS_KEY, on ? null : "off");
     setPitchBars(on);

@@ -970,8 +970,8 @@ export default function Settings(props: {
                 </label>
               </div>
               <Checkbox
-                label="Pitch bars on DAM songs"
-                hint="The melody as bars along the top, with the mics' pitch over them."
+                label="Pitch bars"
+                hint="On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them."
                 checked={props.pitchBars}
                 onChange={async (on) => {
                   props.onPitchBarsChange(on);

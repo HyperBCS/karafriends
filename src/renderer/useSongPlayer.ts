@@ -13,6 +13,7 @@ import { call, useLiveState } from "../common/apiClient";
 import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
+import { damMelody, type Melody } from "./melody";
 import { lowBitrateFallback } from "./playback";
 import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
@@ -27,9 +28,17 @@ const NON_DAM_GAIN = 0.8;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
-  | { kind: "dam"; scoringData: readonly number[] }
-  // telop: the song's .joy_02 lyrics, once loaded.
-  | { kind: "joysound"; telop: ArrayBuffer | null; lyricsMode: LyricsMode }
+  // melody: the pitch bars', from DAM's scoring data.
+  | { kind: "dam"; melody: Melody }
+  // telop: the song's .joy_02 lyrics, once loaded. file: its video, whose
+  // sound holds the guide melody the pitch bars come from.
+  | {
+      kind: "joysound";
+      songId: string;
+      file: string;
+      telop: ArrayBuffer | null;
+      lyricsMode: LyricsMode;
+    }
   | { kind: "youtube"; adhocLyrics: boolean }
   | { kind: "nico" }
   | null;
@@ -173,7 +182,7 @@ export default function useSongPlayer({
   // (one downloaded before the server checked): it goes, and the song
   // streams.
   const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
-    setOverlay({ kind: "dam", scoringData: song.scoringData });
+    setOverlay({ kind: "dam", melody: damMelody(song.scoringData) });
     const fileUrl = `karafriends://local/${song.songId}-${song.streamingUrlIdx}.mp4`;
     let downloaded = false;
     try {
@@ -223,9 +232,16 @@ export default function useSongPlayer({
     video: HTMLVideoElement,
     song: Extract<PoppedSong, { kind: "joysound" }>,
   ) => {
-    setOverlay({ kind: "joysound", telop: null, lyricsMode: song.lyricsMode });
     const background = song.youtubeVideoId ?? "default";
-    video.src = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const file = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
+    const overlay = {
+      kind: "joysound",
+      songId: song.songId,
+      file,
+      lyricsMode: song.lyricsMode,
+    } as const;
+    setOverlay({ ...overlay, telop: null });
+    video.src = file;
     let telop: ArrayBuffer;
     try {
       telop = await fetch(
@@ -238,7 +254,7 @@ export default function useSongPlayer({
     }
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
-    setOverlay({ kind: "joysound", telop, lyricsMode: song.lyricsMode });
+    setOverlay({ ...overlay, telop });
     // At the gain the previous song left, as always.
     video.play();
   };

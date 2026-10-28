@@ -482,8 +482,11 @@ test.describe("the pitch bars", () => {
     await openTab(display, "Display");
     const pitchBars = display
       .getByRole("region", { name: "Display" })
-      .getByLabel("Pitch bars on DAM songs");
+      .getByLabel("Pitch bars", { exact: true });
     await expect(pitchBars).toBeChecked();
+    await expect(pitchBars).toHaveAccessibleDescription(
+      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
+    );
     await pitchBars.uncheck();
     await expect(roll).toHaveCount(0);
     expect(
@@ -501,6 +504,123 @@ test.describe("the pitch bars", () => {
     await openTab(display, "Display");
     await expect(pitchBars).not.toBeChecked();
     await expect(roll).toHaveCount(0);
+  });
+
+  // A Joysound song that looks downloaded before: its video, from
+  // tests/fixtures, and lyrics without lines that the display reads without
+  // an error (empty names, a palette, no timing events).
+  function fakeJoysoundDownload(
+    folder: string,
+    songId: string,
+    video: string,
+    seconds: number,
+  ) {
+    const telop = Buffer.alloc(68);
+    telop.writeUInt32LE(18, 6); // where the names start
+    telop.writeUInt32LE(38, 10); // the lyrics: 15 colours, no lines
+    telop.writeUInt32LE(68, 14); // the timing: no events
+    for (let i = 1; i <= 7; i++) telop.writeUInt16LE(20, 18 + i * 2);
+    telop.writeUInt16LE(seconds, 18 + 18); // the playtime
+    fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
+    fs.copyFileSync(
+      path.resolve(__dirname, "..", "fixtures", video),
+      path.join(folder, `joysound-${songId}-default.mp4`),
+    );
+  }
+
+  // A call from a phone (one song in the queue each, by default).
+  async function phoneCall(
+    remoconUrl: string,
+    deviceId: string,
+    method: string,
+    input: object,
+  ) {
+    const res = await fetch(new URL(`api/${method}`, remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Device-Id": deviceId,
+        "X-Karafriends-Nickname": "e2e",
+      },
+      body: JSON.stringify(input),
+    });
+    return res.json();
+  }
+
+  test("a Joysound song shows them from its guide melody, and one without a guide shows none", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    // A minute of black video without sound: no guide channel.
+    fakeJoysoundDownload(folder, "e2e-no-guide", "black.mp4", 60);
+    // 12 s of black video whose sound is 3-channel Vorbis, as Joysound's
+    // ogg: silent left and right, so the bars can only come from the third
+    // channel, and nine sine notes there (C5 E5 G5 E5, D5 F5 A5 F5, C5, 0.9
+    // s each, from 0.5 s). Made with the app's ffmpeg:
+    //   ffmpeg -f lavfi -i "aevalsrc=exprs=0|0|0.3*sin(2*PI*t*(<each note's between(t,start,end)*Hz, summed>))*(<the same betweens, summed>):s=44100:c=3.0:d=12" -c:a libvorbis -q:a 0 guide.ogg
+    //   ffmpeg -f lavfi -i color=black:s=320x180:r=10:d=12 -i guide.ogg -c:v libx264 -pix_fmt yuv420p -c:a copy -shortest -movflags faststart joysound-guide.mp4
+    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    for (const songId of ["e2e-no-guide", "e2e-guide"]) {
+      expect(
+        await phoneCall(remoconUrl, `e2e-phone-${songId}`, "queueSong", {
+          kind: "joysound",
+          songId,
+          name: `E2E ${songId}`,
+          artistName: "E2E artist",
+          lyricsMode: "kana",
+          youtubeVideoId: null,
+        }),
+      ).toMatchObject({ ok: true });
+    }
+
+    const video = display.locator("video");
+    // The song's file, and whether it has played for a while.
+    const playing = () =>
+      video.evaluate((v: HTMLVideoElement) => ({
+        file: v.currentSrc.split("/").at(-1),
+        started: v.currentTime > 2,
+      }));
+    const roll = display.locator("canvas.pianoRollRoll");
+
+    // No guide channel: no bars, and no error.
+    await expect
+      .poll(playing, { timeout: 20_000 })
+      .toEqual({ file: "joysound-e2e-no-guide-default.mp4", started: true });
+    await expect(roll).toHaveCount(0);
+
+    // The guide melody's: the bars come once it's read, and stay while the
+    // song is paused.
+    expect(
+      await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "SKIPPING",
+      }),
+    ).toBe(true);
+    await expect(roll).toHaveCount(1, { timeout: 20_000 });
+    expect((await playing()).file).toBe("joysound-e2e-guide-default.mp4");
+    expect(
+      await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "PAUSED",
+      }),
+    ).toBe(true);
+    await expect(video).toHaveJSProperty("paused", true);
+
+    // The switch takes them off and back, at once: the melody is kept.
+    await openTab(display, "Display");
+    const pitchBars = display
+      .getByRole("region", { name: "Display" })
+      .getByLabel("Pitch bars", { exact: true });
+    await pitchBars.uncheck();
+    await expect(roll).toHaveCount(0);
+    await pitchBars.check();
+    await expect(roll).toHaveCount(1);
+
+    expect(karafriends.displayErrors).toEqual([]);
   });
 });
 
