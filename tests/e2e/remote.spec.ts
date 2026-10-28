@@ -1242,6 +1242,45 @@ test("a song already queued says why it wasn't queued again", async ({
   ).toBeEnabled();
 });
 
+test.describe("with everyone an admin", () => {
+  const PASSWORD = "e2e everyone";
+  test.use({
+    appConfig: { ...adminPasswordConfig(PASSWORD), everyoneIsAdmin: true },
+  });
+
+  test("the settings say so, and Sign out shows only for a phone that signed in", async ({
+    display,
+    remote,
+  }) => {
+    const admin = remote.getByRole("region", { name: "Admin" });
+    const signOut = admin.getByRole("button", { name: "Sign out" });
+    await remote.getByRole("link", { name: "Settings" }).click();
+    await expect(admin.getByRole("status")).toHaveText(
+      "Everyone is an admin right now",
+    );
+    await expect(
+      admin.getByRole("slider", { name: "Song volume" }),
+    ).toBeVisible();
+    await expect(signOut).toHaveCount(0);
+
+    // Off, a guest signs in as before, and can sign out.
+    const setEveryoneIsAdmin = (everyoneIsAdmin: boolean) =>
+      displayCall(display, "setSettings", { settings: { everyoneIsAdmin } });
+    await setEveryoneIsAdmin(false);
+    await admin.getByLabel("Admin password").fill(PASSWORD);
+    await admin.getByRole("button", { name: "Sign in" }).click();
+    await expect(admin.getByRole("status")).toHaveText("You're an admin");
+    await expect(signOut).toBeVisible();
+
+    // On again, the phone that signed in still can.
+    await setEveryoneIsAdmin(true);
+    await expect(admin.getByRole("status")).toHaveText(
+      "Everyone is an admin right now",
+    );
+    await expect(signOut).toBeVisible();
+  });
+});
+
 // The server answers 409 when the host set no admin password (403 is a
 // wrong one). Made up here, so this tests what the remote says.
 test("signing in without an admin password says there is none", async ({

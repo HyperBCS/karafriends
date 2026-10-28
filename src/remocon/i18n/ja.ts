@@ -129,6 +129,7 @@ export const ja: Messages = {
   "settings.signIn": "ログイン",
   "settings.signOut": "ログアウト",
   "settings.signedIn": "管理者としてログイン中",
+  "settings.everyoneAdmin": "今は全員が管理者です",
   "settings.wrongPassword": "パスワードが違います。ホストに確認してください。",
   "settings.noPassword": "管理者パスワードは設定されていません。",
   "settings.tooManyTries":

@@ -148,6 +148,8 @@ export const en = {
   "settings.signIn": "Sign in",
   "settings.signOut": "Sign out",
   "settings.signedIn": "You're an admin",
+  // The host's "everyone is an admin": every phone is one, signed in or not.
+  "settings.everyoneAdmin": "Everyone is an admin right now",
   "settings.wrongPassword": "Wrong password. Ask the host for it.",
   "settings.noPassword": "The host hasn't set an admin password.",
   "settings.tooManyTries": "Too many tries. Wait a minute, then try again.",
