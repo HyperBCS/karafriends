@@ -710,6 +710,7 @@ test.describe("the pitch bars", () => {
     expect(
       await phoneCall(karafriends.remoconUrl, "e2e-phone", "setPlaybackState", {
         playbackState: "PAUSED",
+        song: await currentSongKey(karafriends.remoconUrl),
       }),
     ).toBe(true);
     await expect.poll(() => rollDrew(display)).toBe(true);
@@ -730,7 +731,7 @@ test.describe("the pitch bars", () => {
         karafriends.remoconUrl,
         "e2e-phone",
         "setPitchShiftSemis",
-        { semis: 2 },
+        { semis: 2, song: await currentSongKey(karafriends.remoconUrl) },
       ),
     ).toBe(true);
     // The live state reaches the display.

@@ -143,7 +143,7 @@ describe("call", () => {
     globalThis.fetch = async () =>
       Response.json({ error: "Supervised mode: no" }, { status: 403 });
     await assert.rejects(
-      call("setPlaybackState", { playbackState: "PAUSED" }),
+      call("setPlaybackState", { playbackState: "PAUSED", song: "sm1@1" }),
       (err) =>
         err instanceof ApiCallError &&
         err.status === 403 &&
@@ -186,7 +186,7 @@ describe("call on the display", () => {
       error: "Supervised mode: no",
     }));
     await assert.rejects(
-      call("setPlaybackState", { playbackState: "PAUSED" }),
+      call("setPlaybackState", { playbackState: "PAUSED", song: "sm1@1" }),
       (err) =>
         err instanceof ApiCallError &&
         err.status === 403 &&

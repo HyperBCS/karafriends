@@ -505,7 +505,10 @@ test.describe("a Joysound song's lyrics", () => {
     // Skipped to it: the old song's canvas goes, the new one draws its
     // lines (the one of spaces too: it doesn't stop the others).
     expect(
-      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
+      await call(remoconUrl, "setPlaybackState", {
+        playbackState: "SKIPPING",
+        song: await currentSongKey(remoconUrl),
+      }),
     ).toBe(true);
     await expect(display.locator("video")).toHaveAttribute("src", /e2e-romaji/);
     await expect(canvas).toHaveCount(1);
@@ -556,7 +559,10 @@ test.describe("a YouTube song's adhoc lyrics", () => {
       .toEqual(["E2E lyrics song", "PLAYING"]);
     for (const lyricIndex of [0, 1, 2]) {
       expect(
-        await displayCall(display, "pushAdhocLyrics", { lyricIndex }),
+        await displayCall(display, "pushAdhocLyrics", {
+          lyricIndex,
+          song: `${VIDEO}@${Date.UTC(2026, 0, 1)}`,
+        }),
       ).toEqual({ ok: true, output: true });
     }
 
