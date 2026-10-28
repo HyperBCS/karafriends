@@ -13,9 +13,9 @@ export default class KarafriendsAudio {
   // Joysound's ogg is 3-channel: 0 left, 1 right, 2 a synthesised guide
   // melody (centre), which a stereo destination drops. While a Joysound song
   // plays, the input goes through the splitter instead: left and right as
-  // they are, and the centre through guideGain into both sides. A mono or
-  // stereo source must not go this way (the splitter would put mono on the
-  // left only).
+  // they are, and the centre through guideGain into both sides. Other songs
+  // don't go this way: the splitter would put a mono source (a Niconico
+  // video, say) on the left only.
   private splitter: ChannelSplitterNode;
   private guideGain: GainNode;
 
