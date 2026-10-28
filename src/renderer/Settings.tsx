@@ -10,8 +10,12 @@ import {
 import { call } from "../common/apiClient";
 import "./global";
 import HostnameSetting from "./HostnameSetting";
-import MicrophoneSetting from "./MicrophoneSetting";
-import { InputDevice } from "./nativeAudio";
+import {
+  AddMicrophone,
+  MicrophoneSetting,
+  type MicLevels,
+} from "./MicrophoneSetting";
+import { InputDevice, outputDevices } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
 import "./Settings.css";
 
@@ -147,8 +151,14 @@ export default function Settings(props: {
   hostname: string;
   onHostnameChange: (hostname: string) => void;
   mics: InputDevice[];
-  onChangeMic: (index: number, mic: InputDevice) => void;
-  onClearMics: () => void;
+  micLevels: (mic: InputDevice) => MicLevels;
+  // index is mics.length for a new mic.
+  onChangeMic: (index: number, name: string, channel: number) => void;
+  onChangeLevels: (mic: InputDevice, levels: MicLevels) => void;
+  onRemoveMic: (index: number) => void;
+  // null: the system default.
+  micOutput: string | null;
+  onMicOutputChange: (name: string | null) => void;
   avOffsetMs: number;
   onAvOffsetChange: (offsetMs: number) => void;
   uiScale: number;
@@ -541,26 +551,46 @@ export default function Settings(props: {
         </SettingsSection>
 
         <SettingsSection title="Microphones">
+          <div className="settingsFields">
+            <label className="kfLabel">
+              Mic output
+              <select
+                className="kfField"
+                value={props.micOutput ?? ""}
+                onChange={(event) =>
+                  props.onMicOutputChange(event.target.value || null)
+                }
+              >
+                <option value="">System default</option>
+                {outputDevices().map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="settingsNote">
+            Every mic plays through this output; songs keep playing through the
+            system default. An ASIO interface whose driver allows one program at
+            a time can't play the songs and the mics at once (FlexASIO,
+            ASIO4ALL, RME and MOTU drivers share; many others don't).
+          </p>
           {props.mics.map((mic, i) => (
             <MicrophoneSetting
               key={mic.deviceId}
-              onChange={(next) => props.onChangeMic(i, next)}
               mic={mic}
+              levels={props.micLevels(mic)}
+              onChange={(name, channel) => props.onChangeMic(i, name, channel)}
+              onLevelsChange={(levels) => props.onChangeLevels(mic, levels)}
+              onRemove={() => props.onRemoveMic(i)}
             />
           ))}
-          <MicrophoneSetting
-            onChange={(next) => props.onChangeMic(props.mics.length, next)}
-            mic={null}
+          <AddMicrophone
+            onAdd={(name, channel) =>
+              props.onChangeMic(props.mics.length, name, channel)
+            }
           />
-          <div className="settingsActions">
-            <button
-              type="button"
-              className="kfButton"
-              onClick={props.onClearMics}
-            >
-              Clear mics
-            </button>
-          </div>
         </SettingsSection>
 
         <SettingsSection title="Tools" message={messages.tools ?? undefined}>

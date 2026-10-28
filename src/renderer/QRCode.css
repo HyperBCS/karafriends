@@ -1,3 +1,54 @@
+.join {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* 45% of the screen's height on the idle screen, white with its own quiet
+   zone. */
+.joinCode {
+  width: 45vh;
+  border-radius: var(--kf-radius);
+  overflow: hidden;
+  line-height: 0;
+}
+
 .qrcode {
   width: 100%;
+}
+
+.joinScan {
+  margin: var(--kf-space-6) 0 0;
+  font-size: var(--kf-text-title);
+  font-weight: 700;
+}
+
+.joinAddress {
+  margin: var(--kf-space-2) 0 0;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-heading);
+}
+
+/* While a song plays: bottom-left over the video, above the up-next strip
+   (App.css), on a panel. */
+.joinCorner {
+  position: absolute;
+  bottom: var(--kf-space-6);
+  left: var(--kf-space-6);
+  z-index: 5;
+  padding: var(--kf-space-4);
+  border: 1px solid var(--kf-border);
+  border-radius: var(--kf-radius);
+  background-color: var(--kf-surface);
+  pointer-events: none;
+}
+
+.joinCorner .joinCode {
+  width: 8rem;
+}
+
+.joinCorner .joinAddress {
+  font-size: var(--kf-text-label);
 }

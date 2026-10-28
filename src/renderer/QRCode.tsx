@@ -3,7 +3,10 @@ import React, { useEffect, useRef } from "react";
 
 import "./QRCode.css";
 
-function QRCode(props: { hostname: string }) {
+// The remote's QR code with its address under it: big, with "Scan to
+// join", on the idle screen; small in the bottom-left corner while a song
+// plays.
+function QRCode(props: { hostname: string; corner?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -32,12 +35,18 @@ function QRCode(props: { hostname: string }) {
   });
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="qrcode"
-      role="img"
-      aria-label="QR code for the remote"
-    />
+    <div className={props.corner ? "join joinCorner" : "join"}>
+      <div className="joinCode">
+        <canvas
+          ref={canvasRef}
+          className="qrcode"
+          role="img"
+          aria-label="QR code for the remote"
+        />
+      </div>
+      {props.corner ? null : <p className="joinScan">Scan to join</p>}
+      <p className="joinAddress">{props.hostname}</p>
+    </div>
   );
 }
 

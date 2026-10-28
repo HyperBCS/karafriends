@@ -85,6 +85,51 @@ ipcRenderer
   .then(setRemoconProblem)
   .catch((err) => console.error("Couldn't ask about the remote:", err));
 
+// KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
+// is ever opened, or even listed. Two fake inputs and two fake outputs, and
+// every call is kept, for the tests to read with
+// window.karafriendsFakeAudio.calls().
+type FakeAudioCall = [string, ...unknown[]];
+const fakeAudioCalls: FakeAudioCall[] | null =
+  process.env.KARAFRIENDS_FAKE_AUDIO === "1" ? [] : null;
+
+function fakeNativeAudio(calls: FakeAudioCall[]) {
+  let nextDeviceId = 0;
+  const fake =
+    <T>(name: string, answer: () => T) =>
+    (...args: unknown[]): T => {
+      calls.push([name, ...args]);
+      return answer();
+    };
+  return {
+    inputDevices: fake("inputDevices", (): [string, number][] => [
+      ["E2E Mic (Windows)", 1],
+      ["E2E Interface (Windows)", 2],
+    ]),
+    outputDevices: fake("outputDevices", () => [
+      "E2E Speakers (Windows)",
+      "E2E Interface (ASIO)",
+    ]),
+    setOutputDevice: fake("setOutputDevice", () => undefined),
+    inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
+    inputDevice_delete: fake("inputDevice_delete", () => undefined),
+    inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
+    inputDevice_setEcho: fake("inputDevice_setEcho", () => undefined),
+    inputDevice_status: fake("inputDevice_status", () => "ok"),
+    inputDevice_getPitch: fake("inputDevice_getPitch", () => ({
+      midiNumber: 0,
+      confidence: 0,
+    })),
+    inputDevice_stop: fake("inputDevice_stop", () => undefined),
+  };
+}
+
+if (fakeAudioCalls) {
+  contextBridge.exposeInMainWorld("karafriendsFakeAudio", {
+    calls: (): FakeAudioCall[] => fakeAudioCalls,
+  });
+}
+
 contextBridge.exposeInMainWorld("karafriends", {
   ipAddresses,
   remoconPort: (): number => remoconPort,
@@ -99,43 +144,45 @@ contextBridge.exposeInMainWorld("karafriends", {
   },
   api,
   ...files,
-  nativeAudio: {
-    // Repeatedly asking CPAL for input devices seems to cause unexpected
-    // breakages, like the default output device being released. Let's avoid
-    // that.
-    inputDevices: once(nativeAudio.inputDevices),
-    outputDevices: once(nativeAudio.outputDevices),
-    setOutputDevice(name: string | null) {
-      return nativeAudio.setOutputDevice(name);
-    },
-    inputDevice_new(name: string, channelSelection: number) {
-      console.debug(
-        `preload: creating input device ${inputDeviceCount}: ${name}`,
-      );
-      inputDevices[inputDeviceCount++] = nativeAudio.inputDevice_new(
-        name,
-        channelSelection,
-      );
-      return inputDeviceCount - 1;
-    },
-    inputDevice_delete(deviceId: number) {
-      console.debug(`preload: deleting input device ${deviceId}`);
-      delete inputDevices[deviceId];
-    },
-    inputDevice_setGain(deviceId: number, gain: number) {
-      return nativeAudio.inputDevice_setGain(inputDevices[deviceId], gain);
-    },
-    inputDevice_setEcho(deviceId: number, echo: number) {
-      return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
-    },
-    inputDevice_status(deviceId: number) {
-      return nativeAudio.inputDevice_status(inputDevices[deviceId]);
-    },
-    inputDevice_getPitch(deviceId: number) {
-      return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
-    },
-    inputDevice_stop(deviceId: number) {
-      return nativeAudio.inputDevice_stop(inputDevices[deviceId]);
-    },
-  },
+  nativeAudio: fakeAudioCalls
+    ? fakeNativeAudio(fakeAudioCalls)
+    : {
+        // Repeatedly asking CPAL for input devices seems to cause unexpected
+        // breakages, like the default output device being released. Let's avoid
+        // that.
+        inputDevices: once(nativeAudio.inputDevices),
+        outputDevices: once(nativeAudio.outputDevices),
+        setOutputDevice(name: string | null) {
+          return nativeAudio.setOutputDevice(name);
+        },
+        inputDevice_new(name: string, channelSelection: number) {
+          console.debug(
+            `preload: creating input device ${inputDeviceCount}: ${name}`,
+          );
+          inputDevices[inputDeviceCount++] = nativeAudio.inputDevice_new(
+            name,
+            channelSelection,
+          );
+          return inputDeviceCount - 1;
+        },
+        inputDevice_delete(deviceId: number) {
+          console.debug(`preload: deleting input device ${deviceId}`);
+          delete inputDevices[deviceId];
+        },
+        inputDevice_setGain(deviceId: number, gain: number) {
+          return nativeAudio.inputDevice_setGain(inputDevices[deviceId], gain);
+        },
+        inputDevice_setEcho(deviceId: number, echo: number) {
+          return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
+        },
+        inputDevice_status(deviceId: number) {
+          return nativeAudio.inputDevice_status(inputDevices[deviceId]);
+        },
+        inputDevice_getPitch(deviceId: number) {
+          return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
+        },
+        inputDevice_stop(deviceId: number) {
+          return nativeAudio.inputDevice_stop(inputDevices[deviceId]);
+        },
+      },
 });

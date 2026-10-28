@@ -60,6 +60,7 @@ export default function useSongPlayer({
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const guideMelodyLevel = useLiveState((s) => s?.guideMelodyLevel ?? 0);
+  const songVolume = useLiveState((s) => s?.songVolume ?? 100);
   const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
   // Set while waiting for the next poll; null while one is in flight or a
   // song plays.
@@ -350,6 +351,10 @@ export default function useSongPlayer({
   useEffect(() => {
     audio.guideMelodyLevel(guideMelodyLevel);
   }, [audio, guideMelodyLevel]);
+
+  useEffect(() => {
+    audio.songVolume(songVolume / 100);
+  }, [audio, songVolume]);
 
   // The video's sound goes through the audio graph (guide melody, gain, key
   // change). A media element gives an audio context one source, ever, so

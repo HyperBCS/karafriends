@@ -19,7 +19,11 @@ test("the display opens on its idle screen without console errors", async ({
   // The idle screen: the remote's QR code and address, and an empty queue.
   // The address carries the remote's port, which the preload got from the
   // main process.
+  // Only the big one: the small one in the corner is for while a song plays.
   const { port } = new URL(karafriends.remoconUrl);
+  await expect(
+    display.getByRole("img", { name: "QR code for the remote" }),
+  ).toHaveCount(1);
   await expect(
     display.getByRole("img", { name: "QR code for the remote" }),
   ).toBeVisible();
@@ -36,9 +40,7 @@ test("the display opens on its idle screen without console errors", async ({
   await expect(
     settings.locator(`option[value="karafriends.local:${port}"]`),
   ).toHaveCount(1);
-  await expect(
-    settings.getByRole("button", { name: "Clear mics" }),
-  ).toBeVisible();
+  await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
   await display.getByRole("button", { name: "Settings" }).click();
@@ -95,6 +97,45 @@ test.describe("while a song plays", () => {
     await expect(upNext).toHaveCount(0);
     await display.keyboard.press("q");
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
+  });
+
+  test("the QR code and the address stay in the corner, but not over Settings", async ({
+    display,
+    karafriends,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    const qrCode = display.getByRole("img", { name: "QR code for the remote" });
+    const address = display.getByText(
+      `karafriends.local:${new URL(karafriends.remoconUrl).port}`,
+    );
+    await display.keyboard.press("Escape");
+    // Song 1 plays once song 2 is up next.
+    await expect(
+      display.getByRole("region", { name: "Up next" }).getByRole("listitem"),
+    ).toHaveText([/E2E strip song 2/]);
+    await expect(qrCode).toBeVisible();
+    await expect(address).toBeVisible();
+    await expect(display.getByText("Scan to join")).toHaveCount(0);
+    // Small, bottom-left, above the strip.
+    const box = (await qrCode.boundingBox())!;
+    const strip = (await display
+      .getByRole("region", { name: "Up next" })
+      .boundingBox())!;
+    const [width, rem] = await display.evaluate(() => [
+      window.innerWidth,
+      parseFloat(getComputedStyle(document.documentElement).fontSize),
+    ]);
+    expect(box.x + box.width).toBeLessThan(width / 2);
+    expect(box.y).toBeGreaterThan(strip.y / 2);
+    expect(box.y + box.height).toBeLessThan(strip.y);
+    expect(box.width).toBeCloseTo(8 * rem, 0);
+
+    await display.keyboard.press("s");
+    await expect(settings).toBeVisible();
+    await expect(qrCode).toHaveCount(0);
+    await display.keyboard.press("Escape");
+    await expect(qrCode).toBeVisible();
   });
 
   test("the wait counts down, and stops while a phone pauses", async ({

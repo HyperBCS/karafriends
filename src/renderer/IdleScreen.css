@@ -20,31 +20,3 @@
   width: 3rem;
   height: 3rem;
 }
-
-.idleJoin {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-/* 45% of the screen's height, white with its own quiet zone. */
-.idleQRCode {
-  width: 45vh;
-  border-radius: var(--kf-radius);
-  overflow: hidden;
-  line-height: 0;
-}
-
-.idleScan {
-  margin: var(--kf-space-6) 0 0;
-  font-size: var(--kf-text-title);
-  font-weight: 700;
-}
-
-.idleAddress {
-  margin: var(--kf-space-2) 0 0;
-  color: var(--kf-muted);
-  font-size: var(--kf-text-heading);
-}

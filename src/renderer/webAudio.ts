@@ -16,11 +16,13 @@ const CENTRE_TO_SIDE = 0.7;
 const VOCODER_LEVEL = 0.375;
 
 // The display's sound: input → [Joysound routing] → delay (the audio/video
-// offset) → gain → vocoder (once its worklet loads, and only while the key
-// is changed; otherwise bypassGain) → speakers.
+// offset) → gain (the song's own loudness) → songVolume (the party's
+// volume) → vocoder (once its worklet loads, and only while the key is
+// changed; otherwise bypassGain) → speakers.
 export default class KarafriendsAudio {
   private delayNode: DelayNode;
   private gainNode: GainNode;
+  private songVolumeNode: GainNode;
   private bypassGain: GainNode;
   private vocoderNode: AudioWorkletNode | null;
   private semitones = 0;
@@ -44,12 +46,14 @@ export default class KarafriendsAudio {
       audioDelay(Math.max(...AV_OFFSETS)),
     );
     this.gainNode = this.audioContext.createGain();
+    this.songVolumeNode = this.audioContext.createGain();
     this.input.connect(this.delayNode);
     this.delayNode.connect(this.gainNode);
+    this.gainNode.connect(this.songVolumeNode);
     this.bypassGain = this.audioContext.createGain();
     this.bypassGain.gain.value = VOCODER_LEVEL;
     this.bypassGain.connect(this.audioContext.destination);
-    this.gainNode.connect(this.bypassGain);
+    this.songVolumeNode.connect(this.bypassGain);
 
     this.splitter = this.audioContext.createChannelSplitter(3);
     const merger = this.audioContext.createChannelMerger(2);
@@ -95,7 +99,7 @@ export default class KarafriendsAudio {
 
   // The vocoder is in the chain only while the key is changed: even at no
   // shift it adds 44 ms (measured in M8, see notes/PLAN-mobile.md), so at 0
-  // the gain goes through bypassGain instead, at the vocoder's level.
+  // the song goes through bypassGain instead, at the vocoder's level.
   pitchShift(semitones: number) {
     this.semitones = semitones;
     const vocoder = this.vocoderNode;
@@ -103,14 +107,21 @@ export default class KarafriendsAudio {
       // @ts-expect-error i swear there's a .get method on this object.
       vocoder.parameters.get("pitchFactor").value = Math.pow(2, semitones / 12);
     }
-    this.gainNode.disconnect();
-    this.gainNode.connect(
+    this.songVolumeNode.disconnect();
+    this.songVolumeNode.connect(
       vocoder && semitones !== 0 ? vocoder : this.bypassGain,
     );
   }
 
+  // The song's own loudness, from its source.
   gain(gain: number) {
     this.gainNode.gain.value = gain;
+  }
+
+  // The party's volume for every song, 0 to 1 (the live state's
+  // songVolume).
+  songVolume(volume: number) {
+    this.songVolumeNode.gain.value = volume;
   }
 
   // On while a Joysound song plays: see splitter.

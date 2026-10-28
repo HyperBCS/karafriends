@@ -24,13 +24,7 @@ export default function IdleScreen(props: {
           />
         </svg>
       </button>
-      <div className="idleJoin">
-        <div className="idleQRCode">
-          <QRCode hostname={props.hostname} />
-        </div>
-        <p className="idleScan">Scan to join</p>
-        <p className="idleAddress">{props.hostname}</p>
-      </div>
+      <QRCode hostname={props.hostname} />
       <UpNext layout="rows" />
     </div>
   );
