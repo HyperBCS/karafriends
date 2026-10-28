@@ -118,7 +118,10 @@ export default function useSongPlayer({
   // Streams a DAM song from DAM. False if it can't, and has moved on to the
   // next song.
   const streamDam = (video: HTMLVideoElement, song: PoppedDamSong): boolean => {
-    const streamingUrl = song.streamingUrls[song.streamingUrlIdx];
+    const streamingUrl =
+      song.streamingUrls[song.streamingUrlIdx]?.[
+        song.startWithLowBitrate ? "low" : "high"
+      ];
     if (streamingUrl === undefined) {
       // Not downloaded, and DAM didn't give popSong a URL.
       skipBroken(song);

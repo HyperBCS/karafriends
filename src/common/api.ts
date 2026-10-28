@@ -123,8 +123,11 @@ export type SharedQueueItem = Shared<QueueItem>;
 // to play and score it, as far as DAM answered in time: either list may be
 // empty.
 export interface PoppedDamSong extends DamQueueItem {
-  // For a song that isn't downloaded.
-  streamingUrls: string[];
+  // For a song that isn't downloaded: one per vocal type (streamingUrlIdx
+  // picks), at both bitrates.
+  streamingUrls: { high: string; low: string }[];
+  // Which bitrate to start with: config.yaml's useLowBitrateUrl.
+  startWithLowBitrate: boolean;
   scoringData: number[];
 }
 

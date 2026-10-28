@@ -459,13 +459,30 @@ describe("admin checks", () => {
       streamingUrlIdx: 0,
     };
 
-    test("comes with its streaming URLs and scoring data", async () => {
+    test("comes with both streaming URLs of each vocal type and scoring data", async () => {
       const api = makeApi();
       store.update((state) => state.songQueue.push(damSong));
       assert.deepEqual(await api.popSong({}, display), {
         ...damSong,
-        streamingUrls: ["https://dam/high0", "https://dam/high1"],
+        streamingUrls: [
+          { high: "https://dam/high0", low: "low0" },
+          { high: "https://dam/high1", low: "low1" },
+        ],
+        startWithLowBitrate: false,
         scoringData: [1, 2, 3],
+      });
+    });
+
+    test("says to start low when config.yaml asks for the low bitrate", async () => {
+      const api = makeApi({ useLowBitrateUrl: true });
+      store.update((state) => state.songQueue.push(damSong));
+      const popped = await api.popSong({}, display);
+      assert.ok(popped?.kind === "dam");
+      assert.equal(popped.startWithLowBitrate, true);
+      // Both still come.
+      assert.deepEqual(popped.streamingUrls[0], {
+        high: "https://dam/high0",
+        low: "low0",
       });
     });
 
@@ -493,6 +510,7 @@ describe("admin checks", () => {
         assert.deepEqual(await api.popSong({}, display), {
           ...damSong,
           streamingUrls: [],
+          startWithLowBitrate: false,
           scoringData: [],
         });
         assert.ok(Date.now() - started < 2000);
