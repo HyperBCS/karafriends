@@ -108,6 +108,10 @@ const QueueButtons = (props: Props) => {
           input: {
             ...base,
             kind: "dam",
+            // For the queue's and history's rows (WithReading). DAM's song
+            // details give no artist reading today ("").
+            nameYomi: props.song.nameYomi || undefined,
+            artistNameYomi: props.song.artistNameYomi || undefined,
             playtime: props.song.playtime,
             streamingUrlIdx: i,
           },

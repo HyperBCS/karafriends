@@ -5,6 +5,7 @@ import { usePagedApiQuery } from "../../common/apiQueries";
 import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
 import { EmptyState, List, ListRow } from "../components/ui";
+import WithReading from "../components/WithReading";
 import { t, useLanguage } from "../i18n";
 import songLink, { sourceName } from "../songLink";
 import * as styles from "./HistoryPage.module.scss";
@@ -32,8 +33,10 @@ const HistoryPage = () => {
         {paged.items.map((song) => (
           <ListRow
             key={historyKey(song)}
-            title={song.name}
-            subtitle={song.artistName}
+            title={<WithReading text={song.name} yomi={song.nameYomi} under />}
+            subtitle={
+              <WithReading text={song.artistName} yomi={song.artistNameYomi} />
+            }
             source={sourceName(song.kind)}
             to={songLink(song)}
             trailing={

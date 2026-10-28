@@ -1,0 +1,16 @@
+@use "../tokens" as *;
+
+// Inside a row's one-line title: each line ends in its own ellipsis.
+.line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.under {
+  color: $kf-muted;
+  font-size: $kf-text-body;
+  font-weight: 400;
+  line-height: $kf-line-height;
+}
