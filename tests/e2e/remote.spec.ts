@@ -1,4 +1,4 @@
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 
 import { adminPasswordConfig, expect, NICKNAME, test } from "./fixtures";
 
@@ -172,6 +172,83 @@ test.describe("a DAM title search", () => {
     await expect(songs).toHaveCount(RESULTS);
     expect(offsets).toEqual([0, 0, 30, 30]);
   });
+});
+
+// Scrolls `target` a few screens down: with the wheel over it, or in mobile
+// WebKit, which has no wheel in Playwright, by bringing its last row into
+// view (which scrolls every scroller around it, the page too if it could).
+async function scrollDown(page: Page, target: Locator) {
+  if (page.context().browser()?.browserType().name() === "webkit") {
+    await target.getByRole("listitem").last().scrollIntoViewIfNeeded();
+    return;
+  }
+  const box = (await target.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 2000);
+}
+
+const scrollTop = (scroller: Locator) =>
+  scroller.evaluate((el) => el.scrollTop);
+
+// Only the screen and the queue scroll: the page never does, so the top bar
+// and the now-playing sheet never move (on iOS, the page bounced and
+// dragged them along).
+const pageScroll = (page: Page) =>
+  page.evaluate(() => [window.scrollY, document.documentElement.scrollTop]);
+
+test("the top bar and the now-playing sheet stay put while results scroll", async ({
+  remote,
+}) => {
+  await remote.route("**/api/damSearchSongs", (route) =>
+    fakePages(route, PAGE_SIZE, damSong),
+  );
+  await remote.getByRole("tab", { name: "DAM" }).click();
+  await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
+  const main = remote.getByRole("main");
+  await expect(main.getByRole("link", { name: /E2E DAM song/ })).toHaveCount(
+    PAGE_SIZE,
+  );
+  // Out of the field, as when the keyboard closes.
+  await remote.getByRole("searchbox", { name: "Search" }).blur();
+
+  const topBar = remote.getByRole("banner");
+  const sheet = remote.getByRole("region", { name: "Now playing" });
+  const before = [await topBar.boundingBox(), await sheet.boundingBox()];
+  await scrollDown(remote, main);
+  await expect.poll(() => scrollTop(main)).toBeGreaterThan(500);
+  expect([await topBar.boundingBox(), await sheet.boundingBox()]).toEqual(
+    before,
+  );
+  expect(await pageScroll(remote)).toEqual([0, 0]);
+});
+
+test("Home on a song page goes to the search screen", async ({
+  karafriends,
+  remote,
+}) => {
+  // Not on the search screen itself.
+  await expect(remote.getByRole("link", { name: "Home" })).toHaveCount(0);
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        ...damSong(1),
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 200,
+      },
+    }),
+  );
+  await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
+  await expect(
+    remote.getByRole("heading", { name: songName(1) }),
+  ).toBeVisible();
+
+  await remote.getByRole("link", { name: "Home" }).click();
+  await expect(
+    remote.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
+  expect(new URL(remote.url()).hash).toBe("#/");
 });
 
 test("an artist search from both catalogs shows a page from each in turn", async ({
@@ -624,5 +701,45 @@ test.describe("history", () => {
     // Tapping one opens its page.
     await songs.filter({ hasText: songName(35) }).click();
     await expect(remote).toHaveURL(/#\/search\/youtube\/e2e-history-35$/);
+  });
+});
+
+test.describe("a long queue", () => {
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: Array.from({ length: 12 }, (_, i) => ({
+        kind: "nico",
+        songId: `sm7000${i + 1}`,
+        name: `E2E long queue song ${i + 1}`,
+        artistName: "E2E artist",
+        playtime: 60,
+        timestamp: String(Date.UTC(2026, 0, 1) + i),
+        user: { deviceId: "e2e-someone", nickname: "someone" },
+      })),
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("scrolls in the sheet without moving the screen or the top bar", async ({
+    remote,
+  }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const queue = remote.getByRole("region", { name: "Queue" });
+    await expect(queue.getByRole("listitem")).toHaveCount(12);
+
+    const topBar = remote.getByRole("banner");
+    const main = remote.getByRole("main");
+    const before = await topBar.boundingBox();
+    await scrollDown(remote, queue);
+    await expect.poll(() => scrollTop(queue)).toBeGreaterThan(100);
+    expect(await topBar.boundingBox()).toEqual(before);
+    expect(await scrollTop(main)).toBe(0);
+    expect(await pageScroll(remote)).toEqual([0, 0]);
+    // The controls stay below the queue, in view.
+    await expect(
+      remote.getByRole("button", { name: "Show emotes" }),
+    ).toBeInViewport();
   });
 });
