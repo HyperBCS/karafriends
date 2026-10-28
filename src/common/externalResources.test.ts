@@ -190,6 +190,54 @@ describe("createToolsManager", () => {
     assert.equal(read("ytdlp"), YTDLP);
   });
 
+  test("a download that won't start (wrong CPU, broken) doesn't replace the cached copy", async () => {
+    await setup(fresh).manager.ensure();
+    const broken = (id: "ytdlp" | "ffmpeg"): Answer => ({
+      status: 200,
+      body: `broken ${id}`,
+      etag: `"${id}-2"`,
+    });
+    // At launch: kept, and the old validator stays so it's tried again.
+    const launch = setup(broken);
+    await launch.manager.ensure();
+    assert.equal(launch.read("ytdlp"), YTDLP);
+    assert.equal(launch.read("ffmpeg"), FFMPEG);
+    assert.equal(launch.versions().ytdlp.etag, '"ytdlp-1"');
+    // Update tools: kept, and the host is told.
+    const update = setup(broken);
+    await assert.rejects(update.manager.update(), /won't start/);
+    assert.equal(update.read("ytdlp"), YTDLP);
+    // Nothing left behind next to the tools.
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(update.manager.resourcePaths.ytdlp)),
+      ["yt-dlp"],
+    );
+  });
+
+  test("a first download that won't start fails the check", async () => {
+    const { manager } = setup((id) => ({ status: 200, body: `broken ${id}` }));
+    await assert.rejects(manager.ensure(), /won't start/);
+    assert.equal(fs.existsSync(manager.resourcePaths.ffmpeg), false);
+  });
+
+  test("a tool from another source is downloaded again, whatever its validator", async () => {
+    await setup(fresh).manager.ensure();
+    // As if an older version had cached it from another URL.
+    const file = path.join(dir, "cache", "versions.json");
+    const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+    stored.ffmpeg.url = "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip";
+    fs.writeFileSync(file, JSON.stringify(stored));
+    const { manager, fetches, versions } = setup((id) => ({
+      status: 200,
+      body: id === "ytdlp" ? YTDLP : "ffmpeg version 9.0.3\n",
+    }));
+    await manager.ensure();
+    const ffmpeg = fetches.find((f) => f.id === "ffmpeg")!;
+    assert.deepEqual(ffmpeg.headers, {});
+    assert.equal(versions().ffmpeg.version, "9.0.3");
+    assert.match(versions().ffmpeg.url, /ffmpeg-master-latest/);
+  });
+
   test("Update tools downloads again, without validators", async () => {
     await setup(fresh).manager.ensure();
     const { manager, fetches, read } = setup((id) => ({

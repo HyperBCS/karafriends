@@ -53,7 +53,10 @@ const EXPECT: Record<
     ytdlp: "yt-dlp_macos",
     ytdlpUrl:
       "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
-    ffmpegUrl: "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip",
+    // Martin Riedl's signed static builds, the latest FFmpeg release: Intel
+    // here, arm64 on Apple Silicon (see "by architecture").
+    ffmpegUrl:
+      "https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip",
     archiveName: "ffmpeg.zip",
     steps: 1,
     binary: ["out", "ffmpeg"],
@@ -200,6 +203,27 @@ describe("assetPlans by architecture", () => {
       "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
     );
     assert.equal(path.basename(ytdlp.dest), "yt-dlp");
+  });
+
+  test("Apple Silicon gets an arm64 ffmpeg, not an Intel one", () => {
+    assert.equal(
+      plan("darwin", "arm64", "ffmpeg").url,
+      "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip",
+    );
+    // yt-dlp_macos is a universal binary.
+    assert.equal(
+      plan("darwin", "arm64", "ytdlp").url,
+      plan("darwin", "x64", "ytdlp").url,
+    );
+  });
+
+  test("no macOS ffmpeg is pinned to a version", () => {
+    for (const arch of ["x64", "arm64"]) {
+      assert.match(
+        plan("darwin", arch, "ffmpeg").url,
+        /\/latest\/.*\/release\//,
+      );
+    }
   });
 
   test("no Linux plan downloads the Python zipapp", () => {

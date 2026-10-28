@@ -17,6 +17,7 @@ import {
   canSkipUnvalidated,
   conditionalHeaders,
   extractorFileName,
+  fromOtherSource,
   isStale,
   parseToolVersion,
   ResourcePaths,
@@ -171,7 +172,8 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
   ): Promise<string> => {
     if (res.body === null) throw new Error(`${plan.url} sent no body`);
     if (plan.download.kind === "binary") {
-      const bin = path.join(tmpDir, "bin");
+      // Named as in the cache: Windows only runs a .exe.
+      const bin = path.join(tmpDir, path.basename(plan.dest));
       await pipeline(res.body, fs.createWriteStream(bin));
       return bin;
     }
@@ -200,8 +202,10 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     force: boolean,
   ): Promise<boolean> => {
     const exists = fs.existsSync(plan.dest);
-    const stored = versions[plan.id];
-    const stale = exists ? isStale(mtimeMs(plan.dest), deps.now()) : true;
+    const otherSource = fromOtherSource(versions[plan.id], plan.url);
+    const stored = otherSource ? undefined : versions[plan.id];
+    const stale =
+      exists && !otherSource ? isStale(mtimeMs(plan.dest), deps.now()) : true;
 
     // Without a stored validator we cannot make a conditional request, so a
     // plain GET would re-download every launch. Skip until the cached copy
@@ -229,18 +233,29 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     }
 
     if (res.status === 304) {
-      return false;
+      if (versions[plan.id]?.url === plan.url) return false;
+      // Recorded before URLs were.
+      versions[plan.id] = { ...versions[plan.id], url: plan.url };
+      return true;
     }
 
     const tmpDir = fs.mkdtempSync(
       path.join(deps.tmpDir, "karafriends_externalResources"),
     );
+    let version: string | null;
     try {
       const src = await materialize(plan, tmpDir, res);
-      await finalize(src, plan.dest);
       if (deps.platform !== "win32") {
-        fs.chmodSync(plan.dest, 0o755);
+        fs.chmodSync(src, 0o755);
       }
+      // Run it where it is before it replaces anything: a build for another
+      // CPU (an Intel ffmpeg on an Apple Silicon Mac without Rosetta, say)
+      // or a broken download won't start, and the cached copy stays.
+      version = await toolVersion(plan.id, src);
+      if (version === null) {
+        throw new Error(`the downloaded ${plan.id} won't start`);
+      }
+      await finalize(src, plan.dest);
     } catch (err) {
       // A failed refresh must not destroy a working cached copy.
       if (exists && !force) {
@@ -255,7 +270,9 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     versions[plan.id] = {
       etag: res.headers.get("etag") ?? undefined,
       lastModified: res.headers.get("last-modified") ?? undefined,
+      version,
       updatedAt: deps.now(),
+      url: plan.url,
     };
     return true;
   };

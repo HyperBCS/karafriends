@@ -23,12 +23,23 @@ export interface Validator {
   lastModified?: string;
 }
 
-// versions.json: each downloaded tool's validator, the version it reports
-// and when it was downloaded (ms since the epoch).
+// versions.json: each downloaded tool's validator, the version it reports,
+// when it was downloaded (ms since the epoch) and from which URL. (Versions
+// before this one didn't record the URL.)
 export type Versions = Record<
   string,
-  Validator & { version?: string; updatedAt?: number }
+  Validator & { version?: string; updatedAt?: number; url?: string }
 >;
+
+// Whether the cached copy came from another URL than the plan's (an older
+// version's source, or another architecture's build): its validator then
+// says nothing about the plan's asset, and it's downloaded again.
+export function fromOtherSource(
+  stored: Versions[string] | undefined,
+  url: string,
+): boolean {
+  return stored?.url !== undefined && stored.url !== url;
+}
 
 // One extraction pass: unpack `input` (relative to the temp dir) into `outDir`
 // (relative to the temp dir). Archives that need multiple passes (e.g. .tar.xz)
@@ -178,7 +189,12 @@ export function assetPlans(
         },
         {
           id: "ffmpeg",
-          url: "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip",
+          // Martin Riedl's static builds of the latest FFmpeg release, one
+          // per architecture (signed, which Apple Silicon requires of
+          // arm64 code). evermeet.cx, the source before, builds for Intel
+          // only, so Apple Silicon needed Rosetta. The redirect moves with
+          // each release; its zip holds just the ffmpeg binary.
+          url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch === "arm64" ? "arm64" : "amd64"}/release/ffmpeg.zip`,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
