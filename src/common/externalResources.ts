@@ -297,9 +297,11 @@ const overrideVersions: Partial<Record<AssetPlan["id"], string | null>> = {};
 let lastCheck: number | null = null;
 
 async function doEnsure(force: boolean): Promise<void> {
-  const plans = assetPlans(process.platform, resourcePaths).filter(
-    (plan) => !(plan.id in overrides),
-  );
+  const plans = assetPlans(
+    process.platform,
+    process.arch,
+    resourcePaths,
+  ).filter((plan) => !(plan.id in overrides));
   const versions = readVersions();
 
   const results = await Promise.allSettled(

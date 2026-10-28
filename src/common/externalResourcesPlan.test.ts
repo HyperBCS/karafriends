@@ -62,8 +62,10 @@ const EXPECT: Record<
     extractor: "7za",
     ffmpeg: "ffmpeg",
     ytdlp: "yt-dlp",
+    // The standalone build: the plain yt-dlp is a Python zipapp that needs
+    // Python 3.11 or later, which Ubuntu 22.04 doesn't have.
     ytdlpUrl:
-      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp",
+      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
     ffmpegUrl:
       "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
     archiveName: "ffmpeg.tar.xz",
@@ -130,7 +132,7 @@ describe("assetPlans", () => {
   for (const platform of PLATFORMS) {
     const expected = EXPECT[platform];
     const paths = resourcePathsFor(platform, path.join("cache", "dir"));
-    const plans = assetPlans(platform, paths);
+    const plans = assetPlans(platform, "x64", paths);
 
     test(`${platform}: has a ytdlp binary asset and an ffmpeg archive asset`, () => {
       assert.deepEqual(
@@ -181,6 +183,30 @@ describe("assetPlans", () => {
       }
     });
   }
+});
+
+describe("assetPlans by architecture", () => {
+  const plan = (platform: Platform, arch: string, id: "ytdlp" | "ffmpeg") =>
+    assetPlans(
+      platform,
+      arch,
+      resourcePathsFor(platform, path.join("cache", "dir")),
+    ).find((p) => p.id === id)!;
+
+  test("linux arm64 gets the aarch64 standalone yt-dlp, under the same name", () => {
+    const ytdlp = plan("linux", "arm64", "ytdlp");
+    assert.equal(
+      ytdlp.url,
+      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
+    );
+    assert.equal(path.basename(ytdlp.dest), "yt-dlp");
+  });
+
+  test("no Linux plan downloads the Python zipapp", () => {
+    for (const arch of ["x64", "arm64"]) {
+      assert.match(plan("linux", arch, "ytdlp").url, /\/yt-dlp_linux/);
+    }
+  });
 });
 
 describe("conditionalHeaders", () => {

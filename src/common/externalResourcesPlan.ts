@@ -139,10 +139,12 @@ export function resourcePathsFor(
   };
 }
 
-// The downloadable assets for a platform: their URLs, final destinations, and
-// how (if at all) each download is unpacked.
+// The downloadable assets for a platform and CPU architecture (process.arch):
+// their URLs, final destinations, and how (if at all) each download is
+// unpacked.
 export function assetPlans(
   platform: Platform,
+  arch: string,
   paths: ResourcePaths,
 ): AssetPlan[] {
   switch (platform) {
@@ -190,7 +192,11 @@ export function assetPlans(
       return [
         {
           id: "ytdlp",
-          url: YTDLP_BASE,
+          // The standalone build, which brings its own Python. The plain
+          // yt-dlp is a zipapp run by the system's python3, and it needs
+          // 3.11 or later: Ubuntu 22.04 has 3.10, and some hosts have none.
+          // The file keeps the name yt-dlp.
+          url: `${YTDLP_BASE}_linux${arch === "arm64" ? "_aarch64" : ""}`,
           dest: paths.ytdlp,
           download: { kind: "binary" },
         },
