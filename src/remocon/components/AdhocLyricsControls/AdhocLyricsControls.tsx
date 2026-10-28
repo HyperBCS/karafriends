@@ -3,6 +3,7 @@ import { Navigate } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
 import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
+import { songKey } from "../../../common/currentSong";
 import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
 
 import { withLoader } from "../Loader";
@@ -48,9 +49,11 @@ function AdhocLyricsControls({ id }: Props) {
   }
 
   const onSendLine = () => {
+    if (!currentSong) return;
     const index = indexRef.current;
-    // The server has the lyrics, so the line's number is enough.
-    pushLyrics({ lyricIndex: index });
+    // The server has the lyrics, so the line's number is enough, with the
+    // song it is for: one sent as the song ends doesn't show on the next.
+    pushLyrics({ lyricIndex: index, song: songKey(currentSong) });
     setSelectedIndex(index + 1);
   };
 

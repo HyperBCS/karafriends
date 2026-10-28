@@ -5,7 +5,13 @@ import net from "net";
 
 import type { Page } from "@playwright/test";
 
-import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  currentSongKey,
+  displayCall,
+  expect,
+  test,
+} from "./fixtures";
 
 const DEVICE_ID = "e2e-remote-device";
 const NICKNAME = "e2e";
@@ -287,6 +293,7 @@ test.describe("supervised mode", () => {
       const { remoconUrl } = karafriends;
       await openRemote(page, remoconUrl);
       await waitForSong1(remoconUrl);
+      const song1 = await currentSongKey(remoconUrl);
 
       // /api
       expect(
@@ -304,7 +311,7 @@ test.describe("supervised mode", () => {
         await call(
           remoconUrl,
           "setPlaybackState",
-          { playbackState: "PAUSED" },
+          { playbackState: "PAUSED", song: song1 },
           REMOTE_HEADERS,
         ),
       ).toMatchObject({ status: 403 });
@@ -333,7 +340,7 @@ test.describe("supervised mode", () => {
           await call(
             remoconUrl,
             "setPlaybackState",
-            { playbackState: "SKIPPING" },
+            { playbackState: "SKIPPING", song: song1 },
             headers,
           ),
         ).toMatchObject({ status: 403 });
@@ -385,6 +392,7 @@ test.describe("supervised mode", () => {
     }) => {
       const { remoconUrl } = karafriends;
       await waitForSong1(remoconUrl);
+      const song1 = await currentSongKey(remoconUrl);
 
       const login = await call(
         remoconUrl,
@@ -414,7 +422,7 @@ test.describe("supervised mode", () => {
         await call(
           remoconUrl,
           "setPlaybackState",
-          { playbackState: "PAUSED" },
+          { playbackState: "PAUSED", song: song1 },
           admin,
         ),
       ).toEqual({ status: 200, body: true });
@@ -436,7 +444,7 @@ test.describe("supervised mode", () => {
         await call(
           remoconUrl,
           "setPlaybackState",
-          { playbackState: "PLAYING" },
+          { playbackState: "PLAYING", song: song1 },
           admin,
         ),
       ).toMatchObject({ status: 403 });
@@ -671,6 +679,8 @@ test.describe("supervised mode", () => {
       idToAdhocLyrics: { [VIDEO]: LYRICS },
     });
 
+    const LYRICS_SONG = `${VIDEO}@${Date.UTC(2026, 0, 1)}`;
+
     async function waitForLyricsSong(remoconUrl: string) {
       await expect
         .poll(async () => {
@@ -699,7 +709,7 @@ test.describe("supervised mode", () => {
             await call(
               remoconUrl,
               "pushAdhocLyrics",
-              { lyricIndex: 0 },
+              { lyricIndex: 0, song: LYRICS_SONG },
               headers,
             ),
           ).toMatchObject({ status: 403 });
@@ -709,17 +719,23 @@ test.describe("supervised mode", () => {
           await call(
             remoconUrl,
             "pushAdhocLyrics",
-            { lyric: "E2E graffiti", lyricIndex: 0 },
+            { lyric: "E2E graffiti", lyricIndex: 0, song: LYRICS_SONG },
             REMOTE_HEADERS,
           ),
         ).toMatchObject({ status: 400 });
         expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([]);
 
         expect(
-          await displayCall(display, "pushAdhocLyrics", { lyricIndex: 1 }),
+          await displayCall(display, "pushAdhocLyrics", {
+            lyricIndex: 1,
+            song: LYRICS_SONG,
+          }),
         ).toEqual({ ok: true, output: true });
         expect(
-          await displayCall(display, "pushAdhocLyrics", { lyricIndex: 2 }),
+          await displayCall(display, "pushAdhocLyrics", {
+            lyricIndex: 2,
+            song: LYRICS_SONG,
+          }),
         ).toMatchObject({ ok: false, status: 400 });
         expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([
           { lyric: LYRICS[1], lyricIndex: 1 },

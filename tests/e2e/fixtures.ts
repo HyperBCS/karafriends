@@ -124,6 +124,32 @@ export function sliderFill(slider: Locator): Promise<number> {
   );
 }
 
+// The current song's songKey (songId@timestamp), from the first event of a
+// fresh /api/events stream, or "none": what setPlaybackState,
+// setPitchShiftSemis and pushAdhocLyrics name as the song they're for.
+export async function currentSongKey(remoconUrl: string): Promise<string> {
+  const controller = new AbortController();
+  const res = await fetch(new URL("api/events", remoconUrl), {
+    signal: controller.signal,
+  });
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error(`The stream ended early: ${text}`);
+      text += value;
+      const data = text.match(/^data: (.*)$/m);
+      if (data) {
+        const song = JSON.parse(data[1]).state.currentSong;
+        return song ? `${song.songId}@${song.timestamp}` : "none";
+      }
+    }
+  } finally {
+    controller.abort();
+  }
+}
+
 // What the display's api.call answers.
 export type DisplayAnswer = {
   ok: boolean;

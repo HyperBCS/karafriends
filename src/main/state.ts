@@ -21,8 +21,8 @@ import type {
   ReadingsMode,
   UserIdentity,
 } from "../common/api";
-import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
-import { secondsLeft } from "../common/currentSong";
+import { LYRICS_MODES, READINGS_MODES } from "../common/api";
+import { secondsLeft, songKey } from "../common/currentSong";
 
 // A download in progress, or one that failed in the last
 // FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
@@ -157,7 +157,8 @@ export interface State {
   currentSongLength: number | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   // The lines of each queued (or current) YouTube song with adhoc lyrics, by
-  // adhocLyricsKey. Nothing else: they go when the song does.
+  // songKey: the queue item, not the video, since anyone may queue the same
+  // video again with other lyrics. Nothing else: they go when the song does.
   idToAdhocLyrics: Record<string, string[]>;
   pitchShiftSemis: number;
   // 0 to 1. Saved, unlike the pitch.
@@ -186,15 +187,6 @@ export interface StateStore {
   update<T>(mutator: (state: State) => T): T;
   // Called after every update(). Returns a function that stops it.
   onChange(listener: (state: Readonly<State>) => void): () => void;
-}
-
-// A queue item's key in idToAdhocLyrics: the queue item, not the video,
-// since anyone may queue the same video again with other lyrics.
-export function adhocLyricsKey(item: {
-  songId: string;
-  timestamp: string;
-}): string {
-  return `${item.songId}@${item.timestamp}`;
 }
 
 // Seconds left of the current song at now (ms since the epoch): of its
@@ -285,29 +277,20 @@ export function createStateStore(filePath: string): StateStore {
   };
 }
 
-// What goes in queue.json. The current song is saved at the head of the queue,
-// so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics, the song's timing and length, the song volume, the
-// mics and the tools problem start over. The guide melody level is kept.
+// What goes in queue.json: the queue, with the current song at its head so
+// that after a restart it plays again from the start, the queued songs' adhoc
+// lyrics, the history and the guide melody level. Everything else starts
+// over: nothing plays (WAITING, until the display takes the first song), and
+// the downloads, pitch, pushed lines, the song's timing, the song volume, the
+// mics and the tools problem are a launch's own.
 export function serializeState(state: Readonly<State>): string {
-  const {
-    toolsProblem: _,
-    songVolume: _songVolume,
-    mics: _mics,
-    currentSongStartedAt: _startedAt,
-    currentSongPausedSince: _pausedSince,
-    currentSongLength: _length,
-    ...saved
-  } = state;
   return JSON.stringify({
-    ...saved,
-    pitchShiftSemis: 0,
-    currentSong: null,
-    currentSongAdhocLyrics: [],
     songQueue: state.currentSong
       ? [state.currentSong, ...state.songQueue]
       : state.songQueue,
-    downloadQueue: [],
+    idToAdhocLyrics: state.idToAdhocLyrics,
+    songHistory: state.songHistory,
+    guideMelodyLevel: state.guideMelodyLevel,
   });
 }
 
@@ -335,36 +318,29 @@ export function loadState(filePath: string): State {
   return parseState(raw);
 }
 
-// Builds a State from a parsed queue.json, keeping whatever is valid. Reads
-// both this format and the GraphQL-shaped items older versions saved
-// (`__typename` and `userIdentity` instead of `kind` and `user`). Drops the
-// null that older versions saved at the head of the queue when nothing was
-// playing.
+// Builds a State from a parsed queue.json (serializeState), keeping whatever
+// is valid. Reads the GraphQL-shaped items older versions saved too
+// (`__typename` and `userIdentity` instead of `kind` and `user`), and drops
+// the null they saved at the head of the queue when nothing was playing. A
+// current song in the file (none has saved one, but in case) goes at the
+// head of the queue.
 export function parseState(raw: Record<string, unknown>): State {
   const state = emptyState();
-  state.currentSong = parseQueueItem(raw.currentSong);
+  const current = parseQueueItem(raw.currentSong);
   state.songQueue = parseList(raw.songQueue, parseQueueItem);
+  if (current) state.songQueue.unshift(current);
   state.songHistory = parseList(raw.songHistory, (entry) => {
     const song = isObject(entry) ? parseQueueItem(entry.song) : null;
     return song ? { song } : null;
   });
-  state.currentSongAdhocLyrics = parseList(
-    raw.currentSongAdhocLyrics,
-    (entry) =>
-      isObject(entry) &&
-      typeof entry.lyric === "string" &&
-      typeof entry.lyricIndex === "number"
-        ? { lyric: entry.lyric, lyricIndex: entry.lyricIndex }
-        : null,
-  );
   // Only the lyrics of songs still queued: older versions kept those of
   // songs that never played. And they saved them by video ID.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
   const saved = (key: string) =>
     Object.hasOwn(savedLyrics, key) ? savedLyrics[key] : undefined;
-  for (const item of [state.currentSong, ...state.songQueue]) {
-    if (item?.kind !== "youtube" || !item.hasAdhocLyrics) continue;
-    const key = adhocLyricsKey(item);
+  for (const item of state.songQueue) {
+    if (item.kind !== "youtube" || !item.hasAdhocLyrics) continue;
+    const key = songKey(item);
     const lyrics = saved(key) ?? saved(item.songId);
     if (Array.isArray(lyrics)) {
       state.idToAdhocLyrics[key] = lyrics.filter(
@@ -372,15 +348,9 @@ export function parseState(raw: Record<string, unknown>): State {
       );
     }
   }
-  if (typeof raw.pitchShiftSemis === "number") {
-    state.pitchShiftSemis = raw.pitchShiftSemis;
-  }
   const level = raw.guideMelodyLevel;
   if (typeof level === "number" && level >= 0 && level <= 1) {
     state.guideMelodyLevel = level;
-  }
-  if (PLAYBACK_STATES.includes(raw.playbackState as PlaybackState)) {
-    state.playbackState = raw.playbackState as PlaybackState;
   }
   return state;
 }

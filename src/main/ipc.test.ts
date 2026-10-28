@@ -167,6 +167,7 @@ describe("call", () => {
     assert.deepEqual(
       await ipc.call(fromDisplay, "setPlaybackState", {
         playbackState: "PAUSED",
+        song: "sm1@1",
       }),
       { ok: false, status: 403, error: "Supervised mode: no" },
     );

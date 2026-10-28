@@ -6,8 +6,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import type { QueueItem } from "../common/api";
+import { songKey } from "../common/currentSong";
 import {
-  adhocLyricsKey,
   createStateStore,
   currentSongSecondsLeft,
   type DownloadQueueItem,
@@ -64,14 +64,14 @@ describe("createStateStore", () => {
     store.update((state) => {
       state.songQueue.push(withLyrics, song(2));
       state.songHistory.unshift({ song: song(0) });
-      state.idToAdhocLyrics[adhocLyricsKey(withLyrics)] = ["la", "la"];
+      state.idToAdhocLyrics[songKey(withLyrics)] = ["la", "la"];
     });
 
     const loaded = createStateStore(file).getState();
     assert.deepEqual(loaded.songQueue, [withLyrics, song(2)]);
     assert.deepEqual(loaded.songHistory, [{ song: song(0) }]);
     assert.deepEqual(loaded.idToAdhocLyrics, {
-      [adhocLyricsKey(withLyrics)]: ["la", "la"],
+      [songKey(withLyrics)]: ["la", "la"],
     });
   });
 
@@ -94,12 +94,13 @@ describe("createStateStore", () => {
     assert.deepEqual(seen, [1, 2]);
   });
 
-  test("saves the current song at the head of the queue, and resets pitch and downloads", () => {
+  test("saves the current song at the head of the queue, and starts the rest of it over", () => {
     const store = createStateStore(file);
     store.update((state) => {
       state.currentSong = song(1);
       state.songQueue.push(song(2));
       state.pitchShiftSemis = 3;
+      state.playbackState = "PLAYING";
       state.currentSongAdhocLyrics.push({ lyric: "la", lyricIndex: 0 });
       startDownload(state.downloadQueue, {
         kind: "youtube",
@@ -114,20 +115,41 @@ describe("createStateStore", () => {
     });
 
     const file_ = saved();
-    assert.equal(file_.currentSong, null);
+    assert.deepEqual(Object.keys(file_).sort(), [
+      "guideMelodyLevel",
+      "idToAdhocLyrics",
+      "songHistory",
+      "songQueue",
+    ]);
     assert.deepEqual(file_.songQueue, [song(1), song(2)]);
-    assert.equal(file_.pitchShiftSemis, 0);
-    assert.deepEqual(file_.currentSongAdhocLyrics, []);
-    assert.deepEqual(file_.downloadQueue, []);
-    assert.equal("toolsProblem" in file_, false);
-    assert.equal(createStateStore(file).getState().toolsProblem, null);
-    for (const key of [
-      "currentSongStartedAt",
-      "currentSongPausedSince",
-      "currentSongLength",
-    ]) {
-      assert.equal(key in file_, false, key);
-    }
+    // Nothing plays after a restart, until the display takes song 1.
+    const loaded = createStateStore(file).getState();
+    assert.equal(loaded.currentSong, null);
+    assert.equal(loaded.playbackState, "WAITING");
+    assert.equal(loaded.pitchShiftSemis, 0);
+    assert.deepEqual(loaded.currentSongAdhocLyrics, []);
+    assert.deepEqual(loaded.downloadQueue, []);
+    assert.equal(loaded.toolsProblem, null);
+  });
+
+  test("an older file's playback state and pitch are left out, and its current song is queued first", () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        currentSong: song(1),
+        songQueue: [song(2)],
+        playbackState: "PLAYING",
+        pitchShiftSemis: 3,
+        currentSongAdhocLyrics: [{ lyric: "la", lyricIndex: 0 }],
+      }),
+    );
+    const loaded = createStateStore(file).getState();
+    assert.equal(loaded.currentSong, null);
+    assert.deepEqual(loaded.songQueue, [song(1), song(2)]);
+    assert.equal(loaded.playbackState, "WAITING");
+    assert.equal(loaded.pitchShiftSemis, 0);
+    assert.deepEqual(loaded.currentSongAdhocLyrics, []);
   });
 
   test("starts the song volume and the mics over on every launch", () => {
@@ -379,7 +401,7 @@ describe("loadState", () => {
     write({
       songQueue: [keyed, old, song(3)],
       idToAdhocLyrics: {
-        [adhocLyricsKey(keyed)]: ["one", 1, "two"],
+        [songKey(keyed)]: ["one", 1, "two"],
         video2: ["old"],
         // Songs that aren't queued (a failed download, say).
         video3: ["not queued with lyrics"],
@@ -388,8 +410,8 @@ describe("loadState", () => {
       },
     });
     assert.deepEqual(loadState(file).idToAdhocLyrics, {
-      [adhocLyricsKey(keyed)]: ["one", "two"],
-      [adhocLyricsKey(old)]: ["old"],
+      [songKey(keyed)]: ["one", "two"],
+      [songKey(old)]: ["old"],
     });
   });
 

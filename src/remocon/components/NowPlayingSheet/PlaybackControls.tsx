@@ -1,6 +1,8 @@
 import React from "react";
 
+import type { PlaybackCommand } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
+import { songKey } from "../../../common/currentSong";
 import usePitchShiftSemis from "../../../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import { t } from "../../i18n";
@@ -97,36 +99,46 @@ export const KeyStepper = ({ semis, disabled, onChange }: KeyStepperProps) => (
   </div>
 );
 
-// The transport and the key. In supervised mode they're dimmed for anyone
-// but an admin and the current singer, as the server would refuse them
-// (setPlaybackState in src/main/api.ts), with a line under them saying
-// so. (The guide melody's level is in Settings, for admins.)
+// The transport and the key, for the current song (each command names it,
+// so a tap that crosses the song's end can't land on the next one). Dimmed
+// while nothing plays or the TV loads the song (WAITING), and in supervised
+// mode for anyone but an admin and the current singer, as the server would
+// refuse them (setPlaybackState in src/main/api.ts), with a line under them
+// saying so. (The guide melody's level is in Settings, for admins.)
 const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
+  const song = useLiveState((state) =>
+    state?.currentSong ? songKey(state.currentSong) : null,
+  );
   const supervisedMode = useLiveState(
     (state) => state?.config.supervisedMode ?? false,
   );
   const isMine = useLiveState((state) => state?.currentSong?.isMine === true);
   const isAdmin = useIsAdmin();
   const isEntitled = !supervisedMode || isAdmin === true || isMine;
-  const active = ["PLAYING", "PAUSED"].includes(playbackState);
+  const active = song !== null && ["PLAYING", "PAUSED"].includes(playbackState);
   const disabled = !active || !isEntitled;
   const playing = playbackState === "PLAYING";
+  const play = (next: PlaybackCommand) => {
+    if (song !== null) setPlaybackState(next, song);
+  };
 
   return (
     <>
       <Transport
         playing={playing}
         disabled={disabled}
-        onRestart={() => setPlaybackState("RESTARTING")}
-        onPlayPause={() => setPlaybackState(playing ? "PAUSED" : "PLAYING")}
-        onSkip={() => setPlaybackState("SKIPPING")}
+        onRestart={() => play("RESTARTING")}
+        onPlayPause={() => play(playing ? "PAUSED" : "PLAYING")}
+        onSkip={() => play("SKIPPING")}
       />
       <KeyStepper
         semis={pitchShiftSemis}
         disabled={disabled}
-        onChange={setPitchShiftSemis}
+        onChange={(semis) => {
+          if (song !== null) setPitchShiftSemis(semis, song);
+        }}
       />
       {active && supervisedMode && isAdmin === false && !isMine && (
         <p className={styles.note}>{t("playback.singerOnly")}</p>

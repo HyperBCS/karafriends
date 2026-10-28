@@ -26,6 +26,7 @@ import type {
 import { isAdminPassword } from "../common/adminPassword";
 import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
 import type { KarafriendsConfig } from "../common/config";
+import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
@@ -34,7 +35,6 @@ import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
 import {
-  adhocLyricsKey,
   currentSongSecondsLeft,
   isDownloading,
   type StateStore,
@@ -224,6 +224,20 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     }
   };
 
+  // Whether a command for song (its songKey) may act now: song must be the
+  // current one, and for a phone, one the display has started (not WAITING,
+  // while it loads). Otherwise it's a tap meant for the song before, sent
+  // just as it ended, or one sent while nothing plays: it changes nothing
+  // and isn't an error.
+  const isForCurrentSong = (song: string, caller: Caller) => {
+    const { currentSong, playbackState } = store.getState();
+    return (
+      currentSong !== null &&
+      songKey(currentSong) === song &&
+      (caller.isDisplay || playbackState !== "WAITING")
+    );
+  };
+
   // server.ts refuses the display's methods to phones; this checks again.
   const requireDisplay = (caller: Caller) => {
     if (!caller.isDisplay) {
@@ -281,7 +295,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   // A YouTube song's adhoc lyrics, if it has them.
   const adhocLyricsOf = (item: QueueItem | null) =>
     item?.kind === "youtube" && item.hasAdhocLyrics
-      ? store.getState().idToAdhocLyrics[adhocLyricsKey(item)]
+      ? store.getState().idToAdhocLyrics[songKey(item)]
       : undefined;
 
   // adhocLyrics: a YouTube song's, kept with it while it is queued.
@@ -295,7 +309,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     );
     store.update((state) => {
       if (adhocLyrics) {
-        state.idToAdhocLyrics[adhocLyricsKey(item)] = adhocLyrics;
+        state.idToAdhocLyrics[songKey(item)] = adhocLyrics;
       }
       if (pushToHead) {
         // To give things time to download, we don't actually push to the
@@ -741,7 +755,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       }
       return store.update((state) => {
         state.songQueue.splice(state.songQueue.indexOf(item), 1);
-        delete state.idToAdhocLyrics[adhocLyricsKey(item)];
+        delete state.idToAdhocLyrics[songKey(item)];
         return true;
       });
     },
@@ -763,7 +777,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       });
     },
 
-    async setPlaybackState({ playbackState }, caller) {
+    async setPlaybackState({ playbackState, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
       // Only the state: the song's clock follows the display's video, which
       // reports each start, pause, restart and seek (reportSongPosition).
@@ -805,7 +820,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       return true;
     },
 
-    async setPitchShiftSemis({ semis }, caller) {
+    async setPitchShiftSemis({ semis, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
       store.update((state) => {
         state.pitchShiftSemis = semis;
@@ -846,10 +862,10 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       });
     },
 
-    async pushAdhocLyrics({ lyricIndex }, caller) {
+    async pushAdhocLyrics({ lyricIndex, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       const { currentSong, currentSongAdhocLyrics } = store.getState();
       const lyrics = adhocLyricsOf(currentSong);
-      // The song may just have ended.
       if (lyrics === undefined) return false;
       // Who may sing along is who may control the song.
       requirePlaybackControl(caller);
@@ -927,30 +943,33 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         throw new ApiError(403, "Only the display starts the next song");
       }
       const song = store.update((state) => {
+        const skipping = state.playbackState === "SKIPPING";
+        // WAITING until the display has loaded the song and says PLAYING:
+        // the phones' controls wait, and the server drops their commands
+        // (isForCurrentSong), so none can act on the video before, which
+        // has ended. The display's first report starts the clock
+        // (reportSongPosition).
+        state.playbackState = "WAITING";
+        state.currentSongStartedAt = null;
+        state.currentSongPausedSince = null;
+        state.currentSongLength = null;
         const current = state.currentSong;
         if (
           resume &&
           current &&
-          state.playbackState !== "SKIPPING" &&
-          adhocLyricsKey(current) !== resumedSong
+          !skipping &&
+          songKey(current) !== resumedSong
         ) {
           // A reloaded display: the same song from the start, keeping its
           // place in the history and its lines pushed so far.
-          resumedSong = adhocLyricsKey(current);
-          state.currentSongStartedAt = null;
-          state.currentSongPausedSince = null;
-          state.currentSongLength = null;
+          resumedSong = songKey(current);
           return current;
         }
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];
         const previous = state.currentSong;
-        if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
+        if (previous) delete state.idToAdhocLyrics[songKey(previous)];
         state.currentSong = next;
-        // The display's first report starts the clock (reportSongPosition).
-        state.currentSongStartedAt = null;
-        state.currentSongPausedSince = null;
-        state.currentSongLength = null;
 
         if (next) {
           const last = state.songHistory[0]?.song;

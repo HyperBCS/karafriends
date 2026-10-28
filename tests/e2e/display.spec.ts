@@ -1,6 +1,6 @@
 import type { Locator } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { currentSongKey, expect, test } from "./fixtures";
 
 // A Marquee's text (the element getByText finds) and its box: whether it
 // slides, and the animation's settings.
@@ -247,7 +247,10 @@ test.describe("while a song plays", () => {
           "X-Karafriends-Device-Id": "e2e-display-device",
           "X-Karafriends-Nickname": "e2e",
         },
-        body: JSON.stringify({ playbackState: "PAUSED" }),
+        body: JSON.stringify({
+          playbackState: "PAUSED",
+          song: await currentSongKey(karafriends.remoconUrl),
+        }),
       },
     );
     expect(await res.json()).toBe(true);
@@ -256,6 +259,15 @@ test.describe("while a song plays", () => {
         display.locator("video").evaluate((v: HTMLVideoElement) => v.paused),
       )
       .toBe(true);
+    // The countdown stops once the video's pause reaches the server (the
+    // display reports it: reportSongPosition), a moment later.
+    await expect
+      .poll(async () => {
+        const before = await wait();
+        await display.waitForTimeout(1_100);
+        return (await wait()) - before;
+      })
+      .toBe(0);
     const paused = await wait();
     await display.waitForTimeout(2_000);
     expect(await wait()).toBe(paused);

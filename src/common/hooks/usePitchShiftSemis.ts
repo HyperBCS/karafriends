@@ -2,7 +2,8 @@ import { useLiveState } from "../apiClient";
 import { useApiMutation } from "../apiQueries";
 import useOptimisticValue from "./useOptimisticValue";
 
-// The key change in semitones, live, and a setter for it.
+// The key change in semitones, live, and a setter for it that names the
+// song it is for (its songKey).
 export default function usePitchShiftSemis() {
   const live = useLiveState((state) => state?.pitchShiftSemis ?? 0);
   const [pitchShiftSemis, setPending, clearPending] = useOptimisticValue(live);
@@ -13,9 +14,9 @@ export default function usePitchShiftSemis() {
     },
   });
 
-  const setPitchShiftSemis = (semis: number) => {
+  const setPitchShiftSemis = (semis: number, song: string) => {
     setPending(semis);
-    mutate({ semis });
+    mutate({ semis, song });
   };
 
   return { pitchShiftSemis, setPitchShiftSemis };
