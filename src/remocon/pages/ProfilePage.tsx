@@ -6,8 +6,11 @@ import {
   adminSignOut,
   ApiCallError,
   useIsAdmin,
+  useLiveState,
 } from "../../common/apiClient";
+import { useApiMutation } from "../../common/apiQueries";
 import useGuideMelodyLevel from "../../common/hooks/useGuideMelodyLevel";
+import useOptimisticValue from "../../common/hooks/useOptimisticValue";
 import {
   LyricsModeTabs,
   saveLyricsMode,
@@ -17,7 +20,11 @@ import { Button, InlineError, Tabs, TextField } from "../components/ui";
 import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
-import { READINGS_MODES, type ReadingsMode } from "../../common/api";
+import {
+  READINGS_MODES,
+  type MicInfo,
+  type ReadingsMode,
+} from "../../common/api";
 import { currentTheme, saveTheme, THEMES, type Theme } from "../theme";
 import * as styles from "./ProfilePage.module.scss";
 
@@ -158,13 +165,27 @@ const Notifications = () => {
   );
 };
 
-// How loud Joysound's guide melody plays, for an admin, whatever is
-// playing. While the thumb is dragged it moves here only; letting go (the
-// input's change event, which a key press also fires) sends the level
-// once, so the echo of an earlier step can't pull the thumb back or settle
-// on a stale level.
-const GuideMelodySlider = () => {
-  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
+interface LevelSliderProps {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onSend: (value: number) => void;
+}
+
+// An admin's level slider. While the thumb is dragged it moves here only;
+// letting go (the input's change event, which a key press also fires) sends
+// the level once, so the echo of an earlier step can't pull the thumb back
+// or settle on a stale level.
+const LevelSlider = ({
+  label,
+  min,
+  max,
+  step,
+  value,
+  onSend,
+}: LevelSliderProps) => {
   const [held, setHeld] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   // React's onChange is the input event, which comes with every step.
@@ -172,7 +193,7 @@ const GuideMelodySlider = () => {
     const el = input.current;
     if (!el) return;
     const send = () => {
-      setGuideMelodyLevel(Number(el.value));
+      onSend(Number(el.value));
       setHeld(null);
     };
     el.addEventListener("change", send);
@@ -180,26 +201,123 @@ const GuideMelodySlider = () => {
   });
 
   return (
+    <label className={styles.slider}>
+      {label}
+      <input
+        ref={input}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={held ?? value}
+        onChange={(e) => setHeld(Number(e.target.value))}
+      />
+    </label>
+  );
+};
+
+// How loud Joysound's guide melody plays, whatever is playing.
+const GuideMelodySlider = () => {
+  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
+  return (
     <>
-      <label className={styles.guideMelody}>
-        {t("guideMelody.label")}
-        <input
-          ref={input}
-          type="range"
-          min={0}
-          max={1}
-          step={0.1}
-          value={held ?? guideMelodyLevel}
-          onChange={(e) => setHeld(Number(e.target.value))}
-        />
-      </label>
+      <LevelSlider
+        label={t("guideMelody.label")}
+        min={0}
+        max={1}
+        step={0.1}
+        value={guideMelodyLevel}
+        onSend={setGuideMelodyLevel}
+      />
       <p className={styles.text}>{t("guideMelody.help")}</p>
     </>
   );
 };
 
+// The song's volume on the display, 0 to 100 %.
+const SongVolumeSlider = () => {
+  const live = useLiveState((state) => state?.songVolume ?? 100);
+  const [volume, setPending, clearPending] = useOptimisticValue(live);
+  const { mutate } = useApiMutation("setSongVolume", {
+    onError: (err) => {
+      console.error("Couldn't change the song volume:", err);
+      clearPending();
+    },
+  });
+  return (
+    <LevelSlider
+      label={t("songVolume.label")}
+      min={0}
+      max={100}
+      step={5}
+      value={volume}
+      onSend={(next) => {
+        setPending(next);
+        mutate({ volume: next });
+      }}
+    />
+  );
+};
+
+// One of a mic's levels: gain (0 to 200 %) or echo (0 to 100 %).
+const MicLevelSlider = ({
+  mic,
+  level,
+}: {
+  mic: MicInfo;
+  level: "gain" | "echo";
+}) => {
+  const [value, setPending, clearPending] = useOptimisticValue(mic[level]);
+  const { mutate } = useApiMutation("setMicLevels", {
+    onError: (err) => {
+      console.error(`Couldn't change the mic's ${level}:`, err);
+      clearPending();
+    },
+  });
+  return (
+    <LevelSlider
+      label={t(`mics.${level}`)}
+      min={0}
+      max={level === "gain" ? 200 : 100}
+      step={5}
+      value={value}
+      onSend={(next) => {
+        setPending(next);
+        mutate({ id: mic.id, [level]: next });
+      }}
+    />
+  );
+};
+
+// One empty list, so the live state's selector gives the same one each time.
+const NO_MICS: MicInfo[] = [];
+
+// The display's mics, each with its gain and echo.
+const Mics = () => {
+  const mics = useLiveState((state) => state?.mics ?? NO_MICS);
+  return (
+    <>
+      <h3 className={styles.heading}>{t("mics.label")}</h3>
+      {mics.length === 0 ? (
+        <p className={styles.text}>{t("mics.none")}</p>
+      ) : (
+        <ul className={styles.mics}>
+          {mics.map((mic) => (
+            <li key={mic.id} className={styles.mic}>
+              <span className={styles.text}>{mic.label}</span>
+              <MicLevelSlider mic={mic} level="gain" />
+              <MicLevelSlider mic={mic} level="echo" />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+};
+
 // Signing in and out as an admin with the password the host set. Signed
-// in, the admin's controls: the guide melody's level.
+// in, the admin's controls: the song volume, the guide melody's level and
+// the mics' levels.
 const Admin = () => {
   const { adminToken } = useUserIdentity();
   const isAdmin = useIsAdmin();
@@ -237,7 +355,9 @@ const Admin = () => {
         <p className={styles.text} role="status">
           {t("profile.signedIn")}
         </p>
+        <SongVolumeSlider />
         <GuideMelodySlider />
+        <Mics />
         <Button variant="secondary" disabled={pending} onClick={leave}>
           {t("profile.signOut")}
         </Button>

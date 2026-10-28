@@ -29,17 +29,32 @@
   font-size: $kf-text-body;
 }
 
-// The guide melody's level, for admins: the label, then the slider, a full
-// tap target tall.
-.guideMelody {
+// The admin's mics: each one's label, then its two sliders.
+.mics {
   display: flex;
+  flex-direction: column;
+  gap: $kf-space-4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mic {
+  display: flex;
+  flex-direction: column;
+}
+
+// An admin's level slider: the label, then the slider, a full tap target
+// tall. The labels take one width, so the sliders line up.
+.slider {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
   align-items: center;
   gap: $kf-space-3;
   color: $kf-text;
   font-size: $kf-text-body;
 
   input {
-    flex: 1;
     min-width: 0;
     height: $kf-tap;
     margin: 0;

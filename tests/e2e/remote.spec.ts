@@ -27,8 +27,8 @@ test("the remote opens on the search screen", async ({ remote }) => {
   await expect(remote.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-// Home, History and Profile: the top bar's three, in that order.
-const PLACES = ["Home", "History", "Profile"] as const;
+// History, Profile and Home: the top bar's three, in that order.
+const PLACES = ["History", "Profile", "Home"] as const;
 const places = (page: Page) =>
   page
     .getByRole("banner")
@@ -43,7 +43,7 @@ const rgb = (hex: string) => {
   return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
 };
 
-test("the top bar has Home, History and Profile in the same place on every screen", async ({
+test("the top bar has History, Profile and Home in the same place on every screen", async ({
   karafriends,
   remote,
 }) => {
@@ -108,10 +108,10 @@ test("the top bar has Home, History and Profile in the same place on every scree
 });
 
 test("History in the top bar opens the history", async ({ remote }) => {
-  await places(remote).nth(1).click();
+  await places(remote).nth(0).click();
   await expect(remote.getByRole("heading", { name: "History" })).toBeVisible();
   await expect(remote).toHaveURL(/#\/history$/);
-  await places(remote).nth(0).click();
+  await places(remote).nth(2).click();
   await expect(
     remote.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
@@ -1517,6 +1517,112 @@ test.describe("the guide melody slider", () => {
     await remote.getByRole("button", { name: "Sign out" }).click();
     await expect(remote.getByLabel("Admin password")).toBeVisible();
     await expect(slider).toHaveCount(0);
+  });
+});
+
+test.describe("the song volume and mic sliders", () => {
+  const PASSWORD = "e2e mic sliders";
+  test.use({ appConfig: adminPasswordConfig(PASSWORD) });
+
+  async function signIn(remote: Page) {
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Admin password").fill(PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+  }
+
+  test("the song volume is above the guide melody and sends setSongVolume", async ({
+    karafriends,
+    remote,
+  }) => {
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setSongVolume")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    await signIn(remote);
+
+    const volume = remote.getByRole("slider", { name: "Song volume" });
+    const guide = remote.getByRole("slider", { name: "Guide melody" });
+    await expect(volume).toHaveValue("100");
+    expect((await volume.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect((await volume.boundingBox())!.y).toBeLessThan(
+      (await guide.boundingBox())!.y,
+    );
+    // The display has no mics open.
+    await expect(remote.getByText("No microphones")).toBeVisible();
+
+    await volume.fill("40");
+    await expect.poll(() => sent).toEqual([{ volume: 40 }]);
+    await expect
+      .poll(async () => (await liveState(karafriends.remoconUrl)).songVolume)
+      .toBe(40);
+    await expect(volume).toHaveValue("40");
+  });
+
+  test("the display's mics show with their gain and echo, which send setMicLevels", async ({
+    karafriends,
+    display,
+    remote,
+  }) => {
+    const mics = [
+      {
+        id: "Yeti Stereo Microphone (USB)#1",
+        label: "Yeti Stereo Microphone (USB), channel 1",
+        gain: 100,
+        echo: 40,
+      },
+      {
+        id: "Focusrite USB (USB)#2",
+        label: "Focusrite USB (USB), channel 2",
+        gain: 120,
+        echo: 0,
+      },
+    ];
+    expect(
+      await display.evaluate(
+        (mics) =>
+          (
+            window as unknown as {
+              karafriends: {
+                api: { call(method: string, input: object): Promise<unknown> };
+              };
+            }
+          ).karafriends.api.call("setMics", { mics }),
+        mics,
+      ),
+    ).toMatchObject({ ok: true });
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setMicLevels")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    await signIn(remote);
+
+    await expect(remote.getByText("No microphones")).toHaveCount(0);
+    const row = (label: string) =>
+      remote.getByRole("listitem").filter({ hasText: label });
+    const yeti = row(mics[0].label);
+    const focusrite = row(mics[1].label);
+    await expect(yeti.getByRole("slider", { name: "Gain" })).toHaveValue("100");
+    await expect(yeti.getByRole("slider", { name: "Echo" })).toHaveValue("40");
+    await expect(focusrite.getByRole("slider", { name: "Gain" })).toHaveValue(
+      "120",
+    );
+    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
+      "0",
+    );
+
+    await focusrite.getByRole("slider", { name: "Echo" }).fill("60");
+    await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 60 }]);
+    await expect
+      .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
+      .toEqual([mics[0], { ...mics[1], echo: 60 }]);
+    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
+      "60",
+    );
   });
 });
 

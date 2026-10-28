@@ -155,6 +155,13 @@ export const en = {
   // Joysound's guide melody level, on the profile for admins.
   "guideMelody.label": "Guide melody",
   "guideMelody.help": "For Joysound songs.",
+
+  // The song's volume and the display's mics, on the profile for admins.
+  "songVolume.label": "Song volume",
+  "mics.label": "Microphones",
+  "mics.none": "No microphones",
+  "mics.gain": "Gain",
+  "mics.echo": "Echo",
   "readings.label": "Readings",
   "readings.written": "Written",
   "readings.kana": "Kana",

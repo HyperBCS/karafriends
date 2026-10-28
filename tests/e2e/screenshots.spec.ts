@@ -593,3 +593,79 @@ test.describe("phase P2", () => {
     }
   });
 });
+
+// The mic round's R1, the same way with -g "phase R1": the profile's Admin
+// section with the song volume, the guide melody and two mics, which the
+// display sets, in the light and the dark theme:
+// n-remote-admin-<theme>-<browser>.png.
+test.describe("phase R1", () => {
+  const ADMIN_PASSWORD = "screenshots";
+  test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
+
+  const MICS = [
+    {
+      id: "Yeti Stereo Microphone (USB)#1",
+      label: "Yeti Stereo Microphone (USB), channel 1",
+      gain: 100,
+      echo: 40,
+    },
+    {
+      id: "Focusrite USB (USB)#2",
+      label: "Focusrite USB (USB), channel 2",
+      gain: 120,
+      echo: 20,
+    },
+  ];
+
+  test("the Admin section in both themes", async ({
+    display,
+    remote,
+    browserName,
+  }) => {
+    // As the display would, over IPC.
+    for (const [method, input] of [
+      ["setMics", { mics: MICS }],
+      ["setSongVolume", { volume: 80 }],
+      ["setGuideMelodyLevel", { level: 0.5 }],
+    ] as const) {
+      expect(
+        await display.evaluate(
+          ([method, input]) =>
+            (
+              window as unknown as {
+                karafriends: {
+                  api: {
+                    call(method: string, input: object): Promise<unknown>;
+                  };
+                };
+              }
+            ).karafriends.api.call(method, input),
+          [method, input] as const,
+        ),
+      ).toEqual({ ok: true, output: true });
+    }
+    // A real-looking nickname, signed in as an admin.
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Nickname").fill("Ken");
+    await remote.getByRole("button", { name: "Save nickname" }).click();
+    await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(
+      remote.getByRole("slider", { name: "Song volume" }),
+    ).toHaveValue("80");
+    await expect(remote.getByRole("slider", { name: "Gain" })).toHaveCount(2);
+
+    for (const theme of ["light", "dark"] as const) {
+      await remote.emulateMedia({ colorScheme: theme });
+      await expect(remote.locator("html")).toHaveAttribute("data-theme", theme);
+      await remote
+        .getByRole("heading", { name: "Admin" })
+        .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await expect(
+        remote.getByRole("button", { name: "Sign out" }),
+      ).toBeInViewport();
+      await shoot(remote, `n-remote-admin-${theme}-${browserName}`);
+    }
+  });
+});
