@@ -97,6 +97,17 @@ export interface ToolRun {
   signal?: AbortSignal;
 }
 
+// How to stop each tool running now.
+const running = new Set<() => void>();
+
+// Stops every tool running now and what it started, as the app quits or
+// restarts: on Linux and macOS, runTool starts each in its own process
+// group, which would go on without the app. Each one's run fails as
+// stopped.
+export function stopAllTools(): void {
+  for (const stop of running) stop();
+}
+
 // Runs a tool to the end, its output going to the console and the log.
 // Resolves when it exits 0. Rejects with a DownloadFailure when it can't
 // start, exits non-zero, or runs longer than its timeout or signal aborts
@@ -125,7 +136,10 @@ export function runTool(run: ToolRun): Promise<void> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (stop) run.signal?.removeEventListener("abort", stop);
+      if (stop) {
+        run.signal?.removeEventListener("abort", stop);
+        running.delete(stop);
+      }
       if (failure) log.write(`\nkarafriends: ${failure.detail}\n`);
       // Settles once the log is written, so it says why. The callback
       // comes even when the log can't be written (with its error).
@@ -186,6 +200,7 @@ export function runTool(run: ToolRun): Promise<void> {
       killTree(proc, run.label);
     };
     run.signal?.addEventListener("abort", stop, { once: true });
+    running.add(stop);
     proc.on("close", (code, signal) => {
       if (stoppedFor) {
         settle(stoppedFor);

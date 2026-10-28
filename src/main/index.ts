@@ -45,7 +45,7 @@ import express from "express";
 
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
-import { TEMP_FOLDER } from "./downloads";
+import { stopAllTools, TEMP_FOLDER } from "./downloads";
 import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
@@ -310,6 +310,9 @@ app.on("ready", () => {
 app.on("window-all-closed", () => {
   app.quit();
 });
+
+// A download running now would go on without the app.
+app.on("will-quit", stopAllTools);
 
 app.on("activate", () => {
   if (rendererWindow === null) {

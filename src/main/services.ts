@@ -9,7 +9,12 @@ import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
 import { toolsStatus, updateTools } from "../common/externalResources";
-import { createDownloads, getNicoVideoInfo, TEMP_FOLDER } from "./downloads";
+import {
+  createDownloads,
+  getNicoVideoInfo,
+  stopAllTools,
+  TEMP_FOLDER,
+} from "./downloads";
 import {
   createAdminSessions,
   createSetAdminPassword,
@@ -132,6 +137,8 @@ export const api: ApiHandlers = {
       joysound: (email, password) => JoysoundAPI.login(email, password),
     },
     restart: () => {
+      // app.exit skips will-quit, where they are stopped otherwise.
+      stopAllTools();
       app.relaunch();
       app.exit(0);
     },

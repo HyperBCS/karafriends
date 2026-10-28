@@ -42,6 +42,8 @@ import {
 } from "./jobs";
 import { runDownload } from "./queue";
 
+export { stopAllTools } from "./run";
+
 const execFileAsync = promisify(execFile);
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;

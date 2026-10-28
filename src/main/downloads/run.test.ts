@@ -9,7 +9,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { REASONS } from "../../common/downloadFailure";
 import type { DownloadQueueItem } from "../state";
 import { runDownload } from "./queue";
-import { parseDuration, runTool, type ToolRun } from "./run";
+import { parseDuration, runTool, stopAllTools, type ToolRun } from "./run";
 
 let folder: string;
 
@@ -124,4 +124,18 @@ test("a tool's output reaches onStdout and onStderr a line at a time", async () 
   ]);
   assert.deepEqual(stdout, ["[download]  50.0%", "[download] 100.0%"]);
   assert.equal(parseDuration(stderr[0]), 241.52);
+});
+
+test("stopAllTools stops every tool running", async () => {
+  const runs = [
+    runTool({ ...hangs(), label: "first" }),
+    runTool({ ...hangs(), label: "second", logFilename: `${folder}/2.log` }),
+  ];
+  // Started, so there are processes to stop.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  stopAllTools();
+  await Promise.all(runs.map((run) => assert.rejects(run, /was stopped/)));
+  // None left to stop: a tool that ran to the end isn't stopped later.
+  await runTool({ ...hangs(), args: ["-e", ""] });
+  stopAllTools();
 });
