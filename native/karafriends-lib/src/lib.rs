@@ -1100,13 +1100,9 @@ impl InputDevice {
         let input_rate = input_config.sample_rate;
         let input_channels = input_config.channels as usize;
 
-        let mut reverbs = [
-            reverb_module::ReverbModule::new(input_rate, 0.09920, 0.750)?,
-            reverb_module::ReverbModule::new(input_rate, 0.06930, 0.720)?,
-            reverb_module::ReverbModule::new(input_rate, 0.04836, 0.691)?,
-            reverb_module::ReverbModule::new(input_rate, 0.03570, 0.649)?,
-            reverb_module::ReverbModule::new(input_rate, 0.02196, 0.662)?,
-        ];
+        let mut reverbs = reverb_module::REVERB_TAPS.map(|(delay, amplitude)| {
+            reverb_module::ReverbModule::new(input_rate, delay, amplitude)
+        });
 
         let mut resampler = if input_rate == output_rate {
             None
@@ -1128,7 +1124,9 @@ impl InputDevice {
         // them once at startup so the output stays aligned with the input.
         let mut resampler_delay = resampler.as_ref().map_or(0, |r| r.output_delay());
 
+        // The chosen channel, and its reverb: sized by the first callback.
         let mut mono: Vec<f32> = Vec::new();
+        let mut wet: Vec<f32> = Vec::new();
         let mut full_prints = RateLimit::default();
         let mut error_prints = RateLimit::default();
 
@@ -1151,13 +1149,12 @@ impl InputDevice {
             let gain = f32::from_bits(levels.gain.load(Relaxed));
             let echo = f32::from_bits(levels.echo.load(Relaxed));
             mono.iter_mut().for_each(|sample| *sample *= gain);
-            let mut reverb_samples: Vec<_> = mono.iter().map(|s| s * 0.5 * echo).collect();
+            wet.clear();
+            wet.extend(mono.iter().map(|s| s * 0.5 * echo));
             for reverb in &mut reverbs {
-                reverb_samples = reverb.process(reverb_samples.as_slice());
+                reverb.process(&mut wet);
             }
-            mono.iter_mut()
-                .zip(reverb_samples)
-                .for_each(|(dry, wet)| *dry += wet);
+            mono.iter_mut().zip(&wet).for_each(|(dry, wet)| *dry += wet);
 
             let mut dropped = 0;
             match &mut resampler {
@@ -1688,18 +1685,13 @@ mod tests {
             run_input_callback(rate, rate, Levels::new(1.0, 0.4), &samples, &[256])?;
         assert_eq!(pitch, samples);
 
-        let mut reverbs = [
-            reverb_module::ReverbModule::new(rate, 0.09920, 0.750)?,
-            reverb_module::ReverbModule::new(rate, 0.06930, 0.720)?,
-            reverb_module::ReverbModule::new(rate, 0.04836, 0.691)?,
-            reverb_module::ReverbModule::new(rate, 0.03570, 0.649)?,
-            reverb_module::ReverbModule::new(rate, 0.02196, 0.662)?,
-        ];
+        let mut reverbs = reverb_module::REVERB_TAPS
+            .map(|(delay, amplitude)| reverb_module::ReverbModule::new(rate, delay, amplitude));
         let mut expected = Vec::new();
         for chunk in samples.chunks(256) {
             let mut wet: Vec<f32> = chunk.iter().map(|s| s * 0.2).collect();
             for reverb in &mut reverbs {
-                wet = reverb.process(&wet);
+                reverb.process(&mut wet);
             }
             expected.extend(chunk.iter().zip(wet).map(|(dry, wet)| dry + wet));
         }
@@ -1887,6 +1879,73 @@ mod tests {
         let mut stall = Stall::new(start);
         assert!(!stall.stalled(u32::MAX, at(10)));
         assert!(!stall.stalled(0, at(2000)));
+    }
+
+    // Counts each thread's allocations, for the test that the mic's callback
+    // makes none.
+    struct CountingAllocator;
+
+    thread_local! {
+        static ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    fn allocations() -> usize {
+        ALLOCATIONS.with(|count| count.get())
+    }
+
+    unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+            std::alloc::System.alloc(layout)
+        }
+
+        unsafe fn realloc(
+            &self,
+            ptr: *mut u8,
+            layout: std::alloc::Layout,
+            new_size: usize,
+        ) -> *mut u8 {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+            std::alloc::System.realloc(ptr, layout, new_size)
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+            std::alloc::System.dealloc(ptr, layout)
+        }
+    }
+
+    #[global_allocator]
+    static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+    // The mic's callback runs on the audio thread: once its first call has
+    // sized its buffers, it allocates nothing, resampling or not.
+    #[test]
+    fn test_the_input_callback_doesnt_allocate() -> Result<()> {
+        for (input_rate, output_rate) in [(48000, 48000), (44100, 48000)] {
+            let (pitch_tx, _pitch) = pitch_detector::PitchWindow::new(input_rate);
+            let (output_tx, _output_rx) = ringbuf::HeapRb::new(output_rate as usize).split();
+            let mut callback = InputDevice::input_data_callback::<f32>(
+                &config(input_rate),
+                output_rate,
+                0,
+                Arc::new(Levels::new(1.0, 0.4)),
+                Arc::default(),
+                pitch_tx,
+                output_tx,
+            )?;
+            let samples = sine_samples(input_rate, 128);
+            callback(&samples);
+            let before = allocations();
+            for _ in 0..100 {
+                callback(&samples);
+            }
+            let made = allocations() - before;
+            assert_eq!(
+                made, 0,
+                "{input_rate} -> {output_rate}: {made} in 100 callbacks"
+            );
+        }
+        Ok(())
     }
 
     // The input callback counts itself for the stall check.
