@@ -19,7 +19,7 @@ import {
   youtubeJob,
   type JobPaths,
 } from "./jobs";
-import { runDownload } from "./queue";
+import { runDownload, YTDLP_SLOTS } from "./queue";
 
 const fake = (name: string) =>
   path.resolve(
@@ -92,6 +92,44 @@ test("a YouTube download reports its progress and leaves its video", async () =>
   assert.equal(outcome.item.progress, 1);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), ["yt-jNQXAC9IVRw.log", "yt-jNQXAC9IVRw.mp4"]);
+});
+
+test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", async () => {
+  assert.equal(YTDLP_SLOTS, 2);
+  const queue: DownloadQueueItem[] = [];
+  const started: string[] = [];
+  // Each job runs until finish(name).
+  const finishers = new Map<string, () => void>();
+  const finish = (name: string) => finishers.get(name)?.();
+  const job = (name: string) => (item: DownloadQueueItem) => {
+    started.push(name);
+    item.progress = 0.5;
+    return new Promise<void>((resolve) => finishers.set(name, resolve));
+  };
+  const outcomes = [
+    download(queue, "youtube", job("first")),
+    download(queue, "nico", job("second")),
+    download(queue, "youtube", job("third")),
+  ];
+  // Joysound's own video doesn't use yt-dlp, so it doesn't wait.
+  const joysound = download(queue, "joysound", job("joysound"));
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  await settle();
+  assert.deepEqual(started.sort(), ["first", "joysound", "second"]);
+  const third = queue[2];
+  assert.equal(third.status, "downloading");
+  assert.equal(third.progress, 0);
+
+  finish("second");
+  await settle();
+  assert.deepEqual(started.sort(), ["first", "joysound", "second", "third"]);
+
+  for (const name of ["first", "third", "joysound"]) finish(name);
+  for (const outcome of [...outcomes, joysound]) {
+    assert.equal((await outcome).ok, true);
+  }
+  assert.deepEqual(queue, []);
 });
 
 test("a Niconico download leaves its video", async () => {
