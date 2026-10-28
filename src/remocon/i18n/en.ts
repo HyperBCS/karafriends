@@ -141,4 +141,9 @@ export const en = {
   "profile.noPassword": "The host hasn't set an admin password.",
   "profile.tooManyTries": "Too many tries. Wait a minute, then try again.",
   "profile.signInFailed": "Couldn't sign in: {reason}",
+  "readings.label": "Readings",
+  "readings.written": "Written",
+  "readings.kana": "Kana",
+  "readings.romaji": "Romaji",
+  "readings.both": "Both",
 } as const;
