@@ -838,6 +838,20 @@ function stopMics(display: Page, names: string[]) {
   );
 }
 
+// From now on, and through a reload, listing the fake inputs and outputs
+// throws (on) or works again (off).
+function failListing(display: Page, on: boolean) {
+  return display.evaluate(
+    (on) =>
+      (
+        window as unknown as {
+          karafriendsFakeAudio: { failListing(on: boolean): void };
+        }
+      ).karafriendsFakeAudio.failListing(on),
+    on,
+  );
+}
+
 test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
@@ -969,7 +983,7 @@ test.describe("the microphones", () => {
       null,
       null,
     ]);
-    // The outputs are listed again each time Settings opens.
+    // The outputs are listed again each time the Sound tab opens.
     const listings = async () =>
       (await fakeAudioCalls(display)).filter(
         ([name]) => name === "outputDevices",
@@ -978,10 +992,9 @@ test.describe("the microphones", () => {
     await display.keyboard.press("Escape");
     await expect(settings).toHaveCount(0);
     await display.keyboard.press("s");
-    await expect(settings).toBeVisible();
-    expect(await listings()).toBe(listed + 1);
     // On Sound still.
     await expect(section).toBeVisible();
+    expect(await listings()).toBe(listed + 1);
 
     // An admin's phone changes the mic's levels.
     expect(
@@ -1411,6 +1424,52 @@ test.describe("devices that won't open", () => {
     await output.selectOption("E2E Speakers (Windows)");
     await expect(output).toHaveValue("E2E Speakers (Windows)");
     await expect(section.locator(".settingsMessage.problem")).toHaveCount(0);
+  });
+
+  test("a device list that won't read leaves the display up: Settings says why, a mic keeps its row, and a launch opens with the saved mics kept", async ({
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const section = settings.getByRole("region", { name: "Microphones" });
+    const crashed = display.getByRole("heading", {
+      name: "Something went wrong",
+    });
+    const MIC = "E2E Mic (USB), channel 1";
+    await section.getByLabel("Add a microphone").selectOption(MIC);
+    const mic = section.getByRole("group", { name: MIC });
+    await expect(mic).toBeVisible();
+
+    // Settings lists the devices again as it opens.
+    await failListing(display, true);
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    await display.keyboard.press("s");
+    await expect(
+      section.getByText(
+        "Couldn't list the sound devices: A device won't give its name (fake)",
+      ),
+    ).toBeVisible();
+    await expect(crashed).toHaveCount(0);
+    // The mic's own device still shows in its row.
+    await expect(mic.getByLabel("Microphone")).toHaveValue(`${MIC_DEVICE}_0`);
+    await expect(section.getByLabel("Mic output")).toHaveValue("");
+
+    // A launch while the list won't read opens no mic, and keeps it saved.
+    await display.reload();
+    await expect(settings).toBeVisible();
+    await expect(crashed).toHaveCount(0);
+    expect(
+      await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
+    ).toEqual([{ name: MIC_DEVICE, channel: 0, gain: 100, echo: 40 }]);
+
+    // Once it reads again, the next launch opens it.
+    await failListing(display, false);
+    await display.reload();
+    await openTab(display, "Sound");
+    await expect(mic).toBeVisible();
+    await expect(
+      section.getByText("Couldn't list the sound devices", { exact: false }),
+    ).toHaveCount(0);
   });
 });
 

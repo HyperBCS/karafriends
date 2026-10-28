@@ -5,12 +5,6 @@ import React, { useEffect, useId, useState } from "react";
 
 import { call } from "../common/apiClient";
 import "./global";
-import {
-  asioStatus,
-  linuxAudio,
-  outputDevices,
-  refreshInputDevices,
-} from "./nativeAudio";
 import AccountsTab from "./settings/AccountsTab";
 import {
   createSettingsActions,
@@ -54,19 +48,6 @@ export default function Settings(
   const tabId = (tab: SettingsTab) => `${tabIds}-${tab}`;
   const panelId = `${tabIds}-panel`;
   const [adminDraft, setAdminDraft] = useState("");
-  // Listed each time Settings opens: the outputs, and on Linux the inputs
-  // too, so a mic plugged in since can be picked.
-  const [outputs] = useState(() => {
-    refreshInputDevices();
-    return outputDevices();
-  });
-  // Shown only when a driver won't load or ASIO didn't start.
-  const [asioProblem] = useState(() => {
-    const status = asioStatus();
-    return /won't load|didn't start/.test(status) ? status : null;
-  });
-  // On Linux, the sound system and the mics' buffer sizes; null elsewhere.
-  const [linux] = useState(linuxAudio);
 
   const say = (section: Section, message: Message | null) =>
     setMessages((previous) => ({ ...previous, [section]: message }));
@@ -171,14 +152,7 @@ export default function Settings(
             />
           ) : null}
           {props.tab === "sound" ? (
-            <SoundTab
-              {...props}
-              messages={messages}
-              report={report}
-              outputs={outputs}
-              asioProblem={asioProblem}
-              linux={linux}
-            />
+            <SoundTab {...props} messages={messages} report={report} />
           ) : null}
           {props.tab === "display" ? <DisplayTab {...props} /> : null}
           {props.tab === "advanced" ? (

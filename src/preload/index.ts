@@ -89,7 +89,7 @@ ipcRenderer
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
 // endpoint ids, and labels) and two fake outputs, and every call is kept,
 // for the tests to read with window.karafriendsFakeAudio.calls(). The
-// tests can have devices fail (failOpen, stopMics below).
+// tests can have devices fail (failOpen, stopMics, failListing below).
 // KARAFRIENDS_FAKE_AUDIO=linux: the same, as on Linux with PipeWire.
 type FakeAudioCall = [string, ...unknown[]];
 const fakeAudio = process.env.KARAFRIENDS_FAKE_AUDIO;
@@ -119,11 +119,20 @@ function failsToOpen(name: string | null): boolean {
   return name !== null && failing.includes(name);
 }
 
+// While window.karafriendsFakeAudio.failListing(true) is on, these throw,
+// as a listing does when one device won't give its name. Kept in
+// sessionStorage, so a reload finds it too.
+const FAIL_LISTING_KEY = "karafriendsFakeAudioFailListing";
+const LISTINGS = new Set(["inputDevices", "outputDevices", "outputOptions"]);
+
 // Records each call of a fake, then answers it.
 function faker(calls: FakeAudioCall[]) {
   return <T>(name: string, answer: (...args: any[]) => T) =>
     (...args: unknown[]): T => {
       calls.push([name, ...args]);
+      if (LISTINGS.has(name) && sessionStorage.getItem(FAIL_LISTING_KEY)) {
+        throw new Error("A device won't give its name (fake)");
+      }
       return answer(...args);
     };
 }
@@ -248,6 +257,10 @@ if (fakeAudioCalls) {
     calls: (): FakeAudioCall[] => fakeAudioCalls,
     failOpen: (names: string[]) =>
       sessionStorage.setItem(FAIL_OPEN_KEY, JSON.stringify(names)),
+    failListing: (on: boolean) => {
+      if (on) sessionStorage.setItem(FAIL_LISTING_KEY, "1");
+      else sessionStorage.removeItem(FAIL_LISTING_KEY);
+    },
     // The open mics of these inputs stop, as a stream that stops calling
     // back does; they open again as usual.
     stopMics: (names: string[]) => {

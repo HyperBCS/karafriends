@@ -9,8 +9,63 @@ const native = window.karafriends.nativeAudio;
 // is down.
 const WATCH_MS = 2000;
 
-export function outputDevices(): string[] {
-  return native.outputDevices();
+// An input as listed: its id (the key mics are saved and sent by), its
+// label (what the system calls it) and its channel count.
+export type Input = [id: string, label: string, channels: number];
+
+// What list() answers, or fallback and why when it throws: one device that
+// won't give its name can fail a whole listing. Logged, so no listing
+// throws into a render.
+function listed<T>(
+  what: string,
+  list: () => T,
+  fallback: T,
+): { value: T; problem: string | null } {
+  try {
+    return { value: list(), problem: null };
+  } catch (err) {
+    console.error(`Couldn't list ${what}:`, err);
+    return { value: fallback, problem: String((err as Error)?.message ?? err) };
+  }
+}
+
+// The inputs as listed; none while the listing fails.
+export function inputDevices(): Input[] {
+  return listed("the inputs", () => native.inputDevices(), []).value;
+}
+
+// What Settings shows as its Sound tab opens: the inputs (listed again on
+// Linux, for a mic plugged in since), the outputs, the ASIO drivers'
+// status and Linux's sound system. A listing that fails leaves its part
+// empty, and problem says why.
+export interface SoundDevices {
+  inputs: Input[];
+  outputs: string[];
+  asioStatus: string;
+  linux: LinuxAudio | null;
+  problem: string | null;
+}
+
+export function soundDevices(): SoundDevices {
+  const refreshed = listed(
+    "the inputs",
+    () => native.refreshInputDevices(),
+    undefined,
+  );
+  const inputs = listed("the inputs", () => native.inputDevices(), []);
+  const outputs = listed("the outputs", () => native.outputDevices(), []);
+  const asio = listed("the ASIO drivers", () => native.asioStatus(), "");
+  const linux = listed("the sound system", () => native.linuxAudio(), null);
+  const problem = [refreshed, inputs, outputs, asio, linux].find(
+    (answer) => answer.problem !== null,
+  )?.problem;
+  return {
+    inputs: inputs.value,
+    outputs: outputs.value,
+    asioStatus: asio.value,
+    linux: linux.value,
+    problem: problem ? `Couldn't list the sound devices: ${problem}` : null,
+  };
 }
 
 // Where every mic plays: the device (null for the default output), and for
@@ -44,16 +99,10 @@ export function exclusiveAvailable(): boolean {
   return native.exclusiveAvailable();
 }
 
-export function linuxAudio(): LinuxAudio | null {
-  return native.linuxAudio();
-}
-
-export function refreshInputDevices() {
-  native.refreshInputDevices();
-}
-
+// Null too while they won't list.
 export function outputOptions(name: string): OutputOptions | null {
-  return native.outputOptions(name);
+  return listed(`${name}'s options`, () => native.outputOptions(name), null)
+    .value;
 }
 
 export function outputFormat(): string | undefined {
@@ -66,13 +115,9 @@ export function outputStatus(): string | undefined {
   return native.outputStatus();
 }
 
-export function asioStatus(): string {
-  return native.asioStatus();
-}
-
 // What the system calls an input, from its id; the id if it isn't listed.
 function inputLabel(name: string): string {
-  return native.inputDevices().find(([id]) => id === name)?.[1] ?? name;
+  return inputDevices().find(([id]) => id === name)?.[1] ?? name;
 }
 
 // How Settings and the phones show one channel of an input.

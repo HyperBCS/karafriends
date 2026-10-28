@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 
 import {
   AddMicrophone,
@@ -8,11 +8,12 @@ import {
   type MicLevels,
   useTick,
 } from "../MicrophoneSetting";
-import type {
-  InputDevice,
-  LinuxAudio,
-  MicMode,
-  MicOutput,
+import {
+  type InputDevice,
+  type MicMode,
+  type MicOutput,
+  type SoundDevices,
+  soundDevices,
 } from "../nativeAudio";
 import { AV_OFFSETS } from "../playback";
 import type { OutputPlace } from "../songOutput";
@@ -145,17 +146,14 @@ export default function SoundTab(
     messages: Partial<Record<Section, Message | null>>;
     // Why a device didn't open, under its section; null clears it.
     report: (section: Section, problem: string | null) => void;
-    // As listed when Settings opened.
-    outputs: string[];
-    asioProblem: string | null;
-    linux: LinuxAudio | null;
   },
 ) {
-  const { messages, report, outputs, asioProblem, linux } = props;
-  // What the native side says about the output while the mics work ("ok:
-  // <note>"): that the chosen one is missing or won't open, say.
-  const micStatus = props.mics[0]?.status();
-  const outputNote = micStatus?.startsWith("ok: ") ? micStatus.slice(4) : null;
+  const { messages, report } = props;
+  // Listed each time the tab opens, outside the render (a listing can
+  // fail): the outputs, and on Linux the inputs too, so a mic plugged in
+  // since can be picked.
+  const [devices, setDevices] = useState<SoundDevices | null>(null);
+  useLayoutEffect(() => setDevices(soundDevices()), []);
 
   return (
     <>
@@ -197,41 +195,72 @@ export default function SoundTab(
       </SettingsSection>
 
       <SettingsSection title="Microphones" message={messages.mics}>
-        <MicOutputSetting
-          outputs={outputs}
-          output={props.micOutput}
-          onChange={(output) => report("mics", props.onMicOutputChange(output))}
-        />
-        {outputNote ? (
-          <p className="settingsHint" role="status">
-            {outputNote}
-          </p>
-        ) : null}
-        {linux ? <Hint>{linux.status}</Hint> : null}
-        {asioProblem ? <Hint>{asioProblem}</Hint> : null}
-        <MicModeSetting
-          mode={props.micMode}
-          linux={linux}
-          onChange={props.onMicModeChange}
-        />
-        {props.mics.map((mic, i) => (
-          <MicrophoneSetting
-            key={mic.key}
-            mic={mic}
-            levels={props.micLevels(mic)}
-            onChange={(name, channel) =>
-              report("mics", props.onChangeMic(i, name, channel))
-            }
-            onLevelsChange={(levels) => props.onChangeLevels(mic, levels)}
-            onRemove={() => props.onRemoveMic(i)}
-          />
-        ))}
-        <AddMicrophone
-          onAdd={(name, channel) =>
-            report("mics", props.onChangeMic(props.mics.length, name, channel))
-          }
-        />
+        {devices ? <Microphones {...props} devices={devices} /> : null}
       </SettingsSection>
+    </>
+  );
+}
+
+// The Microphones section's fields, once the devices are listed.
+function Microphones(
+  props: SoundProps & {
+    devices: SoundDevices;
+    report: (section: Section, problem: string | null) => void;
+  },
+) {
+  const { devices, report } = props;
+  const { inputs, linux } = devices;
+  // Shown only when a driver won't load or ASIO didn't start.
+  const asioProblem = /won't load|didn't start/.test(devices.asioStatus)
+    ? devices.asioStatus
+    : null;
+  // What the native side says about the output while the mics work ("ok:
+  // <note>"): that the chosen one is missing or won't open, say.
+  const micStatus = props.mics[0]?.status();
+  const outputNote = micStatus?.startsWith("ok: ") ? micStatus.slice(4) : null;
+  return (
+    <>
+      {devices.problem ? (
+        <p className="settingsMessage problem" role="status">
+          {devices.problem}
+        </p>
+      ) : null}
+      <MicOutputSetting
+        outputs={devices.outputs}
+        output={props.micOutput}
+        onChange={(output) => report("mics", props.onMicOutputChange(output))}
+      />
+      {outputNote ? (
+        <p className="settingsHint" role="status">
+          {outputNote}
+        </p>
+      ) : null}
+      {linux ? <Hint>{linux.status}</Hint> : null}
+      {asioProblem ? <Hint>{asioProblem}</Hint> : null}
+      <MicModeSetting
+        mode={props.micMode}
+        linux={linux}
+        onChange={props.onMicModeChange}
+      />
+      {props.mics.map((mic, i) => (
+        <MicrophoneSetting
+          key={mic.key}
+          mic={mic}
+          inputs={inputs}
+          levels={props.micLevels(mic)}
+          onChange={(name, channel) =>
+            report("mics", props.onChangeMic(i, name, channel))
+          }
+          onLevelsChange={(levels) => props.onChangeLevels(mic, levels)}
+          onRemove={() => props.onRemoveMic(i)}
+        />
+      ))}
+      <AddMicrophone
+        inputs={inputs}
+        onAdd={(name, channel) =>
+          report("mics", props.onChangeMic(props.mics.length, name, channel))
+        }
+      />
     </>
   );
 }

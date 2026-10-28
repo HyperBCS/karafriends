@@ -3,11 +3,24 @@ import assert from "node:assert/strict";
 import { afterEach, before, beforeEach, describe, mock, test } from "node:test";
 
 // The native module as the preload hands it over: a mic that won't open
-// while `busy` is set.
+// while `busy` is set, and the outputs' listing throwing while
+// `outputsFail` is (as cpal's does when one output won't give its name).
 let busy = false;
+let outputsFail = false;
 let nextHandle = 0;
 const native = {
   inputDevices: () => [["usb-mic", "USB Mic", 1]],
+  refreshInputDevices: () => undefined,
+  outputDevices: () => {
+    if (outputsFail) throw new Error("could not open property store");
+    return ["Speakers (Windows)"];
+  },
+  outputOptions: () => {
+    if (outputsFail) throw new Error("could not open property store");
+    return null;
+  },
+  asioStatus: () => "No ASIO drivers are installed",
+  linuxAudio: () => null,
   inputDevice_new: () => {
     if (busy) throw new Error("The device is busy");
     return nextHandle++;
@@ -72,5 +85,39 @@ describe("a mic", () => {
     assert.notEqual(other.key, key);
     mic.stop();
     other.stop();
+  });
+});
+
+describe("the device listings", () => {
+  let nativeAudio: typeof import("./nativeAudio");
+  before(async () => {
+    nativeAudio = await import("./nativeAudio");
+  });
+  beforeEach(() => {
+    outputsFail = false;
+    mock.method(console, "error", () => undefined);
+  });
+  afterEach(() => mock.restoreAll());
+
+  test("list the inputs and outputs, with no problem", () => {
+    assert.deepEqual(nativeAudio.soundDevices(), {
+      inputs: [["usb-mic", "USB Mic", 1]],
+      outputs: ["Speakers (Windows)"],
+      asioStatus: "No ASIO drivers are installed",
+      linux: null,
+      problem: null,
+    });
+  });
+
+  test("that throw don't: the inputs still list, and the problem says why", () => {
+    outputsFail = true;
+    const devices = nativeAudio.soundDevices();
+    assert.deepEqual(devices.inputs, [["usb-mic", "USB Mic", 1]]);
+    assert.deepEqual(devices.outputs, []);
+    assert.equal(
+      devices.problem,
+      "Couldn't list the sound devices: could not open property store",
+    );
+    assert.equal(nativeAudio.outputOptions("Speakers (Windows)"), null);
   });
 });

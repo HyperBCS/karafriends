@@ -11,6 +11,7 @@ import IdleScreen from "./IdleScreen";
 import type { MicLevels } from "./MicrophoneSetting";
 import {
   InputDevice,
+  inputDevices,
   type MicMode,
   type MicOutput,
   setMicMode,
@@ -159,10 +160,10 @@ function openSavedMics(): InputDevice[] {
     console.warn("The saved mic output won't open:", err);
   }
   setMicMode(savedMicMode());
+  // None while the listing fails: the saved mics then wait, kept, for a
+  // launch that lists them.
   const channelCounts = new Map(
-    window.karafriends.nativeAudio
-      .inputDevices()
-      .map(([id, , channels]) => [id, channels]),
+    inputDevices().map(([id, , channels]) => [id, channels]),
   );
   const listed = ({ name, channel }: SavedMic) =>
     channel < (channelCounts.get(name) ?? 0);

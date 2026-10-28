@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import "./global";
 import {
   channelLabel,
   exclusiveAvailable,
+  type Input,
   InputDevice,
   type LinuxAudio,
+  type OutputOptions,
   type MicMode,
   type MicOutput,
   outputFormat,
@@ -23,13 +25,19 @@ export interface MicLevels {
 const STATUS_MS = 2000;
 
 // The device select: every channel of every input device, by its label;
-// the option's data carries the id.
+// the option's data carries the id. A mic whose input isn't listed (the
+// listing failed) still shows its own.
 function DeviceSelect(props: {
   label: string;
+  inputs: Input[];
   mic: InputDevice | null;
   onChange: (name: string, channel: number) => void;
 }) {
   const { mic } = props;
+  const listed = props.inputs.some(
+    ([name, , channels]) =>
+      name === mic?.name && mic.channelSelection < channels,
+  );
   return (
     <label className="kfLabel">
       {props.label}
@@ -44,20 +52,23 @@ function DeviceSelect(props: {
         <option value="" disabled={true}>
           Select a microphone
         </option>
-        {window.karafriends.nativeAudio
-          .inputDevices()
-          .map(([name, label, channelCount]) =>
-            [...Array(channelCount)].map((_, channel) => (
-              <option
-                key={`${name}_${channel}`}
-                data-name={name}
-                data-channel={channel}
-                value={`${name}_${channel}`}
-              >
-                {channelLabel(label, channel)}
-              </option>
-            )),
-          )}
+        {mic && !listed ? (
+          <option value={`${mic.name}_${mic.channelSelection}`} disabled={true}>
+            {mic.label}
+          </option>
+        ) : null}
+        {props.inputs.map(([name, label, channelCount]) =>
+          [...Array(channelCount)].map((_, channel) => (
+            <option
+              key={`${name}_${channel}`}
+              data-name={name}
+              data-channel={channel}
+              value={`${name}_${channel}`}
+            >
+              {channelLabel(label, channel)}
+            </option>
+          )),
+        )}
       </select>
     </label>
   );
@@ -106,15 +117,18 @@ function NumberSelect(props: {
 // The output every mic plays through; for an ASIO one, its buffer size and
 // sample rate too; and what it runs at.
 export function MicOutputSetting(props: {
-  // As listed when Settings opened.
+  // As listed when the Sound tab opened.
   outputs: string[];
   output: MicOutput;
   onChange: (output: MicOutput) => void;
 }) {
   const { outputs, output } = props;
   const connected = output.name !== null && outputs.includes(output.name);
-  const options = useMemo(
-    () => (connected && output.name ? outputOptions(output.name) : null),
+  // Asked for outside the render, before the paint.
+  const [options, setOptions] = useState<OutputOptions | null>(null);
+  useLayoutEffect(
+    () =>
+      setOptions(connected && output.name ? outputOptions(output.name) : null),
     [connected, output.name],
   );
   useTick();
@@ -337,6 +351,8 @@ function LevelSlider(props: {
 // it is doing, and a button that removes it.
 export function MicrophoneSetting(props: {
   mic: InputDevice;
+  // The inputs, as listed when the Sound tab opened.
+  inputs: Input[];
   levels: MicLevels;
   onChange: (name: string, channel: number) => void;
   onLevelsChange: (levels: MicLevels) => void;
@@ -349,7 +365,12 @@ export function MicrophoneSetting(props: {
   return (
     <div className="settingsMic" role="group" aria-label={mic.label}>
       <div className="settingsMicRow">
-        <DeviceSelect label="Microphone" mic={mic} onChange={props.onChange} />
+        <DeviceSelect
+          label="Microphone"
+          inputs={props.inputs}
+          mic={mic}
+          onChange={props.onChange}
+        />
         <LevelSlider
           label="Gain"
           value={levels.gain}
@@ -383,12 +404,14 @@ export function MicrophoneSetting(props: {
 
 // The last row: a select that adds a mic.
 export function AddMicrophone(props: {
+  inputs: Input[];
   onAdd: (name: string, channel: number) => void;
 }) {
   return (
     <div className="settingsMicRow">
       <DeviceSelect
         label="Add a microphone"
+        inputs={props.inputs}
         mic={null}
         onChange={props.onAdd}
       />
