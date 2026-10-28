@@ -117,11 +117,10 @@ describe("configProblems", () => {
 });
 
 describe("hasLogin", () => {
-  test("needs both fields, neither the placeholder", () => {
+  test("needs both fields", () => {
     const dam = (damUsername: string, damPassword: string) =>
       hasLogin({ ...DEFAULT_CONFIG, damUsername, damPassword }, "dam");
     assert.equal(hasLogin(DEFAULT_CONFIG, "dam"), false);
-    assert.equal(dam("me", DEFAULT_CONFIG.damPassword), false);
     assert.equal(dam("me", ""), false);
     assert.equal(dam("me", "pw"), true);
     assert.equal(

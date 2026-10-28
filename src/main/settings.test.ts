@@ -376,6 +376,43 @@ describe("exportConfig and importConfig", () => {
     assert.equal(store.get().remoconPort, DEFAULT_CONFIG.remoconPort);
   });
 
+  test("a 0.1.0 config.yaml's placeholders are imported as empty", async () => {
+    const { api, store } = setup();
+    const result = await api.importConfig(
+      {
+        yaml:
+          "damUsername: YOUR_USERNAME_HERE\ndamPassword: YOUR_PASSWORD_HERE\n" +
+          "joysoundEmail: YOUR_EMAIL_HERE\njoysoundPassword: YOUR_PASSWORD_HERE\n" +
+          "proxyHost: PROXY_HOST_HERE\nproxyUser: PROXY_USER_HERE\n" +
+          "proxyPass: PROXY_PASS_HERE\nsupervisedMode: true\n",
+      },
+      display,
+    );
+    assert.deepEqual(result, {
+      ok: true,
+      problems: [
+        "No DAM login is set: enter the username and password first.",
+        "No Joysound login is set: enter the email and password first.",
+      ],
+    });
+    const saved = store.saved();
+    for (const key of [
+      "damUsername",
+      "damPassword",
+      "joysoundEmail",
+      "joysoundPassword",
+      "proxyHost",
+      "proxyUser",
+      "proxyPass",
+    ] as const) {
+      assert.equal(saved[key], "", key);
+    }
+    assert.equal(saved.supervisedMode, true);
+    const { settings, isFirstRun } = await api.getSettings({}, display);
+    assert.equal(settings.damPassword, "");
+    assert.equal(isFirstRun, true);
+  });
+
   test("unknown keys are dropped and listed", async () => {
     const { api, onDisk } = setup();
     const result = await api.importConfig(

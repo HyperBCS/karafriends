@@ -14,6 +14,7 @@ import {
   type ToolsStatus,
 } from "../common/api";
 import {
+  clearPlaceholders,
   CONFIG_KEYS,
   configProblems,
   DEFAULT_CONFIG,
@@ -250,6 +251,8 @@ export function createSettingsHandlers(
 
       const values: Record<string, unknown> = { ...parsed };
       delete values.karafriendsConfigVersion;
+      // An old config.yaml's YOUR_PASSWORD_HERE and the like mean nothing set.
+      clearPlaceholders(values);
       const notes: string[] = [];
       for (const key of Object.keys(values)) {
         if ((OBSOLETE_KEYS as readonly string[]).includes(key)) {
