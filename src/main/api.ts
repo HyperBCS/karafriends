@@ -42,6 +42,7 @@ import type { SettingsMethod } from "./settings";
 import {
   currentSongSecondsLeft,
   isDownloading,
+  MAX_HISTORY,
   type PendingSong,
   type StateStore,
 } from "./state";
@@ -709,9 +710,10 @@ export function createApi(
       const { songHistory } = store.getState();
       return {
         // Without device IDs, like the live state.
-        items: songHistory
-          .slice(offset, offset + limit)
-          .map((entry) => shareQueueItem(entry.song, caller.deviceId)),
+        items: songHistory.slice(offset, offset + limit).map((entry) => ({
+          ...shareQueueItem(entry.song, caller.deviceId),
+          playedAt: entry.playedAt,
+        })),
         nextOffset: nextOffset(offset, limit, songHistory.length),
       };
     },
@@ -1066,6 +1068,20 @@ export function createApi(
       if (!caller.isDisplay) {
         throw new ApiError(403, "Only the display starts the next song");
       }
+      // The idle display asks every 5 seconds: with nothing to start and
+      // nothing to clear, don't save (and serialize) the state each time.
+      const before = store.getState();
+      if (
+        before.currentSong === null &&
+        before.songQueue.length === 0 &&
+        before.playbackState === "WAITING" &&
+        before.currentSongStartedAt === null &&
+        before.currentSongPausedSince === null &&
+        before.currentSongLength === null &&
+        before.currentSongAdhocLyrics.length === 0
+      ) {
+        return null;
+      }
       const song = store.update((state) => {
         const skipping = state.playbackState === "SKIPPING";
         // WAITING until the display has loaded the song and says PLAYING:
@@ -1103,7 +1119,8 @@ export function createApi(
             last.songId !== next.songId ||
             last.timestamp !== next.timestamp
           ) {
-            state.songHistory.unshift({ song: next });
+            state.songHistory.unshift({ song: next, playedAt: now() });
+            state.songHistory.splice(MAX_HISTORY);
           }
         }
         return next;

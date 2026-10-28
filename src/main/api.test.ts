@@ -17,6 +17,7 @@ import { damPageWindow, nextOffset } from "./paging";
 import {
   createStateStore,
   failDownload,
+  MAX_HISTORY,
   startDownload,
   type StateStore,
 } from "./state";
@@ -422,7 +423,9 @@ describe("admin checks", () => {
     const popped = await api.popSong({}, display);
     assert.equal(popped?.songId, "sm1");
     assert.equal(store.getState().currentSong?.songId, "sm1");
-    assert.deepEqual(store.getState().songHistory, [{ song: song(1, alice) }]);
+    assert.deepEqual(store.getState().songHistory, [
+      { song: song(1, alice), playedAt: 42 },
+    ]);
     assert.equal(await api.popSong({}, display), null);
   });
 
@@ -430,7 +433,7 @@ describe("admin checks", () => {
     store.update((state) => {
       state.currentSong = song(1, alice);
       state.songQueue.push(song(2, bob));
-      state.songHistory.unshift({ song: song(1, alice) });
+      state.songHistory.unshift({ song: song(1, alice), playedAt: 1 });
     });
     // The restart: queue.json has the song back at the head of the queue.
     store = createStateStore(path.join(dir, "queue.json"));
@@ -1470,7 +1473,7 @@ describe("paging", () => {
     const api = makeApi();
     store.update((state) => {
       for (let n = 1; n <= 35; n++) {
-        state.songHistory.unshift({ song: song(n, alice) });
+        state.songHistory.unshift({ song: song(n, alice), playedAt: n });
       }
     });
     const first = await api.history({}, alice);
@@ -1488,15 +1491,15 @@ describe("paging", () => {
   test("history names singers by nickname only, and marks the caller's", async () => {
     const api = makeApi();
     store.update((state) => {
-      state.songHistory.unshift({ song: song(1, alice) });
-      state.songHistory.unshift({ song: song(2, bob) });
+      state.songHistory.unshift({ song: song(1, alice), playedAt: null });
+      state.songHistory.unshift({ song: song(2, bob), playedAt: 2 });
     });
     const { items } = await api.history({}, alice);
     assert.deepEqual(
-      items.map((item) => [item.songId, item.user, item.isMine]),
+      items.map((item) => [item.songId, item.user, item.isMine, item.playedAt]),
       [
-        ["sm2", { nickname: "bob" }, false],
-        ["sm1", { nickname: "alice" }, true],
+        ["sm2", { nickname: "bob" }, false, 2],
+        ["sm1", { nickname: "alice" }, true, null],
       ],
     );
     assert.doesNotMatch(JSON.stringify(items), /-device/);
@@ -1505,6 +1508,35 @@ describe("paging", () => {
       anonymous.items.map((item) => item.isMine),
       [false, false],
     );
+  });
+});
+
+describe("the history's length", () => {
+  test("keeps the newest MAX_HISTORY songs", async () => {
+    store.update((state) => {
+      for (let n = 1; n <= MAX_HISTORY; n++) {
+        state.songHistory.unshift({ song: song(n, alice), playedAt: n });
+      }
+      state.songQueue.push(song(MAX_HISTORY + 1, bob));
+    });
+    const api = makeApi();
+    await api.popSong({}, display);
+    const { songHistory } = store.getState();
+    assert.equal(songHistory.length, MAX_HISTORY);
+    assert.deepEqual(
+      [songHistory[0].song.songId, songHistory[0].playedAt],
+      [`sm${MAX_HISTORY + 1}`, 42],
+    );
+    assert.equal(songHistory.at(-1)!.song.songId, "sm2");
+  });
+
+  test("an idle display's asking saves nothing", async () => {
+    const api = makeApi();
+    let changes = 0;
+    store.onChange(() => changes++);
+    assert.equal(await api.popSong({}, display), null);
+    assert.equal(await api.popSong({ resume: true }, display), null);
+    assert.equal(changes, 0);
   });
 });
 

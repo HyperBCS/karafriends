@@ -1540,10 +1540,10 @@ test.describe("history", () => {
   const songName = (n: number) =>
     `E2E history song ${String(n).padStart(2, "0")}`;
 
-  // queue.json in the format older versions wrote (GraphQL-shaped items with
-  // __typename and userIdentity), with a history of 35 songs, newest first.
-  // The app still reads it (parseState in src/main/state.ts), so this also
-  // checks that an old queue.json survives an upgrade.
+  // queue.json with a history of 35 songs, newest first: the newest one
+  // with when it was sung, the rest as 0.1.0 saved them, without. The app
+  // still reads those (parseState in src/main/state.ts), so this also checks
+  // that an old queue.json survives an upgrade.
   test.use({
     seedQueue: {
       currentSong: null,
@@ -1557,17 +1557,20 @@ test.describe("history", () => {
         const n = HISTORY_LENGTH - i;
         return {
           song: {
-            __typename: "YoutubeQueueItem",
+            kind: "youtube",
             songId: `e2e-history-${n}`,
             name: songName(n),
             artistName: "E2E artist",
             playtime: 60,
             timestamp: String(Date.UTC(2026, 0, 1) + n * 60_000),
-            userIdentity: { deviceId: "e2e-device", nickname: NICKNAME },
+            user: { deviceId: "e2e-device", nickname: NICKNAME },
             hasAdhocLyrics: false,
             hasCaptions: false,
             gainValue: 1,
           },
+          ...(n === HISTORY_LENGTH && {
+            playedAt: Date.UTC(2026, 0, 1) + (n + 30) * 60_000,
+          }),
         };
       }),
     },
@@ -1590,11 +1593,18 @@ test.describe("history", () => {
     await expect(
       remote.getByRole("main").getByRole("listitem").first(),
     ).toContainText(NICKNAME);
-    // The time is when it was queued, and says so: when it was sung isn't
-    // kept.
-    await expect(
-      remote.getByRole("main").getByRole("listitem").first().locator("time"),
-    ).toHaveText(/^Queued /);
+    // The time is when it was sung, and for a song from before that was
+    // kept, when it was queued, which says so.
+    const times = remote
+      .getByRole("main")
+      .getByRole("listitem")
+      .locator("time");
+    await expect(times.first()).toHaveText(/^Sung /);
+    await expect(times.first()).toHaveAttribute(
+      "datetime",
+      new Date(Date.UTC(2026, 0, 1) + 65 * 60_000).toISOString(),
+    );
+    await expect(times.nth(1)).toHaveText(/^Queued /);
 
     await remote.getByRole("button", { name: "More" }).click();
     await expect(songs).toHaveCount(HISTORY_LENGTH);

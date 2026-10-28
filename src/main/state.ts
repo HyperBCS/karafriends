@@ -142,7 +142,14 @@ function sameDownload(
 
 export interface HistoryItem {
   song: QueueItem;
+  // When it started (ms since the epoch); null for a song sung before this
+  // was kept.
+  playedAt: number | null;
 }
+
+// The most songs the history keeps, newest first: a long run of parties,
+// and every state change saves it all to queue.json.
+export const MAX_HISTORY = 1000;
 
 // A YouTube, Niconico or Joysound song whose download is running: it joins
 // the queue once that's done (queueSong), with what came with it. Saved, so
@@ -301,8 +308,8 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json: the queue, with the current song at its head so
 // that after a restart it plays again from the start, the queued songs' adhoc
-// lyrics, the songs still downloading (to download again), the history and
-// the guide melody level. Everything else starts over: nothing plays
+// lyrics, the songs still downloading (to download again), the history (its
+// newest MAX_HISTORY) and the guide melody level. Everything else starts over: nothing plays
 // (WAITING, until the display takes the first song), and the download
 // queue, pitch, pushed lines, the song's timing, the song volume, the mics
 // and the two problems are a launch's own.
@@ -313,7 +320,7 @@ export function serializeState(state: Readonly<State>): string {
       : state.songQueue,
     idToAdhocLyrics: state.idToAdhocLyrics,
     pendingSongs: state.pendingSongs,
-    songHistory: state.songHistory,
+    songHistory: state.songHistory.slice(0, MAX_HISTORY),
     guideMelodyLevel: state.guideMelodyLevel,
   });
 }
@@ -355,8 +362,10 @@ export function parseState(raw: Record<string, unknown>): State {
   if (current) state.songQueue.unshift(current);
   state.songHistory = parseList(raw.songHistory, (entry) => {
     const song = isObject(entry) ? parseQueueItem(entry.song) : null;
-    return song ? { song } : null;
-  });
+    if (!song) return null;
+    const playedAt = (entry as Record<string, unknown>).playedAt;
+    return { song, playedAt: typeof playedAt === "number" ? playedAt : null };
+  }).slice(0, MAX_HISTORY);
   // Only the lyrics of songs still queued: older versions kept those of
   // songs that never played. And they saved them by video ID.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};

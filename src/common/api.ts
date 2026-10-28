@@ -132,6 +132,10 @@ type Shared<Item> = Item extends QueueItem
 // A queue item as the live state and history show it.
 export type SharedQueueItem = Shared<QueueItem>;
 
+// A song in the history: as the queue showed it, and when it started (ms
+// since the epoch; null for one sung before that was kept).
+export type PlayedSong = SharedQueueItem & { playedAt: number | null };
+
 // What popSong hands the display. A DAM song comes with what the display needs
 // to play and score it, as far as DAM answered in time: either list may be
 // empty.
@@ -443,8 +447,8 @@ export interface Api {
   };
   // A YouTube song's adhoc lyrics, null if it has none.
   adhocLyrics: { input: { songId: string }; output: string[] | null };
-  // Newest first.
-  history: { input: PageInput; output: Page<SharedQueueItem> };
+  // Newest first: the last 1,000 songs sung.
+  history: { input: PageInput; output: Page<PlayedSong> };
 
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and

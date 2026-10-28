@@ -131,6 +131,7 @@ export const ja: Messages = {
 
   "history.heading": "履歴",
   "history.empty": "履歴はありません",
+  "history.sungAt": "{time}に歌唱",
   "history.queuedAt": "{time}に予約",
 
   "settings.heading": "設定",

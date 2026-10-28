@@ -15,8 +15,10 @@ import {
   failDownload,
   isDownloading,
   loadState,
+  MAX_HISTORY,
   removeDownload,
   removeExpiredDownloads,
+  serializeState,
   startDownload,
   type State,
 } from "./state";
@@ -63,13 +65,13 @@ describe("createStateStore", () => {
     const withLyrics = song(1, { hasAdhocLyrics: true });
     store.update((state) => {
       state.songQueue.push(withLyrics, song(2));
-      state.songHistory.unshift({ song: song(0) });
+      state.songHistory.unshift({ song: song(0), playedAt: 5 });
       state.idToAdhocLyrics[songKey(withLyrics)] = ["la", "la"];
     });
 
     const loaded = createStateStore(file).getState();
     assert.deepEqual(loaded.songQueue, [withLyrics, song(2)]);
-    assert.deepEqual(loaded.songHistory, [{ song: song(0) }]);
+    assert.deepEqual(loaded.songHistory, [{ song: song(0), playedAt: 5 }]);
     assert.deepEqual(loaded.idToAdhocLyrics, {
       [songKey(withLyrics)]: ["la", "la"],
     });
@@ -408,6 +410,22 @@ describe("loadState", () => {
     assert.equal(state.songHistory[0].song.readingsMode, "kana");
   });
 
+  test("keeps the newest MAX_HISTORY of the history, saving and loading", () => {
+    const history = Array.from({ length: MAX_HISTORY + 5 }, (_, n) => ({
+      song: song(n),
+      playedAt: n,
+    }));
+    write({ songHistory: history });
+    const state = loadState(file);
+    assert.equal(state.songHistory.length, MAX_HISTORY);
+    assert.deepEqual(state.songHistory.at(-1), history[MAX_HISTORY - 1]);
+    state.songHistory.push(...history.slice(MAX_HISTORY));
+    assert.equal(
+      JSON.parse(serializeState(state)).songHistory.length,
+      MAX_HISTORY,
+    );
+  });
+
   test("drops entries it can't read and keeps the rest", () => {
     write({
       songQueue: [{ kind: "karaoke-cassette" }, song(1), "junk"],
@@ -418,7 +436,7 @@ describe("loadState", () => {
     });
     const state: State = loadState(file);
     assert.deepEqual(state.songQueue, [song(1)]);
-    assert.deepEqual(state.songHistory, [{ song: song(2) }]);
+    assert.deepEqual(state.songHistory, [{ song: song(2), playedAt: null }]);
     assert.equal(state.playbackState, "WAITING");
     assert.equal(state.pitchShiftSemis, 0);
     assert.equal(state.guideMelodyLevel, 0);
