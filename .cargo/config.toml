@@ -1,2 +1,12 @@
 [env]
 CPAL_ASIO_DIR = { value = "buildResources/asio/asiosdk", relative = true }
+
+# Linux: partial RELRO for every crate, so rustc calls libpipewire through the
+# PLT, and build.rs's -z lazy then binds each function when it is first
+# called. With rustc's default (full RELRO, no PLT) the module binds all of
+# them as it loads, and one missing from an older libpipewire (Ubuntu 22.04's
+# 0.3.48 has no pw_stream_get_time_n) stops the app at launch. A RUSTFLAGS
+# variable, even an empty one, replaces this list: put the flag in it too.
+# scripts/checkLazyPipewire.sh checks the built module.
+[target.'cfg(target_os = "linux")']
+rustflags = ["-C", "relro-level=partial"]

@@ -88,7 +88,7 @@ pub use mixer::{output_devices, output_format, output_options, output_status, se
 // How the platform's mics open: exclusive (Windows only, see exclusive.rs)
 // with a buffer size in frames (None: the mic's smallest), or shared. On
 // Linux the buffer size is for the mics and their output alike (None:
-// linux::DEFAULT_BUFFER).
+// linux::default_buffer).
 #[derive(Clone, Copy)]
 struct MicMode {
     exclusive: bool,
@@ -113,7 +113,7 @@ pub fn set_mic_mode(exclusive: bool, buffer: Option<u32>) {
 // The buffer size in frames the mics and their output ask for on Linux.
 #[cfg(target_os = "linux")]
 fn linux_buffer() -> u32 {
-    lock(&MIC_MODE).buffer.unwrap_or(linux::DEFAULT_BUFFER)
+    lock(&MIC_MODE).buffer.unwrap_or_else(linux::default_buffer)
 }
 
 // For Settings on Linux: the sound system ("Sound system: PipeWire 1.6.2"),
@@ -131,12 +131,12 @@ pub fn linux_audio() -> Option<LinuxAudio> {
         Ok((host, why)) => LinuxAudio {
             status: linux::status(&host, why),
             buffer_sizes: linux::buffer_sizes(&host),
-            default_buffer: linux::DEFAULT_BUFFER,
+            default_buffer: linux::default_buffer(),
         },
         Err(e) => LinuxAudio {
             status: format!("No sound system: {e}"),
             buffer_sizes: Vec::new(),
-            default_buffer: linux::DEFAULT_BUFFER,
+            default_buffer: linux::default_buffer(),
         },
     });
     #[cfg(not(target_os = "linux"))]
@@ -144,12 +144,12 @@ pub fn linux_audio() -> Option<LinuxAudio> {
 }
 
 // The platform's own host: WASAPI, CoreAudio, or on Linux the sound system
-// linux.rs picks (PipeWire, PulseAudio or ALSA).
-fn system_host() -> Result<cpal::Host> {
+// linux.rs picks (PipeWire, PulseAudio or ALSA), shared for a second.
+fn system_host() -> Result<std::rc::Rc<cpal::Host>> {
     #[cfg(target_os = "linux")]
     return Ok(linux::system_host()?.0);
     #[cfg(not(target_os = "linux"))]
-    Ok(cpal::default_host())
+    Ok(std::rc::Rc::new(cpal::default_host()))
 }
 
 pub fn exclusive_available() -> bool {
