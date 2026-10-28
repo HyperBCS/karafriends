@@ -154,4 +154,9 @@ export const en = {
 
   // Joysound's guide melody level, in the playback controls.
   "guideMelody.label": "Guide melody",
+  "readings.label": "Readings",
+  "readings.written": "Written",
+  "readings.kana": "Kana",
+  "readings.romaji": "Romaji",
+  "readings.both": "Both",
 } as const;

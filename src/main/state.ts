@@ -365,6 +365,10 @@ function parseQueueItem(raw: unknown): QueueItem | null {
     songId: raw.songId,
     name: raw.name,
     artistName: raw.artistName,
+    ...(typeof raw.nameYomi === "string" && { nameYomi: raw.nameYomi }),
+    ...(typeof raw.artistNameYomi === "string" && {
+      artistNameYomi: raw.artistNameYomi,
+    }),
     playtime: typeof raw.playtime === "number" ? raw.playtime : null,
     timestamp: raw.timestamp,
     user: { deviceId: user.deviceId, nickname: user.nickname },

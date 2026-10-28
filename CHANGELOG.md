@@ -23,6 +23,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Admins reorder the queue on the phone by dragging a song's grip (or with the arrow keys on it) instead of the up and down buttons; Move to top stays.
 - Admins can turn up Joysound's guide melody, which was never heard before (`setGuideMelodyLevel`, 0 to 1, muted by default and kept across songs and restarts).
 - A Joysound song's lyrics show on the TV with kana over the kanji, in romaji, or both (romaji under the kanji line), picked on its page when queueing, with the phone's default on the profile screen ("Lyrics on the TV"); the romaji queue button is gone. Admins set the guide melody with a slider in the playback controls while a Joysound song plays.
+- A "Readings" choice on the phone's profile shows song titles and artists with the kana reading DAM gives, in romaji, or both, under the title and after the artist, in search results, the queue and the history (Joysound gives no readings, so its songs show as written).
 
 ## 0.1.0
 

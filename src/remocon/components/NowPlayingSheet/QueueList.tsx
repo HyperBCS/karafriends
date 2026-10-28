@@ -10,6 +10,7 @@ import { t } from "../../i18n";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
 import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
+import WithReading from "../WithReading";
 import * as styles from "./NowPlayingSheet.module.scss";
 import useDragReorder from "./useDragReorder";
 
@@ -86,8 +87,14 @@ const QueueRow = ({
   return (
     <ListRow
       leading={<Initial nickname={nickname} />}
-      title={item.name}
-      subtitle={expanded ? queuedBy : item.artistName}
+      title={<WithReading text={item.name} yomi={item.nameYomi} under />}
+      subtitle={
+        expanded ? (
+          queuedBy
+        ) : (
+          <WithReading text={item.artistName} yomi={item.artistNameYomi} />
+        )
+      }
       source={sourceName(item.kind)}
       onPress={() => setExpanded(!expanded)}
       expanded={expanded}
@@ -156,8 +163,19 @@ const QueueList = () => {
             <ListRow
               current
               leading={<Initial nickname={nicknameOf(currentSong)} />}
-              title={currentSong.name}
-              subtitle={currentSong.artistName}
+              title={
+                <WithReading
+                  text={currentSong.name}
+                  yomi={currentSong.nameYomi}
+                  under
+                />
+              }
+              subtitle={
+                <WithReading
+                  text={currentSong.artistName}
+                  yomi={currentSong.artistNameYomi}
+                />
+              }
               source={sourceName(currentSong.kind)}
               to={songLink(currentSong)}
               trailing={t("sheet.nowPlaying")}

@@ -13,8 +13,10 @@ import {
   savedLyricsMode,
 } from "../components/QueueButtons";
 import { Button, InlineError, Tabs, TextField } from "../components/ui";
+import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
+import { READINGS, type Readings } from "../readings";
 import * as styles from "./ProfilePage.module.scss";
 
 // What to tell a guest whose sign-in failed.
@@ -77,6 +79,23 @@ const LanguagePicker = () => {
         tabs={LANGUAGES.map((id) => ({ id, label: t(`language.${id}`) }))}
         selected={language}
         onSelect={setLanguage}
+      />
+    </div>
+  );
+};
+
+// How this phone shows song titles and artists: as written, or with their
+// kana reading, in romaji, or both (where DAM gives a reading).
+const ReadingsPicker = () => {
+  const readings = useReadings();
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.heading}>{t("readings.label")}</h2>
+      <Tabs<Readings>
+        label={t("readings.label")}
+        tabs={READINGS.map((id) => ({ id, label: t(`readings.${id}`) }))}
+        selected={readings}
+        onSelect={saveReadings}
       />
     </div>
   );
@@ -210,6 +229,7 @@ const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
     <LanguagePicker />
     {!firstVisit && (
       <>
+        <ReadingsPicker />
         <Notifications />
         <Admin />
         <LyricsOnTheTv />
