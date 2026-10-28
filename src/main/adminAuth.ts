@@ -5,7 +5,7 @@
 // X-Karafriends-Admin-Token header. The sessions are saved (as SHA-256
 // hashes of the tokens) in adminSessions.json in userData, so a restart
 // mid-party doesn't sign the admins out. Changing the password ends them
-// all.
+// all (endSessionsOnPasswordChange).
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import crypto from "crypto";
@@ -17,6 +17,7 @@ import {
   newAdminSalt,
   type AdminPasswordConfig,
 } from "../common/adminPassword";
+import type { ConfigStore } from "../common/configStore";
 
 export interface AdminSessions {
   // Whether token is a live session.
@@ -97,17 +98,33 @@ function loadSessions(filePath: string): string[] {
   }
 }
 
+// Ends every session when config.yaml's admin password changes: from
+// setAdminPassword or importConfig.
+export function endSessionsOnPasswordChange(
+  store: Pick<ConfigStore, "onChange">,
+  sessions: AdminSessions,
+): void {
+  store.onChange(({ keys }) => {
+    if (
+      keys.includes("adminPasswordHash") ||
+      keys.includes("adminPasswordSalt")
+    ) {
+      sessions.clear();
+    }
+  });
+}
+
 export interface SetAdminPasswordDeps {
   // The current values.
   config: AdminPasswordConfig;
   // Saves new values to config.yaml (and the running config).
   saveConfig(values: AdminPasswordConfig): void;
-  sessions: AdminSessions;
 }
 
-// Returns setAdminPassword(password): sets the admin password and signs
-// every phone out. An empty password means none: no phone can become an
-// admin. The salt is made the first time and kept after that.
+// Returns setAdminPassword(password): sets the admin password, which signs
+// every phone out (endSessionsOnPasswordChange). An empty password means
+// none: no phone can become an admin. The salt is made the first time and
+// kept after that.
 export function createSetAdminPassword(deps: SetAdminPasswordDeps) {
   return (password: string) => {
     const salt = deps.config.adminPasswordSalt || newAdminSalt();
@@ -116,6 +133,5 @@ export function createSetAdminPassword(deps: SetAdminPasswordDeps) {
       adminPasswordHash:
         password === "" ? "" : hashAdminPassword(password, salt),
     });
-    deps.sessions.clear();
   };
 }
