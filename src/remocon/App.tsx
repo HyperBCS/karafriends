@@ -60,9 +60,9 @@ const App = () => (
 
 type Place = "home" | "history" | "profile";
 
-// The top bar's three places, in the same order on every screen.
+// The top bar's three places, in the same order on every screen: Home at
+// the far right.
 const PLACES = [
-  { place: "home", to: "/", label: "nav.home", icon: <MdHome /> },
   {
     place: "history",
     to: "/history",
@@ -75,6 +75,7 @@ const PLACES = [
     label: "nav.profile",
     icon: <MdPerson />,
   },
+  { place: "home", to: "/", label: "nav.home", icon: <MdHome /> },
 ] as const;
 
 interface ScreenProps {
@@ -89,7 +90,7 @@ interface ScreenProps {
   children: React.ReactNode;
 }
 
-// One screen: the top bar (back, the title, and Home, History and Profile)
+// One screen: the top bar (back, the title, and History, Profile and Home)
 // and the screen's content below it.
 const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   const navigate = useNavigate();

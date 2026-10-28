@@ -27,8 +27,8 @@ test("the remote opens on the search screen", async ({ remote }) => {
   await expect(remote.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-// Home, History and Profile: the top bar's three, in that order.
-const PLACES = ["Home", "History", "Profile"] as const;
+// History, Profile and Home: the top bar's three, in that order.
+const PLACES = ["History", "Profile", "Home"] as const;
 const places = (page: Page) =>
   page
     .getByRole("banner")
@@ -43,7 +43,7 @@ const rgb = (hex: string) => {
   return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
 };
 
-test("the top bar has Home, History and Profile in the same place on every screen", async ({
+test("the top bar has History, Profile and Home in the same place on every screen", async ({
   karafriends,
   remote,
 }) => {
@@ -108,10 +108,10 @@ test("the top bar has Home, History and Profile in the same place on every scree
 });
 
 test("History in the top bar opens the history", async ({ remote }) => {
-  await places(remote).nth(1).click();
+  await places(remote).nth(0).click();
   await expect(remote.getByRole("heading", { name: "History" })).toBeVisible();
   await expect(remote).toHaveURL(/#\/history$/);
-  await places(remote).nth(0).click();
+  await places(remote).nth(2).click();
   await expect(
     remote.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
