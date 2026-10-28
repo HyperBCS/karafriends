@@ -192,14 +192,11 @@ test.describe("while a song plays", () => {
     ]);
     expect(box.x + box.width).toBeLessThan(width / 2);
     expect(box.y + box.height).toBeLessThan(strip.y / 2);
-    // The white tile is 7.25rem square; the code in it is drawn in whole
-    // pixels per module, so it fits inside, and the rest is white border.
-    const tile = (await qrCode.locator("..").boundingBox())!;
-    expect(tile.width).toBeCloseTo(7.25 * rem, 0);
-    expect(tile.height).toBeCloseTo(tile.width, 0);
-    expect(box.width).toBeLessThanOrEqual(tile.width + 0.5);
+    // About 7.25rem square: the code and a 2-module white border, 29
+    // modules across, each a whole number of pixels, so within half a
+    // module per module of it.
+    expect(Math.abs(box.width - 7.25 * rem)).toBeLessThanOrEqual(29 / 2);
     expect(box.height).toBeCloseTo(box.width, 0);
-    // The code and a 2-module border, 29 modules across.
     const canvasWidth = await qrCode.evaluate(
       (canvas: HTMLCanvasElement) => canvas.width,
     );

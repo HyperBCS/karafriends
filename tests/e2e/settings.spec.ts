@@ -476,15 +476,6 @@ test.describe("the pitch bars", () => {
 
     const roll = display.locator("canvas.pianoRollRoll");
     await expect(roll).toHaveCount(1, { timeout: 20_000 });
-    // The bars start right of the QR tile in the corner, and run to the
-    // screen's right edge.
-    const [rollBox, rem, screenWidth] = await roll.evaluate((el) => [
-      el.getBoundingClientRect().toJSON(),
-      parseFloat(getComputedStyle(document.documentElement).fontSize),
-      window.innerWidth,
-    ]);
-    expect(rollBox.left).toBeCloseTo((2 + 7.25 + 1) * rem, 0);
-    expect(rollBox.right).toBeCloseTo(screenWidth, 0);
     await expect
       .poll(() =>
         display

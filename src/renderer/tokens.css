@@ -106,11 +106,6 @@
   --kf-radius-control: 0.625rem;
   --kf-radius-card: 1rem;
 
-  /* The QR tile in the corner while a song plays: 29 modules (the code and
-     a 2-module border), each 4 pixels at 1080p. The pitch bars start
-     right of it. */
-  --kf-join-corner: 7.25rem;
-
   /* UI text uses the system stack; lyrics keep the bundled Noto fonts. */
   --kf-font:
     system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans",

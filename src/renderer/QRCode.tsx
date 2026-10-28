@@ -3,26 +3,30 @@ import React, { useEffect, useRef } from "react";
 
 import "./QRCode.css";
 
-// The white border round the code, in modules: the 2 phone cameras need,
-// rather than the standard's 4, so the modules are bigger in the same
-// space.
+// The white border round the code, in modules. Cameras need light round
+// the corner squares to find the code: with none it doesn't scan. The
+// standard asks for 4; 2 is the least that held up over the pitch bars
+// (OpenCV read the corner code at 1440p down to 40 % of its size with 2,
+// but only to 75 % with 1).
 const QUIET_ZONE = 2;
 
-// Draws the code with each module a whole number of the screen's pixels,
-// as big as fits the tile, so its squares stay sharp at any size. The tile
-// is white too, so what doesn't divide evenly widens the border.
+// Draws the code, with its border, as near the box's width as whole
+// screen pixels per module allow, so its squares stay sharp at any size.
+// The canvas is the white tile: it ends where the border does, its corners
+// rounded by one module, which only takes from the border.
 function draw(canvas: HTMLCanvasElement, text: string) {
-  const tile = canvas.parentElement;
-  if (!tile) return;
+  const box = canvas.parentElement;
+  if (!box) return;
   const { modules } = create(text, { errorCorrectionLevel: "L" });
   const count = modules.size + QUIET_ZONE * 2;
   const ratio = window.devicePixelRatio || 1;
-  const scale = Math.max(1, Math.floor((tile.clientWidth * ratio) / count));
+  const scale = Math.max(1, Math.round((box.clientWidth * ratio) / count));
   const pixels = count * scale;
   canvas.width = pixels;
   canvas.height = pixels;
   canvas.style.width = `${pixels / ratio}px`;
   canvas.style.height = `${pixels / ratio}px`;
+  canvas.style.borderRadius = `${scale / ratio}px`;
 
   const context = canvas.getContext("2d");
   if (!context) return;
@@ -49,7 +53,7 @@ function draw(canvas: HTMLCanvasElement, text: string) {
 function QRCode(props: { hostname: string; corner?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Again when the tile changes size (the window, the UI scale).
+  // Again when the box changes size (the window, the UI scale).
   useEffect(() => {
     const canvas = canvasRef.current;
     const tile = canvas?.parentElement;
