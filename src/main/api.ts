@@ -26,6 +26,7 @@ import type {
 import { isAdminPassword } from "../common/adminPassword";
 import {
   isToolProblem,
+  REASONS,
   TOOLS_PROBLEM,
   ytdlpFailureReason,
 } from "../common/downloadFailure";
@@ -346,8 +347,9 @@ export function createApi(
     deps.publish({ type: "queueFailed", item, reason });
   };
 
-  // YouTube and Niconico downloads run yt-dlp: one that fails because of it
-  // sets the tools problem the display shows, and one that works clears it.
+  // YouTube and Niconico downloads, and Joysound songs' YouTube backgrounds,
+  // run yt-dlp: one that fails because of it sets the tools problem the
+  // display shows, and one that works clears it.
   const ytdlpWorked = () => {
     if (store.getState().toolsProblem) {
       store.update((state) => {
@@ -383,11 +385,18 @@ export function createApi(
           pushToHead,
           (ready, toHead) => {
             done();
+            if (item.youtubeVideoId !== null) ytdlpWorked();
             pushSongToQueue(ready, toHead);
           },
           (reason) => {
             done();
-            queueFailed(item)(reason);
+            // A YouTube background runs yt-dlp, which counts as a YouTube
+            // song's does; Joysound's own failure doesn't.
+            if (item.youtubeVideoId !== null && reason !== REASONS.joysound) {
+              ytdlpFailed(item)(reason);
+            } else {
+              queueFailed(item)(reason);
+            }
           },
         );
         break;

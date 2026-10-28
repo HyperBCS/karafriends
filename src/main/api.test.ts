@@ -2131,7 +2131,7 @@ describe("a failed download", () => {
     assert.deepEqual(asked, ["joysound"]);
   });
 
-  test("of YouTube or Niconico, because of yt-dlp, sets the tools problem until one works", async () => {
+  test("of YouTube, Niconico or a Joysound song's YouTube background, because of yt-dlp, sets the tools problem until one works", async () => {
     // Each download fails with the next reason, or works once they run out.
     let reasons: string[] = [];
     const finish = (
@@ -2150,8 +2150,8 @@ describe("a failed download", () => {
           youtube: (_item, _captions, onReady, onFailed) =>
             finish(onReady, onFailed),
           nico: (_item, onReady, onFailed) => finish(onReady, onFailed),
-          joysound: (_item, _pushToHead, _onReady, onFailed) =>
-            onFailed("YouTube blocked the download"),
+          joysound: (item, pushToHead, onReady, onFailed) =>
+            finish(() => onReady(item, pushToHead), onFailed),
         },
         now: () => clock,
       },
@@ -2173,18 +2173,23 @@ describe("a failed download", () => {
     await queueNico();
     assert.equal(problem(), null);
 
-    // Joysound's YouTube background isn't counted.
-    await api.queueSong(
-      {
-        kind: "joysound",
-        songId: "123",
-        name: "j",
-        artistName: "",
-        lyricsMode: "kana",
-        youtubeVideoId: "jNQXAC9IVRw",
-      },
-      alice,
-    );
+    // Joysound itself failing isn't yt-dlp's doing, background or not; nor
+    // is anything failing without a background.
+    const queueJoysound = (youtubeVideoId: string | null) =>
+      api.queueSong(
+        {
+          kind: "joysound",
+          songId: "123",
+          name: "j",
+          artistName: "",
+          lyricsMode: "kana",
+          youtubeVideoId,
+        },
+        alice,
+      );
+    reasons = [REASONS.joysound, REASONS.other];
+    await queueJoysound("jNQXAC9IVRw");
+    await queueJoysound(null);
     assert.equal(problem(), null);
 
     reasons = ["YouTube blocked the download", "Couldn't start the downloader"];
@@ -2202,6 +2207,13 @@ describe("a failed download", () => {
     await queueNico();
     assert.equal(problem()?.message, PROBLEM.message);
     await queueVideo(api, alice);
+    assert.equal(problem(), null);
+
+    // A background's yt-dlp failing sets it; one that works clears it.
+    reasons = [REASONS.botCheck];
+    await queueJoysound("jNQXAC9IVRw");
+    assert.equal(problem()?.message, PROBLEM.message);
+    await queueJoysound("jNQXAC9IVRw");
     assert.equal(problem(), null);
   });
 });
