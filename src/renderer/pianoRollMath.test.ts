@@ -13,7 +13,7 @@ import {
   rollLayout,
   SEGMENT_FLOATS,
   TRACE_POINTS,
-} from "./pianoRoll";
+} from "./pianoRollMath";
 
 const note = (startTime: number, endTime: number, midiNumber: number) => ({
   startTime,

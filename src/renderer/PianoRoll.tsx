@@ -11,7 +11,7 @@ import {
   type RollLayout,
   SEGMENT_FLOATS,
   TIME_WIDTH_SECS,
-} from "./pianoRoll";
+} from "./pianoRollMath";
 import "./PianoRoll.css";
 import { drawTime, pitchTime } from "./playback";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
