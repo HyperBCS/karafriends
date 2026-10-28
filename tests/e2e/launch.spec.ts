@@ -1,6 +1,5 @@
-// A second launch with the same profile (the launcher clicked again) leaves
-// at once and brings the running display to the front, instead of opening a
-// second display that writes the same queue.json.
+// The app as a whole: one copy at a time, and a display that crashes comes
+// back, but not in a loop.
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -16,6 +15,9 @@ const MAIN_ENTRY = path.resolve(
   "index.js",
 );
 
+// A second launch with the same profile (the launcher clicked again) leaves
+// at once and brings the running display to the front, instead of opening a
+// second display that writes the same queue.json.
 test("a second launch leaves and focuses the first", async ({
   karafriends,
 }) => {
@@ -81,4 +83,39 @@ test("a second launch leaves and focuses the first", async ({
   // The first one's display and server are still there.
   expect(app.windows()).toHaveLength(1);
   expect((await fetch(remoconUrl)).status).toBe(200);
+});
+
+test("a crashed display reloads, but not in a loop", async ({
+  karafriends,
+}) => {
+  const { app } = karafriends;
+  await app.evaluate(({ BrowserWindow }) => {
+    const seen = { loads: 0 };
+    Object.assign(globalThis, { displayLoads: seen });
+    BrowserWindow.getAllWindows()[0].webContents.on(
+      "did-finish-load",
+      () => seen.loads++,
+    );
+  });
+  const loads = () =>
+    app.evaluate(
+      () =>
+        (globalThis as unknown as { displayLoads: { loads: number } })
+          .displayLoads.loads,
+    );
+  const crash = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer(),
+    );
+
+  // Reloaded after a second, then after 3 more.
+  await crash();
+  await expect.poll(loads).toBe(1);
+  await crash();
+  await expect.poll(loads).toBe(2);
+  // A third crash within the minute: no reload (with the window shown, a
+  // dialog asks the host).
+  await crash();
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  expect(await loads()).toBe(2);
 });
