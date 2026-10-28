@@ -805,3 +805,53 @@ test.describe("the guide melody level", () => {
     }
   });
 });
+
+test.describe("the queuer's readings mode", () => {
+  const user = { deviceId: DEVICE_ID, nickname: NICKNAME };
+  const song = (n: number, extra: object = {}) => ({
+    kind: "nico",
+    songId: `sm9100${n}`,
+    name: `E2E readings song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user,
+    ...extra,
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [song(1), song(2, { readingsMode: "romaji" })],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("travels with the song to every phone, and queueSong checks it", async ({
+    karafriends,
+  }) => {
+    const { remoconUrl } = karafriends;
+    // Song 1 may have started by now.
+    const { state } = await liveState(remoconUrl, "e2e-other-device");
+    const items = [state.currentSong, ...state.queue].filter(Boolean);
+    expect(items.map((item) => item.readingsMode)).toEqual([
+      undefined,
+      "romaji",
+    ]);
+
+    const refused = await call(
+      remoconUrl,
+      "queueSong",
+      {
+        kind: "nico",
+        songId: "sm91003",
+        name: "E2E readings song 3",
+        artistName: "E2E artist",
+        readingsMode: "both",
+      },
+      REMOTE_HEADERS,
+    );
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain("readingsMode");
+  });
+});

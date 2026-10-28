@@ -336,6 +336,18 @@ describe("loadState", () => {
     assert.deepEqual(loadState(file).songQueue, [dam, old, old]);
   });
 
+  test("keeps a known readings mode, which older items don't have", () => {
+    const old = song(1);
+    const romaji = { ...old, readingsMode: "romaji" };
+    write({
+      songQueue: [romaji, old, { ...old, readingsMode: "both" }],
+      songHistory: [{ song: { ...old, readingsMode: "kana" } }],
+    });
+    const state = loadState(file);
+    assert.deepEqual(state.songQueue, [romaji, old, old]);
+    assert.equal(state.songHistory[0].song.readingsMode, "kana");
+  });
+
   test("drops entries it can't read and keeps the rest", () => {
     write({
       songQueue: [{ kind: "karaoke-cassette" }, song(1), "junk"],

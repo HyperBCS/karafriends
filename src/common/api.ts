@@ -55,6 +55,11 @@ export interface PageInput {
 
 export type QueueItemKind = "dam" | "joysound" | "youtube" | "nico";
 
+// How a phone shows titles and artists (its profile's Readings): as written,
+// or as the kana reading or its romaji.
+export const READINGS_MODES = ["written", "kana", "romaji"] as const;
+export type ReadingsMode = (typeof READINGS_MODES)[number];
+
 interface QueueItemBase {
   songId: string;
   name: string;
@@ -63,6 +68,9 @@ interface QueueItemBase {
   // songs queued from this version on.
   nameYomi?: string;
   artistNameYomi?: string;
+  // How the phone that queued it reads, so the display shows the song that
+  // way too. Missing: as written.
+  readingsMode?: ReadingsMode;
   // Seconds, when known.
   playtime: number | null;
   // When it was queued: Date.now() as a string. With songId it identifies an
@@ -141,6 +149,7 @@ interface SongToQueueBase {
   artistName: string;
   nameYomi?: string;
   artistNameYomi?: string;
+  readingsMode?: ReadingsMode;
   playtime?: number | null;
   // Admins only; anyone else's song goes to the end, as before.
   tryHeadOfQueue?: boolean;

@@ -17,9 +17,10 @@ import type {
   PlaybackState,
   QueueItem,
   QueueItemKind,
+  ReadingsMode,
   UserIdentity,
 } from "../common/api";
-import { LYRICS_MODES, PLAYBACK_STATES } from "../common/api";
+import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
 
 // A download in progress, or one that failed in the last
 // FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
@@ -407,6 +408,9 @@ function parseQueueItem(raw: unknown): QueueItem | null {
     ...(typeof raw.nameYomi === "string" && { nameYomi: raw.nameYomi }),
     ...(typeof raw.artistNameYomi === "string" && {
       artistNameYomi: raw.artistNameYomi,
+    }),
+    ...(READINGS_MODES.includes(raw.readingsMode as ReadingsMode) && {
+      readingsMode: raw.readingsMode as ReadingsMode,
     }),
     playtime: typeof raw.playtime === "number" ? raw.playtime : null,
     timestamp: raw.timestamp,

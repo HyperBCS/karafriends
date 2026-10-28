@@ -574,6 +574,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         ...(input.artistNameYomi !== undefined && {
           artistNameYomi: input.artistNameYomi,
         }),
+        ...(input.readingsMode !== undefined && {
+          readingsMode: input.readingsMode,
+        }),
         playtime: input.playtime ?? null,
         timestamp: now().toString(),
         user,
