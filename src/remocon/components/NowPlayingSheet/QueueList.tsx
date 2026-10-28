@@ -18,7 +18,7 @@ import * as styles from "./NowPlayingSheet.module.scss";
 import useDragReorder from "./useDragReorder";
 
 // The singer's initial, before each row.
-const Initial = ({ nickname }: { nickname: string }) => (
+export const Initial = ({ nickname }: { nickname: string }) => (
   <span className={styles.initial} aria-hidden="true">
     {Array.from(nickname)[0]?.toUpperCase()}
   </span>

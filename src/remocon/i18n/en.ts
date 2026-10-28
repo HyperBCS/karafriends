@@ -121,8 +121,6 @@ export const en = {
   "sheet.hideQueue": "Hide queue",
   "sheet.showEmotes": "Show emotes",
   "sheet.showControls": "Show playback controls",
-  // The song's progress line, for screen readers: "1 minute 12 seconds of
-  // 4 minutes 5 seconds".
   "queue.label": "Queue",
   "queue.upNext": "Up next",
   "queue.empty": "The queue is empty",

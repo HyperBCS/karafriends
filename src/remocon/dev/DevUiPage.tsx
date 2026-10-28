@@ -4,6 +4,7 @@
 // data-demo (see tokens.scss), so a screenshot shows them.
 import React, { useState } from "react";
 
+import type { SharedQueueItem } from "../../common/api";
 import {
   Button,
   EmptyState,
@@ -16,16 +17,18 @@ import {
   TextField,
   TopBar,
 } from "../components/ui";
-import { ModeSwitch } from "../components/NowPlayingSheet/NowPlayingSheet";
+import {
+  ModeSwitch,
+  NowPlayingBar,
+} from "../components/NowPlayingSheet/NowPlayingSheet";
 import * as sheetStyles from "../components/NowPlayingSheet/NowPlayingSheet.module.scss";
 import {
   KeyStepper,
   Transport,
 } from "../components/NowPlayingSheet/PlaybackControls";
-import { SingerBadge } from "../components/NowPlayingSheet/QueueList";
+import { Initial } from "../components/NowPlayingSheet/QueueList";
 import { t, useLanguage, type Language } from "../i18n";
 import {
-  FaSmile,
   MdClose,
   MdPause,
   MdPlayArrow,
@@ -33,7 +36,6 @@ import {
   MdSearch,
   MdSettings,
   MdSkipNext,
-  MdTranslate,
 } from "../icons";
 import * as styles from "./DevUiPage.module.scss";
 
@@ -61,6 +63,19 @@ const SONGS = {
 };
 
 const noop = () => {};
+
+// The song on the now-playing bar.
+const PLAYING: SharedQueueItem = {
+  kind: "dam",
+  songId: "0000-00",
+  name: SONGS.marigold.title,
+  artistName: SONGS.marigold.artist,
+  playtime: 300,
+  timestamp: "0",
+  user: { nickname: "Ken" },
+  isMine: false,
+  streamingUrlIdx: 0,
+};
 
 const Section = ({
   title,
@@ -91,17 +106,11 @@ const Demo = ({
   </figure>
 );
 
-const Initial = ({ name }: { name: string }) => (
-  <span className={styles.initial} aria-hidden="true">
-    {name.slice(0, 1).toUpperCase()}
-  </span>
-);
-
 // The songs waiting, as the sheet's queue shows them.
 const QueueRows = () => (
   <>
     <ListRow
-      leading={<Initial name="あやか" />}
+      leading={<Initial nickname="あやか" />}
       title={SONGS.gurenge.title}
       subtitle={SONGS.gurenge.artist}
       source={t("source.joysound")}
@@ -118,7 +127,7 @@ const QueueRows = () => (
       }
     />
     <ListRow
-      leading={<Initial name="Mio" />}
+      leading={<Initial nickname="Mio" />}
       title={SONGS.pretender.title}
       subtitle={SONGS.pretender.artist}
       source={t("source.youtube")}
@@ -126,7 +135,7 @@ const QueueRows = () => (
       trailing="+8:31"
     />
     <ListRow
-      leading={<Initial name="Taro" />}
+      leading={<Initial nickname="Taro" />}
       title={SONGS.senbonzakura.title}
       subtitle={SONGS.senbonzakura.artist}
       source={t("source.niconico")}
@@ -160,19 +169,13 @@ const DevUiPage = () => {
     { id: "ja", label: t("language.ja") },
   ] as const;
 
-  // As the real bar has it (NowPlaying), folded: the label, the artist
-  // under the title, the singer on the right.
-  const nowPlaying = (
-    <span className={styles.nowPlaying}>
-      <span className={styles.nowLabel}>{t("sheet.nowPlaying")}</span>
-      <span className={styles.nowRow}>
-        <span className={styles.nowSong}>
-          <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
-          <span className={styles.nowArtist}>{SONGS.marigold.artist}</span>
-        </span>
-        <SingerBadge nickname="Ken" />
-      </span>
-    </span>
+  // The real bar, with a sample song.
+  const nowPlaying = (expanded: boolean) => (
+    <NowPlayingBar
+      currentSong={PLAYING}
+      expanded={expanded}
+      onOpenSong={noop}
+    />
   );
   // The queue as the open sheet shows it: under "Up next", in its well.
   const upNext = (
@@ -219,10 +222,7 @@ const DevUiPage = () => {
               back="/dev/ui"
               title={SONGS.zankoku.title}
               trailing={
-                <IconButton
-                  label={t("language.label")}
-                  icon={<MdTranslate />}
-                />
+                <IconButton label={t("nav.settings")} icon={<MdSettings />} />
               }
             />
           </Demo>
@@ -262,17 +262,6 @@ const DevUiPage = () => {
             <Button variant="secondary">{t("common.cancel")}</Button>
           </Demo>
         </div>
-        <div className={styles.row}>
-          <Demo state="danger">
-            <Button variant="danger">{t("queue.remove")}</Button>
-          </Demo>
-          <Demo state="pressed" force="pressed">
-            <Button variant="danger">{t("queue.remove")}</Button>
-          </Demo>
-          <Demo state="focus" force="focus">
-            <Button variant="danger">{t("queue.remove")}</Button>
-          </Demo>
-        </div>
         <Demo state="disabled (any variant)">
           <Button disabled full>
             {t("queueButton.downloadingPercent", { percent: "42.6" })}
@@ -287,13 +276,6 @@ const DevUiPage = () => {
         <div className={styles.row}>
           <Demo state="default">
             <IconButton label={t("playback.restart")} icon={<MdReplay />} />
-          </Demo>
-          <Demo state="accent">
-            <IconButton
-              label={t("playback.play")}
-              icon={<MdPlayArrow />}
-              tone="accent"
-            />
           </Demo>
           <Demo state="filled">
             <IconButton
@@ -314,13 +296,6 @@ const DevUiPage = () => {
               label={t("queue.remove")}
               icon={<MdClose />}
               tone="danger"
-            />
-          </Demo>
-          <Demo state="toggle on">
-            <IconButton
-              label={t("sheet.showEmotes")}
-              icon={<FaSmile />}
-              aria-pressed
             />
           </Demo>
         </div>
@@ -373,16 +348,8 @@ const DevUiPage = () => {
           </Demo>
         </div>
         <div className={styles.bleed}>
-          <Demo state="queue: current, leading and trailing slots">
+          <Demo state="queue: leading and trailing slots">
             <List label={t("queue.label")}>
-              <ListRow
-                current
-                leading={<Initial name="Ken" />}
-                title={SONGS.marigold.title}
-                subtitle={SONGS.marigold.artist}
-                source={t("source.dam")}
-                onPress={noop}
-              />
               <QueueRows />
             </List>
           </Demo>
@@ -545,7 +512,7 @@ const DevUiPage = () => {
           <Demo state="collapsed">
             <Sheet
               label={t("sheet.nowPlaying")}
-              header={nowPlaying}
+              header={nowPlaying(false)}
               expanded={false}
               onExpandedChange={noop}
             >
@@ -557,7 +524,7 @@ const DevUiPage = () => {
           <Demo state="collapsed, pressed" force="pressed">
             <Sheet
               label={t("sheet.nowPlaying")}
-              header={nowPlaying}
+              header={nowPlaying(false)}
               expanded={false}
               onExpandedChange={noop}
             >
@@ -569,7 +536,7 @@ const DevUiPage = () => {
           <Demo state="expanded">
             <Sheet
               label={t("sheet.nowPlaying")}
-              header={nowPlaying}
+              header={nowPlaying(sheetOpen)}
               expanded={sheetOpen}
               onExpandedChange={setSheetOpen}
             >

@@ -73,7 +73,6 @@ $kf-tint: var(--kf-tint);
 $kf-tint-edge: var(--kf-tint-edge);
 // Destructive actions and errors.
 $kf-danger: var(--kf-danger);
-$kf-danger-pressed: var(--kf-danger-pressed);
 
 // Shadows, one per level (see Depth above).
 $kf-shadow-card: var(--kf-shadow-card);
@@ -136,7 +135,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // 7.0:1 as text (6.4:1 on a card, 5.0:1 on the sheet). Pressed on the
   // sheet, 4.2:1: icons only there.
   --kf-danger: #ff6b6b;
-  --kf-danger-pressed: #e65c5c; // 5.6:1 under the dark text
 
   --kf-shadow-card:
     inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.55),
@@ -201,7 +199,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // Icons and the error bar: 3.7:1 (4.3:1 on a card, 3.3:1 pressed in the
   // well), with 4.6:1 for the dark text on it.
   --kf-danger: #d84848;
-  --kf-danger-pressed: #e25a5a; // 5.4:1 under the dark text
 
   --kf-shadow-card:
     0 0 0 1px #{color.change($shade, $alpha: 0.04)},
