@@ -16,7 +16,7 @@ import path from "path";
 
 import { devices, type Page } from "@playwright/test";
 
-import { adminPasswordConfig, expect, test } from "./fixtures";
+import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
 
 const OUT_DIR = path.resolve(
   __dirname,
@@ -628,21 +628,10 @@ test.describe("phase R1", () => {
       ["setSongVolume", { volume: 80 }],
       ["setGuideMelodyLevel", { level: 0.5 }],
     ] as const) {
-      expect(
-        await display.evaluate(
-          ([method, input]) =>
-            (
-              window as unknown as {
-                karafriends: {
-                  api: {
-                    call(method: string, input: object): Promise<unknown>;
-                  };
-                };
-              }
-            ).karafriends.api.call(method, input),
-          [method, input] as const,
-        ),
-      ).toEqual({ ok: true, output: true });
+      expect(await displayCall(display, method, input)).toEqual({
+        ok: true,
+        output: true,
+      });
     }
     // A real-looking nickname, signed in as an admin.
     await remote.getByRole("link", { name: "Profile" }).click();

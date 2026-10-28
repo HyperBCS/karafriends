@@ -8,7 +8,13 @@ import type {
   Route,
 } from "@playwright/test";
 
-import { adminPasswordConfig, expect, NICKNAME, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  displayCall,
+  expect,
+  NICKNAME,
+  test,
+} from "./fixtures";
 
 test("the remote opens on the search screen", async ({ remote }) => {
   await expect(
@@ -1569,17 +1575,7 @@ test.describe("the song volume and mic sliders", () => {
     remote,
   }) => {
     const setSongVolume = (volume: number) =>
-      display.evaluate(
-        (volume) =>
-          (
-            window as unknown as {
-              karafriends: {
-                api: { call(method: string, input: object): Promise<unknown> };
-              };
-            }
-          ).karafriends.api.call("setSongVolume", { volume }),
-        volume,
-      );
+      displayCall(display, "setSongVolume", { volume });
     const sent: unknown[] = [];
     remote.on("request", (request) => {
       if (request.url().endsWith("/api/setSongVolume")) {
@@ -1629,19 +1625,9 @@ test.describe("the song volume and mic sliders", () => {
         echo: 0,
       },
     ];
-    expect(
-      await display.evaluate(
-        (mics) =>
-          (
-            window as unknown as {
-              karafriends: {
-                api: { call(method: string, input: object): Promise<unknown> };
-              };
-            }
-          ).karafriends.api.call("setMics", { mics }),
-        mics,
-      ),
-    ).toMatchObject({ ok: true });
+    expect(await displayCall(display, "setMics", { mics })).toMatchObject({
+      ok: true,
+    });
     const sent: unknown[] = [];
     remote.on("request", (request) => {
       if (request.url().endsWith("/api/setMicLevels")) {
