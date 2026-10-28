@@ -529,7 +529,7 @@ function App(props: {
             onUiScaleChange={changeUiScale}
             pitchBars={pitchBars}
             onPitchBarsChange={changePitchBars}
-            audioLatencyMs={props.audio.latencyMs()}
+            audioLatencyMs={() => props.audio.latencyMs()}
           />
         ) : null}
       </main>

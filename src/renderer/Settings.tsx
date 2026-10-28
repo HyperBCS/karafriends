@@ -451,6 +451,13 @@ function SongOutputPlace(props: {
   );
 }
 
+// "Output latency: 20 ms", looked at again every tick: the context measures
+// a new output only once it has played on it a while.
+function OutputLatency(props: { latencyMs: () => number }) {
+  useTick();
+  return <>Output latency: {props.latencyMs()} ms.</>;
+}
+
 const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
 
 // The app names a setting by its config.yaml key when it refuses a value;
@@ -500,7 +507,8 @@ export default function Settings(props: {
   onUiScaleChange: (scale: number) => void;
   pitchBars: boolean;
   onPitchBarsChange: (on: boolean) => void;
-  audioLatencyMs: number;
+  // What the song output adds, in ms, as the context says now.
+  audioLatencyMs: () => number;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadProblem, setLoadProblem] = useState<string | null>(null);
@@ -969,8 +977,8 @@ export default function Settings(props: {
                   place={props.songOutputPlace}
                 />
                 <Hint>
-                  Plus delays the sound, minus delays the lyrics. Output
-                  latency: {props.audioLatencyMs} ms.
+                  Plus delays the sound, minus delays the lyrics.{" "}
+                  <OutputLatency latencyMs={props.audioLatencyMs} />
                 </Hint>
               </SettingsSection>
 
