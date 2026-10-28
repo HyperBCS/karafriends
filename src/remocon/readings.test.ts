@@ -28,6 +28,13 @@ describe("reading", () => {
     assert.equal(reading("愛ラーメン", "アイラーメン", "kana"), "あいらーめん");
   });
 
+  test("a long vowel mark doubles the vowel in romaji", () => {
+    assert.equal(
+      reading("恋人がサンタクロース", "こいびとがさんたくろーす", "romaji"),
+      "koibitogasantakuroosu",
+    );
+  });
+
   test("a song with no reading, such as Joysound's, is just its title", () => {
     for (const mode of ["kana", "romaji", "both"] as const) {
       assert.equal(reading("恋", undefined, mode), null);

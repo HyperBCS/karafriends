@@ -1,4 +1,4 @@
-import { isRomaji, toHiragana, toRomaji } from "wanakana";
+import { isRomaji, toHiragana, toKatakana, toRomaji } from "wanakana";
 
 import { normalize } from "./rank";
 
@@ -35,7 +35,9 @@ export function reading(
     normalize(yomi) === normalize(written)
       ? null
       : toHiragana(yomi, { convertLongVowelMark: false, passRomaji: true });
-  const romaji = toRomaji(yomi);
+  // From katakana, so a long vowel mark doubles the vowel (さんたくろーす:
+  // santakuroosu, not santakuro-su).
+  const romaji = toRomaji(toKatakana(yomi));
   const parts =
     mode === "kana" ? [kana] : mode === "romaji" ? [romaji] : [kana, romaji];
   return parts.filter(Boolean).join(" · ") || null;
