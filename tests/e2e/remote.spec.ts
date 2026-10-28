@@ -747,3 +747,58 @@ test.describe("a long queue", () => {
     ).toBeInViewport();
   });
 });
+
+test("a title search ranks both catalogs' results together, best match first", async ({
+  remote,
+}) => {
+  // Each catalog has the exact match, but not first.
+  const dam = [
+    ["恋愛サーキュレーション", "花澤香菜"],
+    ["初恋", "宇多田ヒカル"],
+    ["恋", "星野源"],
+  ];
+  const joysound = [
+    ["恋におちて", "小林明子"],
+    ["恋人よ", "五輪真弓"],
+    ["恋", "星野源"],
+  ];
+  await remote.route("**/api/damSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: dam.map(([name, artistName], i) => ({
+          id: `e2e-${i}`,
+          name,
+          nameYomi: "",
+          artistName,
+          artistNameYomi: "",
+        })),
+        nextOffset: null,
+      },
+    }),
+  );
+  await remote.route("**/api/joysoundSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: joysound.map(([name, artistName], i) => ({
+          id: `e2e-joy-${i}`,
+          name,
+          artistName,
+        })),
+        nextOffset: null,
+      },
+    }),
+  );
+
+  await remote.getByRole("searchbox", { name: "Search" }).fill("恋");
+  const results = remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link");
+  await expect(results).toHaveCount(6);
+  // Both exact matches, side by side, then the shorter of the titles that
+  // start with 恋. Each row keeps its catalog's label.
+  expect((await results.allTextContents()).slice(0, 3)).toEqual([
+    "恋DAM星野源",
+    "恋Joysound星野源",
+    "恋人よJoysound五輪真弓",
+  ]);
+});
