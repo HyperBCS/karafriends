@@ -105,6 +105,7 @@ export function toLiveState(
     },
     toolsProblem: state.toolsProblem?.message ?? null,
     remoconProblem: state.remoconProblem,
+    adminSignOuts: state.adminSignOuts,
   };
 }
 

@@ -193,6 +193,9 @@ export interface State {
   // Why phones can't connect (the remote's server couldn't listen), as a
   // sentence for the display. Not saved.
   remoconProblem: string | null;
+  // How many times this launch every admin phone was signed out (the admin
+  // password changed). Not saved.
+  adminSignOuts: number;
 }
 
 export interface StateStore {
@@ -243,6 +246,7 @@ export function emptyState(): State {
     songHistory: [],
     toolsProblem: null,
     remoconProblem: null,
+    adminSignOuts: 0,
   };
 }
 

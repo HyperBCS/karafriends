@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { parse } from "yaml";
 
+import { isAdminPassword } from "../common/adminPassword";
 import { MASKED_PASSWORD, type LoginService } from "../common/api";
 import { DEFAULT_CONFIG } from "../common/configSchema";
 import { createConfigStore } from "../common/configStore";
+import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { ApiError, type Caller } from "./api";
 import { HttpStatusError } from "./http";
 import { createSettingsHandlers, loginFailureReason } from "./settings";
@@ -66,11 +68,6 @@ function setup(
     };
   const api = createSettingsHandlers({
     store,
-    setAdminPassword: (password) =>
-      store.update({
-        adminPasswordSalt: "00ff",
-        adminPasswordHash: password ? `hash of ${password}` : "",
-      }),
     logins: { dam: recording("dam"), joysound: recording("joysound") },
     restart: () => restarts.push(Date.now()),
     tools: {
@@ -253,17 +250,32 @@ describe("setSettings", () => {
 });
 
 describe("setAdminPassword", () => {
-  test("calls services' setAdminPassword", async () => {
-    const { api } = setup();
+  test("sets it with a new salt each time, so the same one again still signs the phones out", async () => {
+    const { api, store } = setup();
+    const sessions = createAdminSessions(path.join(dir, "adminSessions.json"));
+    endSessionsOnPasswordChange(store, sessions);
     assert.deepEqual(
       await api.setAdminPassword({ password: "pw" }, display),
       {},
     );
+    const first = store.saved();
+    assert.match(first.adminPasswordSalt, /^[0-9a-f]{32}$/);
+    assert.equal(await isAdminPassword("pw", first), true);
+    assert.equal(await isAdminPassword("other", first), false);
+
+    const token = sessions.create();
+    await api.setAdminPassword({ password: "pw" }, display);
+    assert.notEqual(store.saved().adminPasswordSalt, first.adminPasswordSalt);
+    assert.equal(await isAdminPassword("pw", store.saved()), true);
+    assert.equal(sessions.has(token), false);
+
+    // Empty: none.
     const isSet = async () =>
       (await api.getSettings({}, display)).settings.adminPasswordSet;
     assert.equal(await isSet(), true);
     await api.setAdminPassword({ password: "" }, display);
     assert.equal(await isSet(), false);
+    assert.equal(await isAdminPassword("pw", store.saved()), false);
   });
 });
 

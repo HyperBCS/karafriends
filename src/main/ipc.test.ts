@@ -27,6 +27,7 @@ const liveState: LiveState = {
   config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
   remoconProblem: null,
+  adminSignOuts: 0,
 };
 
 function fakeContents() {

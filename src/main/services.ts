@@ -21,11 +21,7 @@ import {
   moveOldSongFiles,
   sweepHalfDone,
 } from "./downloads/folder";
-import {
-  createAdminSessions,
-  createSetAdminPassword,
-  endSessionsOnPasswordChange,
-} from "./adminAuth";
+import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
@@ -72,16 +68,13 @@ export const adminSessions = createAdminSessions(
   path.join(app.getPath("userData"), "adminSessions.json"),
 );
 
-// Sets the admin password ("" for none) and signs every phone out. For the
-// display's settings; no phone can call it.
-export const setAdminPassword = createSetAdminPassword({
-  config: karafriendsConfig,
-  saveConfig: (values) => configStore.update(values),
-});
-
 // A new password (from setAdminPassword or importConfig) signs every phone
-// out.
-endSessionsOnPasswordChange(configStore, adminSessions);
+// out, and the live state tells the phones signed in to ask whoami again.
+endSessionsOnPasswordChange(configStore, adminSessions, () =>
+  store.update((state) => {
+    state.adminSignOuts++;
+  }),
+);
 
 // The clients' shared logins, forgotten when the settings change them.
 const credentials = createCredentialProviders({
@@ -167,7 +160,6 @@ export const api: ApiHandlers = {
   ...queueApi,
   ...createSettingsHandlers({
     store: configStore,
-    setAdminPassword,
     // Fresh logins, so a test never touches the clients' shared ones.
     logins: {
       dam: (username, password) => MinseiAPI.login(username, password),

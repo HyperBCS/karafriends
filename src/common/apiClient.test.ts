@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
+  adminCheck,
+  adminMayHaveChanged,
   adminSignIn,
   adminSignOut,
   ApiCallError,
@@ -51,6 +53,7 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
   remoconProblem: null,
+  adminSignOuts: 0,
   ...overrides,
 });
 
@@ -470,6 +473,81 @@ describe("admin sign-in", () => {
     };
     await adminSignOut();
     assert.equal(storage.items.adminToken, undefined);
+  });
+});
+
+describe("adminCheck", () => {
+  const TOKEN = "ab".repeat(32);
+  // whoami's answers, in the order the test gives them.
+  function whoamiAnswers() {
+    const pending: ((isAdmin: boolean) => void)[] = [];
+    globalThis.fetch = () =>
+      new Promise((resolve) =>
+        pending.push((isAdmin) => resolve(Response.json({ isAdmin }))),
+      );
+    return pending;
+  }
+
+  test("only the latest answer counts", async () => {
+    fakeStorage();
+    const answers = whoamiAnswers();
+    const seen: boolean[] = [];
+    const check = adminCheck((isAdmin) => seen.push(isAdmin));
+    const first = check.ask();
+    const second = check.ask();
+    answers[1](true);
+    await second;
+    // The first question's answer comes late, from before a sign-in, say.
+    answers[0](false);
+    await first;
+    assert.deepEqual(seen, [true]);
+    // Nor any once stopped.
+    const third = check.ask();
+    check.stop();
+    answers[2](false);
+    await third;
+    assert.deepEqual(seen, [true]);
+  });
+
+  test("a no to the token still stored signs the phone out; to another, not", async () => {
+    const storage = fakeStorage({ adminToken: TOKEN });
+    const answers = whoamiAnswers();
+    let changes = 0;
+    const stop = onAdminTokenChange(() => changes++);
+    try {
+      const check = adminCheck(() => {});
+      const asked = check.ask();
+      answers[0](false);
+      await asked;
+      assert.equal(storage.items.adminToken, undefined);
+      assert.equal(changes, 1);
+
+      // Asked with one token, then the phone signed in again meanwhile.
+      storage.items.adminToken = TOKEN;
+      const again = check.ask();
+      storage.items.adminToken = "cd".repeat(32);
+      answers[1](false);
+      await again;
+      assert.equal(storage.items.adminToken, "cd".repeat(32));
+      assert.equal(changes, 1);
+    } finally {
+      stop();
+    }
+  });
+
+  test("asks again when everyone-admin mode flips, or a new password signs phones out", () => {
+    const before = state();
+    const sameAgain = state();
+    const everyone = state({
+      config: { supervisedMode: false, everyoneIsAdmin: true },
+    });
+    const signedOut = state({ adminSignOuts: 1 });
+    assert.equal(adminMayHaveChanged(null, before, true), false);
+    assert.equal(adminMayHaveChanged(before, sameAgain, true), false);
+    assert.equal(adminMayHaveChanged(before, everyone, false), true);
+    assert.equal(adminMayHaveChanged(before, signedOut, true), true);
+    // A phone not signed in has nothing to lose.
+    assert.equal(adminMayHaveChanged(before, signedOut, false), false);
   });
 });
 

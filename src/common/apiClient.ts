@@ -382,9 +382,56 @@ export function openLiveStream(
   };
 }
 
+// Asks the server whether this phone is an admin, for useIsAdmin(): ask()
+// each time that may have changed. Only the latest question's answer counts.
+// A no for a phone that asked with the token it still has means its session
+// ended (the host changed the password, say): it signs out here too, so it
+// offers to sign in again.
+export function adminCheck(setIsAdmin: (isAdmin: boolean) => void) {
+  let stopped = false;
+  let asked = 0;
+  return {
+    // Resolves once the answer is taken in (or ignored).
+    ask(): Promise<void> {
+      const question = ++asked;
+      const token = storedAdminToken();
+      return call("whoami", {}).then(
+        (who) => {
+          if (stopped || question !== asked) return;
+          setIsAdmin(who.isAdmin);
+          if (!who.isAdmin && token !== null && storedAdminToken() === token) {
+            storeAdminToken(null);
+          }
+        },
+        (err) => console.warn("Couldn't ask whoami:", err),
+      );
+    },
+    // Answers after this are ignored.
+    stop() {
+      stopped = true;
+    },
+  };
+}
+
+// Whether a new state means this phone's admin status may have changed:
+// the host turned everyone-admin mode on or off, or a new admin password
+// signed every phone out (and this one is signed in).
+export function adminMayHaveChanged(
+  before: LiveState | null,
+  after: LiveState,
+  signedIn: boolean,
+): boolean {
+  return (
+    before !== null &&
+    (before.config.everyoneIsAdmin !== after.config.everyoneIsAdmin ||
+      (signedIn && before.adminSignOuts !== after.adminSignOuts))
+  );
+}
+
 // One stream for the page. Mount it once, at the root. With checkAdmin, it
 // also asks whoami each time it connects, each time the phone signs in or
-// out, and each time everyone-admin mode turns on or off, for useIsAdmin().
+// out, each time everyone-admin mode turns on or off, and when a new admin
+// password signs the phones out, for useIsAdmin().
 export function LiveStateProvider({
   children,
   checkAdmin = false,
@@ -403,24 +450,8 @@ export function LiveStateProvider({
   }));
 
   useEffect(() => {
-    let stopped = false;
-    // Only the latest question's answer counts.
-    let asked = 0;
-    const askWhoami = () => {
-      const question = ++asked;
-      const token = storedAdminToken();
-      call("whoami", {})
-        .then((who) => {
-          if (stopped || question !== asked) return;
-          setIsAdmin(who.isAdmin);
-          // The session ended (the password changed, say): sign out here
-          // too, so the phone offers to sign in again.
-          if (!who.isAdmin && token !== null && storedAdminToken() === token) {
-            storeAdminToken(null);
-          }
-        })
-        .catch((err) => console.warn("Couldn't ask whoami:", err));
-    };
+    const check = adminCheck(setIsAdmin);
+    const askWhoami = () => void check.ask();
     const stopWatchingToken = checkAdmin
       ? onAdminTokenChange(askWhoami)
       : () => {};
@@ -437,14 +468,16 @@ export function LiveStateProvider({
           if (reconnected) resetClockOffset();
           reconnected = false;
           noteStateSentAt(event.sentAt, Date.now());
-          const before = store.get()?.config.everyoneIsAdmin;
-          store.set(mergeLiveState(store.get(), event.state));
-          // The host turned everyone-admin mode on or off. (On connect,
-          // the open above already asked.)
+          const before = store.get();
+          store.set(mergeLiveState(before, event.state));
+          // (On connect, the open above already asked.)
           if (
             checkAdmin &&
-            before !== undefined &&
-            before !== event.state.config.everyoneIsAdmin
+            adminMayHaveChanged(
+              before,
+              event.state,
+              storedAdminToken() !== null,
+            )
           ) {
             askWhoami();
           }
@@ -462,7 +495,7 @@ export function LiveStateProvider({
       },
     );
     return () => {
-      stopped = true;
+      check.stop();
       stopWatchingToken();
       close();
     };

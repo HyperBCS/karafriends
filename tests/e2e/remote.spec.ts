@@ -2236,6 +2236,27 @@ test.describe("the song volume and mic sliders", () => {
     await expect(remote.getByText("You're an admin")).toBeVisible();
   }
 
+  test("the host setting the admin password again signs the phone out at once", async ({
+    display,
+    remote,
+  }) => {
+    await signIn(remote);
+    await expect(
+      remote.getByRole("slider", { name: "Song volume" }),
+    ).toBeVisible();
+    // The same password: it still ends every session.
+    expect(
+      await displayCall(display, "setAdminPassword", { password: PASSWORD }),
+    ).toMatchObject({ ok: true });
+    await expect(remote.getByLabel("Admin password")).toBeVisible();
+    await expect(
+      remote.getByRole("slider", { name: "Song volume" }),
+    ).toHaveCount(0);
+    expect(
+      await remote.evaluate(() => localStorage.getItem("adminToken")),
+    ).toBeNull();
+  });
+
   test("the song volume is above the guide melody and sends setSongVolume", async ({
     karafriends,
     remote,

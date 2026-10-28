@@ -258,6 +258,9 @@ export interface LiveState {
   // Why phones can't connect (the server couldn't listen: "Phones can't
   // connect: port 8080 is in use..."), for the display's notice too.
   remoconProblem: string | null;
+  // Goes up each time the host's new admin password signs every phone out:
+  // a phone signed in asks whoami again, and signs out.
+  adminSignOuts: number;
 }
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"

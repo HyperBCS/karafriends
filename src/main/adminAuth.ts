@@ -1,5 +1,5 @@
-// Admin sign-in: the sessions phones get from adminLogin, and changing the
-// admin password.
+// Admin sign-in: the sessions phones get from adminLogin, and ending them
+// when the admin password changes.
 //
 // A session is a random token the phone keeps and sends back in the
 // X-Karafriends-Admin-Token header. The sessions are saved (as SHA-256
@@ -12,11 +12,6 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
-import {
-  hashAdminPassword,
-  newAdminSalt,
-  type AdminPasswordConfig,
-} from "../common/adminPassword";
 import type { ConfigStore } from "../common/configStore";
 
 export interface AdminSessions {
@@ -99,10 +94,13 @@ function loadSessions(filePath: string): string[] {
 }
 
 // Ends every session when config.yaml's admin password changes: from
-// setAdminPassword or importConfig.
+// setAdminPassword (which always makes a new salt, so the same password
+// again counts) or importConfig. Then calls onEnded, which tells the phones
+// to ask whoami again.
 export function endSessionsOnPasswordChange(
   store: Pick<ConfigStore, "onChange">,
   sessions: AdminSessions,
+  onEnded: () => void = () => {},
 ): void {
   store.onChange(({ keys }) => {
     if (
@@ -110,28 +108,7 @@ export function endSessionsOnPasswordChange(
       keys.includes("adminPasswordSalt")
     ) {
       sessions.clear();
+      onEnded();
     }
   });
-}
-
-export interface SetAdminPasswordDeps {
-  // The current values.
-  config: AdminPasswordConfig;
-  // Saves new values to config.yaml (and the running config).
-  saveConfig(values: AdminPasswordConfig): void;
-}
-
-// Returns setAdminPassword(password): sets the admin password, which signs
-// every phone out (endSessionsOnPasswordChange). An empty password means
-// none: no phone can become an admin. The salt is made the first time and
-// kept after that.
-export function createSetAdminPassword(deps: SetAdminPasswordDeps) {
-  return (password: string) => {
-    const salt = deps.config.adminPasswordSalt || newAdminSalt();
-    deps.saveConfig({
-      adminPasswordSalt: salt,
-      adminPasswordHash:
-        password === "" ? "" : hashAdminPassword(password, salt),
-    });
-  };
 }

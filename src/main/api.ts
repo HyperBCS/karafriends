@@ -1151,7 +1151,13 @@ export function createApi(
         // Not 403, so the phone doesn't say "Wrong password".
         throw new ApiError(409, "The host hasn't set an admin password");
       }
+      const hash = config.adminPasswordHash;
       if (!(await isAdminPassword(password, config))) {
+        throw new ApiError(403, "Wrong admin password");
+      }
+      // The host set a new password while this was hashed, which ended
+      // every session: this one mustn't outlive it.
+      if (config.adminPasswordHash !== hash) {
         throw new ApiError(403, "Wrong admin password");
       }
       console.log(`adminLogin: ${caller.nickname ?? "a phone"} signed in`);

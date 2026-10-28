@@ -225,6 +225,7 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       config: { supervisedMode: false, everyoneIsAdmin: false },
       toolsProblem: null,
       remoconProblem: null,
+      adminSignOuts: 0,
     },
     sentAt: expect.any(Number),
   });

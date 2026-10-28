@@ -6,6 +6,7 @@
 // No Electron imports, so unit tests can load this file under plain Node.
 import { parse, stringify } from "yaml";
 
+import { hashAdminPassword, newAdminSalt } from "../common/adminPassword";
 import {
   MASKED_PASSWORD,
   type LoginService,
@@ -58,8 +59,6 @@ const SERVICE_NAMES: Record<LoginService, string> = {
 
 export interface SettingsDeps {
   store: Pick<ConfigStore, "saved" | "atLaunch" | "update" | "loadProblem">;
-  // services.ts's: sets the hash and salt, and signs every phone out.
-  setAdminPassword(password: string): void;
   // A fresh login, not the clients' shared one. Resolves on success.
   logins: Record<
     LoginService,
@@ -192,9 +191,17 @@ export function createSettingsHandlers(
       return { ok: true, needsRestart: needsRestart() };
     },
 
+    // An empty password means none: no phone can become an admin. A new
+    // salt every time, so even the same password changes the hash, which
+    // signs every phone out (endSessionsOnPasswordChange).
     async setAdminPassword({ password }, caller) {
       requireDisplay(caller);
-      deps.setAdminPassword(password);
+      const salt = newAdminSalt();
+      store.update({
+        adminPasswordSalt: salt,
+        adminPasswordHash:
+          password === "" ? "" : hashAdminPassword(password, salt),
+      });
       return {};
     },
 
