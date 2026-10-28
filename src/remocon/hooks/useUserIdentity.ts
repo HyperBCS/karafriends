@@ -1,12 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-import {
-  adminSignIn,
-  adminSignOut,
-  onAdminTokenChange,
-  storedAdminToken,
-} from "../../common/apiClient";
+import { onAdminTokenChange, storedAdminToken } from "../../common/apiClient";
 
 // The phone's identity, kept in localStorage: its device ID (made on first
 // visit), its nickname (set on the profile screen, which a new phone opens
@@ -48,8 +43,6 @@ const useUserIdentity = () => {
     // Null until the phone has picked one.
     nickname,
     adminToken,
-    signIn: adminSignIn,
-    signOut: adminSignOut,
   };
 };
 
