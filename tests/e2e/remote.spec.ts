@@ -246,6 +246,77 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
 });
 
+// Picking a background video changes the song page's address in place. Back
+// must still walk the remote's history: the artist, the song, the search.
+test("a Joysound song with a background keeps the way back", async ({
+  remote,
+}) => {
+  const joysoundSong = (n: number) => ({
+    id: `e2e-joy-${n}`,
+    name: `E2E Joysound song ${n}`,
+    artistName: "E2E artist",
+  });
+  await remote.route(/youtube\.com|ytimg\.com/, (route) => route.abort());
+  await remote.route("**/api/joysoundSearchSongs", (route) =>
+    fakePages(route, 3, joysoundSong),
+  );
+  await remote.route("**/api/joysoundSearchArtists", (route) =>
+    fakePages(route, 1, (n) => ({ id: `e2e-${n}`, name: "E2E artist" })),
+  );
+  await remote.route("**/api/joysoundSong", (route) =>
+    route.fulfill({
+      json: { ...joysoundSong(1), lyricsPreview: null, tieUp: null },
+    }),
+  );
+  await remote.route("**/api/youtubeInfo", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        info: {
+          title: "Me at the zoo",
+          author: "jawed",
+          channelId: "UC4QobU6STFB0P71PMvOGN5A",
+          lengthSeconds: 19,
+          description: "",
+          viewCount: 1,
+          captionLanguages: [],
+          keywords: [],
+          gainValue: 1,
+        },
+      },
+    }),
+  );
+
+  await remote.getByRole("tab", { name: "Joysound" }).click();
+  const search = remote.getByRole("searchbox", { name: "Search" });
+  await search.fill("E2E");
+  await remote
+    .getByRole("main")
+    .getByRole("link", { name: /E2E Joysound song 1/ })
+    .click();
+  await remote
+    .getByRole("button", { name: "Play a YouTube video behind the lyrics" })
+    .click();
+  await remote.getByLabel("YouTube link or video ID").fill("jNQXAC9IVRw");
+  await remote.getByRole("button", { name: "Use this video" }).click();
+  await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
+  await expect(remote.getByText("Me at the zoo")).toBeVisible();
+
+  await remote.getByRole("link", { name: "E2E artist" }).click();
+  await expect(remote).toHaveURL(/by=artist/);
+  const back = remote.getByRole("button", { name: "Back" });
+  await back.click();
+  await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
+  await expect(
+    remote.getByRole("button", { name: "Remove the video" }),
+  ).toBeVisible();
+  await back.click();
+  await expect(search).toHaveValue("E2E");
+  await expect(
+    remote.getByRole("main").getByRole("link", { name: /E2E Joysound song/ }),
+  ).toHaveCount(3);
+});
+
 // The live state changes several times a second while anything downloads.
 // That used to re-render the whole remote each time, which kept a DAM queue
 // button's 2.5-second reset from ever going off.

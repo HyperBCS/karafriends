@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { isRomaji, toRomaji } from "wanakana";
 
 import type { JoysoundSongDetail } from "../../common/api";
@@ -62,6 +62,7 @@ const JoysoundQueue = ({
   song: JoysoundSongDetail;
   initialVideoId: string;
 }) => {
+  const navigate = useNavigate();
   const [videoId, setVideoId] = useState(initialVideoId);
   // Set once the video's details came back: queueing waits for it.
   const [checkedVideoId, setCheckedVideoId] = useState("");
@@ -71,11 +72,11 @@ const JoysoundQueue = ({
   const chooseVideo = (id: string) => {
     setVideoId(id);
     setCheckedVideoId("");
-    history.replaceState(
-      {},
-      "",
-      `#/joysoundSong/${song.id}${id ? `/${id}` : ""}`,
-    );
+    // Through the router, which keeps its place in the history (the top
+    // bar's back button needs it).
+    navigate(`/joysoundSong/${song.id}${id ? `/${id}` : ""}`, {
+      replace: true,
+    });
   };
 
   const onSubmit = (e: React.FormEvent) => {
