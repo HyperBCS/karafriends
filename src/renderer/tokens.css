@@ -43,10 +43,10 @@
      inner shadow and its label, it's plainly a field; focused, the accent
      (7.1:1 on a card) takes its place. */
   --kf-border-strong: #3a3e46;
-  /* A slider's track past its value: the field's color, a groove in the
-     card (1.1:1, with a hairline and the inner shadow round it); the
-     accent filling it to the value is 8.0:1 against it. */
-  --kf-track: #08090a;
+  /* A slider's track past its value: a groove a step lighter than the
+     card (1.7:1, with the inner shadow), so a slider at 0 still shows its
+     track; the accent filling it to the value is 4.3:1 against it. */
+  --kf-track: #3a3e46;
   /* Text, 15.5:1 (16.8:1 on black, 14.2:1 on a card, 11.0:1 on a
      button). */
   --kf-text: #e4e6e9;

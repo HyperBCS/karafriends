@@ -125,10 +125,10 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // its inner shadow and its label, it's plainly a field; focused, the
   // accent (7.8:1) takes its place.
   --kf-border-strong: #3a3e46;
-  // The field's color: the slider is a groove in the card (1.1:1, with a
-  // hairline and the inner shadow round it), and the accent filling it to
-  // the value is 8.0:1 against it.
-  --kf-track: #08090a;
+  // A groove a step lighter than the card (1.7:1, with the inner shadow),
+  // so a slider at 0 still shows its track; the accent filling it to the
+  // value is 4.3:1 against it, and the thumb 8.6:1.
+  --kf-track: #3a3e46;
   // 15.5:1 (14.2:1 on a card, 11.0:1 on the sheet, 9.4:1 pressed there)
   --kf-text: #{$text};
   // 7.6:1 (7.0:1 on a card or in the well, 6.1:1 pressed; 5.4:1 on the
@@ -199,9 +199,10 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // A field's edge: 3.3:1, the 3:1 a component's boundary needs (3.8:1 on
   // a card, 3.5:1 on a field's fill).
   --kf-border-strong: #7d848e;
-  // A grey groove, 1.3:1 on a card (with a hairline and the inner shadow
-  // round it); the accent filling it to the value is 4.6:1 against it.
-  --kf-track: #e2e5e9;
+  // A grey groove, 1.6:1 on a card (with the inner shadow), so a slider at
+  // 0 still shows its track; the accent filling it to the value is 3.7:1
+  // against it.
+  --kf-track: #c9ced5;
   // 14.8:1 (17.1:1 on a card or the sheet, 15.1:1 pressed)
   --kf-text: #{$text};
   // 5.3:1 (6.2:1 on a card or the sheet, 5.5:1 pressed; 5.3:1 in the well,

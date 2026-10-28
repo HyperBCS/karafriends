@@ -65,6 +65,8 @@ The stack work in [`PLAN-hard-fork.md`](PLAN-hard-fork.md) is done. This plan is
 
 ## Design brief (binding for B, C and D; the coordinator reviews against it)
 
+> **Updated 2026-10-28 (UI round, C1):** the colors, radius and shadow rules below are replaced by Graphite and its depth system: darker greys, rounded cards (about 12px) with soft shadows for lists and settings, a lighter sheet with a long shadow, sunken fields and tracks, raised picked choices. See [`PLAN-ui-round.md`](PLAN-ui-round.md) and the token files. The rest of the brief (type, spacing, one accent, words) still holds.
+
 The app is used in a dim room, on phones held at arm's length and on a TV across the room. It should feel like the remote in a Japanese karaoke box: dense, dark, obvious, fast.
 
 **Do**
