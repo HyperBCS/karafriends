@@ -27,7 +27,7 @@ import {
 } from "./playback";
 import Player from "./Player";
 import QRCode from "./QRCode";
-import Settings from "./Settings";
+import Settings, { SETTINGS_TABS, type SettingsTab } from "./Settings";
 import UpNext from "./UpNext";
 import type { Announcement } from "./useSongPlayer";
 import KarafriendsAudio, { type SongOutput } from "./webAudio";
@@ -101,6 +101,17 @@ function savedMicMode(): MicMode {
     exclusive: localStorage.getItem(MIC_MODE_KEY) === "exclusive",
     bufferSize: savedNumber(MIC_BUFFER_KEY),
   };
+}
+
+// "off" when DAM songs show no pitch bars (the piano roll); not set for on.
+const PITCH_BARS_KEY = "pitchBars";
+
+// Settings' open tab, to open on it the next time.
+const SETTINGS_TAB_KEY = "settingsTab";
+
+function savedSettingsTab(): SettingsTab {
+  const saved = localStorage.getItem(SETTINGS_TAB_KEY);
+  return SETTINGS_TABS.find((tab) => tab === saved) ?? "accounts";
 }
 
 // How the phones tell the mics apart (MicInfo.id).
@@ -191,8 +202,12 @@ function App(props: {
   const [hostname, setHostname] = useState(
     `${HOSTNAME}:${window.karafriends.remoconPort()}`,
   );
+  const [pitchBars, setPitchBars] = useState(
+    () => localStorage.getItem(PITCH_BARS_KEY) !== "off",
+  );
   const [upNextVisible, setUpNextVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(savedSettingsTab);
   const [announcements, setAnnouncements] = useState<
     (Announcement & { id: number })[]
   >([]);
@@ -342,6 +357,17 @@ function App(props: {
     setUiScale(scale);
   };
 
+  // A DAM song that's playing gains or loses them at once.
+  const changePitchBars = (on: boolean) => {
+    save(PITCH_BARS_KEY, on ? null : "off");
+    setPitchBars(on);
+  };
+
+  const changeSettingsTab = (tab: SettingsTab) => {
+    localStorage.setItem(SETTINGS_TAB_KEY, tab);
+    setSettingsTab(tab);
+  };
+
   useEffect(() => props.audio.avOffset(avOffsetMs), [props.audio, avOffsetMs]);
 
   // index.css multiplies the root font size by it.
@@ -387,11 +413,14 @@ function App(props: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // The first launch, with no DAM or Joysound login, opens Settings.
+  // The first launch, with no DAM or Joysound login, opens Settings on
+  // Accounts.
   useEffect(() => {
     call("getSettings", {}).then(
       ({ isFirstRun }) => {
-        if (isFirstRun) setSettingsOpen(true);
+        if (!isFirstRun) return;
+        setSettingsTab("accounts");
+        setSettingsOpen(true);
       },
       (err) => console.error("Couldn't load the settings:", err),
     );
@@ -421,6 +450,7 @@ function App(props: {
             audio={props.audio}
             announce={announce}
             avOffsetMs={avOffsetMs}
+            pitchBars={pitchBars}
           />
           {!idle && !settingsOpen ? (
             <QRCode hostname={hostname} corner />
@@ -437,6 +467,8 @@ function App(props: {
         <Announcements items={announcements} />
         {settingsOpen ? (
           <Settings
+            tab={settingsTab}
+            onTabChange={changeSettingsTab}
             onClose={() => setSettingsOpen(false)}
             hostname={hostname}
             onHostnameChange={setHostname}
@@ -457,6 +489,8 @@ function App(props: {
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}
             onUiScaleChange={changeUiScale}
+            pitchBars={pitchBars}
+            onPitchBarsChange={changePitchBars}
             audioLatencyMs={props.audio.latencyMs()}
           />
         ) : null}

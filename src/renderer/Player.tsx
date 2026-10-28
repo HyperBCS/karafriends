@@ -16,6 +16,8 @@ function Player(props: {
   audio: KarafriendsAudio;
   announce: (announcement: Announcement) => void;
   avOffsetMs: number;
+  // Whether DAM songs show the piano roll (Settings, Display).
+  pitchBars: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
@@ -37,7 +39,7 @@ function Player(props: {
           avOffsetMs={props.avOffsetMs}
         />
       ) : null}
-      {overlay?.kind === "dam" ? (
+      {overlay?.kind === "dam" && props.pitchBars ? (
         <PianoRoll
           scoringData={overlay.scoringData}
           videoRef={videoRef}
