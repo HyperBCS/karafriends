@@ -1,5 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
-import YouTubePlayer from "youtube-player";
+import React, { useState } from "react";
 
 import { useApiQuery } from "../../../common/apiQueries";
 import { t } from "../../i18n";
@@ -9,6 +8,7 @@ import { withLoader } from "../Loader";
 import { QueueButton } from "../QueueButtons";
 import { InlineError } from "../ui";
 import VideoMetadata from "../VideoMetadata";
+import YouTubeEmbed from "../YouTubeEmbed";
 
 interface Props {
   videoId: string;
@@ -18,22 +18,14 @@ interface Props {
 // lyrics to show with it (its captions, or lyrics pasted here to send line
 // by line), and its queue button.
 const YouTubeInfo = ({ videoId }: Props) => {
-  const playerRef = useRef<ReturnType<typeof YouTubePlayer> | null>(null);
   const [adhocLyrics, setAdhocLyrics] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
 
   const videoInfo = useApiQuery("youtubeInfo", { videoId });
 
-  // One video per mount (YouTubePage keys this by it).
-  useEffect(() => {
-    playerRef.current ??= YouTubePlayer("youtube-player", { videoId });
-  }, [videoId]);
-
   return (
     <>
-      <div className={styles.video}>
-        <div id="youtube-player" />
-      </div>
+      <YouTubeEmbed videoId={videoId} />
       {!videoInfo.ok && (
         <InlineError>
           {t("video.infoFailed", { reason: reasonText(videoInfo.reason) })}
