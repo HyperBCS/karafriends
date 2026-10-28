@@ -159,4 +159,10 @@ export const en = {
   "readings.written": "Written",
   "readings.kana": "Kana",
   "readings.romaji": "Romaji",
+
+  // The light or dark theme, on the profile.
+  "theme.label": "Theme",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+  "theme.auto": "Auto",
 } as const;

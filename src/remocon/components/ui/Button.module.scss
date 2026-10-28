@@ -46,7 +46,7 @@
 }
 
 .primary {
-  background-color: $kf-accent;
+  background-color: $kf-accent-fill;
   color: $kf-on-accent;
 
   @include kf-pressed {

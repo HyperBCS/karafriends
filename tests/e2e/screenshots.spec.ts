@@ -573,10 +573,13 @@ test.describe("phase P2", () => {
       await shoot(remote, name("sheet"));
 
       await open("/profile");
-      // Scrolled down to the theme and the admin's slider.
-      const slider = remote.getByRole("slider", { name: "Guide melody" });
-      await slider.scrollIntoViewIfNeeded();
-      await expect(slider).toBeInViewport();
+      // Scrolled down to the theme, then the admin's slider.
+      await remote
+        .getByRole("heading", { name: "Theme" })
+        .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await expect(
+        remote.getByRole("slider", { name: "Guide melody" }),
+      ).toBeInViewport();
       await shoot(remote, name("profile"));
 
       await open("/song/dam-0");

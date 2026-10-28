@@ -35,8 +35,11 @@ const places = (page: Page) =>
     .getByRole("link", { name: /^(Home|History|Profile)$/ });
 
 // "#1cb3ff" as getComputedStyle gives a color: "rgb(28, 179, 255)".
+// (The build may shorten a custom property's "#666666" to "#666".)
 const rgb = (hex: string) => {
-  const n = parseInt(hex.slice(1), 16);
+  const digits =
+    hex.length === 4 ? hex.slice(1).replace(/./g, "$&$&") : hex.slice(1);
+  const n = parseInt(digits, 16);
   return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
 };
 
@@ -167,6 +170,70 @@ test("the language toggle switches the remote to Japanese", async ({
   await remote.getByRole("button", { name: "戻る" }).click();
   await expect(remote.getByRole("heading", { name: "曲を探す" })).toBeVisible();
   await expect(remote.locator("html")).toHaveAttribute("lang", "ja");
+});
+
+test("the Theme setting picks light, dark, or the phone's mode", async ({
+  remote,
+}) => {
+  const html = remote.locator("html");
+  const body = remote.locator("body");
+  const LIGHT = "rgb(245, 245, 245)";
+  const DARK = "rgb(18, 18, 18)";
+  const tab = (name: string) =>
+    remote
+      .getByRole("tablist", { name: "Theme" })
+      .getByRole("tab", { name, exact: true });
+
+  // Auto at first, following the phone's mode as it changes.
+  await remote.emulateMedia({ colorScheme: "light" });
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await expect(body).toHaveCSS("background-color", LIGHT);
+  await remote.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await expect(remote.getByRole("tablist", { name: "Theme" })).toBeVisible();
+  await expect(
+    remote.getByRole("tablist", { name: "Theme" }).getByRole("tab"),
+  ).toHaveText(["Light", "Dark", "Auto"]);
+  await expect(tab("Auto")).toHaveAttribute("aria-selected", "true");
+
+  // Light stays light in dark mode, and the sheet and the top bar go with
+  // it.
+  await tab("Light").click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await expect(body).toHaveCSS("background-color", LIGHT);
+  await expect(remote.getByRole("banner").locator("div").first()).toHaveCSS(
+    "background-color",
+    LIGHT,
+  );
+  await expect(remote.getByRole("region", { name: "Now playing" })).toHaveCSS(
+    "background-color",
+    "rgb(235, 235, 235)",
+  );
+  expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
+    "light",
+  );
+
+  // Dark stays dark in light mode, and after a reload.
+  await tab("Dark").click();
+  await remote.emulateMedia({ colorScheme: "light" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+  await remote.reload();
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(tab("Dark")).toHaveAttribute("aria-selected", "true");
+
+  // Auto follows the phone again.
+  await tab("Auto").click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await remote.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+  expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
+    "auto",
+  );
 });
 
 // DAM and Joysound only answer Japanese IPs, so the remote's searches and

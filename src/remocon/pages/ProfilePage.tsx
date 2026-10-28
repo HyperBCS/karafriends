@@ -18,6 +18,7 @@ import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
 import { READINGS, type Readings } from "../readings";
+import { currentTheme, saveTheme, THEMES, type Theme } from "../theme";
 import * as styles from "./ProfilePage.module.scss";
 
 // What to tell a guest whose sign-in failed.
@@ -98,6 +99,25 @@ const ReadingsPicker = () => {
         tabs={READINGS.map((id) => ({ id, label: t(`readings.${id}`) }))}
         selected={readings}
         onSelect={saveReadings}
+      />
+    </div>
+  );
+};
+
+// Light, dark, or as the phone is set (theme.ts).
+const ThemePicker = () => {
+  const [theme, setTheme] = useState(currentTheme);
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.heading}>{t("theme.label")}</h2>
+      <Tabs<Theme>
+        label={t("theme.label")}
+        tabs={THEMES.map((id) => ({ id, label: t(`theme.${id}`) }))}
+        selected={theme}
+        onSelect={(next) => {
+          saveTheme(next);
+          setTheme(next);
+        }}
       />
     </div>
   );
@@ -265,8 +285,9 @@ const LyricsOnTheTv = () => {
   );
 };
 
-// The phone's nickname, language, notifications and admin sign-in. On a
-// first visit, just the nickname (and the language, to read the rest in).
+// The phone's nickname, language, readings, theme, notifications, and the
+// admin sign-in and controls. On a first visit, just the nickname (and the
+// language, to read the rest in).
 const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
   <div className={styles.profile}>
     <Nickname firstVisit={firstVisit} />
@@ -274,6 +295,7 @@ const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
     {!firstVisit && (
       <>
         <ReadingsPicker />
+        <ThemePicker />
         <Notifications />
         <Admin />
         <LyricsOnTheTv />

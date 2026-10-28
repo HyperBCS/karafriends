@@ -1,8 +1,15 @@
 @use "./tokens" as *;
 
+// The dark theme unless theme.ts says light.
 :root {
   @include custom-properties;
+  @include dark-colors;
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  @include light-colors;
+  color-scheme: light;
 }
 
 * {

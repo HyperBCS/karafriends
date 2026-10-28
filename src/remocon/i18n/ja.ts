@@ -142,4 +142,9 @@ export const ja: Messages = {
   "readings.written": "そのまま",
   "readings.kana": "かな",
   "readings.romaji": "ローマ字",
+
+  "theme.label": "テーマ",
+  "theme.light": "ライト",
+  "theme.dark": "ダーク",
+  "theme.auto": "自動",
 };

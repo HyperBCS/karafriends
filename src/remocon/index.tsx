@@ -8,6 +8,8 @@ import App from "./App";
 import { QueueNotifications } from "./hooks/useQueueNotifications";
 import { LanguageProvider } from "./i18n";
 import "./index.scss";
+// Sets <html>'s data-theme on import.
+import "./theme";
 
 const queryClient = createQueryClient();
 

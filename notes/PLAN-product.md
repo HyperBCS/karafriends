@@ -90,6 +90,10 @@ The app is used in a dim room, on phones held at arm's length and on a TV across
 - Page transitions, staggered fade-ins, confetti.
 - Placeholder names or content in screenshots: use real songs from the Japan tests or fixed fixtures.
 
+**Light theme (the phone only; added in the polish round's P2)**
+
+The phone has a light theme beside the dark one (the profile's Theme: Light, Dark, or Auto, which follows the phone's mode). It keeps the same type, spacing, 4px radius and accent; only the colors change, all from the tokens (`src/remocon/tokens.scss`): a near-white page (`#f5f5f5`), white lists and fields, a panel one step darker than the surface, `#1a1a1a` text, borders at 3:1 against the page and muted text at 4.5:1. Where the accent is text, an icon, a line or the focus ring, the light theme uses the same blue a step darker (`#006fa8`) so it reads on white; the primary button keeps the icon's `#1cb3ff`. No shadows beyond the sheet's. The Don't list applies to both themes. The display stays dark.
+
 ## Phases
 
 ### A1: download failures reach the phone (branch `download-failures`)
