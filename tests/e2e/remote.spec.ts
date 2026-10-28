@@ -23,8 +23,95 @@ test("the remote opens on the search screen", async ({ remote }) => {
       remote.getByRole("tablist", { name: group }).getByRole("tab"),
     ).toHaveText([...tabs]);
   }
-  await expect(remote.getByRole("link", { name: "Profile" })).toBeVisible();
-  await expect(remote.getByRole("link", { name: "History" })).toBeVisible();
+  // The empty search screen has no History row: the top bar has it.
+  await expect(remote.getByRole("main").getByRole("link")).toHaveCount(0);
+});
+
+// Home, History and Profile: the top bar's three, in that order.
+const PLACES = ["Home", "History", "Profile"] as const;
+const places = (page: Page) =>
+  page
+    .getByRole("banner")
+    .getByRole("link", { name: /^(Home|History|Profile)$/ });
+
+// "#1cb3ff" as getComputedStyle gives a color: "rgb(28, 179, 255)".
+const rgb = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+
+test("the top bar has Home, History and Profile in the same place on every screen", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        ...damSong(1),
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 200,
+      },
+    }),
+  );
+  let first: unknown;
+  for (const [hash, current] of [
+    ["#/", "Home"],
+    ["#/history", "History"],
+    ["#/profile", "Profile"],
+    ["#/song/e2e-1", null],
+  ] as const) {
+    await remote.goto(new URL(hash, karafriends.remoconUrl).href);
+    const buttons = places(remote);
+    await expect(buttons).toHaveCount(3);
+    for (const [i, name] of PLACES.entries()) {
+      const button = buttons.nth(i);
+      await expect(button).toHaveAccessibleName(name);
+      if (name === current) {
+        await expect(button).toHaveAttribute("aria-current", "page");
+      } else {
+        await expect(button).not.toHaveAttribute("aria-current");
+      }
+    }
+    const boxes = await Promise.all(
+      [0, 1, 2].map((i) => buttons.nth(i).boundingBox()),
+    );
+    for (const box of boxes) {
+      expect([box!.width, box!.height], hash).toEqual([44, 44]);
+    }
+    // Where they were on the first screen.
+    first ??= boxes;
+    expect(boxes, hash).toEqual(first);
+    // Back on the left, except on the search screen.
+    await expect(remote.getByRole("banner").getByLabel("Back")).toHaveCount(
+      current === "Home" ? 0 : 1,
+    );
+    if (current) {
+      // In the accent, and a tap stays put.
+      const button = buttons.nth(PLACES.indexOf(current));
+      const accent = await remote.evaluate(() =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--kf-accent")
+          .trim(),
+      );
+      await expect(button).toHaveCSS("color", rgb(accent));
+      const before = remote.url();
+      await button.click();
+      await expect(remote.getByRole("main")).toBeVisible();
+      expect(remote.url()).toBe(before);
+    }
+  }
+});
+
+test("History in the top bar opens the history", async ({ remote }) => {
+  await places(remote).nth(1).click();
+  await expect(remote.getByRole("heading", { name: "History" })).toBeVisible();
+  await expect(remote).toHaveURL(/#\/history$/);
+  await places(remote).nth(0).click();
+  await expect(
+    remote.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
 });
 
 test("a new phone picks a nickname before anything else", async ({
@@ -36,8 +123,16 @@ test("a new phone picks a nickname before anything else", async ({
   await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
   const nickname = page.getByLabel("Nickname");
   await expect(nickname).toBeFocused();
-  // Nothing else until it has one: no profile button, no sheet.
-  await expect(page.getByRole("link", { name: "Profile" })).toHaveCount(0);
+  // Nothing else until it has one: the top bar's three are there but
+  // disabled, there's no way back, and no sheet.
+  await expect(places(page)).toHaveCount(3);
+  for (const [i, name] of PLACES.entries()) {
+    const button = places(page).nth(i);
+    await expect(button).toHaveAccessibleName(name);
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).not.toHaveAttribute("href");
+  }
+  await expect(page.getByLabel("Back")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Now playing" })).toHaveCount(
     0,
   );
@@ -234,8 +329,11 @@ test("Home on a song page goes to the search screen", async ({
   karafriends,
   remote,
 }) => {
-  // Not on the search screen itself.
-  await expect(remote.getByRole("link", { name: "Home" })).toHaveCount(0);
+  // On the search screen itself, it's the current screen's.
+  await expect(remote.getByRole("link", { name: "Home" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await remote.route("**/api/damSong", (route) =>
     route.fulfill({
       json: {

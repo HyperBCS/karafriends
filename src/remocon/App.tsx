@@ -13,7 +13,7 @@ import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
-import { MdHome, MdPerson } from "./icons";
+import { MdHistory, MdHome, MdPerson } from "./icons";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -58,34 +58,47 @@ const App = () => (
   </HashRouter>
 );
 
+type Place = "home" | "history" | "profile";
+
+// The top bar's three places, in the same order on every screen.
+const PLACES = [
+  { place: "home", to: "/", label: "nav.home", icon: <MdHome /> },
+  {
+    place: "history",
+    to: "/history",
+    label: "nav.history",
+    icon: <MdHistory />,
+  },
+  {
+    place: "profile",
+    to: "/profile",
+    label: "nav.profile",
+    icon: <MdPerson />,
+  },
+] as const;
+
 interface ScreenProps {
   title: string;
-  // The search screen: nowhere to go back to.
-  home?: boolean;
-  // The profile screen: no profile button. On a first visit, no back
-  // button either.
-  profile?: boolean;
+  // Which of the three places this screen is, if one: its button shows in
+  // the accent and does nothing. The search screen has nowhere to go back
+  // to.
+  current?: Place;
+  // The profile screen on a first visit: no back button, and the three
+  // buttons disabled until there's a nickname.
   firstVisit?: boolean;
   children: React.ReactNode;
 }
 
-// One screen: the top bar (back, the title, the home and profile buttons)
+// One screen: the top bar (back, the title, and Home, History and Profile)
 // and the screen's content below it.
-const Screen = ({
-  title,
-  home,
-  profile,
-  firstVisit,
-  children,
-}: ScreenProps) => {
+const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   const navigate = useNavigate();
-  // Away from the search screen, with somewhere to go back to: Back and
-  // Home.
-  const away = !home && !firstVisit;
   // react-router counts the entries it pushed: back stays in the remote.
   const canGoBack = (window.history.state?.idx ?? 0) > 0;
   let back: string | (() => void) | undefined;
-  if (away) back = canGoBack ? () => navigate(-1) : "/";
+  if (current !== "home" && !firstVisit) {
+    back = canGoBack ? () => navigate(-1) : "/";
+  }
 
   return (
     <>
@@ -93,30 +106,34 @@ const Screen = ({
         <TopBar
           title={title}
           back={back}
-          trailing={
-            (away || !profile) && (
-              <>
-                {away && (
-                  <Link
-                    to="/"
-                    className={styles.iconLink}
-                    aria-label={t("nav.home")}
-                  >
-                    <MdHome />
-                  </Link>
-                )}
-                {!profile && (
-                  <Link
-                    to="/profile"
-                    className={styles.iconLink}
-                    aria-label={t("nav.profile")}
-                  >
-                    <MdPerson />
-                  </Link>
-                )}
-              </>
-            )
-          }
+          trailing={PLACES.map(({ place, to, label, icon }) => {
+            const here = place === current ? ("page" as const) : undefined;
+            // A link can't be disabled: without an address, it's one in
+            // name only (role), out of the tab order.
+            return firstVisit ? (
+              <a
+                key={place}
+                role="link"
+                aria-disabled="true"
+                aria-current={here}
+                aria-label={t(label)}
+                className={styles.iconLink}
+              >
+                {icon}
+              </a>
+            ) : (
+              <Link
+                key={place}
+                to={to}
+                aria-current={here}
+                aria-label={t(label)}
+                className={styles.iconLink}
+                onClick={here && ((e) => e.preventDefault())}
+              >
+                {icon}
+              </Link>
+            );
+          })}
         />
       </header>
       <main className={styles.main}>{children}</main>
@@ -142,7 +159,7 @@ const Shell = () => {
     if (pathname !== "/profile") return <Navigate replace to="/profile" />;
     return (
       <div className={styles.app}>
-        <Screen title={t("profile.heading")} profile firstVisit>
+        <Screen title={t("profile.heading")} current="profile" firstVisit>
           <ProfilePage firstVisit />
         </Screen>
       </div>
@@ -155,7 +172,7 @@ const Shell = () => {
         <Route
           path="/"
           element={
-            <Screen title={t("search.heading")} home>
+            <Screen title={t("search.heading")} current="home">
               <SearchPage />
             </Screen>
           }
@@ -224,7 +241,7 @@ const Shell = () => {
         <Route
           path="/history"
           element={
-            <Screen title={t("history.heading")}>
+            <Screen title={t("history.heading")} current="history">
               <HistoryPage />
             </Screen>
           }
@@ -232,7 +249,7 @@ const Shell = () => {
         <Route
           path="/profile"
           element={
-            <Screen title={t("profile.heading")} profile>
+            <Screen title={t("profile.heading")} current="profile">
               <ProfilePage />
             </Screen>
           }
