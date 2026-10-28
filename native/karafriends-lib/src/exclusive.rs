@@ -5,10 +5,9 @@
 // thread that made them. Every Windows call is unsafe in the windows crate;
 // the ones here only pass locals that outlive the call.
 
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use windows::core::{w, Error, Interface, GUID, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{
@@ -16,9 +15,9 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Media::Audio::{
     eCapture, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator, IMMEndpoint,
-    MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_E_BUFFER_ERROR,
-    AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_E_DEVICE_IN_USE,
-    AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_SHAREMODE_EXCLUSIVE,
+    MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY, AUDCLNT_BUFFERFLAGS_SILENT,
+    AUDCLNT_E_BUFFER_ERROR, AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_INVALIDATED,
+    AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_SHAREMODE_EXCLUSIVE,
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
 };
 use windows::Win32::Media::KernelStreaming::{
@@ -39,10 +38,10 @@ type Outcome<T> = std::result::Result<T, String>;
 
 // Rates tried after the one asked for.
 const FALLBACK_RATES: [u32; 3] = [48000, 44100, 96000];
-// How often the thread looks at its stop flag when the mic is quiet.
+// How often the thread looks at its stop flag when the mic is quiet. (A
+// mic that stops sending altogether is caught by InputDevice::status, as on
+// every host.)
 const WAIT_MS: u32 = 100;
-// A mic that sends nothing for this long has stopped.
-const STALL: Duration = Duration::from_secs(2);
 
 const NOT_ALLOWED: &str =
     "Windows doesn't allow exclusive use of this mic: in Sound settings, open \
@@ -74,11 +73,15 @@ impl ExclusiveInput {
     // mode, at `preferred_rate` if the mic takes it, with a period of
     // `buffer_frames` (None: the mic's shortest). Returns once the stream
     // runs. `on_data` gets interleaved samples, every channel, on the capture
-    // thread; `on_error` is called once if the stream stops by itself.
+    // thread; `on_error` is called once if the stream stops by itself. The
+    // thread puts in `realtime` why MMCSS refused it, if it did, and counts
+    // in `lost` the packets Windows lost.
     pub(crate) fn open(
         endpoint_id: &str,
         preferred_rate: u32,
         buffer_frames: Option<u32>,
+        realtime: Arc<Mutex<Option<String>>>,
+        lost: Arc<AtomicU32>,
         on_data: impl FnMut(&[f32]) + Send + 'static,
         on_error: impl FnOnce(String) + Send + 'static,
     ) -> crate::Result<(ExclusiveInput, ExclusiveFormat)> {
@@ -91,10 +94,10 @@ impl ExclusiveInput {
             .spawn(move || {
                 capture_thread(
                     &endpoint_id,
-                    preferred_rate,
-                    buffer_frames,
+                    (preferred_rate, buffer_frames),
                     opened_tx,
                     &thread_stop,
+                    (&realtime, &lost),
                     on_data,
                     on_error,
                 )
@@ -123,10 +126,10 @@ impl Drop for ExclusiveInput {
 
 fn capture_thread(
     endpoint_id: &str,
-    preferred_rate: u32,
-    buffer_frames: Option<u32>,
+    (preferred_rate, buffer_frames): (u32, Option<u32>),
     opened: mpsc::Sender<Outcome<ExclusiveFormat>>,
     stop: &AtomicBool,
+    (realtime, lost): (&Mutex<Option<String>>, &AtomicU32),
     mut on_data: impl FnMut(&[f32]),
     on_error: impl FnOnce(String),
 ) {
@@ -146,7 +149,7 @@ fn capture_thread(
         }
     };
     let _ = opened.send(Ok(capture.format));
-    let ended = capture.run(stop, &mut on_data);
+    let ended = capture.run(stop, realtime, lost, &mut on_data);
     // Release the mic before saying it stopped.
     drop(capture);
     if let Some(e) = ended {
@@ -196,16 +199,12 @@ impl Drop for Event {
 struct Mmcss(HANDLE);
 
 impl Mmcss {
-    fn join() -> Option<Mmcss> {
+    // On a refusal the thread still runs, just at normal priority.
+    fn join() -> Outcome<Mmcss> {
         let mut task_index = 0;
-        match unsafe { AvSetMmThreadCharacteristicsW(w!("Pro Audio"), &mut task_index) } {
-            Ok(handle) => Some(Mmcss(handle)),
-            // It still runs, just at normal priority.
-            Err(e) => {
-                eprintln!("The exclusive mic thread runs without MMCSS: {e}");
-                None
-            }
-        }
+        unsafe { AvSetMmThreadCharacteristicsW(w!("Pro Audio"), &mut task_index) }
+            .map(Mmcss)
+            .map_err(|e| format!("MMCSS refused it: {e}"))
     }
 }
 
@@ -291,55 +290,70 @@ impl Capture {
     }
 
     // Reads until `stop` is set; if the stream stops first, why.
-    fn run(&self, stop: &AtomicBool, on_data: &mut impl FnMut(&[f32])) -> Option<String> {
-        let _mmcss = Mmcss::join();
+    fn run(
+        &self,
+        stop: &AtomicBool,
+        realtime: &Mutex<Option<String>>,
+        lost: &AtomicU32,
+        on_data: &mut impl FnMut(&[f32]),
+    ) -> Option<String> {
+        let _mmcss = match Mmcss::join() {
+            Ok(mmcss) => Some(mmcss),
+            Err(e) => {
+                eprintln!("The exclusive mic thread isn't real-time: {e}");
+                *crate::lock(realtime) = Some(e);
+                None
+            }
+        };
         let period = self.format.frames as usize * self.format.channels as usize;
         let mut samples = Vec::with_capacity(period);
-        let mut heard = Instant::now();
         while !stop.load(Relaxed) {
             let waited = unsafe { WaitForSingleObject(self.event.0, WAIT_MS) };
             if waited == WAIT_OBJECT_0 {
-                match self.drain(&mut samples, period, on_data) {
-                    Ok(true) => heard = Instant::now(),
-                    Ok(false) => {}
-                    Err(e) => return Some(e),
+                if let Err(e) = self.drain(&mut samples, period, lost, on_data) {
+                    return Some(e);
                 }
             } else if waited != WAIT_TIMEOUT {
                 return Some(failed("WaitForSingleObject", &Error::from_thread()));
-            }
-            if heard.elapsed() > STALL {
-                return Some(format!(
-                    "The mic stopped sending sound (nothing for {} seconds)",
-                    STALL.as_secs()
-                ));
             }
         }
         None
     }
 
-    // Hands on every packet waiting, at most a period per call; true if
-    // there were any. (GetNextPacketSize is for shared mode only, so this
-    // reads until GetBuffer has nothing.)
+    // Hands on every packet waiting, at most a period per call.
+    // (GetNextPacketSize is for shared mode only, so this reads until
+    // GetBuffer has nothing.)
     fn drain(
         &self,
         samples: &mut Vec<f32>,
         period: usize,
+        lost: &AtomicU32,
         on_data: &mut impl FnMut(&[f32]),
-    ) -> Outcome<bool> {
-        let mut any = false;
+    ) -> Outcome<()> {
         loop {
-            let (mut data, mut frames, mut flags) = (std::ptr::null_mut(), 0, 0);
+            let (mut data, mut frames, mut flags, mut position) = (std::ptr::null_mut(), 0, 0, 0);
             let got = unsafe {
-                self.capture
-                    .GetBuffer(&mut data, &mut frames, &mut flags, None, None)
+                self.capture.GetBuffer(
+                    &mut data,
+                    &mut frames,
+                    &mut flags,
+                    Some(&mut position),
+                    None,
+                )
             };
             match got {
                 // In exclusive mode: no packet yet, so wait for the next event.
-                Err(e) if e.code() == AUDCLNT_E_BUFFER_ERROR => return Ok(any),
+                Err(e) if e.code() == AUDCLNT_E_BUFFER_ERROR => return Ok(()),
                 Err(e) => return Err(failed("IAudioCaptureClient::GetBuffer", &e)),
                 // AUDCLNT_S_BUFFER_EMPTY: all read.
-                Ok(()) if frames == 0 => return Ok(any),
+                Ok(()) if frames == 0 => return Ok(()),
                 Ok(()) => {}
+            }
+            // Windows lost a period, as it does when this thread is late: a
+            // larger buffer helps. (The flag means nothing on the first
+            // packet, at position 0.)
+            if position != 0 && flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0 {
+                lost.fetch_add(1, Relaxed);
             }
             let bytes = if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 || data.is_null() {
                 None
@@ -351,7 +365,6 @@ impl Capture {
             convert(self.sample, bytes, count, samples);
             unsafe { self.capture.ReleaseBuffer(frames) }
                 .map_err(|e| failed("IAudioCaptureClient::ReleaseBuffer", &e))?;
-            any = true;
             for chunk in samples.chunks(period.max(1)) {
                 on_data(chunk);
             }
@@ -639,6 +652,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::sync::Mutex;
+    use std::time::{Duration, Instant};
     use windows::Win32::Media::Audio::{eRender, EDataFlow, DEVICE_STATE_ACTIVE};
 
     fn converted(sample: SampleFormat, bytes: &[u8]) -> Vec<f32> {
@@ -808,8 +822,15 @@ mod tests {
 
     #[test]
     fn test_unknown_endpoint_isnt_connected() {
-        let opened =
-            ExclusiveInput::open("{0.0.1.00000000}.{nothing}", 48000, None, |_| {}, |_| {});
+        let opened = ExclusiveInput::open(
+            "{0.0.1.00000000}.{nothing}",
+            48000,
+            None,
+            Arc::default(),
+            Arc::default(),
+            |_| {},
+            |_| {},
+        );
         assert_eq!(opened.err().unwrap().to_string(), "The mic isn't connected");
     }
 
@@ -846,6 +867,8 @@ mod tests {
                 &id,
                 48000,
                 buffer_frames,
+                Arc::default(),
+                Arc::default(),
                 move |data| {
                     counted.fetch_add(data.len(), Relaxed);
                     seen.fetch_max(data.len(), Relaxed);
@@ -889,7 +912,15 @@ mod tests {
     #[ignore]
     fn test_an_output_isnt_opened() {
         let id = first_endpoint(eRender);
-        let opened = ExclusiveInput::open(&id, 48000, None, |_| {}, |_| {});
+        let opened = ExclusiveInput::open(
+            &id,
+            48000,
+            None,
+            Arc::default(),
+            Arc::default(),
+            |_| {},
+            |_| {},
+        );
         assert_eq!(opened.err().unwrap().to_string(), "This device isn't a mic");
     }
 }
