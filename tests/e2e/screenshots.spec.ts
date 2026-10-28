@@ -172,13 +172,29 @@ const QUEUE = [
   queued.nico("sm2057168", "残酷な天使のテーゼ", "高橋洋子", "Ken"),
 ];
 
+// DAM's come with their readings, in hiragana as DAM gives them.
 const SEARCH = {
   dam: [
-    ["恋", "星野源"],
-    ["恋愛サーキュレーション", "千石撫子(花澤香菜)"],
-    ["恋するフォーチュンクッキー", "AKB48"],
-    ["恋人がサンタクロース", "松任谷由実"],
-    ["恋におちて -Fall in love-", "小林明子"],
+    ["恋", "星野源", "こい", "ほしのげん"],
+    [
+      "恋愛サーキュレーション",
+      "千石撫子(花澤香菜)",
+      "れんあいさーきゅれーしょん",
+      "せんごくなでこはなざわかな",
+    ],
+    ["恋するフォーチュンクッキー", "AKB48", "こいするふぉーちゅんくっきー"],
+    [
+      "恋人がサンタクロース",
+      "松任谷由実",
+      "こいびとがさんたくろーす",
+      "まつとうやゆみ",
+    ],
+    [
+      "恋におちて -Fall in love-",
+      "小林明子",
+      "こいにおちてふぉーるいんらぶ",
+      "こばやしあきこ",
+    ],
   ],
   joysound: [
     ["恋", "星野源"],
@@ -195,13 +211,15 @@ async function fakeCatalogs(page: Page) {
     await page.route(`**/api/${catalog}SearchSongs`, (route) =>
       route.fulfill({
         json: {
-          items: SEARCH[catalog].map(([name, artistName], i) => ({
-            id: `${catalog}-${i}`,
-            name,
-            nameYomi: "",
-            artistName,
-            artistNameYomi: "",
-          })),
+          items: SEARCH[catalog].map(
+            ([name, artistName, nameYomi = "", artistNameYomi = ""], i) => ({
+              id: `${catalog}-${i}`,
+              name,
+              nameYomi,
+              artistName,
+              artistNameYomi,
+            }),
+          ),
           nextOffset: null,
         },
       }),
@@ -400,5 +418,36 @@ test.describe("phase M2", () => {
       remote.getByRole("heading", { name: "恋", exact: true }),
     ).toBeVisible();
     await shoot(remote, `m-song-${browserName}`);
+  });
+});
+
+// Phase M7: search results with the Readings setting on "Both".
+test.describe("phase M7", () => {
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: QUEUE,
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("search results with their readings", async ({
+    remote,
+    browserName,
+  }) => {
+    await fakeCatalogs(remote);
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("tab", { name: "Both", exact: true }).click();
+    await remote.getByRole("button", { name: "Back" }).click();
+    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const search = remote.getByRole("searchbox", { name: "Search" });
+    await search.fill("恋");
+    await search.blur();
+    await expect(remote.getByText("こい · koi").first()).toBeVisible();
+    await shoot(remote, `m-readings-${browserName}`);
   });
 });
