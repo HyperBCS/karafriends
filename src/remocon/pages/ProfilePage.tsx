@@ -303,7 +303,8 @@ const MicLevelSlider = ({
 // One empty list, so the live state's selector gives the same one each time.
 const NO_MICS: MicInfo[] = [];
 
-// The display's mics, each with its gain and echo.
+// The display's mics, each with its gain and echo. The display can open
+// one device and channel twice, so a row's key is its id and place.
 const Mics = () => {
   const mics = useLiveState((state) => state?.mics ?? NO_MICS);
   return (
@@ -313,8 +314,8 @@ const Mics = () => {
         <p className={styles.text}>{t("mics.none")}</p>
       ) : (
         <ul className={styles.mics}>
-          {mics.map((mic) => (
-            <li key={mic.id} className={styles.mic}>
+          {mics.map((mic, index) => (
+            <li key={`${mic.id}-${index}`} className={styles.mic}>
               <span className={styles.text}>{mic.label}</span>
               <MicLevelSlider mic={mic} level="gain" />
               <MicLevelSlider mic={mic} level="echo" />
