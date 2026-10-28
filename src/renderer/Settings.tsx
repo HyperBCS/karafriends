@@ -8,7 +8,6 @@ import {
   type ToolsStatus,
 } from "../common/api";
 import { call } from "../common/apiClient";
-import { DEFAULT_CONFIG } from "../common/configSchema";
 import "./global";
 import HostnameSetting from "./HostnameSetting";
 import MicrophoneSetting from "./MicrophoneSetting";
@@ -25,15 +24,6 @@ interface Message {
   text: string;
   list?: string[];
   tone?: "busy" | "problem";
-}
-
-// A fresh config.yaml's usernames and proxy settings are placeholders,
-// which show as empty fields.
-function shown(
-  key: "damUsername" | "joysoundEmail" | "proxyHost" | "proxyUser",
-  value: string,
-): string {
-  return value === DEFAULT_CONFIG[key] ? "" : value;
 }
 
 // A text or number field that saves when the host leaves it or presses
@@ -330,7 +320,6 @@ export default function Settings(props: {
       service === "dam"
         ? (["damUsername", "damPassword", "Username"] as const)
         : (["joysoundEmail", "joysoundPassword", "Email"] as const);
-    const user = shown(userKey, settings[userKey]);
     return (
       <SettingsSection
         title={`${SERVICE_NAMES[service]} login`}
@@ -339,7 +328,7 @@ export default function Settings(props: {
         <div className="settingsFields">
           <TextSetting
             label={userLabel}
-            value={user}
+            value={settings[userKey]}
             onCommit={(value) => save(service, { [userKey]: value })}
           />
           <TextSetting
@@ -474,7 +463,7 @@ export default function Settings(props: {
           <div className="settingsFields">
             <TextSetting
               label="Proxy host"
-              value={shown("proxyHost", settings.proxyHost)}
+              value={settings.proxyHost}
               onCommit={(value) => save("network", { proxyHost: value })}
             />
             <TextSetting
@@ -487,7 +476,7 @@ export default function Settings(props: {
             />
             <TextSetting
               label="Proxy username"
-              value={shown("proxyUser", settings.proxyUser)}
+              value={settings.proxyUser}
               onCommit={(value) => save("network", { proxyUser: value })}
             />
             <TextSetting
