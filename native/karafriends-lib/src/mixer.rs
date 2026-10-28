@@ -57,18 +57,15 @@ struct OutputChoice {
 }
 
 // None: the default output, as Windows has it. Reopens the stream if the
-// mics have one open.
+// mics have one open. When that fails, nothing changes: the old choice
+// stays, and its stream reopens.
 pub fn set_output_device(
     name: Option<String>,
     rate: Option<cpal::SampleRate>,
     buffer: Option<u32>,
 ) -> Result<()> {
-    let mut mixer = lock(&MIXER);
-    mixer.choice = name.map(|name| OutputChoice { name, rate, buffer });
-    if mixer.output.is_some() {
-        mixer.open()?;
-    }
-    Ok(())
+    let choice = name.map(|name| OutputChoice { name, rate, buffer });
+    lock(&MIXER).choose(choice, Mixer::reopen)
 }
 
 // The rates Settings offers: the usual PCM ones. Drivers also list DSD
@@ -173,8 +170,26 @@ impl Mixer {
         }
     }
 
+    // Takes `choice`, and has `reopen` open the stream on it. If that
+    // fails, the old choice is put back and reopened, so a caller told of
+    // the error can take it that nothing changed.
+    fn choose(
+        &mut self,
+        choice: Option<OutputChoice>,
+        mut reopen: impl FnMut(&mut Self) -> Result<()>,
+    ) -> Result<()> {
+        let previous = std::mem::replace(&mut self.choice, choice);
+        if let Err(e) = reopen(self) {
+            self.choice = previous;
+            if let Err(again) = reopen(self) {
+                eprintln!("The mic output didn't reopen as it was: {again}");
+            }
+            return Err(e);
+        }
+        Ok(())
+    }
+
     // Opens the stream again, as set now, if it is open.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn reopen(&mut self) -> Result<()> {
         if self.output.is_some() {
             self.open()?;
@@ -866,6 +881,38 @@ mod tests {
         // Realtek's takes one size.
         assert_eq!(buffer_choices(528, 528), [528]);
         assert_eq!(buffer_choices(100, 1000), [100, 128, 256, 512, 1000]);
+    }
+
+    // A choice that won't open leaves the old one, reopened.
+    #[test]
+    fn test_a_failed_choice_changes_nothing() {
+        let choice = |name: &str| {
+            Some(OutputChoice {
+                name: name.to_string(),
+                rate: None,
+                buffer: None,
+            })
+        };
+        let mut opened = Vec::new();
+        let mut reopen = |mixer: &mut Mixer| -> Result<()> {
+            let name = mixer.choice.as_ref().map(|c| c.name.clone());
+            opened.push(name.clone());
+            match name.as_deref() {
+                Some("TV") => Err("it's asleep".into()),
+                _ => Ok(()),
+            }
+        };
+        let mut mixer = Mixer::default();
+        mixer.choose(choice("Speakers"), &mut reopen).unwrap();
+        assert!(mixer.choose(choice("TV"), &mut reopen).is_err());
+        assert_eq!(mixer.choice.as_ref().unwrap().name, "Speakers");
+        mixer.choose(None, &mut reopen).unwrap();
+        assert!(mixer.choice.is_none());
+        let opened: Vec<_> = opened.iter().map(Option::as_deref).collect();
+        assert_eq!(
+            opened,
+            [Some("Speakers"), Some("TV"), Some("Speakers"), None]
+        );
     }
 
     #[test]
