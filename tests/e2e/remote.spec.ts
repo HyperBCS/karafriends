@@ -1088,7 +1088,10 @@ test.describe("the guide melody slider", () => {
 // Picks a Readings choice on the profile screen and goes back.
 async function pickReadings(remote: Page, choice: string) {
   await remote.getByRole("link", { name: "Profile" }).click();
-  await remote.getByRole("tab", { name: choice, exact: true }).click();
+  await remote
+    .getByRole("tablist", { name: "Readings" })
+    .getByRole("tab", { name: choice, exact: true })
+    .click();
   await remote.getByRole("button", { name: "Back" }).click();
 }
 

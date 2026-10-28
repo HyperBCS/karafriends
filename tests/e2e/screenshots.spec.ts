@@ -474,7 +474,10 @@ test.describe("phase M7", () => {
   }) => {
     await fakeCatalogs(remote);
     await remote.getByRole("link", { name: "Profile" }).click();
-    await remote.getByRole("tab", { name: "Both", exact: true }).click();
+    await remote
+      .getByRole("tablist", { name: "Readings" })
+      .getByRole("tab", { name: "Both", exact: true })
+      .click();
     await remote.getByRole("button", { name: "Back" }).click();
     await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
       timeout: 15_000,
