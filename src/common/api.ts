@@ -264,9 +264,12 @@ export interface LiveState {
 // event comes first on every (re)connect, and again whenever the state
 // changes (at most about 4 a second). Its sentAt is the server's clock when
 // it was made (ms since the epoch), so a phone can tell how far off its own
-// clock is. The other events are the display's only.
+// clock is. A "downloads" event comes when only the downloads changed (their
+// progress, mostly, several times a second): the state's downloads are now
+// these. The other events are the display's only.
 export type LiveEvent =
   | { type: "state"; state: LiveState; sentAt: number }
+  | { type: "downloads"; downloads: DownloadProgress[] }
   | { type: "emote"; emote: string; user: PublicUser }
   | { type: "queueAdded"; item: SharedQueueItem }
   // A song's download failed, so it won't join the queue. (The phone that

@@ -29,14 +29,21 @@ const remoconPort = Number(
 );
 
 // The live events, from the main process. This page asks for them once, as
-// it loads, and the live state comes first; the latest one is kept for
-// listeners that start later.
+// it loads, and the live state comes first; the latest one (with the latest
+// downloads) is kept for listeners that start later.
 type LiveListener = (event: LiveEvent) => void;
 const liveListeners = new Set<LiveListener>();
-let liveState: LiveEvent | null = null;
+let liveState: Extract<LiveEvent, { type: "state" }> | null = null;
 
 ipcRenderer.on(IPC_CHANNELS.live, (_event, liveEvent: LiveEvent) => {
-  if (liveEvent.type === "state") liveState = liveEvent;
+  if (liveEvent.type === "state") {
+    liveState = liveEvent;
+  } else if (liveEvent.type === "downloads" && liveState) {
+    liveState = {
+      ...liveState,
+      state: { ...liveState.state, downloads: liveEvent.downloads },
+    };
+  }
   for (const listener of liveListeners) {
     try {
       listener(liveEvent);

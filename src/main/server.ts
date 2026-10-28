@@ -3,16 +3,17 @@
 //   POST /api/<method>  JSON in, JSON out (src/common/api.ts has the types).
 //                       415 unless Content-Type is application/json, 404 for
 //                       an unknown method, 400 for bad input, 403 when the
-//                       caller may not do it (always, for the settings and
-//                       setMics: DISPLAY_ONLY_METHODS). adminLogin answers 429 after
-//                       ADMIN_LOGIN_LIMIT tries from one address, or
-//                       ADMIN_LOGIN_TOTAL_LIMIT from all.
+//                       caller may not do it (always, for the display's
+//                       methods: DISPLAY_ONLY_METHODS). adminLogin answers
+//                       429 after ADMIN_LOGIN_LIMIT tries from one address,
+//                       or ADMIN_LOGIN_TOTAL_LIMIT from all.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
-//                       every change (the other events are the display's,
-//                       over IPC). A
-//                       phone adds ?deviceId=<its ID> to see which songs are
-//                       its own; no device IDs are sent. 503 when too many
-//                       are open (STREAM_LIMITS).
+//                       every change, its downloads alone when only they
+//                       changed, and a ping event every HEARTBEAT_MS. (The
+//                       other events are the display's, over IPC.) A phone
+//                       adds ?deviceId=<its ID> to see which songs are its
+//                       own; no device IDs are sent. 503 when too many are
+//                       open (STREAM_LIMITS).
 //
 // No CORS headers: requiring a JSON content type then keeps other web pages
 // from driving the queue (a cross-site form can't send it, and fetch() would
@@ -46,6 +47,8 @@ export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>([
   "clearDownload",
 ]);
 
+// How often a stream gets a ping. openLiveStream counts a stream silent
+// for a little over two of them as dead.
 const HEARTBEAT_MS = 20_000;
 
 // How many event streams may be open at once: in all, and from one address.
@@ -96,46 +99,73 @@ export function streamCounter({ total, perAddress }: StreamLimits) {
 // Where an event stream writes: the response.
 export interface EventSink {
   write(chunk: string): boolean;
+  // Bytes written but not sent yet.
+  readonly writableLength: number;
   on(event: "drain", listener: () => void): unknown;
   destroy(): void;
 }
 
+// What the heartbeat sends: an event named ping, which the phone's script
+// sees (a comment it wouldn't), so a phone that hears nothing for a while
+// knows its stream is dead (openLiveStream). Pages from before it ignore
+// a named event.
+export const PING = "event: ping\ndata: {}\n\n";
+
 // Writes events to one stream. Node buffers whatever the phone hasn't read
-// yet, without limit, so while a phone is behind (a full buffer: a slow or
-// stalled phone, or a script that never reads), this holds back all but the
-// latest state, and sends that once it catches up. Phones only need the
-// state: other events are dropped meanwhile. A phone still behind a
+// yet, without limit, so while a phone is behind (a slow or stalled phone,
+// or a script that never reads), this holds back all but the latest state
+// and the downloads since, and sends those once it catches up. Phones only
+// need those: other events are dropped meanwhile. A phone still behind a
 // heartbeat later is cut off; EventSource reconnects.
+//
+// Behind is more than twice the longest write waiting, not a full buffer:
+// one state of 64 KB or more fills it on its own (write() returns false),
+// and the event right after it would be dropped from a phone keeping up.
 export function eventWriter(res: EventSink, now: () => number = Date.now) {
   let behindSince: number | null = null;
   let heldBack: LiveEvent | null = null;
+  let heldDownloads: LiveEvent | null = null;
+  let longest = 0;
 
   const write = (text: string) => {
-    if (!res.write(text) && behindSince === null) behindSince = now();
+    longest = Math.max(longest, Buffer.byteLength(text));
+    if (
+      !res.write(text) &&
+      behindSince === null &&
+      res.writableLength > 2 * longest
+    ) {
+      behindSince = now();
+    }
   };
   const send = (event: LiveEvent) => {
     if (behindSince !== null) {
-      if (event.type === "state") heldBack = event;
+      if (event.type === "state") {
+        heldBack = event;
+        heldDownloads = null;
+      } else if (event.type === "downloads") {
+        heldDownloads = event;
+      }
       return;
     }
     write(`data: ${serializeEvent(event)}\n\n`);
   };
   res.on("drain", () => {
     behindSince = null;
-    const event = heldBack;
+    const held = [heldBack, heldDownloads];
     heldBack = null;
-    if (event) send(event);
+    heldDownloads = null;
+    for (const event of held) if (event) send(event);
   });
 
   return {
     // How long EventSource waits before reconnecting.
     start: () => write("retry: 2000\n\n"),
     send,
-    // Every HEARTBEAT_MS. Keeps idle connections open through proxies, and
-    // notices dead ones.
+    // Every HEARTBEAT_MS. Keeps idle connections open through proxies, tells
+    // the phone the stream is alive, and notices dead ones.
     heartbeat() {
       if (behindSince === null) {
-        write(": heartbeat\n\n");
+        write(PING);
       } else if (now() - behindSince >= HEARTBEAT_MS) {
         res.destroy();
       }

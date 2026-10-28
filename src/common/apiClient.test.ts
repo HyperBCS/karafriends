@@ -2,7 +2,7 @@
 // window, so these run as a phone would, unless a test gives one with the
 // display's preload API.
 import assert from "node:assert/strict";
-import { afterEach, describe, test } from "node:test";
+import { afterEach, beforeEach, describe, test } from "node:test";
 
 import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
@@ -22,6 +22,7 @@ import {
   resetClockOffset,
   serverNow,
   storedAdminToken,
+  withDownloads,
 } from "./apiClient";
 import type { ApiResponse, DisplayApi } from "./ipc";
 import { removeItem, setItem } from "./storage";
@@ -232,6 +233,159 @@ describe("openLiveStream on the display", () => {
     assert.deepEqual(events, [event]);
     close();
     assert.equal(listener, null);
+  });
+});
+
+// An EventSource the test drives: open(), message(), ping() and fail().
+class FakeEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+  static made: FakeEventSource[] = [];
+  readyState = FakeEventSource.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((message: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  private named = new Map<string, () => void>();
+  constructor(readonly url: string) {
+    FakeEventSource.made.push(this);
+  }
+  addEventListener(type: string, listener: () => void) {
+    this.named.set(type, listener);
+  }
+  close() {
+    this.readyState = FakeEventSource.CLOSED;
+  }
+  open() {
+    this.readyState = FakeEventSource.OPEN;
+    this.onopen?.();
+  }
+  message(event: LiveEvent) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+  ping() {
+    this.named.get("ping")?.();
+  }
+  // EventSource reconnecting by itself (CONNECTING), or giving up (CLOSED).
+  fail(readyState: number) {
+    this.readyState = readyState;
+    this.onerror?.();
+  }
+}
+
+describe("openLiveStream on a phone", () => {
+  const ge = globalThis as { EventSource?: unknown };
+  let made: FakeEventSource[];
+  const latest = () => made[made.length - 1];
+  const live = (n: number): LiveEvent => ({
+    type: "state",
+    state: state({ pitchShiftSemis: n }),
+    sentAt: 0,
+  });
+
+  beforeEach((t) => {
+    FakeEventSource.made = made = [];
+    ge.EventSource = FakeEventSource;
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    fakeStorage({ deviceId: "phone-1" });
+  });
+  afterEach(() => {
+    delete ge.EventSource;
+  });
+
+  test("passes on events, opens on each (re)connect, and starts over 5 s after the server refuses", (t) => {
+    let opened = 0;
+    const events: LiveEvent[] = [];
+    const close = openLiveStream(
+      () => opened++,
+      (event) => events.push(event),
+    );
+    assert.equal(made.length, 1);
+    assert.equal(made[0].url, "/api/events?deviceId=phone-1");
+    made[0].open();
+    made[0].message(live(1));
+    assert.deepEqual([opened, events], [1, [live(1)]]);
+
+    // EventSource reconnects by itself: no new one.
+    made[0].fail(FakeEventSource.CONNECTING);
+    t.mock.timers.tick(10_000);
+    assert.equal(made.length, 1);
+    made[0].open();
+    assert.equal(opened, 2);
+
+    // A 503: it gave up, so a new one, after a while, with the device ID
+    // as it is then.
+    fakeStorage({ deviceId: "phone-2" });
+    made[0].fail(FakeEventSource.CLOSED);
+    t.mock.timers.tick(4_999);
+    assert.equal(made.length, 1);
+    t.mock.timers.tick(1);
+    assert.equal(made.length, 2);
+    assert.equal(latest().url, "/api/events?deviceId=phone-2");
+    latest().open();
+    latest().message(live(2));
+    assert.deepEqual([opened, events], [3, [live(1), live(2)]]);
+
+    // Closed while waiting to start over: nothing more.
+    latest().fail(FakeEventSource.CLOSED);
+    close();
+    t.mock.timers.tick(60_000);
+    assert.equal(made.length, 2);
+  });
+
+  test("a stream silent for 45 s is replaced; the server's pings keep it", (t) => {
+    let opened = 0;
+    const close = openLiveStream(
+      () => opened++,
+      () => {},
+    );
+    made[0].open();
+    for (let i = 0; i < 5; i++) {
+      t.mock.timers.tick(20_000);
+      made[0].ping();
+    }
+    assert.equal(made.length, 1);
+
+    // The connection died without a word.
+    t.mock.timers.tick(44_999);
+    assert.equal(made.length, 1);
+    t.mock.timers.tick(1);
+    assert.equal(made.length, 2);
+    assert.equal(made[0].readyState, FakeEventSource.CLOSED);
+    latest().open();
+    assert.equal(opened, 2);
+
+    // One that never even opens is replaced too.
+    t.mock.timers.tick(45_000);
+    assert.equal(made.length, 3);
+    t.mock.timers.tick(45_000);
+    assert.equal(made.length, 4);
+
+    close();
+    t.mock.timers.tick(60_000);
+    assert.equal(made.length, 4);
+    assert.equal(latest().readyState, FakeEventSource.CLOSED);
+  });
+});
+
+describe("withDownloads", () => {
+  test("takes a downloads event's downloads, keeping the rest", () => {
+    const before = state({ queue: [song(1)] });
+    const download = {
+      id: 1,
+      kind: "nico" as const,
+      songId: "sm2",
+      suffix: null,
+      progress: 0.5,
+      status: "downloading" as const,
+      reason: null,
+      isMine: true,
+    };
+    const after = withDownloads(before, [download])!;
+    assert.deepEqual(after.downloads, [download]);
+    assert.equal(after.queue, before.queue);
+    assert.equal(withDownloads(after, [download]), after);
+    assert.equal(withDownloads(null, [download]), null);
   });
 });
 

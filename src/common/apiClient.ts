@@ -217,6 +217,16 @@ export function mergeLiveState(
   return changed ? merged : prev;
 }
 
+// The state with a downloads event's downloads (the rest stays the same
+// objects). Null until the first state event, which a downloads event never
+// comes before.
+export function withDownloads(
+  prev: LiveState | null,
+  downloads: LiveState["downloads"],
+): LiveState | null {
+  return prev && mergeLiveState(prev, { ...prev, downloads });
+}
+
 // How many of the latest state events serverNow() takes its offset from.
 export const CLOCK_SAMPLES = 20;
 
@@ -288,7 +298,11 @@ const LiveEventsContext = createContext<LiveEvents>({
 const AdminContext = createContext<boolean | undefined>(undefined);
 
 // How long to wait before opening a new stream when EventSource gives up.
-const RESTART_MS = 5_000;
+export const RESTART_MS = 5_000;
+
+// How long a stream may stay silent before it counts as dead: the server
+// pings every 20 seconds (server.ts), so a little over two pings missed.
+export const SILENCE_MS = 45_000;
 
 // Opens the page's live-event stream: over IPC on the display, through
 // EventSource on a phone. Calls onOpen each time it (re)connects, and
@@ -306,13 +320,40 @@ export function openLiveStream(
 
   let source: EventSource | null = null;
   let restart: ReturnType<typeof setTimeout> | null = null;
+  let silence: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
 
+  const stopTimers = () => {
+    if (restart) clearTimeout(restart);
+    if (silence) clearTimeout(silence);
+    restart = null;
+    silence = null;
+  };
+
+  // Anything from the server, a ping included, says the stream is alive. A
+  // connection that died without a word (the laptop slept and woke on
+  // another address, say) leaves EventSource open and waiting forever:
+  // after SILENCE_MS of nothing, start over.
+  const heard = () => {
+    if (silence) clearTimeout(silence);
+    silence = setTimeout(() => {
+      console.warn("The live stream went silent; opening a new one");
+      source?.close();
+      connect();
+    }, SILENCE_MS);
+  };
+
   const connect = () => {
+    stopTimers();
     const current = new EventSource(eventsUrl(deviceId()));
     source = current;
-    current.onopen = onOpen;
+    heard();
+    current.onopen = () => {
+      heard();
+      onOpen();
+    };
     current.onmessage = (message) => {
+      heard();
       const event = parseLiveEvent(message.data);
       if (event === null) {
         console.warn("Ignoring a live event I can't read:", message.data);
@@ -320,6 +361,7 @@ export function openLiveStream(
       }
       onEvent(event);
     };
+    current.addEventListener("ping", heard);
     // EventSource reconnects by itself when a connection drops (the server
     // then sends the whole state again), but gives up when the server
     // answers with an error, like a proxy's 502 while the app restarts.
@@ -327,6 +369,7 @@ export function openLiveStream(
     current.onerror = () => {
       if (current.readyState !== EventSource.CLOSED || stopped) return;
       current.close();
+      stopTimers();
       restart = setTimeout(connect, RESTART_MS);
     };
   };
@@ -335,7 +378,7 @@ export function openLiveStream(
   return () => {
     stopped = true;
     source?.close();
-    if (restart) clearTimeout(restart);
+    stopTimers();
   };
 }
 
@@ -405,6 +448,9 @@ export function LiveStateProvider({
           ) {
             askWhoami();
           }
+        } else if (event.type === "downloads") {
+          const next = withDownloads(store.get(), event.downloads);
+          if (next) store.set(next);
         }
         for (const listener of listeners) {
           try {

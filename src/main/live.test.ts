@@ -283,13 +283,13 @@ describe("createLiveHub: who sees what", () => {
     const seen: string[][] = [];
     const stop = hub.subscribe(
       (event) => {
-        if (event.type === "state") {
-          seen.push(
-            event.state.downloads.map(
-              (d) => `${d.status}:${d.reason}:${d.isMine}`,
-            ),
-          );
-        }
+        const downloads =
+          event.type === "state"
+            ? event.state.downloads
+            : event.type === "downloads"
+              ? event.downloads
+              : [];
+        seen.push(downloads.map((d) => `${d.status}:${d.reason}:${d.isMine}`));
       },
       { deviceId: "d" },
     );
@@ -450,13 +450,17 @@ describe("createLiveHub", () => {
     assert.deepEqual(playbackStates(second), ["PAUSED", "PLAYING"]);
   });
 
-  test("notices download progress, which changes outside the store", async () => {
+  test("notices download progress, which changes outside the store, and sends just the downloads", async () => {
     const hub = createLiveHub(store, config, INTERVAL_MS);
-    const progress: number[][] = [];
+    const progress: string[] = [];
     const stop = hub.subscribe((event) => {
-      if (event.type === "state") {
-        progress.push(event.state.downloads.map((d) => d.progress));
-      }
+      const downloads =
+        event.type === "state"
+          ? event.state.downloads
+          : event.type === "downloads"
+            ? event.downloads
+            : [];
+      progress.push(`${event.type}:${downloads.map((d) => d.progress)}`);
     });
     const { downloadQueue } = store.getState();
     const download = startDownload(downloadQueue, {
@@ -468,10 +472,55 @@ describe("createLiveHub", () => {
     await sleep(INTERVAL_MS * 3);
     download.progress = 0.5;
     await sleep(INTERVAL_MS * 3);
+    // The rest of the state changes too: all of it goes.
+    download.progress = 0.75;
+    store.update((state) => state.songQueue.push(item));
+    await sleep(INTERVAL_MS * 3);
     downloadQueue.splice(0, 1);
     await sleep(INTERVAL_MS * 3);
     stop();
-    assert.deepEqual(progress, [[], [0], [0.5], []]);
+    assert.deepEqual(progress, [
+      "state:",
+      "downloads:0",
+      "downloads:0.5",
+      "state:0.75",
+      "downloads:",
+    ]);
+  });
+
+  test("a downloads event is shared as the state is: each downloader gets its own", async () => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const events = new Map<string, LiveEvent[]>();
+    const watch = (name: string, deviceId: string | null) => {
+      events.set(name, []);
+      return hub.subscribe(
+        (event) => {
+          if (event.type === "downloads") events.get(name)!.push(event);
+        },
+        { deviceId },
+      );
+    };
+    const stops = [watch("d", "d"), watch("idle", "idle"), watch("none", null)];
+    startDownload(store.getState().downloadQueue, {
+      kind: "nico",
+      userIdentity: { deviceId: "d", nickname: "n" },
+      songId: "sm9",
+      suffix: null,
+    });
+    await sleep(INTERVAL_MS * 3);
+    stops.forEach((stop) => stop());
+    const [mine] = events.get("d")!;
+    const [idle] = events.get("idle")!;
+    assert.deepEqual(
+      mine.type === "downloads" && mine.downloads.map((d) => d.isMine),
+      [true],
+    );
+    assert.deepEqual(
+      idle.type === "downloads" && idle.downloads.map((d) => d.isMine),
+      [false],
+    );
+    assert.equal(events.get("none")![0], idle);
+    assert.doesNotMatch(JSON.stringify([...events.values()]), /deviceId/);
   });
 
   test("a failing listener doesn't stop the others", () => {

@@ -57,6 +57,23 @@ export function shareQueueItem(
   } as SharedQueueItem;
 }
 
+// The downloads as deviceId's phone sees them.
+function liveDownloads(
+  state: Readonly<State>,
+  deviceId: string | null,
+): DownloadProgress[] {
+  return state.downloadQueue.map((download) => ({
+    id: download.id,
+    kind: download.kind,
+    songId: download.songId,
+    suffix: download.suffix,
+    progress: download.progress,
+    status: download.status,
+    reason: download.reason,
+    isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
+  }));
+}
+
 // The live state as deviceId's phone sees it (null: as the display does).
 // The current song's playtime is its video's length once the display has
 // reported it.
@@ -81,16 +98,7 @@ export function toLiveState(
     songVolume: state.songVolume,
     mics: state.mics,
     adhocLyrics: state.currentSongAdhocLyrics,
-    downloads: state.downloadQueue.map((download): DownloadProgress => ({
-      id: download.id,
-      kind: download.kind,
-      songId: download.songId,
-      suffix: download.suffix,
-      progress: download.progress,
-      status: download.status,
-      reason: download.reason,
-      isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
-    })),
+    downloads: liveDownloads(state, deviceId),
     config: {
       supervisedMode: config.supervisedMode,
       everyoneIsAdmin: config.everyoneIsAdmin,
@@ -140,6 +148,31 @@ function stateEvents(
   };
 }
 
+// The downloads events for a change to them alone, shared as stateEvents'
+// are: one for every listener downloading nothing, and one per device that
+// is.
+function downloadsEvents(
+  state: Readonly<State>,
+  shared: DownloadProgress[] = liveDownloads(state, null),
+) {
+  const sharedEvent: LiveEvent = { type: "downloads", downloads: shared };
+  const byDevice = new Map<string, LiveEvent>();
+  return (viewer: Viewer): LiveEvent => {
+    const { deviceId } = viewer;
+    if (deviceId === null) return sharedEvent;
+    let event = byDevice.get(deviceId);
+    if (!event) {
+      event = state.downloadQueue.some(
+        (download) => download.userIdentity.deviceId === deviceId,
+      )
+        ? { type: "downloads", downloads: liveDownloads(state, deviceId) }
+        : sharedEvent;
+      byDevice.set(deviceId, event);
+    }
+    return event;
+  };
+}
+
 // The display's event for message. Messages are the display's alone: the
 // phones use only the state (a failed download shows in its downloads).
 function messageEvent(message: HubMessage): LiveEvent {
@@ -166,8 +199,8 @@ function messageEvent(message: HubMessage): LiveEvent {
 export function createLiveHub(
   store: StateStore,
   config: LiveState["config"],
-  // At most one state event per interval: about 4 a second while downloads
-  // report progress.
+  // At most one state or downloads event per interval: about 4 a second
+  // while downloads report progress.
   intervalMs = 250,
 ): LiveHub & {
   // Sends the state again if it changed some other way than through the
@@ -176,8 +209,24 @@ export function createLiveHub(
 } {
   const listeners = new Map<(event: LiveEvent) => void, Viewer>();
   // The last state sent to everyone, serialized, so unchanged state isn't
-  // sent again.
+  // sent again: its downloads apart, since their progress changes several
+  // times a second while the rest stays, and goes out alone (a downloads
+  // event, a few hundred bytes, not the whole state).
   let lastSent: string | null = null;
+  let lastDownloads: string | null = null;
+  // Takes shared as sent, and says what changed since the last.
+  const remember = (shared: LiveState) => {
+    const { downloads, ...rest } = shared;
+    const serialized = JSON.stringify(rest);
+    const serializedDownloads = JSON.stringify(downloads);
+    const changed = {
+      state: serialized !== lastSent,
+      downloads: serializedDownloads !== lastDownloads,
+    };
+    lastSent = serialized;
+    lastDownloads = serializedDownloads;
+    return changed;
+  };
   // When, by the monotonic clock (performance.now()): the wall clock may
   // step back (a time sync), which would hold every change back that long.
   // Only an event's sentAt is the wall clock's, for the phones.
@@ -206,10 +255,12 @@ export function createLiveHub(
     lastSentAt = performance.now();
     const state = store.getState();
     const shared = toLiveState(state, config);
-    const serialized = JSON.stringify(shared);
-    if (serialized === lastSent) return;
-    lastSent = serialized;
-    deliver(stateEvents(state, config, shared));
+    const changed = remember(shared);
+    if (changed.state) {
+      deliver(stateEvents(state, config, shared));
+    } else if (changed.downloads) {
+      deliver(downloadsEvents(state, shared.downloads));
+    }
   };
 
   const scheduleFlush = () => {
@@ -226,6 +277,8 @@ export function createLiveHub(
 
   // src/main/downloads updates downloads in place, without going through the
   // store, so look at them while any are running or failed (or just went).
+  // A poll, not a notice from every place that changes one: it costs a
+  // length check each interval and can't miss a change.
   let downloadsSent = 0;
   const watchDownloads = () => {
     const running = store.getState().downloadQueue.length;
@@ -252,7 +305,7 @@ export function createLiveHub(
       const state = store.getState();
       if (listeners.size === 1) {
         // Nobody was listening, so what was last sent is stale.
-        lastSent = JSON.stringify(toLiveState(state, config));
+        remember(toLiveState(state, config));
         lastSentAt = performance.now();
         downloadWatch = setInterval(watchDownloads, intervalMs);
         downloadWatch.unref?.();
