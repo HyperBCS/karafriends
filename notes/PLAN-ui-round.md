@@ -37,3 +37,16 @@ The user listed ten UI changes and fixes after the mic test. Same way of working
 ## Merge
 
 Merge each branch as it is reviewed. Then: place U1's progress line in U3's sheet header, put the sheet header's title in U5's marquee, regenerate the screenshots, write the CHANGELOG and README lines, and run every check (`typecheck`, `lint`, `prettier --check`, `test:unit`, `build-prod` without the native step, `test:e2e:ci`, one hidden launch).
+
+## Follow-ups (same day)
+
+| Step                          | State   | Branch / commit | Notes |
+| ----------------------------- | ------- | --------------- | ----- |
+| J1: pitch bars for Joysound   | running |                 |       |
+| S1: sliders that read as such | running |                 |       |
+| C1: a darker color scheme     | options |                 |       |
+
+- **Joysound readings: no.** Checked with the login on this PC (Osaka IP): Joysound's song search gives `selSongNo`, `songName`, `artistName`, `serviceTypeList`, `outsideUrlInfo` (iTunes/Amazon links) and `artistId_digi`, and `getFME` gives only `telop` and `ogg`: no readings and no melody notes. Guessed readings (kuroshiro) were offered and declined.
+- **J1: pitch bars for Joysound.** DAM sends the melody's notes (its scoring data); Joysound doesn't, but its ogg's third channel is a synthesized guide melody ([M8](M8-guide-vocal-spike.md)). The display reads the notes from that channel and draws the same pitch bars, the mics' pitch over them. The Pitch bars switch covers both.
+- **S1: sliders.** The user saw "a blue circle with glass around it" in Settings: the TV's native range inputs (Chromium's Windows thumb: a blue dot in a ring) and the phone's lone dot on a faint track (Guide melody at 0 % looks like a stray circle). Both get a clear track with the filled part in the accent and a solid thumb.
+- **C1: colors.** "Too bright for a dark mode." Darker palettes, shown side by side on mock phone and TV screens for the user to pick before anything changes.
