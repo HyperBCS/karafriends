@@ -1426,6 +1426,30 @@ test.describe("devices that won't open", () => {
     await expect(section.locator(".settingsMessage.problem")).toHaveCount(0);
   });
 
+  test("the mic output's note follows the output going away and coming back while Settings is open", async ({
+    display,
+  }) => {
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Microphones" });
+    await section
+      .getByLabel("Add a microphone")
+      .selectOption("E2E Mic (USB), channel 1");
+    await section
+      .getByLabel("Mic output")
+      .selectOption("E2E Speakers (Windows)");
+    const note = section.getByText(
+      "E2E Speakers (Windows) isn't connected; the mics play through the default output",
+    );
+    await expect(section.getByText("In use:").first()).toBeVisible();
+    await expect(note).toHaveCount(0);
+    // Nothing else changes on the screen: the tick finds it.
+    await failOpen(display, ["E2E Speakers (Windows)"]);
+    await expect(note).toBeVisible();
+    await failOpen(display, []);
+    await expect(note).toHaveCount(0);
+  });
+
   test("a device list that won't read leaves the display up: Settings says why, a mic keeps its row, and a launch opens with the saved mics kept", async ({
     display,
   }) => {

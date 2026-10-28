@@ -12,6 +12,7 @@ import {
   type MicOutput,
   outputFormat,
   outputOptions,
+  outputStatus,
 } from "./nativeAudio";
 
 // A mic's levels, in percent: gain 0 to 200, echo (the reverb) 0 to 100.
@@ -131,8 +132,14 @@ export function MicOutputSetting(props: {
       setOptions(connected && output.name ? outputOptions(output.name) : null),
     [connected, output.name],
   );
+  // The native side changes these outside React: the watchdog can move the
+  // mics to the default output and back.
   useTick();
   const format = outputFormat();
+  // What it says while the mics work ("ok: <note>"): that the chosen
+  // output is missing or won't open, say.
+  const status = outputStatus();
+  const note = status?.startsWith("ok: ") ? status.slice(4) : null;
   return (
     <>
       <div className={options ? "settingsFields three" : "settingsFields"}>
@@ -182,6 +189,11 @@ export function MicOutputSetting(props: {
         ) : null}
       </div>
       {format ? <p className="settingsHint">In use: {format}</p> : null}
+      {note ? (
+        <p className="settingsHint" role="status">
+          {note}
+        </p>
+      ) : null}
     </>
   );
 }

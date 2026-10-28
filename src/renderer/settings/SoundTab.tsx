@@ -214,10 +214,6 @@ function Microphones(
   const asioProblem = /won't load|didn't start/.test(devices.asioStatus)
     ? devices.asioStatus
     : null;
-  // What the native side says about the output while the mics work ("ok:
-  // <note>"): that the chosen one is missing or won't open, say.
-  const micStatus = props.mics[0]?.status();
-  const outputNote = micStatus?.startsWith("ok: ") ? micStatus.slice(4) : null;
   return (
     <>
       {devices.problem ? (
@@ -230,11 +226,6 @@ function Microphones(
         output={props.micOutput}
         onChange={(output) => report("mics", props.onMicOutputChange(output))}
       />
-      {outputNote ? (
-        <p className="settingsHint" role="status">
-          {outputNote}
-        </p>
-      ) : null}
       {linux ? <Hint>{linux.status}</Hint> : null}
       {asioProblem ? <Hint>{asioProblem}</Hint> : null}
       <MicModeSetting

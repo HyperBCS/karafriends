@@ -140,6 +140,8 @@ function faker(calls: FakeAudioCall[]) {
 function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
   let nextDeviceId = 0;
   let exclusive = false;
+  // The mic output picked last (null for the default).
+  let chosenOutput: string | null = null;
   const fake = faker(calls);
   return {
     inputDevices: fake("inputDevices", (): [string, string, number][] => [
@@ -155,6 +157,7 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
     asioStatus: fake("asioStatus", () => "ASIO: E2E Interface"),
     setOutputDevice: fake("setOutputDevice", (name: string | null) => {
       if (failsToOpen(name)) throw new Error(`${name} won't open (fake)`);
+      chosenOutput = name;
     }),
     // The ASIO output has options; the Windows one has none.
     outputOptions: fake("outputOptions", (name: string) =>
@@ -165,8 +168,15 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
     outputFormat: fake("outputFormat", () =>
       fakeMics.size > 0 ? "48 kHz, 256 samples (5.3 ms)" : undefined,
     ),
-    // Not kept with the calls, as inputDevice_level.
-    outputStatus: () => (fakeMics.size > 0 ? "ok" : undefined),
+    // Not kept with the calls, as inputDevice_level. A chosen output that
+    // went away since (failOpen) leaves the mics on the default, as the
+    // mixer does.
+    outputStatus: () => {
+      if (fakeMics.size === 0) return undefined;
+      return failsToOpen(chosenOutput)
+        ? `ok: ${chosenOutput} isn't connected; the mics play through the default output`
+        : "ok";
+    },
     setMicMode: fake("setMicMode", (on: boolean) => {
       exclusive = on;
     }),
