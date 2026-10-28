@@ -55,7 +55,7 @@ import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
 import { createCrashReloads } from "./rendererRecovery";
 import { apiRouter, shouldCompress } from "./server";
-import { api, hub, resumeDownloads } from "./services";
+import { api, hub, reportRemoconProblem, resumeDownloads } from "./services";
 
 // In dev, start a debug server if we don't have one already (opening a
 // second one would throw). Packaged builds don't open one, since anything
@@ -135,9 +135,6 @@ ipcMain.handle(IPC_CHANNELS.call, (event, method: unknown, input: unknown) =>
 );
 ipcMain.on(IPC_CHANNELS.liveSubscribe, (event) =>
   displayIpc.subscribeLive(event),
-);
-ipcMain.handle(IPC_CHANNELS.remoconProblem, (event) =>
-  displayIpc.remoconProblem(event),
 );
 
 // Export and import config: dialogs over the display window, for the
@@ -277,7 +274,7 @@ function createWindow() {
       // prompt.
       host: LOCAL_ONLY ? "127.0.0.1" : undefined,
     },
-    displayIpc.reportRemoconProblem,
+    reportRemoconProblem,
   );
 
   if (rendererWindow) {

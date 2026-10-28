@@ -255,6 +255,9 @@ export interface LiveState {
   config: { supervisedMode: boolean; everyoneIsAdmin: boolean };
   // ToolsStatus's problem, for the display's notice. Phones ignore it.
   toolsProblem: string | null;
+  // Why phones can't connect (the server couldn't listen: "Phones can't
+  // connect: port 8080 is in use..."), for the display's notice too.
+  remoconProblem: string | null;
 }
 
 // What GET /api/events sends: one JSON LiveEvent per `data:` line. A "state"

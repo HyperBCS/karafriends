@@ -60,6 +60,14 @@ sweepHalfDone(DOWNLOADS_FOLDER);
 
 export const hub = createLiveHub(store, karafriendsConfig);
 
+// The remote's server can't take connections (its port is taken, say), so
+// phones can't connect. The display works without it, and shows why.
+export function reportRemoconProblem(message: string) {
+  store.update((state) => {
+    state.remoconProblem = message;
+  });
+}
+
 export const adminSessions = createAdminSessions(
   path.join(app.getPath("userData"), "adminSessions.json"),
 );

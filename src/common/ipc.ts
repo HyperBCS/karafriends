@@ -16,10 +16,6 @@ export const IPC_CHANNELS = {
   liveSubscribe: "live:subscribe",
   // main -> display: one LiveEvent
   live: "live",
-  // Why phones can't connect (the remote's server couldn't listen), as a
-  // sentence to show: invoke() -> string | null as the page loads, and
-  // main -> display when it happens.
-  remoconProblem: "remocon:problem",
   // invoke(suggestedName, text) -> boolean: a save dialog, then the file
   // written (Export config).
   saveTextFile: "file:saveText",

@@ -96,6 +96,7 @@ export function toLiveState(
       everyoneIsAdmin: config.everyoneIsAdmin,
     },
     toolsProblem: state.toolsProblem?.message ?? null,
+    remoconProblem: state.remoconProblem,
   };
 }
 

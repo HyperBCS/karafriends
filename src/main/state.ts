@@ -190,6 +190,9 @@ export interface State {
   // (isToolProblem), cleared when one works or the tools are updated. Not
   // saved.
   toolsProblem: { message: string; since: number } | null;
+  // Why phones can't connect (the remote's server couldn't listen), as a
+  // sentence for the display. Not saved.
+  remoconProblem: string | null;
 }
 
 export interface StateStore {
@@ -239,6 +242,7 @@ export function emptyState(): State {
     downloadQueue: [],
     songHistory: [],
     toolsProblem: null,
+    remoconProblem: null,
   };
 }
 
@@ -297,7 +301,7 @@ export function createStateStore(filePath: string): StateStore {
 // the guide melody level. Everything else starts over: nothing plays
 // (WAITING, until the display takes the first song), and the download
 // queue, pitch, pushed lines, the song's timing, the song volume, the mics
-// and the tools problem are a launch's own.
+// and the two problems are a launch's own.
 export function serializeState(state: Readonly<State>): string {
   return JSON.stringify({
     songQueue: state.currentSong

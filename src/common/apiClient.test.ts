@@ -49,6 +49,7 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
+  remoconProblem: null,
   ...overrides,
 });
 

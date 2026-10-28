@@ -78,6 +78,7 @@ describe("toLiveState", () => {
       });
       failDownload(state.downloadQueue, failed, "Video unavailable");
       state.toolsProblem = { message: "Update the tools", since: 5 };
+      state.remoconProblem = "Phones can't connect: port 8080 is in use.";
       state.guideMelodyLevel = 0.5;
       state.songVolume = 70;
       state.mics = [
@@ -97,6 +98,10 @@ describe("toLiveState", () => {
       everyoneIsAdmin: true,
     });
     assert.equal(live.toolsProblem, "Update the tools");
+    assert.equal(
+      live.remoconProblem,
+      "Phones can't connect: port 8080 is in use.",
+    );
     assert.equal(live.guideMelodyLevel, 0.5);
     assert.equal(live.songVolume, 70);
     assert.deepEqual(live.mics, [

@@ -26,6 +26,7 @@ const liveState: LiveState = {
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
+  remoconProblem: null,
 };
 
 function fakeContents() {
@@ -256,38 +257,6 @@ describe("subscribeLive", () => {
     await quietly(() => ipc.subscribeLive({ ...fromDisplay, sender: other }));
     assert.equal(listeners.size, 0);
     assert.deepEqual(other.sent, []);
-  });
-});
-
-describe("remoconProblem", () => {
-  test("tells the display now, and its next page when it asks", () => {
-    const { ipc, display, fromDisplay } = setup();
-    assert.equal(ipc.remoconProblem(fromDisplay), null);
-    ipc.reportRemoconProblem("Phones can't connect: port 8080 is in use.");
-    assert.deepEqual(display.sent, [
-      [
-        IPC_CHANNELS.remoconProblem,
-        "Phones can't connect: port 8080 is in use.",
-      ],
-    ]);
-    assert.equal(
-      ipc.remoconProblem(fromDisplay),
-      "Phones can't connect: port 8080 is in use.",
-    );
-    // Nobody else.
-    assert.equal(
-      ipc.remoconProblem({ ...fromDisplay, sender: fakeContents() }),
-      null,
-    );
-  });
-
-  test("sends nothing to a destroyed window, but keeps it", () => {
-    const { ipc, display, fromDisplay } = setup();
-    display.destroyed = true;
-    ipc.reportRemoconProblem("down");
-    assert.deepEqual(display.sent, []);
-    display.destroyed = false;
-    assert.equal(ipc.remoconProblem(fromDisplay), "down");
   });
 });
 

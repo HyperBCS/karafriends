@@ -109,6 +109,7 @@ describe("createStateStore", () => {
         suffix: null,
       });
       state.toolsProblem = { message: "Update the tools", since: 1 };
+      state.remoconProblem = "Phones can't connect: port 8080 is in use.";
       state.currentSongStartedAt = 1000;
       state.currentSongPausedSince = 1500;
       state.currentSongLength = 245;
@@ -131,6 +132,7 @@ describe("createStateStore", () => {
     assert.deepEqual(loaded.currentSongAdhocLyrics, []);
     assert.deepEqual(loaded.downloadQueue, []);
     assert.equal(loaded.toolsProblem, null);
+    assert.equal(loaded.remoconProblem, null);
   });
 
   test("keeps the songs still downloading, with what came with them", () => {
