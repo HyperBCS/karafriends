@@ -53,22 +53,22 @@ function safeRename(from: string, to: string): void {
   }
 }
 
-// Deletes one song's files in folder: prefix followed by "-" or ".".
-// Not its logs, which say why a download failed.
-function deleteTempFiles(folder: string, prefix: string): void {
-  let filenames: string[];
+// The names in folder, or none if it can't be listed.
+function listFolder(folder: string): string[] {
   try {
-    filenames = fs.readdirSync(folder);
+    return fs.readdirSync(folder);
   } catch (err) {
     console.error(`Failed to list ${folder} for cleanup:`, err);
-    return;
+    return [];
   }
-  for (const filename of filenames) {
-    if (
-      (filename.startsWith(`${prefix}-`) ||
-        filename.startsWith(`${prefix}.`)) &&
-      !filename.endsWith(".log")
-    ) {
+}
+
+// Deletes one video's files in folder: prefix, then ".". Not its logs,
+// which say why a download failed. (IDs have no ".", so another video's
+// files never match.)
+function deleteTempFiles(folder: string, prefix: string): void {
+  for (const filename of listFolder(folder)) {
+    if (filename.startsWith(`${prefix}.`) && !filename.endsWith(".log")) {
       // NB: readdirSync returns bare names; they must be joined with
       // folder or the unlink targets the wrong (cwd-relative) path.
       safeUnlink(path.join(folder, filename));
@@ -77,17 +77,17 @@ function deleteTempFiles(folder: string, prefix: string): void {
 }
 
 // Creates tempFilename, which marks a download as started (in case the app
-// stops halfway). One left from an earlier run means the files with prefix
-// are half-done: they go first.
+// stops halfway). One left from an earlier run means the files are
+// half-done: deleteHalfDone deletes them first.
 function prepareTempFile(
   folder: string,
-  prefix: string,
   tempFilename: string,
+  deleteHalfDone: () => void,
 ): void {
   fs.mkdirSync(folder, { recursive: true });
   if (fs.existsSync(tempFilename)) {
     console.error(`${tempFilename} exists but was not in the download queue.`);
-    deleteTempFiles(folder, prefix);
+    deleteHalfDone();
   }
   fs.closeSync(fs.openSync(tempFilename, "w"));
 }
@@ -390,6 +390,18 @@ async function composeJoysoundVideoPromise(
   };
 }
 
+// What padJoysoundVideoPromise names its files: the video's name without
+// ".mp4", then one of these.
+const PAD_FILE_ENDINGS = [
+  "-no-sound.mp4",
+  "-pad-1f.mp4",
+  "-pad.mp4",
+  "-concat.mp4",
+  "-temp.mp4",
+  "-out.mp4",
+  "-list.txt",
+];
+
 // Pads the start of a YouTube background with its first frame, so it lines
 // up with the song.
 async function padJoysoundVideoPromise(
@@ -400,13 +412,15 @@ async function padJoysoundVideoPromise(
 ): Promise<void> {
   const videoBaseFilename = videoFilename.substr(0, videoFilename.length - 4);
 
-  const videoNoSoundFilename = videoBaseFilename + "-no-sound.mp4";
-  const videoPadFrameFilename = videoBaseFilename + "-pad-1f.mp4";
-  const videoPadFilename = videoBaseFilename + "-pad.mp4";
-  const videoConcatFilename = videoBaseFilename + "-concat.mp4";
-  const videoTempFilename = videoBaseFilename + "-temp.mp4";
-  const videoOutFilename = videoBaseFilename + "-out.mp4";
-  const videoListFilename = videoBaseFilename + "-list.txt";
+  const [
+    videoNoSoundFilename,
+    videoPadFrameFilename,
+    videoPadFilename,
+    videoConcatFilename,
+    videoTempFilename,
+    videoOutFilename,
+    videoListFilename,
+  ] = PAD_FILE_ENDINGS.map((ending) => videoBaseFilename + ending);
 
   const ffmpeg = (ffmpegArgs: string[]) =>
     runJoysoundFFmpeg(paths, data.songId, ffmpegArgs, ffmpegLogFilename);
@@ -493,9 +507,13 @@ async function padJoysoundVideoPromise(
   safeUnlink(videoListFilename);
 }
 
-// A Joysound song's files: joysound-<songId>.joy_02 (the lyrics),
-// joysound-<songId>-<background or "default">.mp4, and the ffmpeg log.
-function joysoundFiles(folder: string, queueItem: JoysoundQueueItem) {
+// A Joysound song's files: joysound-<songId>.joy_02 (the lyrics, every
+// background's), joysound-<songId>-<background or "default">.mp4, and the
+// ffmpeg log.
+function joysoundFiles(
+  folder: string,
+  queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
+) {
   const videoFilenameSuffix = queueItem.youtubeVideoId
     ? queueItem.youtubeVideoId
     : "default";
@@ -506,6 +524,7 @@ function joysoundFiles(folder: string, queueItem: JoysoundQueueItem) {
 
   return {
     filenamePrefix,
+    videoBaseName: `${filenamePrefix}-${videoFilenameSuffix}`,
     telopFilename: `${writeBasePath}.joy_02`,
     videoFilename,
     ffmpegLogFilename: `${writeBasePath}.log`,
@@ -540,9 +559,26 @@ export function queueDownloadedJoysoundSong(
   return false;
 }
 
-// Deletes what a failed Joysound download of songId left, but its log.
-export function deleteJoysoundTempFiles(folder: string, songId: string): void {
-  deleteTempFiles(folder, `joysound-${songId}`);
+// Deletes what a failed Joysound download left, but its log: the files of
+// its background only, not another background's finished video of the same
+// song. The lyrics go too once no other background's files are left.
+export function deleteJoysoundTempFiles(
+  folder: string,
+  queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
+): void {
+  const { filenamePrefix, videoBaseName, telopFilename } = joysoundFiles(
+    folder,
+    queueItem,
+  );
+  deleteTempFiles(folder, videoBaseName);
+  for (const ending of PAD_FILE_ENDINGS) {
+    safeUnlink(path.join(folder, videoBaseName + ending));
+  }
+  if (
+    !listFolder(folder).some((name) => name.startsWith(`${filenamePrefix}-`))
+  ) {
+    safeUnlink(telopFilename);
+  }
 }
 
 // Downloads a Joysound song's lyrics and video (Joysound's, or a YouTube
@@ -554,15 +590,12 @@ export async function joysoundJob(
   queueItem: JoysoundQueueItem,
 ): Promise<JoysoundQueueItem> {
   const songId = queueItem.songId;
-  const {
-    filenamePrefix,
-    telopFilename,
-    videoFilename,
-    ffmpegLogFilename,
-    tempFilename,
-  } = joysoundFiles(paths.folder, queueItem);
+  const { telopFilename, videoFilename, ffmpegLogFilename, tempFilename } =
+    joysoundFiles(paths.folder, queueItem);
 
-  prepareTempFile(paths.folder, filenamePrefix, tempFilename);
+  prepareTempFile(paths.folder, tempFilename, () =>
+    deleteJoysoundTempFiles(paths.folder, queueItem),
+  );
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
@@ -689,7 +722,9 @@ export async function youtubeJob(
     );
   }
 
-  prepareTempFile(paths.folder, filenamePrefix, tempFilename);
+  prepareTempFile(paths.folder, tempFilename, () =>
+    deleteTempFiles(paths.folder, filenamePrefix),
+  );
 
   console.info(`Downloading YouTube video to ${videoFilename}`);
 
@@ -758,7 +793,9 @@ export async function nicoJob(
 
   const tempFilename = `${videoFilename}.tmp`;
 
-  prepareTempFile(paths.folder, filenamePrefix, tempFilename);
+  prepareTempFile(paths.folder, tempFilename, () =>
+    deleteTempFiles(paths.folder, filenamePrefix),
+  );
 
   console.info(`Downloading Niconico video to ${videoFilename}`);
 

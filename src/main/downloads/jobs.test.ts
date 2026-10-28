@@ -218,7 +218,7 @@ test("a Joysound download that fails putting the video together leaves only its 
         joysoundApi(songData),
         joysoundItem("bgVideo0001"),
       ),
-    () => deleteJoysoundTempFiles(folder, "123456"),
+    () => deleteJoysoundTempFiles(folder, joysoundItem("bgVideo0001")),
   );
 
   assert.equal(outcome.ok, false);
@@ -229,6 +229,75 @@ test("a Joysound download that fails putting the video together leaves only its 
   assert.match(
     fs.readFileSync(path.join(folder, "joysound-123456.log"), "utf8"),
     /Invalid data found when processing input/,
+  );
+});
+
+test("a failed Joysound background leaves the song's other backgrounds and lyrics", async () => {
+  // The song with Joysound's own video, downloaded before.
+  const done = await download([], "joysound", (item) =>
+    joysoundJob(paths, item, joysoundApi(songData), joysoundItem(null)),
+  );
+  assert.ok(done.ok);
+
+  paths.ffmpeg = fake("ffmpeg-fails");
+  const outcome = await download(
+    [],
+    "joysound",
+    (item) =>
+      joysoundJob(
+        paths,
+        item,
+        joysoundApi(songData),
+        joysoundItem("bgVideo0001"),
+      ),
+    () => deleteJoysoundTempFiles(folder, joysoundItem("bgVideo0001")),
+  );
+
+  assert.equal(outcome.ok, false);
+  assert.deepEqual(files(), [
+    "joysound-123456-default.mp4",
+    "joysound-123456.joy_02",
+    "joysound-123456.log",
+    "yt-bgVideo0001.log",
+  ]);
+});
+
+test("a Joysound background left half-done by a crash goes before it's downloaded again", async () => {
+  const other = path.join(folder, "joysound-123456-default.mp4");
+  fs.writeFileSync(other, "another background's video");
+  fs.writeFileSync(path.join(folder, "joysound-123456.joy_02"), "lyrics");
+  for (const name of [
+    "joysound-123456-bgVideo0001.mp4",
+    "joysound-123456-bgVideo0001.mp4.tmp",
+    "joysound-123456-bgVideo0001-pad.mp4",
+  ]) {
+    fs.writeFileSync(path.join(folder, name), "half-done");
+  }
+
+  const outcome = await download([], "joysound", (item) =>
+    joysoundJob(
+      paths,
+      item,
+      joysoundApi(songData),
+      joysoundItem("bgVideo0001"),
+    ),
+  );
+
+  assert.ok(outcome.ok);
+  assert.equal(fs.readFileSync(other, "utf8"), "another background's video");
+  assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.mp4",
+    "joysound-123456-default.mp4",
+    "joysound-123456.joy_02",
+    "joysound-123456.log",
+    "yt-bgVideo0001.log",
+  ]);
+  assert.notEqual(
+    fs.readFileSync(
+      path.join(folder, "joysound-123456-bgVideo0001.mp4"),
+      "utf8",
+    ),
+    "half-done",
   );
 });
 
@@ -244,7 +313,7 @@ test("a Joysound download whose song data fails stops its background download", 
         joysoundApi(getFmeFails),
         joysoundItem("bgVideo0001"),
       ),
-    () => deleteJoysoundTempFiles(folder, "123456"),
+    () => deleteJoysoundTempFiles(folder, joysoundItem("bgVideo0001")),
   );
 
   assert.equal(outcome.ok, false);
@@ -278,7 +347,7 @@ test("a Joysound download whose song data fails doesn't wait for the video's URL
         joysoundApi(getFmeFails, slowUrls),
         joysoundItem(null),
       ),
-    () => deleteJoysoundTempFiles(folder, "123456"),
+    () => deleteJoysoundTempFiles(folder, joysoundItem(null)),
   );
 
   assert.equal(!outcome.ok && outcome.reason, REASONS.joysound);

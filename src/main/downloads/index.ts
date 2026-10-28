@@ -104,7 +104,7 @@ export function downloadJoysoundData(
     description,
     async (item) => joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
     (item) => pushSongToQueue(item, pushToHead),
-    () => deleteJoysoundTempFiles(TEMP_FOLDER, songId),
+    () => deleteJoysoundTempFiles(TEMP_FOLDER, queueItem),
     onFailed,
   );
 }
