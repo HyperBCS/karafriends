@@ -472,7 +472,13 @@ export interface Api {
   sendEmote: { input: { emote: string }; output: boolean };
 
   // The display only: start the next song, or null if the queue is empty.
-  popSong: { input: Record<string, never>; output: PoppedSong | null };
+  // resume: the display's page asks for the first time (it has just
+  // loaded, or reloaded after a crash or F5). It gets the current song
+  // again, to play from the start, if there is one and it wasn't being
+  // skipped. Once per song (songId@timestamp), so a song that crashes the
+  // display can't come back forever: after that, as without resume, the
+  // next song.
+  popSong: { input: { resume?: boolean }; output: PoppedSong | null };
   // The display only (a phone gets 403): where the current song's video
   // really is, for the countdowns: position seconds in, of length seconds
   // (null until it knows), and whether it is moving (false while paused or

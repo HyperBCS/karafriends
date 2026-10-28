@@ -14,7 +14,12 @@ import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { damMelody, type Melody } from "./melody";
-import { lowBitrateFallback } from "./playback";
+import {
+  FRAGMENT_RETRIES,
+  lowBitrateFallback,
+  retryFragment,
+  songGain,
+} from "./playback";
 import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
@@ -22,9 +27,6 @@ const POLL_INTERVAL_MS = 5 * 1000;
 // How often the display tells the server where the song is, besides on
 // every start, pause, stall and seek.
 const POSITION_REPORT_MS = 10 * 1000;
-// XXX: Another idea is to add some gain to the DAM videos?
-const DAM_GAIN = 1.0;
-const NON_DAM_GAIN = 0.8;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
@@ -55,7 +57,8 @@ export interface Announcement {
 
 // Plays the queue in the display's <video>: while nothing plays it asks for
 // the next song (popSong, which only the display may call) every 5 seconds,
-// and at once when the live queue stops being empty; it loads each song by
+// and at once when the live queue stops being empty (a reloaded page first
+// asks for the song that was playing, to play it again); it loads each song by
 // kind, follows the live playback state (pause, restart, skip), the key and
 // the guide melody level, tells the server where the song really is, and
 // asks again when a song ends.
@@ -76,6 +79,7 @@ export default function useSongPlayer({
   const guideMelodyLevel = useLiveState((s) => s?.guideMelodyLevel ?? 0);
   const songVolume = useLiveState((s) => s?.songVolume ?? 100);
   const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
+  const hasCurrentSong = useLiveState((state) => !!state?.currentSong);
   // Set while waiting for the next poll; null while one is in flight or a
   // song plays.
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,6 +90,10 @@ export default function useSongPlayer({
   const songRef = useRef<PoppedSong | null>(null);
   // The DAM stream, while one plays.
   const hlsRef = useRef<Hls | null>(null);
+  // True until this page's first popSong answers. That one asks to resume:
+  // after a reload (a renderer crash, or F5) the server's current song is
+  // the one that was playing, and it plays again from the start.
+  const resumeRef = useRef(true);
 
   const schedulePoll = () => {
     pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
@@ -100,9 +108,10 @@ export default function useSongPlayer({
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     pollTimeoutRef.current = null;
     pollingRef.current = true;
-    call("popSong", {}).then(
+    call("popSong", resumeRef.current ? { resume: true } : {}).then(
       (song) => {
         pollingRef.current = false;
+        resumeRef.current = false;
         startSong(song);
       },
       (err) => {
@@ -127,10 +136,18 @@ export default function useSongPlayer({
     pollQueue();
   };
 
-  // Plays the video, once its source is set, at gain.
-  const play = (video: HTMLVideoElement, gain: number) => {
-    audio.gain(gain);
-    video.play();
+  // Lets go of the song before: its stream, its overlay (the lyrics' and
+  // pitch bars' draw loops and mic polls) and the video's media. Then
+  // nothing draws or holds buffers behind the idle screen, and a PLAYING
+  // before the next song loads can't restart the ended video.
+  const release = (video: HTMLVideoElement) => {
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+    setOverlay(null);
+    if (video.hasAttribute("src")) {
+      video.removeAttribute("src");
+      video.load();
+    }
   };
 
   // Streams a DAM song from DAM, at the bitrate popSong says, and on its
@@ -150,8 +167,28 @@ export default function useSongPlayer({
     // From startPosition seconds in (-1: the start).
     const load = (url: string, startPosition: number) => {
       hlsRef.current?.destroy();
-      const hls = new Hls({ maxBufferLength: 90 /* seconds */, startPosition });
+      const hls = new Hls({
+        maxBufferLength: 90 /* seconds */,
+        startPosition,
+        fragLoadPolicy: {
+          default: {
+            ...Hls.DefaultConfig.fragLoadPolicy.default,
+            errorRetry: {
+              maxNumRetry: FRAGMENT_RETRIES,
+              retryDelayMs: 1000,
+              maxRetryDelayMs: 8000,
+              shouldRetry: (_config, retries, _timeout, response, retry) =>
+                retryFragment(retries, response?.code, retry),
+            },
+          },
+        },
+      });
       hlsRef.current = hls;
+      // Some streams end without the video's 'ended' (a stall right at the
+      // end): hls.js says so, and the next song starts.
+      hls.on(Hls.Events.MEDIA_ENDED, () => {
+        if (songRef.current === song) pollQueue();
+      });
       // hls.js retries the others itself.
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (songRef.current !== song) return;
@@ -225,7 +262,7 @@ export default function useSongPlayer({
       );
       if (!streamDam(video, song)) return;
     }
-    play(video, DAM_GAIN);
+    video.play();
   };
 
   const loadJoysound = async (
@@ -255,7 +292,6 @@ export default function useSongPlayer({
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
     setOverlay({ ...overlay, telop });
-    // At the gain the previous song left, as always.
     video.play();
   };
 
@@ -270,7 +306,7 @@ export default function useSongPlayer({
       trackRef.current.src = `karafriends://local/yt-${song.songId}.vtt`;
     }
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
-    play(video, song.gainValue);
+    video.play();
   };
 
   const loadNico = (
@@ -279,12 +315,13 @@ export default function useSongPlayer({
   ) => {
     setOverlay({ kind: "nico" });
     video.src = `karafriends://local/nico-${song.songId}.mp4`;
-    play(video, NON_DAM_GAIN);
+    video.play();
   };
 
   const startSong = useEffectEvent((song: PoppedSong | null) => {
     const video = videoRef.current;
     if (!video) return;
+    release(video);
     if (!song) {
       setPlaybackState("WAITING");
       schedulePoll();
@@ -299,8 +336,7 @@ export default function useSongPlayer({
     }
     setPitchShiftSemis(0);
     audio.setJoysoundMode(song.kind === "joysound");
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
+    audio.gain(songGain(song));
     songRef.current = song;
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -386,12 +422,14 @@ export default function useSongPlayer({
   }, [videoRef]);
 
   // A song queued while nothing plays starts at once, not at the next poll
-  // (which stays as the fallback). Only while a poll is armed: with none,
-  // one is in flight or a song plays.
+  // (which stays as the fallback), and so does the song a reloaded page
+  // finds current. Only while a poll is armed: with none, one is in flight
+  // or a song plays.
   useEffect(() => {
-    if (playbackState !== "WAITING" || !hasQueue) return;
+    const resume = resumeRef.current && hasCurrentSong;
+    if (!resume && (playbackState !== "WAITING" || !hasQueue)) return;
     if (pollTimeoutRef.current !== null) pollQueue();
-  }, [playbackState, hasQueue]);
+  }, [playbackState, hasQueue, hasCurrentSong]);
 
   useEffect(() => {
     const video = videoRef.current;

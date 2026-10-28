@@ -229,6 +229,26 @@ test.describe("a queued song whose files are missing", () => {
       "E2E next song 1",
       "E2E missing song",
     ]);
+
+    // The video let go of song 2, so a Play from a phone now can't start
+    // it over behind the idle screen.
+    const video = display.locator("video");
+    await expect
+      .poll(() =>
+        video.evaluate((v: HTMLVideoElement) => v.hasAttribute("src")),
+      )
+      .toBe(false);
+    expect(
+      await call(remoconUrl, "setPlaybackState", { playbackState: "PLAYING" }),
+    ).toBe(true);
+    await display.waitForTimeout(1_000);
+    expect(
+      await video.evaluate((v: HTMLVideoElement) => [
+        v.readyState,
+        v.currentTime,
+      ]),
+      // HAVE_NOTHING, at the start.
+    ).toEqual([0, 0]);
   });
 });
 

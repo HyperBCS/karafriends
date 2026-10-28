@@ -2,15 +2,18 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import type { PoppedDamSong } from "../common/api";
+import type { PoppedDamSong, PoppedSong } from "../common/api";
 import {
   AV_OFFSETS,
+  FRAGMENT_RETRIES,
   UI_SCALES,
   audioDelay,
   drawTime,
   lowBitrateFallback,
   pitchTime,
+  retryFragment,
   savedChoice,
+  songGain,
 } from "./playback";
 
 describe("the display's settings", () => {
@@ -95,5 +98,61 @@ describe("lowBitrateFallback", () => {
       lowBitrateFallback({ ...song(false), streamingUrls: [] }, 3),
       null,
     );
+  });
+});
+
+describe("retryFragment", () => {
+  test("a fragment that got no answer is tried again, up to the limit", () => {
+    assert.equal(retryFragment(0, 0, false), true);
+    assert.equal(retryFragment(FRAGMENT_RETRIES - 1, 0, false), true);
+    assert.equal(retryFragment(FRAGMENT_RETRIES, 0, false), false);
+  });
+
+  test("otherwise it goes by what hls.js would do", () => {
+    assert.equal(retryFragment(0, 404, false), false);
+    assert.equal(retryFragment(0, undefined, false), false);
+    assert.equal(retryFragment(2, 503, true), true);
+  });
+});
+
+describe("songGain", () => {
+  const base = {
+    songId: "x",
+    name: "Song",
+    artistName: "Artist",
+    playtime: 200,
+    timestamp: "1",
+    user: { deviceId: "d", nickname: "Ken" },
+  };
+
+  test("every kind has its own, whatever played before", () => {
+    const dam: PoppedSong = {
+      ...base,
+      kind: "dam",
+      streamingUrlIdx: 0,
+      streamingUrls: [],
+      startWithLowBitrate: false,
+      scoringData: [],
+    };
+    const joysound: PoppedSong = {
+      ...base,
+      kind: "joysound",
+      lyricsMode: "kana",
+      youtubeVideoId: null,
+    };
+    assert.equal(songGain(dam), 1);
+    assert.equal(songGain(joysound), 1);
+    assert.equal(songGain({ ...base, kind: "nico" }), 0.8);
+  });
+
+  test("a YouTube song's comes with it", () => {
+    const youtube: PoppedSong = {
+      ...base,
+      kind: "youtube",
+      hasAdhocLyrics: false,
+      hasCaptions: false,
+      gainValue: 3.16,
+    };
+    assert.equal(songGain(youtube), 3.16);
   });
 });
