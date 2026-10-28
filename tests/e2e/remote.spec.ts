@@ -802,3 +802,120 @@ test("a title search ranks both catalogs' results together, best match first", a
     "恋人よJoysound五輪真弓",
   ]);
 });
+
+// Picks a Readings choice on the profile screen and goes back.
+async function pickReadings(remote: Page, choice: string) {
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("tab", { name: choice, exact: true }).click();
+  await remote.getByRole("button", { name: "Back" }).click();
+}
+
+test("the Readings setting shows DAM's readings in the search rows", async ({
+  remote,
+}) => {
+  // As the real DAM answers: readings in hiragana. Joysound gives none.
+  await remote.route("**/api/damSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: "5860-12",
+            name: "恋",
+            nameYomi: "こい",
+            artistName: "星野 源",
+            artistNameYomi: "ほしのげん",
+          },
+        ],
+        nextOffset: null,
+      },
+    }),
+  );
+  await remote.route("**/api/joysoundSearchSongs", (route) =>
+    route.fulfill({
+      json: {
+        items: [{ id: "e2e-joy-koi", name: "恋", artistName: "星野源" }],
+        nextOffset: null,
+      },
+    }),
+  );
+
+  await remote.getByRole("searchbox", { name: "Search" }).fill("恋");
+  const results = remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link");
+  const joysound = "恋Joysound星野源";
+  await expect(results).toHaveText(["恋DAM星野 源", joysound]);
+  for (const [choice, dam] of [
+    ["Kana", "恋こいDAM星野 源 ほしのげん"],
+    ["Romaji", "恋koiDAM星野 源 hoshinogen"],
+    ["Both", "恋こい · koiDAM星野 源 ほしのげん · hoshinogen"],
+    ["Written", "恋DAM星野 源"],
+  ]) {
+    await pickReadings(remote, choice);
+    await expect(results).toHaveText([dam, joysound]);
+  }
+  expect(await remote.evaluate(() => localStorage.getItem("readings"))).toBe(
+    "written",
+  );
+});
+
+test.describe("a queued DAM song", () => {
+  // A song that plays for a minute first, so the DAM song (which has no
+  // stream here) waits in the queue.
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "nico",
+          songId: "sm60001",
+          name: "E2E playing song",
+          artistName: "E2E artist",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-someone", nickname: "someone" },
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("shows its reading in the queue", async ({ karafriends, remote }) => {
+    // DAM's song details give the reading in katakana, and no artist
+    // reading.
+    await remote.route("**/api/damSong", (route) =>
+      route.fulfill({
+        json: {
+          id: "5860-12",
+          name: "恋",
+          nameYomi: "コイ",
+          artistName: "星野 源",
+          artistNameYomi: "",
+          lyricsPreview: null,
+          vocalTypes: ["NORMAL"],
+          tieUp: null,
+          playtime: 252,
+        },
+      }),
+    );
+    await pickReadings(remote, "Romaji");
+    await remote.goto(new URL("#/song/5860-12", karafriends.remoconUrl).href);
+    const queued = remote.waitForResponse((res) =>
+      res.url().endsWith("/api/queueSong"),
+    );
+    await remote
+      .getByRole("button", { name: "Queue song", exact: true })
+      .click();
+    expect(await (await queued).json()).toMatchObject({ ok: true });
+
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const row = remote
+      .getByRole("region", { name: "Queue" })
+      .getByRole("listitem")
+      .filter({ hasText: "星野 源" });
+    await expect(row).toContainText("恋koiDAM星野 源");
+    await pickReadings(remote, "Both");
+    await expect(row).toContainText("恋こい · koiDAM星野 源");
+  });
+});
