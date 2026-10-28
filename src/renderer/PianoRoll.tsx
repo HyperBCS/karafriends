@@ -6,7 +6,7 @@ import React, { useEffect, useRef } from "react";
 
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
-import { drawTime } from "./playback";
+import { drawTime, pitchTime } from "./playback";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
 import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl?raw";
 import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl?raw";
@@ -540,7 +540,7 @@ export default function PianoRoll(props: {
         midiNumber !== 0 &&
         !props.videoRef.current.paused
       ) {
-        const time = drawTime(
+        const time = pitchTime(
           props.videoRef.current.currentTime,
           props.avOffsetMs,
         );
