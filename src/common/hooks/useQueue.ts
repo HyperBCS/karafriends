@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import type { SharedQueueItem } from "../api";
 import { serverNow, useLiveState } from "../apiClient";
@@ -22,10 +22,39 @@ export function withETAs(
   });
 }
 
+// One clock for every countdown on the page: a tick a second while any of
+// them counts, and none while none does. Rows that tick together round
+// together, so two waits never disagree by a second.
+export const ticker = (() => {
+  const listeners = new Set<() => void>();
+  let ticks = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  return {
+    ticks: () => ticks,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      timer ??= setInterval(() => {
+        ticks++;
+        for (const each of listeners) each();
+      }, 1000);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+    },
+  };
+})();
+
+const NOT_TICKING = () => () => {};
+
 // How many seconds of the current song's playtime have gone by (the
 // server makes it the video's length once the display knows it): read
-// afresh on each render, which comes once a second while it plays (live) and
-// whenever its timing changes (a pause, a seek); not live, always 0.
+// afresh on each render, which comes with each of the ticker's ticks while
+// it plays (live) and whenever its timing changes (a pause, a seek); not
+// live, always 0.
 function usePlayed(live: boolean): number {
   const playtime = useLiveState((state) => state?.currentSong?.playtime || 0);
   const startedAt = useLiveState(
@@ -34,13 +63,11 @@ function usePlayed(live: boolean): number {
   const pausedSince = useLiveState(
     (state) => state?.currentSongPausedSince ?? null,
   );
-  const [, setTicks] = useState(0);
   const ticking = live && startedAt !== null && pausedSince === null;
-  useEffect(() => {
-    if (!ticking) return;
-    const timer = setInterval(() => setTicks((ticks) => ticks + 1), 1000);
-    return () => clearInterval(timer);
-  }, [ticking]);
+  useSyncExternalStore(
+    ticking ? ticker.subscribe : NOT_TICKING,
+    ticking ? ticker.ticks : () => 0,
+  );
   if (!live) return 0;
   const timing = {
     currentSongStartedAt: startedAt,
