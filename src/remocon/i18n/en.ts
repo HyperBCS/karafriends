@@ -137,6 +137,7 @@ export const en = {
   "profile.signOut": "Sign out",
   "profile.signedIn": "You're an admin",
   "profile.wrongPassword": "Wrong password. Ask the host for it.",
+  "profile.noPassword": "The host hasn't set an admin password.",
   "profile.tooManyTries": "Too many tries. Wait a minute, then try again.",
   "profile.signInFailed": "Couldn't sign in: {reason}",
 } as const;

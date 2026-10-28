@@ -28,11 +28,13 @@ const YouTubePage = () => {
   const currentSong = useLiveState((state) => state?.currentSong);
 
   if (isYouTubeVideoWithLyricsPlaying(currentSong, videoId!)) {
-    return <Navigate to={`/adhocLyrics/${videoId}`} />;
+    // In place of this page, so Back doesn't land here and come back.
+    return <Navigate replace to={`/adhocLyrics/${videoId}`} />;
   }
   return (
     <div className={styles.page}>
-      <YouTubeInfo videoId={videoId!} />
+      {/* Keyed, so another video starts without this one's lyrics. */}
+      <YouTubeInfo key={videoId} videoId={videoId!} />
     </div>
   );
 };

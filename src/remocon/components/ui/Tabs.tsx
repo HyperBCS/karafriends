@@ -14,8 +14,6 @@ interface Props<Id extends string> {
   tabs: readonly Tab<Id>[];
   selected: Id;
   onSelect: (id: Id) => void;
-  // The id of the element the tabs switch (role="tabpanel"), if there's one.
-  panelId?: string;
   className?: string;
 }
 
@@ -26,7 +24,6 @@ export function Tabs<Id extends string>({
   tabs,
   selected,
   onSelect,
-  panelId,
   className,
 }: Props<Id>) {
   const list = useRef<HTMLDivElement>(null);
@@ -69,7 +66,6 @@ export function Tabs<Id extends string>({
             role="tab"
             data-tab={tab.id}
             aria-selected={isSelected}
-            aria-controls={panelId}
             tabIndex={isSelected ? 0 : -1}
             className={styles.tab}
             onClick={() => onSelect(tab.id)}

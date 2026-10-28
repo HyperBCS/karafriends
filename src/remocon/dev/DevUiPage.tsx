@@ -254,10 +254,8 @@ const DevUiPage = () => {
             {t("queueButton.downloadingPercent", { percent: "42.6" })}
           </Button>
         </Demo>
-        <Demo state="full width, with icon">
-          <Button full icon={<MdSearch />}>
-            {t("search.label")}
-          </Button>
+        <Demo state="full width">
+          <Button full>{t("search.label")}</Button>
         </Demo>
       </Section>
 
@@ -467,7 +465,12 @@ const DevUiPage = () => {
       <Section title="Sheet">
         <div className={styles.bleed}>
           <Demo state="collapsed">
-            <Sheet label={t("sheet.nowPlaying")} header={nowPlaying}>
+            <Sheet
+              label={t("sheet.nowPlaying")}
+              header={nowPlaying}
+              expanded={false}
+              onExpandedChange={noop}
+            >
               <List label={t("queue.label")}>
                 <QueueRows />
               </List>

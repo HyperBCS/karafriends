@@ -1,5 +1,5 @@
 import classnames from "classnames";
-import React, { useId, useState } from "react";
+import React, { useId } from "react";
 
 import { t } from "../../i18n";
 import { FaAngleDown, FaAngleUp } from "../../icons";
@@ -13,49 +13,35 @@ interface Props {
   header: React.ReactNode;
   // What expanding shows: the queue, the controls.
   children: React.ReactNode;
-  // Controlled when given; otherwise the sheet keeps its own state.
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
-  defaultExpanded?: boolean;
-  // The toggle's names; "Show queue" and "Hide queue" unless given.
-  expandLabel?: string;
-  collapseLabel?: string;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   className?: string;
 }
 
 // The now-playing panel at the bottom of the remote: a header row with a
-// toggle, and a body below it that the toggle shows and hides. It doesn't
-// position itself; the app's layout puts it at the bottom.
+// toggle ("Show queue", "Hide queue"), and a body below it that the toggle
+// shows and hides. It doesn't position itself; the app's layout puts it at
+// the bottom.
 export const Sheet = ({
   label,
   header,
   children,
-  expanded: controlled,
+  expanded,
   onExpandedChange,
-  defaultExpanded = false,
-  expandLabel = t("sheet.showQueue"),
-  collapseLabel = t("sheet.hideQueue"),
   className,
 }: Props) => {
-  const [own, setOwn] = useState(defaultExpanded);
-  const expanded = controlled ?? own;
   const bodyId = useId();
-
-  const toggle = () => {
-    setOwn(!expanded);
-    onExpandedChange?.(!expanded);
-  };
 
   return (
     <section aria-label={label} className={classnames(styles.sheet, className)}>
       <div className={styles.header}>
         <div className={styles.headerContent}>{header}</div>
         <IconButton
-          label={expanded ? collapseLabel : expandLabel}
+          label={expanded ? t("sheet.hideQueue") : t("sheet.showQueue")}
           icon={expanded ? <FaAngleDown /> : <FaAngleUp />}
           aria-expanded={expanded}
           aria-controls={bodyId}
-          onClick={toggle}
+          onClick={() => onExpandedChange(!expanded)}
         />
       </div>
       <div id={bodyId} className={styles.body} hidden={!expanded}>

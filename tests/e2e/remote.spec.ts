@@ -239,11 +239,125 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
     "Couldn't get this video: E2E offline",
   );
 
+  // A bare ID could be half typed ("sm1" of "sm12345"): the pause in typing
+  // searches for it, and Enter or leaving the field opens it.
+  for (const method of ["damSearchSongs", "joysoundSearchSongs"]) {
+    await remote.route(`**/api/${method}`, (route) =>
+      route.fulfill({ json: { items: [], nextOffset: null } }),
+    );
+  }
   await remote.getByRole("button", { name: "Back" }).click();
   await search.fill("sm9");
+  await expect(remote).toHaveURL(/q=sm9/);
   await search.press("Enter");
   await expect(remote).toHaveURL(/#\/search\/niconico\/sm9$/);
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
+
+  await remote.getByRole("button", { name: "Back" }).click();
+  await search.fill("jNQXAC9IVRw");
+  await expect(remote).toHaveURL(/q=jNQXAC9IVRw/);
+  await search.blur();
+  await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
+});
+
+test("the playback controls fit on a narrow phone", async ({ remote }) => {
+  await remote.getByRole("button", { name: "Show queue" }).click();
+  const sheetBody = await remote
+    .getByRole("button", { name: "Hide queue" })
+    .getAttribute("aria-controls");
+  const first = remote.getByRole("button", { name: "Show emotes" });
+  const last = remote.getByRole("button", { name: "Raise the key" });
+  for (const width of [360, 320]) {
+    await remote.setViewportSize({ width, height: 700 });
+    // One row, inside the screen, and nothing to scroll sideways.
+    const [a, b] = [await first.boundingBox(), await last.boundingBox()];
+    expect(a!.x, `${width}px`).toBeGreaterThanOrEqual(0);
+    expect(b!.x + b!.width, `${width}px`).toBeLessThanOrEqual(width);
+    expect(Math.abs(a!.y - b!.y), `${width}px`).toBeLessThan(1);
+    expect(
+      await remote.evaluate((id) => {
+        const scrolls = (el: Element) => el.scrollWidth > el.clientWidth;
+        return [document.documentElement, document.getElementById(id)!].some(
+          scrolls,
+        );
+      }, sheetBody!),
+      `${width}px`,
+    ).toBe(false);
+  }
+});
+
+// Picking a background video changes the song page's address in place. Back
+// must still walk the remote's history: the artist, the song, the search.
+test("a Joysound song with a background keeps the way back", async ({
+  remote,
+}) => {
+  const joysoundSong = (n: number) => ({
+    id: `e2e-joy-${n}`,
+    name: `E2E Joysound song ${n}`,
+    artistName: "E2E artist",
+  });
+  await remote.route(/youtube\.com|ytimg\.com/, (route) => route.abort());
+  await remote.route("**/api/joysoundSearchSongs", (route) =>
+    fakePages(route, 3, joysoundSong),
+  );
+  await remote.route("**/api/joysoundSearchArtists", (route) =>
+    fakePages(route, 1, (n) => ({ id: `e2e-${n}`, name: "E2E artist" })),
+  );
+  await remote.route("**/api/joysoundSong", (route) =>
+    route.fulfill({
+      json: { ...joysoundSong(1), lyricsPreview: null, tieUp: null },
+    }),
+  );
+  await remote.route("**/api/youtubeInfo", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        info: {
+          title: "Me at the zoo",
+          author: "jawed",
+          channelId: "UC4QobU6STFB0P71PMvOGN5A",
+          lengthSeconds: 19,
+          description: "",
+          viewCount: 1,
+          captionLanguages: [],
+          keywords: [],
+          gainValue: 1,
+        },
+      },
+    }),
+  );
+
+  await remote.getByRole("tab", { name: "Joysound" }).click();
+  const search = remote.getByRole("searchbox", { name: "Search" });
+  await search.fill("E2E");
+  await remote
+    .getByRole("main")
+    .getByRole("link", { name: /E2E Joysound song 1/ })
+    .click();
+  await remote
+    .getByRole("button", { name: "Play a YouTube video behind the lyrics" })
+    .click();
+  await remote.getByLabel("YouTube link or video ID").fill("jNQXAC9IVRw");
+  await remote.getByRole("button", { name: "Use this video" }).click();
+  await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
+  await expect(remote.getByText("Me at the zoo")).toBeVisible();
+
+  // The artist link opens the search by artist, a home screen without a
+  // Back button: the phone's own back returns from it.
+  await remote.getByRole("link", { name: "E2E artist" }).click();
+  await expect(remote).toHaveURL(/by=artist/);
+  await remote.goBack();
+  await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
+  await expect(
+    remote.getByRole("button", { name: "Remove the video" }),
+  ).toBeVisible();
+  // The top bar's Back goes back in the history, to the search, not to an
+  // empty one.
+  await remote.getByRole("button", { name: "Back" }).click();
+  await expect(search).toHaveValue("E2E");
+  await expect(
+    remote.getByRole("main").getByRole("link", { name: /E2E Joysound song/ }),
+  ).toHaveCount(3);
 });
 
 // The live state changes several times a second while anything downloads.
@@ -343,6 +457,25 @@ test("a song already queued says why it wasn't queued again", async ({
   await expect(
     remote.getByRole("button", { name: "Queue video" }),
   ).toBeEnabled();
+});
+
+// The server answers 409 when the host set no admin password (403 is a
+// wrong one). Made up here, so this tests what the remote says.
+test("signing in without an admin password says there is none", async ({
+  remote,
+}) => {
+  await remote.route("**/api/adminLogin", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: "No admin password is set" },
+    }),
+  );
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByLabel("Admin password").fill("anything");
+  await remote.getByRole("button", { name: "Sign in" }).click();
+  await expect(remote.getByRole("alert")).toHaveText(
+    "The host hasn't set an admin password.",
+  );
 });
 
 test.describe("an admin's queue", () => {

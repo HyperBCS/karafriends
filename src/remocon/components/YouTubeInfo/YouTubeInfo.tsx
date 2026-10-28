@@ -23,13 +23,9 @@ const YouTubeInfo = ({ videoId }: Props) => {
 
   const videoInfo = useApiQuery("youtubeInfo", { videoId });
 
+  // One video per mount (YouTubePage keys this by it).
   useEffect(() => {
-    if (playerRef.current == null) {
-      playerRef.current = YouTubePlayer("youtube-player", { videoId });
-    } else {
-      playerRef.current.loadVideoById(videoId);
-      playerRef.current.stopVideo();
-    }
+    playerRef.current ??= YouTubePlayer("youtube-player", { videoId });
   }, [videoId]);
 
   return (

@@ -28,8 +28,12 @@
   font-size: $kf-text-body;
 }
 
+// A link (to the artist's songs, or the video's channel): a full tap target.
 .artist {
+  display: inline-flex;
+  align-items: center;
   align-self: flex-start;
+  min-height: $kf-tap;
   color: $kf-text;
   font-size: $kf-text-title;
   text-decoration: underline;

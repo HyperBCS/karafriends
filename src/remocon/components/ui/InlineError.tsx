@@ -8,25 +8,18 @@ import * as styles from "./Feedback.module.scss";
 interface Props {
   // What happened and what to do: "Couldn't download. Try another video."
   children: React.ReactNode;
-  // A retry button, when trying again might work.
+  // A "Try again" button, when trying again might work.
   onRetry?: () => void;
-  // The retry button's text; "Try again" unless given.
-  retryLabel?: string;
   className?: string;
 }
 
 // An error in place of what failed to show, announced when it appears.
-export const InlineError = ({
-  children,
-  onRetry,
-  retryLabel = t("common.tryAgain"),
-  className,
-}: Props) => (
+export const InlineError = ({ children, onRetry, className }: Props) => (
   <div role="alert" className={classnames(styles.error, className)}>
     <p className={styles.errorText}>{children}</p>
     {onRetry && (
       <Button variant="secondary" onClick={onRetry}>
-        {retryLabel}
+        {t("common.tryAgain")}
       </Button>
     )}
   </div>

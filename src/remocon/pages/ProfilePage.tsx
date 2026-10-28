@@ -1,7 +1,12 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { ApiCallError, useIsAdmin } from "../../common/apiClient";
+import {
+  adminSignIn,
+  adminSignOut,
+  ApiCallError,
+  useIsAdmin,
+} from "../../common/apiClient";
 import { Button, InlineError, Tabs, TextField } from "../components/ui";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
@@ -11,6 +16,7 @@ import * as styles from "./ProfilePage.module.scss";
 function signInError(err: unknown): string {
   if (err instanceof ApiCallError) {
     if (err.status === 403) return t("profile.wrongPassword");
+    if (err.status === 409) return t("profile.noPassword");
     if (err.status === 429) return t("profile.tooManyTries");
     return t("profile.signInFailed", { reason: err.message });
   }
@@ -108,7 +114,7 @@ const Notifications = () => {
 
 // Signing in and out as an admin with the password the host set.
 const Admin = () => {
-  const { adminToken, signIn, signOut } = useUserIdentity();
+  const { adminToken } = useUserIdentity();
   const isAdmin = useIsAdmin();
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -122,7 +128,7 @@ const Admin = () => {
     setPending(true);
     setError(null);
     try {
-      await signIn(password);
+      await adminSignIn(password);
       setPassword("");
     } catch (err) {
       setError(signInError(err));
@@ -133,7 +139,7 @@ const Admin = () => {
 
   const leave = async () => {
     setPending(true);
-    await signOut();
+    await adminSignOut();
     setPending(false);
   };
 

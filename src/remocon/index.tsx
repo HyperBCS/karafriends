@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { LiveStateProvider } from "../common/apiClient";
 import { createQueryClient } from "../common/apiQueries";
 import App from "./App";
+import { QueueNotifications } from "./hooks/useQueueNotifications";
 import { LanguageProvider } from "./i18n";
 import "./index.scss";
 
@@ -21,6 +22,10 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <LiveStateProvider checkAdmin>
+        {/* Outside LanguageProvider, so a language change doesn't remount
+            it and repeat a notification (t() translates them as they go
+            out). */}
+        <QueueNotifications />
         {/* Inside the data providers: a language change remounts the app
             but keeps the queries and the live connection. */}
         <LanguageProvider>
