@@ -1622,7 +1622,7 @@ test.describe("the song volume and mic sliders", () => {
       {
         id: "Focusrite USB (USB)#2",
         label: "Focusrite USB (USB), channel 2",
-        gain: 120,
+        gain: 123,
         echo: 0,
       },
     ];
@@ -1655,19 +1655,19 @@ test.describe("the song volume and mic sliders", () => {
     await expect(yeti.getByRole("slider", { name: "Gain" })).toHaveValue("100");
     await expect(yeti.getByRole("slider", { name: "Echo" })).toHaveValue("40");
     await expect(focusrite.getByRole("slider", { name: "Gain" })).toHaveValue(
-      "120",
+      "123",
     );
     await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
       "0",
     );
 
-    await focusrite.getByRole("slider", { name: "Echo" }).fill("60");
-    await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 60 }]);
+    await focusrite.getByRole("slider", { name: "Echo" }).fill("63");
+    await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
     await expect
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
-      .toEqual([mics[0], { ...mics[1], echo: 60 }]);
+      .toEqual([mics[0], { ...mics[1], echo: 63 }]);
     await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
-      "60",
+      "63",
     );
   });
 });

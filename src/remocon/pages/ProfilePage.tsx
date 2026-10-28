@@ -290,7 +290,7 @@ const MicLevelSlider = ({
       label={t(`mics.${level}`)}
       min={0}
       max={level === "gain" ? 200 : 100}
-      step={5}
+      step={1}
       value={value}
       onSend={(next) => {
         setPending(next);
