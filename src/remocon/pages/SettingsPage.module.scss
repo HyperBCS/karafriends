@@ -85,101 +85,15 @@
   font-size: $kf-text-body;
 }
 
-// The thumb as seen, and the track's height.
-$dot: 24px;
-$track: 6px;
-// How far the thumb's tap target reaches past its dot on each side.
-$dot-inset: calc(($kf-tap - $dot) / 2);
-
-// iOS moves a range input only from its thumb: a full tap target, of
-// which the transparent border leaves a solid dot to see, in the text's
-// color, so it shows on the fill and on the empty track alike.
-@mixin thumb {
-  box-sizing: border-box;
-  width: $kf-tap;
-  height: $kf-tap;
-  border: $dot-inset solid transparent;
-  border-radius: 50%;
-  background-color: $kf-text;
-  background-clip: padding-box;
-  // Raised: a shadow on the dot (a box-shadow would ring the tap target).
-  filter: $kf-drop-raise;
-  appearance: none;
-}
-
-// The slider: a sunken track filled with the accent up to the value, which
-// --kf-fill gives as a percent, and a solid, raised thumb. Drawn here in full:
-// iOS's own thumb is glass unless the input and its thumb both have
-// appearance: none.
-//
-// The track is drawn behind the input, from the dot's left edge at the
-// lowest value to its right edge at the highest, so the edge of the fill
-// is always under the dot. The input's own track is clear: it reaches
-// further, as far as the tap target travels.
-.track {
-  position: relative;
-  display: flex;
+// The slider itself is the phone's own (on an iPhone, iOS's), tinted with
+// the accent where the browser allows, and a full tap target tall.
+.slider input {
   min-width: 0;
+  width: 100%;
+  height: $kf-tap;
+  margin: 0;
+  accent-color: $kf-accent;
+  cursor: pointer;
 
-  &::before {
-    content: "";
-    position: absolute;
-    top: calc(50% - $track / 2);
-    right: $dot-inset;
-    left: $dot-inset;
-    height: $track;
-    border-radius: calc($track / 2);
-    background: linear-gradient(
-      to right,
-      $kf-accent var(--kf-fill),
-      $kf-track var(--kf-fill)
-    );
-    // Sunk into the card, as a field is.
-    box-shadow: $kf-shadow-track;
-  }
-
-  input {
-    // Over the track.
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    height: $kf-tap;
-    margin: 0;
-    background: none;
-    appearance: none;
-    cursor: pointer;
-
-    &::-webkit-slider-runnable-track {
-      height: $track;
-      background: none;
-    }
-
-    &::-moz-range-track {
-      height: $track;
-      background: none;
-    }
-
-    &::-webkit-slider-thumb {
-      @include thumb;
-      // Centered on the track.
-      margin-top: calc(($track - $kf-tap) / 2);
-    }
-
-    &::-moz-range-thumb {
-      @include thumb;
-    }
-
-    // The dot a step larger while held.
-    @include kf-pressed {
-      &::-webkit-slider-thumb {
-        border-width: calc($dot-inset - 2px);
-      }
-
-      &::-moz-range-thumb {
-        border-width: calc($dot-inset - 2px);
-      }
-    }
-
-    @include kf-focus-visible;
-  }
+  @include kf-focus-visible;
 }

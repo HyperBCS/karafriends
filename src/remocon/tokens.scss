@@ -56,8 +56,6 @@ $kf-line: var(--kf-line);
 $kf-border: var(--kf-border);
 // The edge of a field or an outlined control.
 $kf-border-strong: var(--kf-border-strong);
-// A slider's track past its value.
-$kf-track: var(--kf-track);
 $kf-text: var(--kf-text);
 // Secondary text: artists, ETAs, labels.
 $kf-muted: var(--kf-muted);
@@ -88,13 +86,8 @@ $kf-shadow-menu: var(--kf-shadow-menu);
 $kf-shadow-raise: var(--kf-shadow-raise);
 // A raised button in $kf-raised: the light edge and the raise.
 $kf-shadow-button: var(--kf-shadow-button);
-// Below the surface: a field, a track, the well.
+// Below the surface: a field, the choices' track, the well.
 $kf-shadow-sunken: var(--kf-shadow-sunken);
-// A slider's track: a hairline round it and the inner shadow.
-$kf-shadow-track: var(--kf-shadow-track);
-// The raise as a filter, for a shape a box-shadow wouldn't follow (a
-// slider's dot).
-$kf-drop-raise: var(--kf-drop-raise);
 // The sheet's controls, a toolbar under the queue: a hairline and a short
 // shadow upward.
 $kf-shadow-toolbar: var(--kf-shadow-toolbar);
@@ -125,10 +118,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // its inner shadow and its label, it's plainly a field; focused, the
   // accent (7.8:1) takes its place.
   --kf-border-strong: #3a3e46;
-  // A groove a step lighter than the card (1.7:1, with the inner shadow),
-  // so a slider at 0 still shows its track; the accent filling it to the
-  // value is 4.3:1 against it, and the thumb 8.6:1.
-  --kf-track: #3a3e46;
   // 15.5:1 (14.2:1 on a card, 11.0:1 on the sheet, 9.4:1 pressed there)
   --kf-text: #{$text};
   // 7.6:1 (7.0:1 on a card or in the well, 6.1:1 pressed; 5.4:1 on the
@@ -167,12 +156,9 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
     inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.55),
     0 2px 6px rgba(0, 0, 0, 0.3);
   --kf-shadow-sunken: inset 0 1px 3px rgba(0, 0, 0, 0.55);
-  --kf-shadow-track:
-    inset 0 0 0 1px #{$border}, inset 0 1px 3px rgba(0, 0, 0, 0.55);
   --kf-shadow-toolbar:
     inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -1px 0 rgba(0, 0, 0, 0.45),
     0 -4px 10px rgba(0, 0, 0, 0.25);
-  --kf-drop-raise: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 // The light theme ("Graphite light"), for a bright room or a phone in
@@ -199,10 +185,6 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
   // A field's edge: 3.3:1, the 3:1 a component's boundary needs (3.8:1 on
   // a card, 3.5:1 on a field's fill).
   --kf-border-strong: #7d848e;
-  // A grey groove, 1.6:1 on a card (with the inner shadow), so a slider at
-  // 0 still shows its track; the accent filling it to the value is 3.7:1
-  // against it.
-  --kf-track: #c9ced5;
   // 14.8:1 (17.1:1 on a card or the sheet, 15.1:1 pressed)
   --kf-text: #{$text};
   // 5.3:1 (6.2:1 on a card or the sheet, 5.5:1 pressed; 5.3:1 in the well,
@@ -248,12 +230,8 @@ $kf-shadow-toolbar: var(--kf-shadow-toolbar);
     0 1px 2px #{color.change($shade, $alpha: 0.12)},
     0 1px 4px #{color.change($shade, $alpha: 0.08)};
   --kf-shadow-sunken: inset 0 1px 2px #{color.change($shade, $alpha: 0.12)};
-  --kf-shadow-track:
-    inset 0 0 0 1px #{color.change($shade, $alpha: 0.1)},
-    inset 0 1px 2px #{color.change($shade, $alpha: 0.12)};
   --kf-shadow-toolbar:
     0 -1px 0 #{$border}, 0 -4px 10px #{color.change($shade, $alpha: 0.05)};
-  --kf-drop-raise: drop-shadow(0 1px 2px #{color.change($shade, $alpha: 0.3)});
 }
 
 // Spacing.
