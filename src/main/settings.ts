@@ -1,7 +1,8 @@
 // The settings methods: the display's settings screen reads and changes
 // config.yaml, tests the DAM and Joysound logins, and exports and imports
-// the whole file, and shows and updates ffmpeg and yt-dlp. Display only: server.ts refuses them to phones
-// (DISPLAY_ONLY_METHODS), and each handler checks again.
+// the whole file, and shows and updates ffmpeg and yt-dlp. Display only:
+// server.ts refuses them to phones (DISPLAY_ONLY_METHODS), and each handler
+// checks again.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { parse, stringify } from "yaml";

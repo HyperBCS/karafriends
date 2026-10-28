@@ -35,9 +35,9 @@ import { SETTINGS_METHODS } from "./settings";
 export const EVENTS_PATH = "/api/events";
 
 // Methods only the display may call, over IPC: the settings, setMics,
-// reportSongPosition and the downloads folder's. A phone gets 403 before
-// its body is read, whoever it is signed in as. (popSong is the display's
-// too; api.ts checks.)
+// reportSongPosition, the downloads folder's and popSong. A phone gets 403
+// before its body is read, whoever it is signed in as; each handler checks
+// again, on purpose (a handler reached some other way stays shut).
 export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>([
   ...SETTINGS_METHODS,
   "setMics",
@@ -45,6 +45,7 @@ export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>([
   "downloadsInfo",
   "clearDownloads",
   "clearDownload",
+  "popSong",
 ]);
 
 // How often a stream gets a ping. openLiveStream counts a stream silent

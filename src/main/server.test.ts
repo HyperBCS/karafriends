@@ -40,8 +40,8 @@ const handlers = {
     if (password !== "right") throw new ApiError(403, "Wrong admin password");
     return { token: "t".repeat(64) };
   },
-  popSong: async () => {
-    throw new Error("DAM is down");
+  youtubeInfo: async () => {
+    throw new Error("YouTube is down");
   },
   // Answers anyone, to show the router refuses phones before it gets here.
   ...Object.fromEntries(
@@ -112,6 +112,7 @@ describe("POST /api/<method>", () => {
       "getSettings",
       "getToolsStatus",
       "importConfig",
+      "popSong",
       "reportSongPosition",
       "restartApp",
       "setAdminPassword",
@@ -201,7 +202,7 @@ describe("POST /api/<method>", () => {
     const original = console.error;
     console.error = () => {};
     try {
-      const failed = await post("popSong", "{}");
+      const failed = await post("youtubeInfo", '{"videoId":"x"}');
       assert.equal(failed.status, 500);
     } finally {
       console.error = original;

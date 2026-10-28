@@ -12,7 +12,14 @@ import { songKey } from "../common/currentSong";
 import { REASONS } from "../common/downloadFailure";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { NoLoginError } from "./credentials";
-import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
+import {
+  ApiError,
+  type ApiDeps,
+  type ApiHandlers,
+  type Caller,
+  createApi,
+} from "./api";
+import { runMethod } from "./dispatch";
 import { shareQueueItem, type HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
 import {
@@ -2045,28 +2052,25 @@ describe("queueSong", () => {
   });
 
   test("refuses IDs that could escape the downloads folder", async () => {
-    const api = makeApi();
+    // As both transports run it: the validator first.
+    const api = makeApi() as unknown as ApiHandlers;
+    const queueSong = (input: unknown) =>
+      runMethod(api, "queueSong", input, alice);
     for (const songId of ["../../evil", "--exec=calc", "a b", ""]) {
       await rejectsWith(
-        api.queueSong(
-          { kind: "nico", songId, name: "", artistName: "" },
-          alice,
-        ),
+        queueSong({ kind: "nico", songId, name: "", artistName: "" }),
         400,
       );
     }
     await rejectsWith(
-      api.queueSong(
-        {
-          kind: "joysound",
-          songId: "123",
-          name: "",
-          artistName: "",
-          lyricsMode: "kana",
-          youtubeVideoId: "../x",
-        },
-        alice,
-      ),
+      queueSong({
+        kind: "joysound",
+        songId: "123",
+        name: "",
+        artistName: "",
+        lyricsMode: "kana",
+        youtubeVideoId: "../x",
+      }),
       400,
     );
     assert.deepEqual(store.getState().songQueue, []);

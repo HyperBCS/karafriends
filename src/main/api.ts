@@ -180,7 +180,8 @@ const totalLength = (lines: readonly string[]) =>
 // worth a new live state for every phone every 10 seconds.
 const POSITION_SLACK_MS = 500;
 
-// Song and video IDs end up in file names and yt-dlp arguments.
+// Song and video IDs end up in file names and yt-dlp arguments. (queueSong's
+// are checked by its validator.)
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // nicoInfo's answer for an ID that isn't a Niconico video's. The remote
@@ -719,15 +720,9 @@ export function createApi(
     },
 
     async queueSong(input, caller) {
+      // Its song and video IDs are safe for file names and yt-dlp: the
+      // validator (validate.ts) let only those through.
       const user = requireIdentity(caller);
-      if (
-        !SONG_ID.test(input.songId) ||
-        (input.kind === "joysound" &&
-          input.youtubeVideoId !== null &&
-          !SONG_ID.test(input.youtubeVideoId))
-      ) {
-        throw new ApiError(400, "Invalid song ID");
-      }
 
       if (hasMaxSongsInQueue(user, caller)) {
         return {
