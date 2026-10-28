@@ -142,6 +142,61 @@ function toolLine(tool: ToolStatus): string {
   return `${version} · downloaded ${date}`;
 }
 
+const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
+
+// The downloaded songs, kept so they start at once the next time: how much
+// they take, and a button that deletes them, but the files in use.
+function DownloadsSection() {
+  const [info, setInfo] = useState<ApiOutput<"downloadsInfo"> | null>(null);
+  const [message, setMessage] = useState<Message | undefined>();
+  const [clearing, setClearing] = useState(false);
+  const problem = (err: unknown): Message => ({
+    text: String((err as Error)?.message ?? err),
+    tone: "problem",
+  });
+
+  const refresh = () =>
+    call("downloadsInfo", {}).then(setInfo, (err) => setMessage(problem(err)));
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const clear = async () => {
+    setClearing(true);
+    try {
+      const { bytes, kept } = await call("clearDownloads", {});
+      setMessage({
+        text: `Freed ${megabytes(bytes)}${kept > 0 ? `. ${kept} kept, in use` : ""}.`,
+      });
+      await refresh();
+    } catch (err) {
+      setMessage(problem(err));
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <SettingsSection title="Downloads" message={message}>
+      <p className="settingsNote">
+        {info
+          ? `${info.files} file${info.files === 1 ? "" : "s"}, ${megabytes(info.bytes)}`
+          : "…"}
+      </p>
+      <div className="settingsActions">
+        <button
+          type="button"
+          className="kfButton"
+          disabled={clearing}
+          onClick={clear}
+        >
+          Clear downloads
+        </button>
+      </div>
+    </SettingsSection>
+  );
+}
+
 const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
 
 // The settings screen, over everything. Every field saves as the host
@@ -556,6 +611,8 @@ export default function Settings(props: {
             Measured audio output latency: {props.audioLatencyMs} ms
           </p>
         </SettingsSection>
+
+        <DownloadsSection />
 
         <SettingsSection title="Microphones">
           <div className="settingsFields">
