@@ -11,7 +11,6 @@ import {
 
 import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
-import { QueueNotifications } from "./hooks/useQueueNotifications";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
 import { MdPerson } from "./icons";
@@ -38,7 +37,6 @@ const DevUiPage =
 // each component that shows some of it follows just that part.
 const App = () => (
   <HashRouter>
-    <QueueNotifications />
     <Routes>
       {DevUiPage && (
         <Route
