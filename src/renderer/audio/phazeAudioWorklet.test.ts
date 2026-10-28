@@ -84,8 +84,12 @@ function run(
   return [outLeft, outRight];
 }
 
+// Samples in that many seconds, in whole quanta.
+const samples = (seconds: number) =>
+  Math.ceil((seconds * SAMPLE_RATE) / QUANTUM) * QUANTUM;
+
 function sine(hz: number, seconds: number, amplitude = 0.5): Float32Array {
-  const x = new Float32Array(Math.round(seconds * SAMPLE_RATE));
+  const x = new Float32Array(samples(seconds));
   for (let n = 0; n < x.length; n++) {
     x[n] = amplitude * Math.sin((2 * Math.PI * hz * n) / SAMPLE_RATE);
   }
@@ -129,10 +133,16 @@ function hann(n: number, length: number): number {
   return 0.5 * (1 - Math.cos((2 * Math.PI * n) / length));
 }
 
-// The strongest frequency in x[start, start + length): a zero-padded FFT
-// finds the peak bin, then a golden-section search on the Hann-weighted DTFT
-// finds the peak between bins.
-function peakHz(x: Float32Array, start: number, length: number): number {
+// The strongest frequency in x[start, start + length), between lowHz and
+// highHz: a zero-padded FFT finds the peak bin, then a golden-section search
+// on the Hann-weighted DTFT finds the peak between bins.
+function peakHz(
+  x: Float32Array,
+  start: number,
+  length: number,
+  lowHz = 20,
+  highHz = SAMPLE_RATE / 2,
+): number {
   const segment = new Float64Array(length);
   for (let n = 0; n < length; n++) segment[n] = x[start + n] * hann(n, length);
 
@@ -144,8 +154,9 @@ function peakHz(x: Float32Array, start: number, length: number): number {
   fft.realTransform(spectrum, padded);
   let best = 0;
   let bestPower = -1;
-  const lowest = Math.ceil((20 * size) / SAMPLE_RATE);
-  for (let k = lowest; k < size / 2; k++) {
+  const lowest = Math.ceil((lowHz * size) / SAMPLE_RATE);
+  const highest = Math.min(size / 2, Math.floor((highHz * size) / SAMPLE_RATE));
+  for (let k = lowest; k < highest; k++) {
     const power = spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2;
     if (power > bestPower) {
       bestPower = power;
@@ -269,10 +280,37 @@ describe("the key change's vocoder", () => {
     });
   }
 
+  test("a bass under a chord stays in tune with it", (t) => {
+    // A2 with its harmonics, under an A major triad (A3, C#4, E4): the
+    // review's case, where the old shifter left the bass behind.
+    const notes = [110, 220 * 2 ** (4 / 12), 220 * 2 ** (7 / 12)];
+    const bass: Float32Array[] = [];
+    for (let k = 1; k <= 8; k++) bass.push(sine(110 * k, 1, 0.15 / k));
+    const song = mix(...bass, ...notes.slice(1).map((hz) => sine(hz, 1, 0.08)));
+    // Each note, looked for within a third of a semitone of where it should
+    // be: the first two partials of the bass, and the third and fifth. The
+    // third sits 2.25 bins from the fifth (and the bass's third partial), too
+    // close for a 2048-sample window to keep apart entirely: it lands a few
+    // cents off, so these get the tones' tenth of a semitone too.
+    const partials = [110, 220, notes[1], notes[2]];
+    for (const shift of [-2, -1, 1, 2]) {
+      const [left] = run(newVocoder(), song, song, semitonesFactor(shift));
+      const moved = partials.map((hz) => {
+        const target = hz * semitonesFactor(shift);
+        const found = peakHz(left, SETTLE, 32768, target / 1.02, target * 1.02);
+        return 12 * Math.log2(found / hz);
+      });
+      t.diagnostic(`${shift}: ${moved.map((m) => m.toFixed(3)).join(", ")}`);
+      for (const value of moved) {
+        assert.ok(Math.abs(value - shift) < 0.1, `${shift}: ${value}`);
+      }
+    }
+  });
+
   test("adds nothing above the song's top when the key goes down", (t) => {
     // A 220 Hz sawtooth to 8 kHz over a noise floor 60 dB down: what's
     // above 8 kHz in the input is the floor alone.
-    const song = mix(sawtooth(220, 8000, 1.5, 0.3), noise(72000, 0.001));
+    const song = mix(sawtooth(220, 8000, 1.5, 0.3), noise(samples(1.5), 0.001));
     const reference = bandPower(song, SETTLE, 0, 8000);
     const bands: [number, number][] = [
       [12000, 16000],
@@ -309,7 +347,7 @@ describe("the key change's vocoder", () => {
       sine(277.2, 1.5, 0.1),
       sine(329.6, 1.5, 0.1),
       sawtooth(440, 6000, 1.5, 0.05),
-      noise(72000, 0.02),
+      noise(samples(1.5), 0.02),
     );
     const level = rms(song, SETTLE);
     const errors: string[] = [];
@@ -327,7 +365,7 @@ describe("the key change's vocoder", () => {
   });
 
   test("at key 0 it is the song, late by its window", () => {
-    const song = mix(sawtooth(196, 8000, 0.5, 0.3), noise(24000, 0.01));
+    const song = mix(sawtooth(196, 8000, 0.5, 0.3), noise(samples(0.5), 0.01));
     const [left, right] = run(newVocoder(), song, song, 1);
     let worst = 0;
     for (let n = 2 * LATENCY; n < song.length; n++) {
@@ -341,7 +379,7 @@ describe("the key change's vocoder", () => {
     const [, right] = run(
       newVocoder(),
       sine(440, 1),
-      new Float32Array(48000),
+      new Float32Array(samples(1)),
       semitonesFactor(2),
     );
     assert.ok(rms(right, SETTLE) < 1e-5, `right at ${rms(right, SETTLE)}`);
@@ -396,7 +434,7 @@ describe("the key change's vocoder", () => {
     const song = mix(
       sawtooth(110, 12000, 1, 0.2),
       sawtooth(330, 12000, 1, 0.1),
-      noise(48000, 0.02),
+      noise(samples(1), 0.02),
     );
     const quanta = song.length / QUANTUM;
     const vocoder = newVocoder();
