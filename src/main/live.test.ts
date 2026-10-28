@@ -398,6 +398,31 @@ describe("createLiveHub", () => {
     assert.deepEqual(queueLengths, [0, 1, 5]);
   });
 
+  test("a backward step of the wall clock doesn't hold back the state", async (t) => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const states: string[] = [];
+    const stop = hub.subscribe((event) => {
+      if (event.type === "state") states.push(event.state.playbackState);
+    });
+    // The host's clock goes back 3 s (a time sync), just after a flush.
+    await sleep(INTERVAL_MS * 2);
+    store.update((state) => {
+      state.playbackState = "PLAYING";
+    });
+    const realNow = Date.now;
+    t.mock.method(Date, "now", () => realNow() - 3000);
+    store.update((state) => {
+      state.pitchShiftSemis = 1;
+    });
+    store.update((state) => {
+      state.playbackState = "PAUSED";
+    });
+    await sleep(INTERVAL_MS * 4);
+    stop();
+    // It used to wait the 3 s out.
+    assert.deepEqual(states, ["WAITING", "PLAYING", "PAUSED"]);
+  });
+
   test("a listener that joins between flushes ends up with the latest state", async () => {
     const hub = createLiveHub(store, config, INTERVAL_MS);
     const playbackStates = (events: LiveEvent[]) =>

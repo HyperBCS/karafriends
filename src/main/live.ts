@@ -210,7 +210,10 @@ export function createLiveHub(
   // The last state sent to everyone, serialized, so unchanged state isn't
   // sent again.
   let lastSent: string | null = null;
-  let lastSentAt = 0;
+  // When, by the monotonic clock (performance.now()): the wall clock may
+  // step back (a time sync), which would hold every change back that long.
+  // Only an event's sentAt is the wall clock's, for the phones.
+  let lastSentAt = -Infinity;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let downloadWatch: ReturnType<typeof setInterval> | null = null;
 
@@ -232,7 +235,7 @@ export function createLiveHub(
   const flush = () => {
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = null;
-    lastSentAt = Date.now();
+    lastSentAt = performance.now();
     const state = store.getState();
     const shared = toLiveState(state, config);
     const serialized = JSON.stringify(shared);
@@ -243,7 +246,7 @@ export function createLiveHub(
 
   const scheduleFlush = () => {
     if (listeners.size === 0 || flushTimer) return;
-    const wait = lastSentAt + intervalMs - Date.now();
+    const wait = lastSentAt + intervalMs - performance.now();
     if (wait <= 0) {
       flush();
     } else {
@@ -281,7 +284,7 @@ export function createLiveHub(
       if (listeners.size === 1) {
         // Nobody was listening, so what was last sent is stale.
         lastSent = JSON.stringify(toLiveState(state, config));
-        lastSentAt = Date.now();
+        lastSentAt = performance.now();
         downloadWatch = setInterval(watchDownloads, intervalMs);
         downloadWatch.unref?.();
       }
