@@ -1193,6 +1193,30 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(0.7);
     await expect(slider).toHaveValue("0.7");
+
+    // Dragged down across several steps, it sends the level once, when
+    // let go.
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setGuideMelodyLevel")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    const box = (await slider.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await remote.mouse.move(box.x + box.width * 0.7, y);
+    await remote.mouse.down();
+    await remote.mouse.move(box.x + box.width * 0.3, y, { steps: 10 });
+    await expect(slider).not.toHaveValue("0.7");
+    expect(sent).toEqual([]);
+    await remote.mouse.up();
+    const level = Number(await slider.inputValue());
+    expect(level).toBeLessThan(0.6);
+    await expect.poll(() => sent).toEqual([{ level }]);
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
+      .toBe(level);
+    await expect(slider).toHaveValue(String(level));
   });
 });
 
