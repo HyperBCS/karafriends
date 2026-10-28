@@ -162,15 +162,15 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
-  // The display, or a phone signed in with the admin password, or every
-  // phone while everyoneIsAdmin is on. Nicknames grant nothing, since anyone
-  // can pick any nickname and every phone sees everyone's. Device IDs never
-  // leave the server, so they decide whose a song is, but not who is an
-  // admin.
+  // The display, or a phone signed in with the admin password. Nicknames
+  // grant nothing, since anyone can pick any nickname and every phone sees
+  // everyone's. Device IDs never leave the server, so they decide whose a
+  // song is, but not who is an admin.
+  const isRealAdmin = (caller: Caller) =>
+    caller.isDisplay || deps.adminSessions.has(caller.adminToken);
+  // That, or every phone while everyoneIsAdmin is on.
   const isAdmin = (caller: Caller) =>
-    config.everyoneIsAdmin ||
-    caller.isDisplay ||
-    deps.adminSessions.has(caller.adminToken);
+    config.everyoneIsAdmin || isRealAdmin(caller);
 
   // Whether the caller queued item, from the same device (isMine, to the
   // phones).
@@ -219,8 +219,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     console.log(
       `hasMaxSongsInQueue: user ${user.nickname} has ${queued}, ${downloading} downloading`,
     );
+    // The limit is fairness, so everyoneIsAdmin keeps it.
     return (
-      !isAdmin(caller) &&
+      !isRealAdmin(caller) &&
       config.paxSongQueueLimit > 0 &&
       queued + downloading >= config.paxSongQueueLimit
     );

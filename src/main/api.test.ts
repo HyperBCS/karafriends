@@ -936,6 +936,24 @@ describe("queueSong", () => {
     assert.equal((await queue(impostor, 6)).ok, true);
     assert.equal((await queue(impostor, 7)).ok, false);
   });
+
+  test("keeps the limit while everyone is an admin", async () => {
+    const api = makeApi({ paxSongQueueLimit: 1, everyoneIsAdmin: true });
+    const queue = (caller: Caller, n: number) =>
+      api.queueSong(
+        { kind: "nico", songId: `sm${n}`, name: "", artistName: "" },
+        caller,
+      );
+    assert.equal((await queue(bob, 1)).ok, true);
+    assert.deepEqual(await queue(bob, 2), {
+      ok: false,
+      reason: "bob already has 1 song(s) in the queue or downloading",
+    });
+    // A phone signed in with the password still has none.
+    const host = admin("host phone");
+    assert.equal((await queue(host, 3)).ok, true);
+    assert.equal((await queue(host, 4)).ok, true);
+  });
 });
 
 describe("a failed download", () => {
