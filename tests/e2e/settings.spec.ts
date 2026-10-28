@@ -422,6 +422,31 @@ test.describe("the microphones", () => {
     ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
   });
 
+  test("a saved mic output that isn't connected says so; System default clears it", async ({
+    display,
+  }) => {
+    await display.evaluate(() =>
+      localStorage.setItem("micOutput", "E2E Gone (Windows)"),
+    );
+    await display.reload();
+    const output = display
+      .getByRole("region", { name: "Microphones" })
+      .getByLabel("Mic output");
+    await expect(output).toHaveValue("E2E Gone (Windows)");
+    await expect(output.locator("option:checked")).toHaveText(
+      "E2E Gone (Windows) (not connected)",
+    );
+    await output.selectOption("System default");
+    await expect(output).toHaveValue("");
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "setOutputDevice",
+      null,
+    ]);
+    expect(
+      await display.evaluate(() => localStorage.getItem("micOutput")),
+    ).toBeNull();
+  });
+
   test("old saved mics get the default levels", async ({ display }) => {
     await display.evaluate(() =>
       localStorage.setItem(

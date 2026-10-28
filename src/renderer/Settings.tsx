@@ -175,6 +175,10 @@ export default function Settings(props: {
   const [updatingTools, setUpdatingTools] = useState(false);
   // Listed each time Settings opens.
   const [outputs] = useState(outputDevices);
+  // What the native side says about the output while the mics work ("ok:
+  // <note>"): that the chosen one is missing or won't open, say.
+  const micStatus = props.mics[0]?.status();
+  const outputNote = micStatus?.startsWith("ok: ") ? micStatus.slice(4) : null;
   // Saves, tests and imports run one after another, so a Test login
   // clicked right after typing tests what was just saved.
   const chain = useRef<Promise<void>>(Promise.resolve());
@@ -564,6 +568,12 @@ export default function Settings(props: {
                 }
               >
                 <option value="">System default</option>
+                {props.micOutput !== null &&
+                !outputs.includes(props.micOutput) ? (
+                  <option value={props.micOutput} disabled={true}>
+                    {`${props.micOutput} (not connected)`}
+                  </option>
+                ) : null}
                 {outputs.map((name) => (
                   <option key={name} value={name}>
                     {name}
@@ -572,6 +582,11 @@ export default function Settings(props: {
               </select>
             </label>
           </div>
+          {outputNote ? (
+            <p className="settingsNote" role="status">
+              {outputNote}
+            </p>
+          ) : null}
           <p className="settingsNote">
             Every mic plays through this output; songs keep playing through the
             system default. An ASIO interface whose driver allows one program at
