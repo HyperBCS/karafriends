@@ -148,41 +148,6 @@ const ThemePicker = () => {
   );
 };
 
-// Asks the phone to show a notification when this phone's song is up soon
-// or couldn't be downloaded (useQueueNotifications). Browsers only ask
-// once; after that, it's the browser's setting.
-const Notifications = () => {
-  const supported = "Notification" in window;
-  const [permission, setPermission] = useState(
-    supported ? Notification.permission : "denied",
-  );
-  if (!supported) return null;
-
-  return (
-    <div className={styles.setting}>
-      <h3 className={styles.label}>{t("settings.notifications")}</h3>
-      {permission === "default" ? (
-        <Button
-          variant="secondary"
-          onClick={async () =>
-            setPermission(await Notification.requestPermission())
-          }
-        >
-          {t("settings.notificationsOn")}
-        </Button>
-      ) : (
-        <p className={styles.text}>
-          {t(
-            permission === "granted"
-              ? "settings.notificationsAllowed"
-              : "settings.notificationsBlocked",
-          )}
-        </p>
-      )}
-    </div>
-  );
-};
-
 interface LevelSliderProps {
   label: string;
   // The slider's accessible name: the label without the value, or one that
@@ -450,9 +415,9 @@ const LyricsOnTheTv = () => {
   );
 };
 
-// The phone's settings in groups: its nickname; its language, readings,
-// theme and notifications; the lyrics its songs show on the TV; and the
-// admin sign-in and controls. On a first visit, just the nickname (and the
+// The phone's settings in groups: its nickname; its language, readings and
+// theme; the lyrics its songs show on the TV; and the admin sign-in and
+// controls. On a first visit, just the nickname (and the
 // language, to read the rest in).
 const SettingsPage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
   <div className={styles.page}>
@@ -465,7 +430,6 @@ const SettingsPage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
         <>
           <ReadingsPicker />
           <ThemePicker />
-          <Notifications />
         </>
       )}
     </Group>

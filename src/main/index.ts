@@ -50,7 +50,6 @@ import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
-import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
 import { apiRouter, shouldCompress } from "./server";
 import { api, hub } from "./services";
 
@@ -245,10 +244,8 @@ function createWindow() {
 
   expressApp.use("/api", apiRouter(api, hub));
 
-  expressApp.use(remoconServiceWorkerAllowed());
-
-  // The phone remote: its page at /, and the assets and service worker it
-  // loads. (With the pages on the Vite dev server, phones use that instead.)
+  // The phone remote: its page at /, and the assets it loads. (With the
+  // pages on the Vite dev server, phones use that instead.)
   if (!devServerUrl) {
     expressApp.use(express.static(path.join(WEB_DIR, "remocon")));
     expressApp.use(express.static(WEB_DIR, { index: false }));

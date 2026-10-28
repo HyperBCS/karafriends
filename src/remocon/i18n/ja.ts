@@ -103,9 +103,6 @@ export const ja: Messages = {
   "emotes.edit": "リアクションを変更",
   "emotes.prompt": "表示する絵文字を入力してください",
 
-  "notification.upSoon": "あと約{eta}で「{name}」の番です。",
-  "notification.failed": "「{name}」をダウンロードできませんでした：{reason}",
-
   "history.heading": "履歴",
   "history.empty": "履歴はありません",
 
@@ -119,10 +116,6 @@ export const ja: Messages = {
   "settings.nickname": "ニックネーム",
   "settings.start": "はじめる",
   "settings.saveNickname": "保存",
-  "settings.notifications": "通知",
-  "settings.notificationsOn": "通知をオンにする",
-  "settings.notificationsAllowed": "オン：順番が近づくとお知らせします。",
-  "settings.notificationsBlocked": "オフ：ブラウザの設定で許可してください。",
   "settings.admin": "管理者",
   "settings.adminPassword": "管理者パスワード",
   "settings.signIn": "ログイン",

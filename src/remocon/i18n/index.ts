@@ -3,10 +3,10 @@
 //   t("queue.empty")                          "The queue is empty"
 //   t("queue.queuedBy", { nickname: "ken" })  "Queued by ken"
 //
-// t() is a plain function, so it works in components, hooks and
-// notifications alike. It reads the current language, which
-// LanguageProvider sets; when the language changes, LanguageProvider
-// remounts everything under it, so every t() call renders again. That resets
+// t() is a plain function, so it works in components and hooks alike. It
+// reads the current language, which LanguageProvider sets; when the language
+// changes, LanguageProvider remounts everything under it, so every t() call
+// renders again. That resets
 // component state below it, which is fine for a toggle used once a party.
 //
 // The language is kept in localStorage ("language"). Without one, a phone

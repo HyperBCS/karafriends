@@ -2,13 +2,5 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
     "unicorn/no-new-array": "off"
-  },
-  "overrides": [
-    {
-      "files": ["static/notificationServiceWorker.js"],
-      "rules": {
-        "unicorn/no-empty-file": "off"
-      }
-    }
-  ]
+  }
 }
