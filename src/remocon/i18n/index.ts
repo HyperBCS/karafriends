@@ -76,6 +76,8 @@ let current: Language = pickLanguage(
   globalThis.navigator?.language,
 );
 
+export const currentLanguage = (): Language => current;
+
 export function t<K extends MessageKey>(key: K, ...vars: VarsArg<K>): string {
   return translate(current, key, ...vars);
 }

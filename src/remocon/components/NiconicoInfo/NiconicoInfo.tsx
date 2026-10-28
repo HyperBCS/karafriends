@@ -2,6 +2,7 @@ import React from "react";
 
 import { useApiQuery } from "../../../common/apiQueries";
 import { t } from "../../i18n";
+import { reasonText } from "../../i18n/reasons";
 import * as styles from "../../pages/SongPage.module.scss";
 import { withLoader } from "../Loader";
 import { QueueButton } from "../QueueButtons";
@@ -19,7 +20,7 @@ const NiconicoInfo = ({ videoId }: Props) => {
   if (!videoInfo.ok) {
     return (
       <InlineError>
-        {t("video.infoFailed", { reason: videoInfo.reason })}
+        {t("video.infoFailed", { reason: reasonText(videoInfo.reason) })}
       </InlineError>
     );
   }

@@ -29,7 +29,10 @@ describe("nextStatus", () => {
       assert.equal(nextStatus(status, seen()), null);
       assert.equal(nextStatus(status, seen({ progress: 0.5 })), null);
       assert.equal(nextStatus(status, seen({ queued: true })), null);
-      assert.equal(nextStatus(status, seen({ failure: "Video unavailable" })), null);
+      assert.equal(
+        nextStatus(status, seen({ failure: "Video unavailable" })),
+        null,
+      );
     }
   });
 
@@ -43,7 +46,10 @@ describe("nextStatus", () => {
       afterMs: 0,
     });
     // The same progress: nothing to do (no render loop).
-    assert.equal(nextStatus(downloading(0.4256), seen({ progress: 0.4256 })), null);
+    assert.equal(
+      nextStatus(downloading(0.4256), seen({ progress: 0.4256 })),
+      null,
+    );
   });
 
   test("at 100% it's still downloading until the download is gone", () => {
@@ -79,7 +85,10 @@ describe("nextStatus", () => {
   test("says why a download failed", () => {
     for (const progress of [null, 0.426]) {
       assert.deepEqual(
-        nextStatus(downloading(progress), seen({ failure: "Video unavailable" })),
+        nextStatus(
+          downloading(progress),
+          seen({ failure: "Video unavailable" }),
+        ),
         { status: { is: "failed", reason: "Video unavailable" }, afterMs: 0 },
       );
     }
@@ -110,7 +119,8 @@ describe("nextStatus", () => {
 
 describe("statusLabel", () => {
   test("says each status in words", () => {
-    const label = (status: QueueButtonStatus) => statusLabel(status, "Queue video");
+    const label = (status: QueueButtonStatus) =>
+      statusLabel(status, "Queue video");
     assert.equal(label({ is: "idle" }), "Queue video");
     assert.equal(label({ is: "waiting" }), "Waiting for server");
     assert.equal(label(downloading(null)), "Downloading");

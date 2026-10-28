@@ -81,6 +81,29 @@ export const ja: Messages = {
   "queueButton.failed": "ダウンロードできませんでした：{reason}",
   "queueButton.error": "予約できませんでした：{reason}",
 
+  "reason.unavailable": "再生できない動画です",
+  "reason.private": "非公開の動画です",
+  "reason.ageRestricted": "年齢制限のある動画です",
+  "reason.membersOnly": "メンバー限定の動画です",
+  "reason.liveOrPaid": "ライブ配信・公開前・有料の動画です",
+  "reason.geoBlocked": "この国では再生できません",
+  "reason.botCheck": "YouTubeにダウンロードを止められました",
+  "reason.timedOut": "ダウンロードがタイムアウトしました",
+  "reason.joysound": "JOYSOUNDから曲を取得できませんでした",
+  "reason.noTools": "ダウンロード用のツールを取得できませんでした",
+  "reason.toolFailedToStart": "ダウンローダーを起動できませんでした",
+  "reason.videoProcessing": "動画を作成できませんでした",
+  "reason.damSample": "DAMから曲ではなく試聴版が届きました",
+  "reason.other": "ダウンロードに失敗しました",
+  "reason.alreadyAdding": "ほかの人がこの曲を予約しているところです",
+  "reason.nicoInfo": "動画IDが正しくないかもしれません。",
+  "reason.tooManyLyrics":
+    "予約リストの歌詞が多すぎます。何曲か終わってから、または歌詞なしで予約してください。",
+  "reason.queueLimit":
+    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
+  "reason.queueLimit.one":
+    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
+
   "sheet.nowPlaying": "演奏中",
   "sheet.nothingPlaying": "演奏中の曲はありません",
   "sheet.showQueue": "予約リストを開く",

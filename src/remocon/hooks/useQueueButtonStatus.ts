@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DownloadProgress, LiveState } from "../../common/api";
 import { useLiveState } from "../../common/apiClient";
 import { t } from "../i18n";
+import { reasonText } from "../i18n/reasons";
 
 // What a queue button is doing. It starts idle (its own label), is waiting
 // while the server answers, and then shows the wait (queued), why the
@@ -95,9 +96,9 @@ export function statusLabel(
     case "finished":
       return t("queueButton.finished");
     case "failed":
-      return t("queueButton.failed", { reason: status.reason });
+      return t("queueButton.failed", { reason: reasonText(status.reason) });
     case "error":
-      return t("queueButton.error", { reason: status.reason });
+      return t("queueButton.error", { reason: reasonText(status.reason) });
     case "queued":
       return t("queueButton.queued", {
         eta: formatDuration(status.eta * 1000),

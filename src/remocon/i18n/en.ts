@@ -90,6 +90,32 @@ export const en = {
   "queueButton.failed": "Couldn't download: {reason}",
   "queueButton.error": "Not queued: {reason}",
 
+  // The reasons the server gives in English (reasons.ts), inside
+  // "Couldn't download: {reason}" and the like. Downloads first, as
+  // src/common/downloadFailure.ts words them.
+  "reason.unavailable": "Video unavailable",
+  "reason.private": "Private video",
+  "reason.ageRestricted": "Age-restricted video",
+  "reason.membersOnly": "Members-only video",
+  "reason.liveOrPaid": "Live, upcoming or paid video",
+  "reason.geoBlocked": "Not available in this country",
+  "reason.botCheck": "YouTube blocked the download",
+  "reason.timedOut": "Download timed out",
+  "reason.joysound": "Couldn't get the song from Joysound",
+  "reason.noTools": "Couldn't get the download tools",
+  "reason.toolFailedToStart": "Couldn't start the downloader",
+  "reason.videoProcessing": "Couldn't put the video together",
+  "reason.damSample": "DAM sent a sample, not the song",
+  "reason.other": "Download failed",
+  "reason.alreadyAdding": "Someone is already adding this song",
+  "reason.nicoInfo": "Maybe the video ID is wrong.",
+  "reason.tooManyLyrics":
+    "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
+  "reason.queueLimit":
+    "{nickname} already has {count} songs in the queue or downloading",
+  "reason.queueLimit.one":
+    "{nickname} already has {count} song in the queue or downloading",
+
   // The now-playing sheet and the queue in it.
   "sheet.nowPlaying": "Now playing",
   "sheet.nothingPlaying": "Nothing playing",

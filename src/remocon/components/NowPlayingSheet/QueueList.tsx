@@ -9,6 +9,7 @@ import useQueue, { useWait, withETAs } from "../../../common/hooks/useQueue";
 import { reading } from "../../../common/readings";
 import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
+import { reasonText } from "../../i18n/reasons";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import { sourceName } from "../../songLink";
 import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
@@ -182,7 +183,7 @@ const QueueList = () => {
     <>
       {moveError && (
         <InlineError>
-          {t("queue.moveFailed", { reason: moveError })}
+          {t("queue.moveFailed", { reason: reasonText(moveError) })}
         </InlineError>
       )}
       {queue.length > 0 ? (
