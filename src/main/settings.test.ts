@@ -377,8 +377,8 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(result, {
       ok: true,
       problems: [
-        "Dropped adminDeviceIds and adminNicks: the admin lists are gone. Phones become admins with the admin password.",
-        "Dropped proxyEnable, proxyHost, proxyPort, proxyUser and proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
+        "Dropped adminDeviceIds, adminNicks: the admin lists are gone. Phones become admins with the admin password.",
+        "Dropped proxyEnable, proxyHost, proxyPort, proxyUser, proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
         "DAM login works.",
         "No Joysound login is set: enter the email and password first.",
       ],
@@ -408,7 +408,7 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(result, {
       ok: true,
       problems: [
-        "Dropped proxyHost, proxyUser and proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
+        "Dropped proxyHost, proxyUser, proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
         "No DAM login is set: enter the username and password first.",
         "No Joysound login is set: enter the email and password first.",
       ],
