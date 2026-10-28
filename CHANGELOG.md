@@ -24,7 +24,8 @@ The product round: the phone remote, the display, settings and party-time failur
 - Admins can turn up Joysound's guide melody, which was never heard before (`setGuideMelodyLevel`, 0 to 1, muted by default and kept across songs and restarts).
 - A Joysound song's lyrics show on the TV with kana over the kanji, in romaji, or both (romaji under the kanji line), picked on its page when queueing, with the phone's default on the profile screen ("Lyrics on the TV"); the romaji queue button is gone. Admins set the guide melody with a slider in the playback controls while a Joysound song plays.
 - A "Readings" choice on the phone's profile shows song titles and artists with the kana reading DAM gives, in romaji, or both, under the title and after the artist, in search results, the queue and the history (Joysound gives no readings, so its songs show as written).
-- Up-next waits on the display and the phones count down while a song plays and stop while it's paused; the display's screens scale with its window, from 720p to 4K, instead of staying at 1080p sizes; and a song in its own key no longer goes through the pitch shifter, which made it quieter and a little late.
+- Up-next waits on the display and the phones count down while a song plays and stop while it's paused; the display's screens scale with its window, from 720p to 4K, instead of staying at 1080p sizes; and a song in its own key no longer goes through the pitch shifter, which made it a little late.
+- Fixes from the mobile review: a song in its own key plays as loud as before and as with the key changed (skipping the pitch shifter had made it 8.5 dB louder, and a loud YouTube video could distort); "Queued" on the phone counts only what's left of the current song, like the queue; and the countdowns start when the display starts the song, not while a DAM song is still loading.
 
 ## 0.1.0
 

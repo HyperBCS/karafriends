@@ -97,9 +97,9 @@ const lineHeight = (line: LineSize) => line.size + line.stroke * 2;
 const RUBY_LINE = { size: RUBY_FONT_SIZE, stroke: RUBY_FONT_STROKE };
 const MAIN_LINE = { size: MAIN_FONT_SIZE, stroke: MAIN_FONT_STROKE };
 const ROMAJI_LINE = { size: ROMAJI_FONT_SIZE, stroke: ROMAJI_FONT_STROKE };
-const BOTH_RUBY_LINE = { size: 14, stroke: 2 };
+// "both": the ruby and the romaji line.
+const BOTH_SMALL_LINE = { size: 14, stroke: 2 };
 const BOTH_MAIN_LINE = { size: 36, stroke: 3 };
-const BOTH_ROMAJI_LINE = { size: 14, stroke: 2 };
 
 const SCREEN_WIDTH = 720;
 const SCREEN_HEIGHT = 480;
@@ -436,13 +436,13 @@ function createLyricsBlockTexture(
   setupTextCanvas(textCtx, lyricsBlock, fillColor, strokeColor);
 
   if (lyricsMode === "both") {
-    const mainY = lineHeight(BOTH_RUBY_LINE);
-    drawFuriganaTextToCanvas(textCtx, lyricsBlock, BOTH_RUBY_LINE);
+    const mainY = lineHeight(BOTH_SMALL_LINE);
+    drawFuriganaTextToCanvas(textCtx, lyricsBlock, BOTH_SMALL_LINE);
     drawMainTextToCanvas(textCtx, lyricsBlock, BOTH_MAIN_LINE, mainY);
     drawRomajiTextToCanvas(
       textCtx,
       lyricsBlock,
-      BOTH_ROMAJI_LINE,
+      BOTH_SMALL_LINE,
       mainY + lineHeight(BOTH_MAIN_LINE),
     );
   } else {

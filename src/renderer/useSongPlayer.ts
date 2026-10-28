@@ -10,7 +10,6 @@ import {
 
 import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
-import useGuideMelodyLevel from "../common/hooks/useGuideMelodyLevel";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import type KarafriendsAudio from "./webAudio";
@@ -57,7 +56,7 @@ export default function useSongPlayer({
   const [overlay, setOverlay] = useState<Overlay>(null);
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
-  const { guideMelodyLevel } = useGuideMelodyLevel();
+  const guideMelodyLevel = useLiveState((s) => s?.guideMelodyLevel ?? 0);
   const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
   // Set while waiting for the next poll; null while one is in flight or a
   // song plays.
