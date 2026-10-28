@@ -11,18 +11,14 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   variant?: ButtonVariant;
   // As wide as its container.
   full?: boolean;
-  // An icon before the text; it's decoration, the text names the button.
-  icon?: React.ReactNode;
 }
 
 // A text button. A real <button>, type="button" unless it submits a form.
 export const Button = ({
   variant = "primary",
   full,
-  icon,
   className,
   type = "button",
-  children,
   ...rest
 }: ButtonProps) => (
   <button
@@ -34,10 +30,7 @@ export const Button = ({
       className,
     )}
     {...rest}
-  >
-    {icon && <span aria-hidden="true">{icon}</span>}
-    {children}
-  </button>
+  />
 );
 
 export interface IconButtonProps extends Omit<

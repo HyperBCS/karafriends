@@ -254,10 +254,8 @@ const DevUiPage = () => {
             {t("queueButton.downloadingPercent", { percent: "42.6" })}
           </Button>
         </Demo>
-        <Demo state="full width, with icon">
-          <Button full icon={<MdSearch />}>
-            {t("search.label")}
-          </Button>
+        <Demo state="full width">
+          <Button full>{t("search.label")}</Button>
         </Demo>
       </Section>
 
