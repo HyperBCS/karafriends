@@ -279,7 +279,8 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       if (version === null) {
         throw new Error(`the downloaded ${plan.id} won't start`);
       }
-      await finalize(src, plan.dest);
+      await fsp.mkdir(path.dirname(plan.dest), { recursive: true });
+      await replaceFile(src, plan.dest, deps.platform);
     } catch (err) {
       // A failed refresh must not destroy a working cached copy.
       if (exists && !force) {
@@ -337,6 +338,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       (plan) => !(plan.id in overrides),
     );
     const versions = readVersions();
+    await Promise.all(plans.map((plan) => removeLeftovers(plan.dest)));
 
     const results = await Promise.allSettled(
       plans.map((plan) => ensureAsset(plan, versions, force)),
@@ -438,16 +440,107 @@ function mtimeMs(file: string): number {
   }
 }
 
+// What replaceFile does to files: fs's, or a test's fake.
+export interface ReplaceOps {
+  copyFile(src: string, dest: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  // Removes a file; no error if it's missing.
+  remove(file: string): Promise<void>;
+  exists(file: string): boolean;
+  sleep(ms: number): Promise<void>;
+}
+
+const FS_OPS: ReplaceOps = {
+  copyFile: (src, dest) => fsp.copyFile(src, dest),
+  rename: (from, to) => fsp.rename(from, to),
+  remove: (file) => fsp.rm(file, { force: true }),
+  exists: (file) => fs.existsSync(file),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+// The waits between tries when a tool in use can't be replaced yet: about
+// two minutes in all.
+export const REPLACE_RETRY_MS = [1000, 2000, 4000, 8000, 15000, 30000, 60000];
+
+// Windows' errors for a file that's open or running.
+const IN_USE = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+// A copy set aside by replaceFile: "<dest>.<time>.old".
+const ASIDE = /\.\d+\.old$/;
+
 // Move a finished binary into its final cached location atomically: write to
 // a sibling temp file (same directory, so the rename stays on one
 // filesystem) and rename into place last. An interrupted refresh therefore
 // never leaves a file that looks complete, and never corrupts the copy
 // already in use.
-async function finalize(src: string, dest: string): Promise<void> {
-  await fsp.mkdir(path.dirname(dest), { recursive: true });
+//
+// On Windows a running .exe (ffmpeg.exe in a DAM download, yt-dlp.exe in a
+// YouTube one) can't be replaced or deleted, but it can be renamed: the old
+// copy is set aside as <dest>.<time>.old, which the running tool keeps
+// using, and removed when it can be (or at a later check). A file that is
+// still locked (a virus scanner, say) is tried again after each of
+// retryMs; then the .part file is removed and the error thrown.
+export async function replaceFile(
+  src: string,
+  dest: string,
+  platform: NodeJS.Platform,
+  ops: ReplaceOps = FS_OPS,
+  retryMs: readonly number[] = REPLACE_RETRY_MS,
+  now: () => number = Date.now,
+): Promise<void> {
   const partial = `${dest}.part`;
-  await fsp.copyFile(src, partial);
-  await fsp.rename(partial, dest);
+  await ops.copyFile(src, partial);
+  for (let attempt = 0; ; attempt++) {
+    let aside: string | null = null;
+    try {
+      if (platform === "win32" && ops.exists(dest)) {
+        aside = `${dest}.${now()}.old`;
+        await ops.rename(dest, aside);
+      }
+      try {
+        await ops.rename(partial, dest);
+      } catch (err) {
+        if (aside) await ops.rename(aside, dest).catch(() => {});
+        throw err;
+      }
+      if (aside) await ops.remove(aside).catch(() => {});
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (attempt >= retryMs.length || !code || !IN_USE.has(code)) {
+        await ops.remove(partial).catch(() => {});
+        throw err;
+      }
+      console.warn(
+        `${dest} is in use (${code}); trying again in ${retryMs[attempt]} ms`,
+      );
+      await ops.sleep(retryMs[attempt]);
+    }
+  }
+}
+
+// Removes the copies replaceFile set aside, and .part files an interrupted
+// replace left, next to dest. One still running stays, for next time.
+async function removeLeftovers(dest: string): Promise<void> {
+  const dir = path.dirname(dest);
+  const base = path.basename(dest);
+  let names: string[];
+  try {
+    names = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    names
+      .filter(
+        (name) =>
+          name.startsWith(`${base}.`) &&
+          (name === `${base}.part` || ASIDE.test(name)),
+      )
+      .map((name) =>
+        fsp.rm(path.join(dir, name), { force: true }).catch(() => {}),
+      ),
+  );
 }
 
 const execFileAsync = promisify(execFile);

@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
   createToolsManager,
+  replaceFile,
   type AssetResponse,
+  type ReplaceOps,
   type ToolsDeps,
 } from "./externalResources";
 
@@ -370,5 +372,105 @@ describe("createToolsManager", () => {
       updatedAt: null,
       overridden: true,
     });
+  });
+});
+
+// Windows' rules for a running .exe, in memory: it can be renamed, but not
+// replaced or deleted, until it exits. `locked` files can't even be renamed.
+function fakeWindows(files: Record<string, string>) {
+  const running = new Set<string>();
+  const locked = new Set<string>();
+  const sleeps: number[] = [];
+  const fail = (code: string) =>
+    Object.assign(new Error(`${code}: operation not permitted`), { code });
+  const ops: ReplaceOps = {
+    copyFile: async (src, dest) => {
+      files[dest] = files[src];
+    },
+    rename: async (from, to) => {
+      if (locked.has(from) || running.has(to)) throw fail("EPERM");
+      if (!(from in files)) throw fail("ENOENT");
+      files[to] = files[from];
+      delete files[from];
+      if (running.delete(from)) running.add(to);
+    },
+    remove: async (file) => {
+      if (running.has(file)) throw fail("EPERM");
+      delete files[file];
+    },
+    exists: (file) => file in files,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      // The tool finishes while we wait.
+      locked.clear();
+    },
+  };
+  return { files, running, locked, sleeps, ops };
+}
+
+describe("replaceFile", () => {
+  const dest = "C:\\tools\\ffmpeg.exe";
+  let time = 1;
+  const now = () => time++;
+
+  test("Windows: a running tool is set aside and replaced at once", async () => {
+    const win = fakeWindows({ new: "9.0.2", [dest]: "7.1" });
+    win.running.add(dest);
+    await replaceFile("new", dest, "win32", win.ops, [10], now);
+    assert.equal(win.files[dest], "9.0.2");
+    assert.deepEqual(win.sleeps, []);
+    // The old copy is still running, so it stays for a later check.
+    const left = Object.keys(win.files).filter((f) => f !== "new");
+    assert.equal(left.length, 2);
+    assert.match(
+      left.find((f) => f !== dest)!,
+      /ffmpeg\.exe\.\d+\.old$/,
+    );
+  });
+
+  test("Windows: an idle old copy is removed", async () => {
+    const win = fakeWindows({ new: "9.0.2", [dest]: "7.1" });
+    await replaceFile("new", dest, "win32", win.ops, [10], now);
+    assert.deepEqual(Object.keys(win.files).sort(), [dest, "new"].sort());
+  });
+
+  test("Windows: a locked tool is tried again after a wait", async () => {
+    const win = fakeWindows({ new: "9.0.2", [dest]: "7.1" });
+    win.locked.add(dest);
+    await replaceFile("new", dest, "win32", win.ops, [10, 20], now);
+    assert.equal(win.files[dest], "9.0.2");
+    assert.deepEqual(win.sleeps, [10]);
+  });
+
+  test("still locked after every wait: the old copy stays, and no .part", async () => {
+    const win = fakeWindows({ new: "9.0.2", [dest]: "7.1" });
+    win.locked.add(dest);
+    win.ops.sleep = async (ms) => {
+      win.sleeps.push(ms);
+    };
+    await assert.rejects(
+      replaceFile("new", dest, "win32", win.ops, [10, 20], now),
+      /EPERM/,
+    );
+    assert.deepEqual(win.sleeps, [10, 20]);
+    assert.equal(win.files[dest], "7.1");
+    assert.equal(`${dest}.part` in win.files, false);
+  });
+
+  test("elsewhere: renamed over the old copy", async () => {
+    const files: Record<string, string> = { new: "9.0.2", "/t/ffmpeg": "7.1" };
+    const { ops } = fakeWindows(files);
+    await replaceFile("new", "/t/ffmpeg", "linux", ops, [], now);
+    assert.deepEqual(files, { new: "9.0.2", "/t/ffmpeg": "9.0.2" });
+  });
+
+  test("a check removes the copies set aside and .part files", async () => {
+    await setup(fresh).manager.ensure();
+    const { manager } = setup(fresh);
+    const tools = path.dirname(manager.resourcePaths.ffmpeg);
+    fs.writeFileSync(path.join(tools, "ffmpeg.1700000000000.old"), "old");
+    fs.writeFileSync(path.join(tools, "ffmpeg.part"), "part");
+    await manager.update();
+    assert.deepEqual(fs.readdirSync(tools), ["ffmpeg"]);
   });
 });
