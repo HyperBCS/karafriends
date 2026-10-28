@@ -881,21 +881,24 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
     async clearDownloads(_input, caller) {
       requireDisplay(caller);
-      // The current song's files and the downloads running now's. (The DAM
-      // ones running are the downloads' to keep: they aren't in the queue.)
-      const { currentSong, downloadQueue } = store.getState();
+      // The files of the current song and of every queued song (a queued
+      // YouTube song without its file would be skipped at its turn), and the
+      // downloads running now's. (The DAM ones running are the downloads'
+      // to keep: they aren't in the queue.)
+      const { currentSong, songQueue, downloadQueue } = store.getState();
       const inUse: SongFiles[] = downloadQueue
         .filter((item) => item.status === "downloading")
         .map(({ kind, songId, suffix }) => ({ kind, songId, suffix }));
-      if (currentSong) {
+      for (const song of [currentSong, ...songQueue]) {
+        if (!song) continue;
         inUse.push({
-          kind: currentSong.kind,
-          songId: currentSong.songId,
+          kind: song.kind,
+          songId: song.songId,
           suffix:
-            currentSong.kind === "dam"
-              ? currentSong.streamingUrlIdx.toString()
-              : currentSong.kind === "joysound"
-                ? currentSong.youtubeVideoId
+            song.kind === "dam"
+              ? song.streamingUrlIdx.toString()
+              : song.kind === "joysound"
+                ? song.youtubeVideoId
                 : null,
         });
       }

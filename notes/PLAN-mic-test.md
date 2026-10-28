@@ -4,11 +4,11 @@ The user tried the mic round ([`PLAN-mic.md`](PLAN-mic.md)) on the other machine
 
 ## Status (keep this table current)
 
-| Step                                                          | State                            | Branch / commit                    | Notes                                                              |
-| ------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
-| T1: native: real mic names, ASIO on by default, ASIO line     | done in worktree, awaiting merge | `worktree-agent-ab1b28c01bb6d1af1` | CI's `--features asio` dropped (now the default)                   |
-| T2: downloads: Clear downloads, a short DAM file re-downloads | done in worktree, awaiting merge | `clear-downloads`                  | Probes with `ffmpeg -i` only: the downloaded tools have no ffprobe |
-| Final: check by the user on the other machine                 | not started                      |                                    |                                                                    |
+| Step          | State              | Branch / commit | Notes                                                                                                                                                                                                        |
+| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| T1: native    | merged             | `64b9e425`      | Checks green with ASIO in (78 e2e; clippy and cargo tests with and without the feature). The ASIO line here reads "No ASIO drivers are installed". CI no longer passes `--features asio`; it is the default. |
+| T2: downloads | merged             | see git log     | Clear downloads keeps the files of the current song, every queued song and running downloads (the queued ones added at merge). ffprobe is not shipped, so the length check uses `ffmpeg -i`.                 |
+| Final: check  | ready for the user |                 | See the Final section.                                                                                                                                                                                       |
 
 ## The list and the decisions from Q&A
 

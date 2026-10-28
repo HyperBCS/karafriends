@@ -166,7 +166,7 @@ function DownloadsSection() {
     try {
       const { bytes, kept } = await call("clearDownloads", {});
       setMessage({
-        text: `Freed ${megabytes(bytes)}${kept > 0 ? `. ${kept} kept, in use` : ""}.`,
+        text: `Freed ${megabytes(bytes)}${kept > 0 ? `. ${kept} kept: playing, queued or downloading` : ""}.`,
       });
       await refresh();
     } catch (err) {
