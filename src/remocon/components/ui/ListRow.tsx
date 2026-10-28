@@ -30,12 +30,10 @@ interface RowContent {
 
 type Press =
   // A page in the remote.
-  | { to: string; href?: never; onPress?: never }
-  // Somewhere else.
-  | { href: string; to?: never; onPress?: never }
-  | { onPress: () => void; to?: never; href?: never }
+  | { to: string; onPress?: never }
+  | { onPress: () => void; to?: never }
   // Not pressable.
-  | { to?: never; href?: never; onPress?: never };
+  | { to?: never; onPress?: never };
 
 export type ListRowProps = RowContent &
   Press & {
@@ -68,9 +66,9 @@ const Content = ({ title, subtitle, source, leading }: RowContent) => (
 );
 
 // One row of a List: a song, an artist, a queue entry. The row is a <li>;
-// its main part is a router <Link> (to), an <a> (href), a <button>
-// (onPress) or plain text, and the trailing slot sits beside it, so buttons
-// there aren't nested in another control.
+// its main part is a router <Link> (to), a <button> (onPress) or plain
+// text, and the trailing slot sits beside it, so buttons there aren't
+// nested in another control.
 export const ListRow = ({
   title,
   subtitle,
@@ -80,7 +78,6 @@ export const ListRow = ({
   current,
   expanded,
   to,
-  href,
   onPress,
   className,
   "aria-label": ariaLabel,
@@ -107,17 +104,6 @@ export const ListRow = ({
       >
         {content}
       </Link>
-    );
-  } else if (href !== undefined) {
-    main = (
-      <a
-        href={href}
-        className={styles.main}
-        aria-label={ariaLabel}
-        {...currentProps}
-      >
-        {content}
-      </a>
     );
   } else if (onPress) {
     main = (
