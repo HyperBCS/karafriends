@@ -44,7 +44,9 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
       {dam ? (
         <QueueButtons kind="dam" song={dam} />
       ) : (
+        // Keyed, so another song's page starts without this one's video.
         <JoysoundQueue
+          key={song.id}
           song={song as JoysoundSongDetail}
           initialVideoId={params.youtubeVideoId ?? ""}
         />

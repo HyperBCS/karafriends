@@ -33,7 +33,8 @@ const YouTubePage = () => {
   }
   return (
     <div className={styles.page}>
-      <YouTubeInfo videoId={videoId!} />
+      {/* Keyed, so another video starts without this one's lyrics. */}
+      <YouTubeInfo key={videoId} videoId={videoId!} />
     </div>
   );
 };
