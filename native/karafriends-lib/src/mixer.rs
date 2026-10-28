@@ -370,11 +370,7 @@ impl Mixer {
         let default_config = device.default_output_config()?;
         let mut config = default_config.config();
         if let Some(rate) = rate.or_else(|| lock(&self.sources).first().map(|s| s.rate)) {
-            if device.supported_output_configs()?.any(|range| {
-                range.channels() == config.channels
-                    && range.sample_format() == default_config.sample_format()
-                    && (range.min_sample_rate()..=range.max_sample_rate()).contains(&rate)
-            }) {
+            if crate::takes_rate(&default_config, device.supported_output_configs()?, rate) {
                 config.sample_rate = rate;
             }
         }

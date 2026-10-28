@@ -67,10 +67,8 @@ mod mixer;
 mod pitch_detector;
 mod reverb_module;
 
-#[cfg(not(target_os = "linux"))]
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::iter::{FromIterator, Iterator};
+use std::iter::Iterator;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, TryLockError, Weak};
 use std::time::{Duration, Instant};
@@ -694,15 +692,16 @@ impl Drop for InputDevice {
 
 impl InputDevice {
     // Each input's id (its key, as saved), its label (what Settings shows)
-    // and the config it would open with (its channels are what Settings
-    // offers). An input that won't say is left out, not the whole list.
-    pub fn collect_devices<Collector: FromIterator<(String, String, cpal::StreamConfig)>>(
-    ) -> Result<Collector> {
+    // and the channels Settings offers. An input that won't say is left
+    // out, not the whole list.
+    pub fn collect_devices() -> Result<Vec<(String, String, u16)>> {
         Ok(_input_devices()?
             .filter_map(|(input_device, device_type)| {
                 let name = _device_name(&input_device, &device_type);
-                match listed_config(&input_device) {
-                    Ok(config) => Some((name, _device_label(&input_device, &device_type), config)),
+                match listed_channels(&input_device) {
+                    Ok(channels) => {
+                        Some((name, _device_label(&input_device, &device_type), channels))
+                    }
                     Err(e) => {
                         eprintln!("The input {name} is left out: {e}");
                         None
@@ -1202,31 +1201,19 @@ fn resample_chunk(
     Ok(produced)
 }
 
-// The config an input is listed with: on Linux the one it opens with, in
-// its own channels (ALSA's plugins take up to 64, which Settings would offer
-// one by one); elsewhere its best one.
+// The channels an input is listed with (what Settings offers): on Linux
+// those it opens with, its own (ALSA's plugins take up to 64, which Settings
+// would offer one by one); elsewhere its best config's.
 #[cfg(target_os = "linux")]
-fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
-    let default = input_device.default_input_config()?;
-    Ok(linux::stream_config(
-        &default,
-        std::iter::empty(),
-        None,
-        linux_buffer(),
-    ))
+fn listed_channels(input_device: &cpal::Device) -> Result<u16> {
+    Ok(input_device.default_input_config()?.channels())
 }
 
 #[cfg(not(target_os = "linux"))]
-fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
-    let mut supported_input_configs: Vec<_> = input_device.supported_input_configs()?.collect();
-    supported_input_configs.sort_by(|a, b| compare_configs(a, b, None));
-    let best_supported_input_config = supported_input_configs
-        .last()
+fn listed_channels(input_device: &cpal::Device) -> Result<u16> {
+    let best = best_config(input_device.supported_input_configs()?, None)
         .ok_or("No supported input configs")?;
-    Ok(supported_config_to_config(
-        best_supported_input_config,
-        None,
-    ))
+    Ok(best.channels())
 }
 
 // What a mic takes with the chosen channel, asked before the mic output
@@ -1278,7 +1265,7 @@ fn input_stream_config(
     let config = linux::stream_config(
         &configs.default,
         configs.ranges.into_iter(),
-        Some(output_rate),
+        output_rate,
         linux_buffer(),
     );
     (config, configs.default.sample_format())
@@ -1290,72 +1277,60 @@ fn input_stream_config(
     configs: InputConfigs,
     output_rate: cpal::SampleRate,
 ) -> (cpal::StreamConfig, cpal::SampleFormat) {
-    let mut supported_input_configs = configs.0;
-    supported_input_configs.sort_by(|a, b| compare_configs(a, b, Some(output_rate)));
-    let best_supported_input_config = supported_input_configs
-        .last()
+    let best = best_config(configs.0.into_iter(), Some(output_rate))
         .expect("InputConfigs::probe keeps one at least");
     (
-        supported_config_to_config(best_supported_input_config, Some(output_rate)),
-        best_supported_input_config.sample_format(),
+        supported_config_to_config(&best, Some(output_rate)),
+        best.sample_format(),
     )
 }
 
-#[cfg(not(target_os = "linux"))]
-fn compare_configs(
-    a: &cpal::SupportedStreamConfigRange,
-    b: &cpal::SupportedStreamConfigRange,
-    desired_sample_rate: Option<cpal::SampleRate>,
-) -> Ordering {
-    // Our priorities in order are the desired sample rate (being in range is
-    // good enough), buffer size (lower is better), sample rate (higher is
-    // better), and channel count (higher is better).
-    if let Some(sample_rate) = desired_sample_rate {
-        let a_in_range = sample_rate >= a.min_sample_rate() && sample_rate <= a.max_sample_rate();
-        let b_in_range = sample_rate >= b.min_sample_rate() && sample_rate <= b.max_sample_rate();
-        if !a_in_range && b_in_range {
-            return Ordering::Less;
-        }
-        if a_in_range && !b_in_range {
-            return Ordering::Greater;
-        }
-    }
-    if a.buffer_size() == &cpal::SupportedBufferSize::Unknown
-        && b.buffer_size() != &cpal::SupportedBufferSize::Unknown
-    {
-        return Ordering::Less;
-    }
-    if a.buffer_size() != &cpal::SupportedBufferSize::Unknown
-        && b.buffer_size() == &cpal::SupportedBufferSize::Unknown
-    {
-        return Ordering::Greater;
-    }
-    if let cpal::SupportedBufferSize::Range { min, max: _ } = a.buffer_size() {
-        let a_min = min;
-        if let cpal::SupportedBufferSize::Range { min, max: _ } = b.buffer_size() {
-            let b_min = min;
-            let buffer_size_cmp = a_min.cmp(b_min);
-            if buffer_size_cmp != Ordering::Equal {
-                return buffer_size_cmp.reverse();
-            }
-        }
-    }
-
-    let sample_rate_cmp = a.max_sample_rate().cmp(&b.max_sample_rate());
-    if sample_rate_cmp != Ordering::Equal {
-        return sample_rate_cmp;
-    }
-
-    let channels_cmp = a.channels().cmp(&b.channels());
-    if channels_cmp != Ordering::Equal {
-        return channels_cmp;
-    }
-
-    a.cmp_default_heuristics(b)
+// Whether one of a device's `ranges` takes its own channels and sample
+// format (`default`'s) at `rate`.
+fn takes_rate(
+    default: &cpal::SupportedStreamConfig,
+    mut ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    rate: cpal::SampleRate,
+) -> bool {
+    ranges.any(|range| {
+        range.channels() == default.channels()
+            && range.sample_format() == default.sample_format()
+            && range.contains_rate(rate)
+    })
 }
 
+// The best of a mic's configs on Windows and macOS: one with `rate` (the
+// output's) first, then the highest rate, then the most channels, then
+// cpal's order (F32 first, then 48 kHz); the last of equals. The buffer
+// sizes can't choose: CoreAudio and ASIO give every config the same, and
+// Windows sets its own.
+#[cfg(any(test, not(target_os = "linux")))]
+fn best_config(
+    configs: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    rate: Option<cpal::SampleRate>,
+) -> Option<cpal::SupportedStreamConfigRange> {
+    let key = |config: &cpal::SupportedStreamConfigRange| {
+        (
+            rate.is_some_and(|rate| config.contains_rate(rate)),
+            config.max_sample_rate(),
+            config.channels(),
+        )
+    };
+    configs.max_by(|a, b| {
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| a.cmp_default_heuristics(b))
+    })
+}
+
+// The buffer size a macOS mic asks for, within what the device takes. Its
+// smallest (CoreAudio's can be 15 frames) would call back thousands of
+// times a second, for little less delay: the mic output keeps its own.
+#[cfg(all(not(windows), any(test, not(target_os = "linux"))))]
+const MIC_BUFFER: u32 = 128;
+
 // The desired sample rate when the range has it, else its highest.
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(test, not(target_os = "linux")))]
 fn supported_config_to_config(
     config_range: &cpal::SupportedStreamConfigRange,
     desired_sample_rate: Option<cpal::SampleRate>,
@@ -1363,14 +1338,16 @@ fn supported_config_to_config(
     cpal::StreamConfig {
         channels: config_range.channels(),
         sample_rate: desired_sample_rate
-            .filter(|rate| {
-                (config_range.min_sample_rate()..=config_range.max_sample_rate()).contains(rate)
-            })
+            .filter(|rate| config_range.contains_rate(*rate))
             .unwrap_or(config_range.max_sample_rate()),
-        buffer_size: match config_range.buffer_size() {
-            // WASAPI lies about buffer size ranges and doesn't repect fixed size requests
+        buffer_size: match *config_range.buffer_size() {
+            // WASAPI lies about buffer size ranges and doesn't repect fixed
+            // size requests (and ASIO mics take the output's, see
+            // open_shared).
             #[cfg(not(windows))]
-            cpal::SupportedBufferSize::Range { min, max: _ } => cpal::BufferSize::Fixed(*min),
+            cpal::SupportedBufferSize::Range { min, max } if min <= max && max > 0 => {
+                cpal::BufferSize::Fixed(MIC_BUFFER.clamp(min, max))
+            }
             _ => cpal::BufferSize::Default,
         },
     }
@@ -1881,6 +1858,79 @@ mod tests {
         assert!(!stall.stalled(0, at(2000)));
     }
 
+    fn range(
+        channels: u16,
+        rates: std::ops::RangeInclusive<u32>,
+        format: cpal::SampleFormat,
+    ) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            *rates.start(),
+            *rates.end(),
+            cpal::SupportedBufferSize::Range { min: 14, max: 4096 },
+            format,
+        )
+    }
+
+    // A Windows or macOS mic opens at the output's rate when a config has
+    // it, else at the highest rate; then with the most channels, then in
+    // floats rather than integers; the last of equals.
+    #[test]
+    fn test_the_best_config() {
+        use cpal::SampleFormat::{F32, I16};
+        let best = |configs: &[cpal::SupportedStreamConfigRange], rate| {
+            best_config(configs.iter().cloned(), rate).unwrap()
+        };
+        let configs = [range(2, 44100..=44100, F32), range(2, 96000..=96000, F32)];
+        assert_eq!(best(&configs, Some(44100)), configs[0]);
+        assert_eq!(best(&configs, Some(48000)), configs[1]);
+        assert_eq!(best(&configs, None), configs[1]);
+        // In range is good enough.
+        let configs = [range(2, 8000..=192000, F32), range(2, 96000..=96000, F32)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        let configs = [range(4, 48000..=48000, F32), range(2, 48000..=48000, F32)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        let configs = [range(2, 48000..=48000, F32), range(2, 48000..=48000, I16)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        assert_eq!(best_config(std::iter::empty(), None), None);
+    }
+
+    // The config it opens with: the output's rate if the range has it, else
+    // its highest; on macOS 128 frames, within what the device takes, not
+    // its smallest. (Windows sets its own.)
+    #[test]
+    fn test_a_config_range_to_open() {
+        let config = supported_config_to_config(
+            &range(2, 8000..=96000, cpal::SampleFormat::F32),
+            Some(44100),
+        );
+        assert_eq!((config.channels, config.sample_rate), (2, 44100));
+        let config = supported_config_to_config(
+            &range(1, 44100..=48000, cpal::SampleFormat::F32),
+            Some(96000),
+        );
+        assert_eq!(config.sample_rate, 48000);
+        #[cfg(not(windows))]
+        {
+            assert_eq!(config.buffer_size, cpal::BufferSize::Fixed(MIC_BUFFER));
+            let buffers = |min, max| {
+                let range = cpal::SupportedStreamConfigRange::new(
+                    1,
+                    48000,
+                    48000,
+                    cpal::SupportedBufferSize::Range { min, max },
+                    cpal::SampleFormat::F32,
+                );
+                supported_config_to_config(&range, None).buffer_size
+            };
+            assert_eq!(buffers(256, 4096), cpal::BufferSize::Fixed(256));
+            assert_eq!(buffers(14, 64), cpal::BufferSize::Fixed(64));
+            assert_eq!(buffers(0, 0), cpal::BufferSize::Default);
+        }
+        #[cfg(windows)]
+        assert_eq!(config.buffer_size, cpal::BufferSize::Default);
+    }
+
     // Counts each thread's allocations, for the test that the mic's callback
     // makes none.
     struct CountingAllocator;
@@ -2144,7 +2194,7 @@ mod tests {
     #[test]
     fn test_input_device_ids_and_labels() {
         let _devices = lock(&DEVICES);
-        if let Ok(devices) = InputDevice::collect_devices::<Vec<_>>() {
+        if let Ok(devices) = InputDevice::collect_devices() {
             for (id, label, _) in &devices {
                 let host = if id.ends_with(" (ASIO)") {
                     " (ASIO)"

@@ -24,10 +24,10 @@ fn input_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
         Err(e) => return cx.throw_error(e.to_string()),
     };
     let js_array = JsArray::new(&mut cx, input_devices.len());
-    for (i, (id, label, config)) in input_devices.iter().enumerate() {
+    for (i, (id, label, channels)) in input_devices.iter().enumerate() {
         let js_id = cx.string(id);
         let js_label = cx.string(label);
-        let js_channel_count = cx.number(config.channels);
+        let js_channel_count = cx.number(*channels);
         let inner_array = JsArray::new(&mut cx, 3);
         inner_array.set(&mut cx, 0, js_id)?;
         inner_array.set(&mut cx, 1, js_label)?;
