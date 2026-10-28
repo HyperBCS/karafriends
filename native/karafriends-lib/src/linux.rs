@@ -22,8 +22,11 @@ use crate::Result;
 // The buffer size, in frames, the mics and their output ask for until
 // Settings picks one: 128 is 2.7 ms at 48 kHz. With PipeWire's real-time
 // threads that runs without a glitch on an ordinary laptop; the sound
-// waits a few buffers between the mic and the speaker.
-pub(crate) const DEFAULT_BUFFER: u32 = 128;
+// waits a few buffers between the mic and the speaker. cpal runs ALSA's
+// threads at real-time priority too, but not PulseAudio's, which share the
+// display's process at normal priority: those get 512 (10.7 ms).
+const DEFAULT_BUFFER: u32 = 128;
+const PULSEAUDIO_BUFFER: u32 = 512;
 
 // The sizes Settings offers, where the sound system takes them.
 const BUFFERS: [u32; 5] = [64, 128, 256, 512, 1024];
@@ -81,6 +84,20 @@ pub(crate) fn system_host() -> Result<(Rc<cpal::Host>, Option<String>)> {
         });
         Ok((host, why))
     })
+}
+
+// The buffer size the mics and their output ask for until Settings picks
+// one, on the sound system picked last (every listing and open picks one
+// first).
+pub(crate) fn default_buffer() -> u32 {
+    default_buffer_on(PICKED.with_borrow(|picked| picked.as_ref().map(|p| p.host.id())))
+}
+
+fn default_buffer_on(id: Option<cpal::HostId>) -> u32 {
+    match id {
+        Some(cpal::HostId::PulseAudio) => PULSEAUDIO_BUFFER,
+        _ => DEFAULT_BUFFER,
+    }
 }
 
 // KARAFRIENDS_AUDIO_HOST's when it is set and starts; else PipeWire, when
@@ -148,10 +165,23 @@ pub(crate) fn status(host: &cpal::Host, why: Option<String>) -> String {
     };
     #[cfg(not(feature = "pipewire"))]
     let name = host.id().name().to_string();
-    match why {
+    status_line(&name, host.id() == cpal::HostId::PulseAudio, why)
+}
+
+// "Sound system: PulseAudio (why). Not real-time: ...": cpal never says so
+// of PulseAudio's streams, whose threads it doesn't try to promote.
+fn status_line(name: &str, pulseaudio: bool, why: Option<String>) -> String {
+    let mut line = match why {
         Some(why) => format!("Sound system: {name} ({why})"),
         None => format!("Sound system: {name}"),
+    };
+    if pulseaudio {
+        line.push_str(
+            ". Not real-time: PulseAudio runs the mics at normal priority, \
+             so a bigger Mic buffer helps if they crackle",
+        );
     }
+    line
 }
 
 // The PipeWire library's version: "1.6.2".
@@ -576,6 +606,29 @@ mod tests {
         .iter()
         .map(|(node, class)| (node.to_string(), class.to_string()))
         .collect()
+    }
+
+    #[test]
+    fn test_pulseaudio_gets_a_bigger_buffer_and_says_why() {
+        assert_eq!(default_buffer_on(Some(cpal::HostId::PulseAudio)), 512);
+        assert_eq!(default_buffer_on(Some(cpal::HostId::Alsa)), 128);
+        #[cfg(feature = "pipewire")]
+        assert_eq!(default_buffer_on(Some(cpal::HostId::PipeWire)), 128);
+        assert_eq!(default_buffer_on(None), 128);
+        assert_eq!(
+            status_line("PipeWire 1.6.2", false, None),
+            "Sound system: PipeWire 1.6.2"
+        );
+        assert_eq!(
+            status_line(
+                "PulseAudio",
+                true,
+                Some("PipeWire 0.3.48 is older than 0.3.50".to_string())
+            ),
+            "Sound system: PulseAudio (PipeWire 0.3.48 is older than 0.3.50). \
+             Not real-time: PulseAudio runs the mics at normal priority, \
+             so a bigger Mic buffer helps if they crackle"
+        );
     }
 
     // Lists only; no device opens.
