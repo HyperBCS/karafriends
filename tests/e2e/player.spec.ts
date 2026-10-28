@@ -1,20 +1,25 @@
-// The display starts a song queued while nothing plays at once, not at its
-// next 5-second check. No network: yt-dlp is a fake
-// (tests/fixtures/bin/yt-dlp-downloads) that "downloads" an empty video at
-// once, so the display "plays" nothing.
+// How the display plays the queue: it starts a song queued while nothing
+// plays at once, not at its next 5-second check; it skips a song that can't
+// play, once, and goes on with the next. No network: yt-dlp is a fake that
+// "downloads" at once, a minute of black video
+// (tests/fixtures/bin/yt-dlp-downloads-video) or an empty file the display
+// can't play (yt-dlp-downloads).
 import path from "path";
 
 import { expect, test } from "./fixtures";
 
-const FAKE_YTDLP = path.resolve(
-  __dirname,
-  "..",
-  "fixtures",
-  "bin",
-  process.platform === "win32" ? "yt-dlp-downloads.cmd" : "yt-dlp-downloads",
-);
+const fakeYtdlp = (name: string) =>
+  path.resolve(
+    __dirname,
+    "..",
+    "fixtures",
+    "bin",
+    process.platform === "win32" ? `${name}.cmd` : name,
+  );
 
-test.use({ appEnv: { KARAFRIENDS_YTDLP_PATH: FAKE_YTDLP } });
+test.use({
+  appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-downloads-video") },
+});
 
 // The first event of a fresh /api/events stream: the live state.
 async function liveState(remoconUrl: string) {
@@ -37,6 +42,41 @@ async function liveState(remoconUrl: string) {
   }
 }
 
+// A phone's call to the API.
+async function call(remoconUrl: string, method: string, input: object) {
+  const res = await fetch(new URL(`api/${method}`, remoconUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Karafriends-Device-Id": "e2e-player-device",
+      "X-Karafriends-Nickname": "e2e",
+    },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
+// What's playing, as the phones see it.
+async function nowPlaying(remoconUrl: string) {
+  const state = await liveState(remoconUrl);
+  return [state.currentSong?.name ?? null, state.playbackState];
+}
+
+// The songs the display took off the queue, newest first.
+async function history(remoconUrl: string): Promise<string[]> {
+  const { items } = await call(remoconUrl, "history", {});
+  return items.map((item: { name: string }) => item.name);
+}
+
+const queueNico = (remoconUrl: string, name: string) =>
+  call(remoconUrl, "queueSong", {
+    kind: "nico",
+    songId: "sm9",
+    name,
+    artistName: "E2E artist",
+    playtime: 60,
+  });
+
 test("a song queued while the display waits starts within 2 seconds", async ({
   karafriends,
   display,
@@ -47,22 +87,9 @@ test("a song queued while the display waits starts within 2 seconds", async ({
   ).toBeVisible();
   await display.waitForTimeout(1_000);
 
-  const res = await fetch(new URL("api/queueSong", karafriends.remoconUrl), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Karafriends-Device-Id": "e2e-player-device",
-      "X-Karafriends-Nickname": "e2e",
-    },
-    body: JSON.stringify({
-      kind: "nico",
-      songId: "sm9",
-      name: "E2E player song",
-      artistName: "E2E artist",
-      playtime: 60,
-    }),
-  });
-  expect(await res.json()).toMatchObject({ ok: true });
+  expect(
+    await queueNico(karafriends.remoconUrl, "E2E player song"),
+  ).toMatchObject({ ok: true });
   const queuedAt = Date.now();
 
   // The download takes a moment, then the display takes the song.
@@ -81,4 +108,123 @@ test("a song queued while the display waits starts within 2 seconds", async ({
   await expect(
     display.getByRole("img", { name: "QR code for the remote" }),
   ).toHaveCount(0);
+});
+
+test.describe("a download the display can't play", () => {
+  test.use({
+    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeYtdlp("yt-dlp-downloads") },
+  });
+
+  test("is skipped, and the display waits for the next song", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    await expect(
+      display.getByRole("img", { name: "QR code for the remote" }),
+    ).toBeVisible();
+
+    expect(await queueNico(remoconUrl, "E2E empty song")).toMatchObject({
+      ok: true,
+    });
+
+    const corner = display
+      .getByRole("status")
+      .filter({ hasText: "Couldn't play" });
+    await expect(corner).toContainText("E2E empty song");
+    // The phones' controls come back: nothing plays, nothing is skipping.
+    await expect.poll(() => nowPlaying(remoconUrl)).toEqual([null, "WAITING"]);
+    expect(await history(remoconUrl)).toEqual(["E2E empty song"]);
+    await expect(
+      display.getByRole("img", { name: "QR code for the remote" }),
+    ).toBeVisible();
+  });
+});
+
+test.describe("a queued song whose files are missing", () => {
+  const user = { deviceId: "e2e-player-device", nickname: "e2e" };
+  const at = (n: number) => String(Date.UTC(2026, 0, 1) + n);
+  // A Joysound song with neither its video nor its lyrics: both fail to
+  // load, and the display must skip it once, not once for each. The
+  // Niconico songs after it play (the fixture gives them a black video).
+  const nico = (n: number) => ({
+    kind: "nico",
+    songId: `sm8000${n}`,
+    name: `E2E next song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: at(n),
+    user,
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "joysound",
+          songId: "e2e-missing",
+          name: "E2E missing song",
+          artistName: "E2E artist",
+          playtime: 60,
+          timestamp: at(0),
+          user,
+          isRomaji: false,
+          youtubeVideoId: null,
+        },
+        nico(1),
+        nico(2),
+      ],
+      songHistory: [],
+      // Saved as paused, the display takes the first song at its first
+      // check, 5 s after it loads, not at once: time to watch the corner.
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("is skipped once, and each song after it starts once", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const corner = display
+      .getByRole("status")
+      .filter({ hasText: "Couldn't play" });
+    await expect(corner).toContainText("E2E missing song", {
+      timeout: 15_000,
+    });
+    await expect
+      .poll(() => nowPlaying(remoconUrl))
+      .toEqual(["E2E next song 1", "PLAYING"]);
+    await expect(display.getByText("Couldn't play")).toHaveCount(1);
+
+    // Past a 5-second check, song 1 still plays and song 2 waits: nothing
+    // else asked for a song.
+    await display.waitForTimeout(6_000);
+    expect(await nowPlaying(remoconUrl)).toEqual([
+      "E2E next song 1",
+      "PLAYING",
+    ]);
+    expect((await liveState(remoconUrl)).queue).toHaveLength(1);
+    expect(await history(remoconUrl)).toEqual([
+      "E2E next song 1",
+      "E2E missing song",
+    ]);
+
+    // A phone skips song 1, then song 2; then the display waits.
+    expect(
+      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
+    ).toBe(true);
+    await expect
+      .poll(() => nowPlaying(remoconUrl))
+      .toEqual(["E2E next song 2", "PLAYING"]);
+    expect(
+      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
+    ).toBe(true);
+    await expect.poll(() => nowPlaying(remoconUrl)).toEqual([null, "WAITING"]);
+    expect(await history(remoconUrl)).toEqual([
+      "E2E next song 2",
+      "E2E next song 1",
+      "E2E missing song",
+    ]);
+  });
 });

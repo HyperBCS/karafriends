@@ -1,0 +1,14 @@
+#!/bin/sh
+# Like yt-dlp-downloads, but the file it "downloads" is a minute of black
+# video (tests/fixtures/black.mp4), so the display can play it.
+# tests/e2e/player.spec.ts points KARAFRIENDS_YTDLP_PATH here.
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    echo "[download] Destination: $2"
+    cp "$(dirname "$0")/../black.mp4" "$2"
+  fi
+  shift
+done
+echo "[download] 100.0% of    1.00MiB at    1.00MiB/s ETA 00:00"
+echo "[download] 100% of    1.00MiB in 00:00:00 at    1.00MiB/s"
+exit 0

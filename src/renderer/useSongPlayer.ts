@@ -63,6 +63,8 @@ export default function useSongPlayer({
   // True while a popSong call is in flight: one poll at a time, so a second
   // error or end can't take a second song off the queue.
   const pollingRef = useRef(false);
+  // The song playing, until the display moves on from it.
+  const songRef = useRef<PoppedSong | null>(null);
   // The DAM stream, while one plays.
   const hlsRef = useRef<Hls | null>(null);
 
@@ -74,6 +76,7 @@ export default function useSongPlayer({
   // answer, it asks again in a while. Does nothing while a poll is in
   // flight.
   const pollQueue = useEffectEvent(() => {
+    songRef.current = null;
     if (pollingRef.current) return;
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     pollTimeoutRef.current = null;
@@ -91,7 +94,9 @@ export default function useSongPlayer({
     );
   });
 
+  // Moves on from song, once, if it is still the one playing.
   const skipBroken = (song: PoppedSong) => {
+    if (songRef.current !== song) return;
     hlsRef.current?.destroy();
     hlsRef.current = null;
     announce({
@@ -142,6 +147,8 @@ export default function useSongPlayer({
     } catch (error) {
       console.error(error);
     }
+    // Skipped while asking.
+    if (songRef.current !== song) return;
     if (downloaded) {
       console.log(`Using local file for ${song.songId}`);
       video.src = fileUrl;
@@ -162,9 +169,18 @@ export default function useSongPlayer({
     setOverlay({ kind: "joysound", telop: null, isRomaji: song.isRomaji });
     const background = song.youtubeVideoId ?? "default";
     video.src = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
-    const telop = await fetch(
-      `karafriends://local/joysound-${song.songId}.joy_02`,
-    ).then((resp) => resp.arrayBuffer());
+    let telop: ArrayBuffer;
+    try {
+      telop = await fetch(
+        `karafriends://local/joysound-${song.songId}.joy_02`,
+      ).then((resp) => resp.arrayBuffer());
+    } catch (error) {
+      console.error(`Couldn't load the lyrics for ${song.songId}:`, error);
+      skipBroken(song);
+      return;
+    }
+    // Skipped, or the video failed, while loading.
+    if (songRef.current !== song) return;
     setOverlay({ kind: "joysound", telop, isRomaji: song.isRomaji });
     // At the gain the previous song left, as always.
     video.play();
@@ -211,6 +227,7 @@ export default function useSongPlayer({
     setPitchShiftSemis(0);
     hlsRef.current?.destroy();
     hlsRef.current = null;
+    songRef.current = song;
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.name,
@@ -243,16 +260,21 @@ export default function useSongPlayer({
   });
 
   // Once: ask for a song now if the display is waiting, and whenever one
-  // ends.
+  // ends or can't play (a missing or broken file).
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.onended = () => pollQueue();
+    video.onerror = () => {
+      console.error("The video failed:", video.error?.message);
+      if (songRef.current) skipBroken(songRef.current);
+    };
     if (playbackState === "WAITING" && pollTimeoutRef.current === null) {
       schedulePoll();
     }
     return () => {
       video.onended = null;
+      video.onerror = null;
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
       hlsRef.current?.destroy();
@@ -284,8 +306,14 @@ export default function useSongPlayer({
         setPlaybackState("PLAYING");
         break;
       case "SKIPPING":
-        if (isFinite(video.duration)) video.currentTime = video.duration;
-        video.play();
+        // To the end, which starts the next song; a video that never loaded
+        // has no end, so the next song starts here.
+        if (isFinite(video.duration)) {
+          video.currentTime = video.duration;
+          video.play();
+        } else {
+          pollQueue();
+        }
         break;
     }
   }, [playbackState]);

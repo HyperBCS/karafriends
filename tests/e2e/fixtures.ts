@@ -338,6 +338,7 @@ async function launchKarafriends(
         path.join(queueDir, "queue.json"),
         JSON.stringify(options.seedQueue),
       );
+      seedVideos(queueDir, options.seedQueue);
     }
 
     const env: Record<string, string> = {};
@@ -528,3 +529,23 @@ export const test = base.extend<Options & Fixtures>({
 });
 
 export { expect };
+
+// The seeded queue's Niconico and YouTube songs come "downloaded" as a
+// minute of black video (tests/fixtures/black.mp4), so the display plays
+// them: a song whose file is missing is skipped as one that can't play.
+// DAM and Joysound songs get no files.
+function seedVideos(queueDir: string, seed: object) {
+  type Song = { kind: string; songId: string } | null;
+  const { currentSong, songQueue } = seed as {
+    currentSong?: Song;
+    songQueue?: Song[];
+  };
+  const prefixes: Record<string, string> = { nico: "nico", youtube: "yt" };
+  for (const song of [currentSong, ...(songQueue ?? [])]) {
+    if (!song || !(song.kind in prefixes)) continue;
+    fs.copyFileSync(
+      path.join(REPO_ROOT, "tests", "fixtures", "black.mp4"),
+      path.join(queueDir, `${prefixes[song.kind]}-${song.songId}.mp4`),
+    );
+  }
+}
