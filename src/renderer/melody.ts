@@ -21,8 +21,9 @@ export interface Melody {
 // count the notes, the lyrics intervals, DAM's time windows and the kiai
 // (POG) intervals. The notes start at word 6, four words each (start and
 // end in ms, the MIDI number, one more); then the intervals, two words
-// each (start and end in ms), in that order.
-export function damMelody(scoringData: readonly number[]): Melody {
+// each (start and end in ms), in that order. Null with no notes (no
+// scoring data: DAM failed or timed out, or no login): no bars.
+export function damMelody(scoringData: readonly number[]): Melody | null {
   const bytes = Uint8Array.from(scoringData);
   const view = new Uint32Array(bytes.buffer, 0, bytes.length >> 2);
   const noteCount = view[1] ?? 0;
@@ -39,6 +40,7 @@ export function damMelody(scoringData: readonly number[]): Melody {
       midiNumber: view[i + 2],
     });
   }
+  if (notes.length === 0) return null;
 
   const intervals = (offset: number, count: number) => {
     const result: [number, number][] = [];

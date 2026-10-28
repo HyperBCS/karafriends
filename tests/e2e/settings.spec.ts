@@ -440,13 +440,13 @@ test("a tab with something to look at gets a dot, until it's put right", async (
 });
 
 test.describe("the pitch bars", () => {
-  test("a DAM song shows them; the switch in Display takes them off and back at once, kept on the display", async ({
+  test("a DAM song without scoring data shows none, and no error", async ({
     karafriends,
     display,
   }) => {
     // The song "downloaded" as a minute of black video, as long as the song,
     // so it plays. Queued from a phone; without a DAM login, popSong brings
-    // no scoring data, and the roll is empty but there.
+    // no scoring data: no notes, so no bars (not an empty band).
     const folder = path.join(
       await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
       "karafriends_tmp",
@@ -474,42 +474,27 @@ test.describe("the pitch bars", () => {
     });
     expect(await res.json()).toMatchObject({ ok: true });
 
-    const roll = display.locator("canvas.pianoRollRoll");
-    await expect(roll).toHaveCount(1, { timeout: 20_000 });
     await expect
-      .poll(() =>
-        display
-          .locator("video")
-          .evaluate((video: HTMLVideoElement) => video.currentTime > 0),
+      .poll(
+        () =>
+          display
+            .locator("video")
+            .evaluate(
+              (video: HTMLVideoElement) =>
+                video.currentSrc.endsWith("2345-67-0.mp4") &&
+                video.currentTime > 1,
+            ),
+        { timeout: 20_000 },
       )
       .toBe(true);
-
-    // Settings opened on the first launch, over the song.
+    await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(0);
+    // The switch is on all the same.
     await openTab(display, "Display");
-    const pitchBars = display
-      .getByRole("region", { name: "Display" })
-      .getByLabel("Pitch bars", { exact: true });
-    await expect(pitchBars).toBeChecked();
-    await expect(pitchBars).toHaveAccessibleDescription(
-      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
-    );
-    await pitchBars.uncheck();
-    await expect(roll).toHaveCount(0);
-    expect(
-      await display.evaluate(() => localStorage.getItem("pitchBars")),
-    ).toBe("off");
-    await pitchBars.check();
-    await expect(roll).toHaveCount(1);
-    expect(
-      await display.evaluate(() => localStorage.getItem("pitchBars")),
-    ).toBeNull();
-
-    // Off, it stays off after a reload.
-    await pitchBars.uncheck();
-    await display.reload();
-    await openTab(display, "Display");
-    await expect(pitchBars).not.toBeChecked();
-    await expect(roll).toHaveCount(0);
+    await expect(
+      display
+        .getByRole("region", { name: "Display" })
+        .getByLabel("Pitch bars", { exact: true }),
+    ).toBeChecked();
   });
 
   // A Joysound song that looks downloaded before: its video, from
@@ -617,16 +602,33 @@ test.describe("the pitch bars", () => {
     await expect(video).toHaveJSProperty("paused", true);
 
     // The switch takes them off and back, at once: the melody is kept.
+    // Kept on the display.
     await openTab(display, "Display");
     const pitchBars = display
       .getByRole("region", { name: "Display" })
       .getByLabel("Pitch bars", { exact: true });
+    await expect(pitchBars).toBeChecked();
+    await expect(pitchBars).toHaveAccessibleDescription(
+      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
+    );
     await pitchBars.uncheck();
     await expect(roll).toHaveCount(0);
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBe("off");
     await pitchBars.check();
     await expect(roll).toHaveCount(1);
-
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBeNull();
     expect(karafriends.displayErrors).toEqual([]);
+
+    // Off, it stays off after a reload.
+    await pitchBars.uncheck();
+    await display.reload();
+    await openTab(display, "Display");
+    await expect(pitchBars).not.toBeChecked();
+    await expect(roll).toHaveCount(0);
   });
 });
 

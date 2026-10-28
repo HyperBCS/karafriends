@@ -28,8 +28,8 @@ const NON_DAM_GAIN = 0.8;
 
 // What the player draws over the video for the song playing.
 export type Overlay =
-  // melody: the pitch bars', from DAM's scoring data.
-  | { kind: "dam"; melody: Melody }
+  // melody: the pitch bars', from DAM's scoring data; null without it.
+  | { kind: "dam"; melody: Melody | null }
   // telop: the song's .joy_02 lyrics, once loaded. file: its video, whose
   // sound holds the guide melody the pitch bars come from.
   | {

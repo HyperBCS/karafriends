@@ -32,11 +32,12 @@ describe("the pitch bars' melody", () => {
     });
   });
 
-  test("no scoring data (no DAM login) is no notes", () => {
-    const empty = { notes: [], lyricsIntervals: [], pogIntervals: [] };
-    assert.deepEqual(damMelody([]), empty);
+  test("no scoring data (no DAM login), or none with notes, is no bars", () => {
+    assert.equal(damMelody([]), null);
     // Not whole words: what's there is read, the rest isn't.
-    assert.deepEqual(damMelody([0, 0, 0, 0, 0]), empty);
+    assert.equal(damMelody([0, 0, 0, 0, 0]), null);
+    // Lyrics but no notes.
+    assert.equal(damMelody(scoringData([0, 0, 1, 0, 0, 0, 900, 2300])), null);
   });
 
   test("a Joysound song's notes are sung where they are; none, no bars", () => {
