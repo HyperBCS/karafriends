@@ -112,6 +112,8 @@ test.describe("YouTube", { tag: "@net" }, () => {
 async function queueVideo(remote: Page) {
   // An ID in the search box opens the video's page.
   await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
+  // A bare ID opens on Enter (review #21).
+  await remote.getByRole("searchbox", { name: "Search" }).press("Enter");
 
   // YouTube sometimes answers a lookup with "Sign in to confirm you're not a
   // bot". Like a person would, reload the page (its address now names the

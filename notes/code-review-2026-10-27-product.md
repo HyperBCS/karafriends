@@ -65,4 +65,4 @@ Three fix sessions, one per area so they don't touch the same files, each with t
 
 ## Status
 
-Fixes in progress; this file is updated when they merge.
+All 25 rows fixed and merged on 2026-10-27 (main process `fdf868a`, display `32eea22`, phone remote `e803c6f`), and every simplicity cut made except two left on purpose: `useDownloadButtonText`'s text-encoded state (the rewrite would exceed the budget) and `ToolsStatus`'s unused fields (both sides of the API at once). Two deviations from the fix plan: #13 keeps `prettyErrors` on because yaml 2.9 drops `linePos` without it (the message is still never logged), and #10 checks `caller.isDisplay` in the handler rather than through `DISPLAY_ONLY_METHODS`. Not covered by a test: the fatal-only HLS path and single-flight poll against a real failing DAM stream (#1), and a refused boolean save (#24).
