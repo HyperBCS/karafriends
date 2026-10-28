@@ -104,7 +104,10 @@ contextBridge.exposeInMainWorld("karafriends", {
     // breakages, like the default output device being released. Let's avoid
     // that.
     inputDevices: once(nativeAudio.inputDevices),
-    outputDevices: nativeAudio.outputDevices,
+    outputDevices: once(nativeAudio.outputDevices),
+    setOutputDevice(name: string | null) {
+      return nativeAudio.setOutputDevice(name);
+    },
     inputDevice_new(name: string, channelSelection: number) {
       console.debug(
         `preload: creating input device ${inputDeviceCount}: ${name}`,
@@ -118,6 +121,15 @@ contextBridge.exposeInMainWorld("karafriends", {
     inputDevice_delete(deviceId: number) {
       console.debug(`preload: deleting input device ${deviceId}`);
       delete inputDevices[deviceId];
+    },
+    inputDevice_setGain(deviceId: number, gain: number) {
+      return nativeAudio.inputDevice_setGain(inputDevices[deviceId], gain);
+    },
+    inputDevice_setEcho(deviceId: number, echo: number) {
+      return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
+    },
+    inputDevice_status(deviceId: number) {
+      return nativeAudio.inputDevice_status(inputDevices[deviceId]);
     },
     inputDevice_getPitch(deviceId: number) {
       return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);

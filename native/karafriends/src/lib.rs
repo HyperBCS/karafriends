@@ -35,6 +35,35 @@ fn input_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
     Ok(js_array)
 }
 
+fn output_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
+    let names = match karafriends_lib::output_devices() {
+        Ok(names) => names,
+        Err(e) => return cx.throw_error(e.to_string()),
+    };
+    let js_array = JsArray::new(&mut cx, names.len());
+    for (i, name) in names.iter().enumerate() {
+        let js_name = cx.string(name);
+        js_array.set(&mut cx, i as u32, js_name)?;
+    }
+    Ok(js_array)
+}
+
+// A name, or null for the default output.
+fn set_output_device(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let name = match cx.argument_opt(0) {
+        Some(value) if !value.is_a::<JsNull, _>(&mut cx) => Some(
+            value
+                .downcast_or_throw::<JsString, _>(&mut cx)?
+                .value(&mut cx),
+        ),
+        _ => None,
+    };
+    if let Err(e) = karafriends_lib::set_output_device(name) {
+        return cx.throw_error(e.to_string());
+    }
+    Ok(cx.undefined())
+}
+
 fn input_device__new(
     mut cx: FunctionContext,
 ) -> JsResult<JsBox<RefCell<karafriends_lib::InputDevice>>> {
@@ -62,6 +91,26 @@ fn input_device__get_pitch(mut cx: FunctionContext) -> JsResult<JsObject> {
     Ok(js_object)
 }
 
+fn input_device__set_gain(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let gain = cx.argument::<JsNumber>(1)?.value(&mut cx) as f32;
+    device.borrow().set_gain(gain);
+    Ok(cx.undefined())
+}
+
+fn input_device__set_echo(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let echo = cx.argument::<JsNumber>(1)?.value(&mut cx) as f32;
+    device.borrow().set_echo(echo);
+    Ok(cx.undefined())
+}
+
+fn input_device__status(mut cx: FunctionContext) -> JsResult<JsString> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let status = device.borrow().status();
+    Ok(cx.string(status))
+}
+
 fn input_device__stop(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     if let Err(e) = device.borrow().stop() {
@@ -74,7 +123,12 @@ fn input_device__stop(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("allocConsole", alloc_console)?;
     cx.export_function("inputDevices", input_devices)?;
+    cx.export_function("outputDevices", output_devices)?;
+    cx.export_function("setOutputDevice", set_output_device)?;
     cx.export_function("inputDevice_new", input_device__new)?;
+    cx.export_function("inputDevice_setGain", input_device__set_gain)?;
+    cx.export_function("inputDevice_setEcho", input_device__set_echo)?;
+    cx.export_function("inputDevice_status", input_device__status)?;
     cx.export_function("inputDevice_getPitch", input_device__get_pitch)?;
     cx.export_function("inputDevice_stop", input_device__stop)?;
 

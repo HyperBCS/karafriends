@@ -16,9 +16,18 @@ declare global {
       api: DisplayApi;
       nativeAudio: {
         inputDevices: () => [string, number][];
+        // Every output device, with the host in parentheses.
         outputDevices: () => string[];
+        // Where every mic plays; null for the default output.
+        setOutputDevice: (name: string | null) => void;
         inputDevice_new: (name: string, channelSelection: number) => number;
         inputDevice_delete: (deviceId: number) => void;
+        // Linear, 0 to 2.
+        inputDevice_setGain: (deviceId: number, gain: number) => void;
+        // The amount of reverb, 0 to 1.
+        inputDevice_setEcho: (deviceId: number, echo: number) => void;
+        // "ok", "ok: <a note>", or the error that stopped it.
+        inputDevice_status: (deviceId: number) => string;
         inputDevice_getPitch: (deviceId: number) => {
           midiNumber: number;
           confidence: number;

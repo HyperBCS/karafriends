@@ -6,14 +6,14 @@ The polish round ([`PLAN-polish.md`](PLAN-polish.md)) is landing. The user then 
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                                         | State                            | Branch / commit                    | Notes |
-| ------------------------------------------------------------ | -------------------------------- | ---------------------------------- | ----- |
-| N1: native: one output, device choice, gain/echo, no cutout  | not started                      |                                    |       |
-| S1: server: song volume, mic list and levels over the API    | done in worktree, awaiting merge | `worktree-agent-ad50ee1e2486e954c` |       |
-| R1: remote: Home rightmost, song volume and mic sliders      | not started                      |                                    |       |
-| D1: display: QR always, mic rows, output device, song volume | not started                      |                                    |       |
-| N2: review and fixes                                         | not started                      |                                    |       |
-| Final: mic and ASIO check by the user on the other machine   | not started                      |                                    |       |
+| Step                                                       | State       | Branch / commit | Notes                                                                                                                                                                                             |
+| ---------------------------------------------------------- | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1: native                                                 | merged      | see git log     | 15 cargo tests; the ASIO-gated code is read only (no libclang here). The output stream opens only while a mic is open; a rate change puts an error in each mic status so the watchdog reopens it. |
+| S1: server                                                 | merged      | `c437cd0`       | Checks green (70 e2e); `setMics` is in `DISPLAY_ONLY_METHODS` (server.ts); the list is capped at 32 mics.                                                                                         |
+| R1: remote: Home rightmost, song volume and mic sliders    | not started |                 |                                                                                                                                                                                                   |
+| D1: display                                                | running     | agent worktree  | Launched after N1 and S1 merged.                                                                                                                                                                  |
+| N2: review and fixes                                       | not started |                 |                                                                                                                                                                                                   |
+| Final: mic and ASIO check by the user on the other machine | not started |                 |                                                                                                                                                                                                   |
 
 ## The list (2026-10-28) and the decisions from Q&A
 

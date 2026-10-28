@@ -3,6 +3,8 @@ use ringbuf::traits::{Consumer, Producer};
 
 pub struct ReverbModule {
     amplitude: f32,
+    // The delay in samples: the buffer holds this many between calls.
+    latency_sample_count: usize,
     rb: ringbuf::HeapRb<f32>,
 }
 
@@ -14,10 +16,24 @@ impl ReverbModule {
             rb.try_push(0.0_f32)
                 .map_err(|_| "Failed to pre-populate the reverb buffer")?;
         }
-        Ok(ReverbModule { amplitude, rb })
+        Ok(ReverbModule {
+            amplitude,
+            latency_sample_count,
+            rb,
+        })
     }
 
+    // In pieces no longer than the delay: a longer callback would ask the
+    // buffer for samples it doesn't have yet.
     pub fn process(&mut self, samples: &[f32]) -> Vec<f32> {
+        let mut output = Vec::with_capacity(samples.len());
+        for chunk in samples.chunks(self.latency_sample_count) {
+            output.extend(self.process_chunk(chunk));
+        }
+        output
+    }
+
+    fn process_chunk(&mut self, samples: &[f32]) -> Vec<f32> {
         let mut delayed_samples = vec![0.0; samples.len()];
         self.rb.pop_slice(delayed_samples.as_mut_slice());
 
