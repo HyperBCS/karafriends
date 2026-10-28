@@ -2312,9 +2312,14 @@ test.describe("the song volume and mic sliders", () => {
 
     await slider(mics[1], "Echo").fill("63");
     await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
+    await expect(slider(mics[1], "Echo")).toHaveValue("63");
+    // The display applies it to the mic and lists its mics again (these
+    // aren't open there, so do its part: settings.spec has the real one).
+    const applied = [mics[0], { ...mics[1], echo: 63 }];
+    await displayCall(display, "setMics", { mics: applied });
     await expect
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
-      .toEqual([mics[0], { ...mics[1], echo: 63 }]);
+      .toEqual(applied);
     await expect(slider(mics[1], "Echo")).toHaveValue("63");
   });
 });

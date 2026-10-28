@@ -18,13 +18,13 @@ import type {
 } from "../common/api";
 import type { State, StateStore } from "./state";
 
-// What the API publishes, with whole identities. The hub passes these on
-// without the device IDs.
+// What the API publishes for the display, with whole identities. The hub
+// passes these on without the device IDs.
 export type HubMessage =
   | { type: "emote"; emote: string; user: UserIdentity }
   | { type: "queueAdded"; item: QueueItem }
-  // Goes only to the phone that queued item, and the display.
-  | { type: "queueFailed"; item: QueueItem; reason: string };
+  | { type: "queueFailed"; item: QueueItem; reason: string }
+  | { type: "micLevels"; id: string; gain?: number; echo?: number };
 
 // Who is listening: a phone gives its device ID; the display, or a phone
 // that gives none, owns nothing.
@@ -36,8 +36,7 @@ export interface Viewer {
 const NOBODY: Viewer = { deviceId: null };
 
 export interface LiveHub {
-  // Sends an emote or queueAdded event to every listener, or a queueFailed
-  // event to its phone and the display.
+  // Sends message's event to the display (no phone uses one).
   publish(message: HubMessage): void;
   // The listener gets the current state at once, then every state change
   // (throttled) and every message. Returns a function that stops it.
@@ -140,58 +139,26 @@ function stateEvents(
   };
 }
 
-// The event each viewer gets for message, or null for none.
-function messageEvents(
-  message: HubMessage,
-): (viewer: Viewer) => LiveEvent | null {
+// The display's event for message. Messages are the display's alone: the
+// phones use only the state (a failed download shows in its downloads).
+function messageEvent(message: HubMessage): LiveEvent {
   switch (message.type) {
-    case "emote": {
-      const event: LiveEvent = {
+    case "emote":
+      return {
         type: "emote",
         emote: message.emote,
         user: { nickname: message.user.nickname },
       };
-      return () => event;
-    }
-    case "queueAdded": {
-      const { item } = message;
-      const shared: LiveEvent = {
-        type: "queueAdded",
-        item: shareQueueItem(item, null),
+    case "queueAdded":
+      return { type: "queueAdded", item: shareQueueItem(message.item, null) };
+    case "queueFailed":
+      return {
+        type: "queueFailed",
+        item: shareQueueItem(message.item, null),
+        reason: message.reason,
       };
-      let mine: LiveEvent | null = null;
-      return (viewer: Viewer): LiveEvent => {
-        if (viewer.deviceId !== item.user.deviceId) return shared;
-        mine ??= {
-          type: "queueAdded",
-          item: shareQueueItem(item, viewer.deviceId),
-        };
-        return mine;
-      };
-    }
-    case "queueFailed": {
-      const { item, reason } = message;
-      let forDisplay: LiveEvent | null = null;
-      let forOwner: LiveEvent | null = null;
-      return (viewer: Viewer): LiveEvent | null => {
-        if (viewer.isDisplay) {
-          forDisplay ??= {
-            type: "queueFailed",
-            item: shareQueueItem(item, null),
-            reason,
-          };
-          return forDisplay;
-        }
-        if (viewer.deviceId === null || viewer.deviceId !== item.user.deviceId)
-          return null;
-        forOwner ??= {
-          type: "queueFailed",
-          item: shareQueueItem(item, viewer.deviceId),
-          reason,
-        };
-        return forOwner;
-      };
-    }
+    case "micLevels":
+      return { ...message };
   }
 }
 
@@ -271,7 +238,8 @@ export function createLiveHub(
       // Send a pending state change first, so a client never hears about a
       // queued song before it can see it in the queue.
       if (flushTimer) flush();
-      deliver(messageEvents(message));
+      const event = messageEvent(message);
+      deliver((viewer) => (viewer.isDisplay ? event : null));
     },
     subscribe(listener, viewer = NOBODY) {
       // Send a pending state change first, so the new listener starts from

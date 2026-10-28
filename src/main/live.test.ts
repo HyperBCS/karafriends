@@ -18,6 +18,8 @@ import {
 
 const INTERVAL_MS = 50;
 
+const DISPLAY: Viewer = { deviceId: null, isDisplay: true };
+
 const item: QueueItem = {
   kind: "nico",
   songId: "sm9",
@@ -210,80 +212,65 @@ describe("createLiveHub: who sees what", () => {
       watch("d", "d"),
       watch("d again", "d"),
       watch("other", "other"),
-      watch("display", null),
+      watch("no ID", null),
       watch("idle phone", "idle"),
     ];
     store.update((state) => state.songQueue.push(item, otherItem));
-    hub.publish({ type: "queueAdded", item });
-    hub.publish({ type: "emote", emote: "🎉", user: item.user });
     await sleep(INTERVAL_MS * 3);
     stops.forEach((stop) => stop());
 
     const second = (name: string) => events.get(name)!.slice(1);
-    const [dState, dAdded, dEmote] = second("d");
+    const [dState] = second("d");
     assert.deepEqual(
       dState.type === "state" && dState.state.queue.map((e) => e.isMine),
       [true, false],
     );
-    assert.deepEqual(dAdded, { type: "queueAdded", item: shared(true) });
-    assert.deepEqual(dEmote, {
-      type: "emote",
-      emote: "🎉",
-      user: { nickname: "n" },
-    });
-    const [oState, oAdded] = second("other");
+    const [oState] = second("other");
     assert.deepEqual(
       oState.type === "state" && oState.state.queue.map((e) => e.isMine),
       [false, true],
     );
-    assert.deepEqual(oAdded, { type: "queueAdded", item: shared(false) });
 
     // The same objects, so they are serialized once (see server.ts).
-    second("d again").forEach((event, i) =>
-      assert.equal(event, second("d")[i]),
-    );
-    second("idle phone").forEach((event, i) =>
-      assert.equal(event, second("display")[i]),
-    );
-    assert.equal(second("display")[2], second("d")[2]);
-    assert.notEqual(second("display")[0], second("d")[0]);
+    assert.equal(second("d again")[0], dState);
+    assert.equal(second("idle phone")[0], second("no ID")[0]);
+    assert.notEqual(second("no ID")[0], dState);
 
     for (const list of events.values()) {
       assert.doesNotMatch(JSON.stringify(list), /deviceId|"other"|"d"/);
     }
   });
 
-  test("a failed download is told to the phone that queued it and the display, no one else", () => {
+  test("messages go to the display only: phones read the state", () => {
     const hub = createLiveHub(store, config, INTERVAL_MS);
-    const failures = new Map<string, LiveEvent[]>();
+    const messages = new Map<string, LiveEvent[]>();
     const watch = (name: string, viewer: Viewer) => {
-      failures.set(name, []);
+      messages.set(name, []);
       return hub.subscribe((event) => {
-        if (event.type !== "state") failures.get(name)!.push(event);
+        if (event.type !== "state") messages.get(name)!.push(event);
       }, viewer);
     };
     const stops = [
       watch("d", { deviceId: "d" }),
-      watch("d again", { deviceId: "d" }),
       watch("other", { deviceId: "other" }),
       watch("no ID", { deviceId: null }),
       watch("display", { deviceId: null, isDisplay: true }),
     ];
+    hub.publish({ type: "queueAdded", item });
+    hub.publish({ type: "emote", emote: "🎉", user: item.user });
     hub.publish({ type: "queueFailed", item, reason: "Video unavailable" });
+    hub.publish({ type: "micLevels", id: "Mic#0", echo: 30 });
     stops.forEach((stop) => stop());
 
-    const mine = {
-      type: "queueFailed",
-      item: shared(true),
-      reason: "Video unavailable",
-    };
-    assert.deepEqual(failures.get("d"), [mine]);
-    assert.deepEqual(failures.get("d again"), [mine]);
-    assert.deepEqual(failures.get("display"), [
-      { ...mine, item: shared(false) },
+    assert.deepEqual(messages.get("display"), [
+      { type: "queueAdded", item: shared(false) },
+      { type: "emote", emote: "🎉", user: { nickname: "n" } },
+      { type: "queueFailed", item: shared(false), reason: "Video unavailable" },
+      { type: "micLevels", id: "Mic#0", echo: 30 },
     ]);
-    assert.deepEqual(failures.get("other"), []);
-    assert.deepEqual(failures.get("no ID"), []);
+    assert.deepEqual(messages.get("d"), []);
+    assert.deepEqual(messages.get("other"), []);
+    assert.deepEqual(messages.get("no ID"), []);
   });
 
   test("a failed download stays in the state until it's removed", async () => {
@@ -328,7 +315,7 @@ describe("createLiveHub", () => {
     const hub = createLiveHub(store, config, INTERVAL_MS);
     const events: LiveEvent[] = [];
     const before = Date.now();
-    const stop = hub.subscribe((event) => events.push(event));
+    const stop = hub.subscribe((event) => events.push(event), DISPLAY);
     assert.equal(events.length, 1);
     assert.equal(events[0].type, "state");
     // With the server's time, for the phones' clocks.
@@ -490,8 +477,8 @@ describe("createLiveHub", () => {
     try {
       const stopBad = hub.subscribe(() => {
         throw new Error("broken");
-      });
-      const stopGood = hub.subscribe((event) => seen.push(event.type));
+      }, DISPLAY);
+      const stopGood = hub.subscribe((event) => seen.push(event.type), DISPLAY);
       hub.publish({ type: "emote", emote: "🎉", user: item.user });
       stopBad();
       stopGood();

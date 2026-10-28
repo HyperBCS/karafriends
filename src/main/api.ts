@@ -329,7 +329,8 @@ export function createApi(
     deps.publish({ type: "queueAdded", item });
   };
 
-  // Tells item's phone (and the display) that it won't be queued.
+  // Tells the display that item won't be queued (or, for a DAM song, play
+  // its download).
   const queueFailed = (item: QueueItem) => (reason: string) => {
     console.log(`queueFailed: ${item.kind} ${item.songId}: ${reason}`);
     deps.publish({ type: "queueFailed", item, reason });
@@ -941,13 +942,17 @@ export function createApi(
       if (!isAdmin(caller)) {
         throw new ApiError(403, "Only an admin can change the mics");
       }
-      return store.update((state) => {
-        const mic = state.mics.find((m) => m.id === id);
-        if (!mic) return false;
-        if (gain !== undefined) mic.gain = gain;
-        if (echo !== undefined) mic.echo = echo;
-        return true;
+      if (!store.getState().mics.some((mic) => mic.id === id)) return false;
+      // The display owns the levels: it applies just the ones given (so a
+      // change the host is making to the other stands), and its setMics
+      // then shows them to the phones.
+      deps.publish({
+        type: "micLevels",
+        id,
+        ...(gain !== undefined && { gain }),
+        ...(echo !== undefined && { echo }),
       });
+      return true;
     },
 
     async pushAdhocLyrics({ lyricIndex, song }, caller) {

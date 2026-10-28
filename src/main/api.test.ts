@@ -962,7 +962,7 @@ describe("the song volume and the mics", () => {
     assert.deepEqual(store.getState().mics, [mic(2)]);
   });
 
-  test("an admin sets one mic's levels; an unknown mic is false", async () => {
+  test("an admin's levels for one mic go to the display, just those given; an unknown mic is false", async () => {
     const api = makeApi({ supervisedMode: false });
     await api.setMics({ mics: [mic(1), mic(2)] }, display);
     await rejectsWith(api.setMicLevels({ id: mic(1).id, gain: 0 }, bob), 403);
@@ -974,18 +974,17 @@ describe("the song volume and the mics", () => {
       await api.setMicLevels({ id: mic(2).id, echo: 0 }, display),
       true,
     );
-    assert.deepEqual(store.getState().mics, [
-      { ...mic(1), gain: 150 },
-      { ...mic(2), echo: 0 },
-    ]);
     assert.equal(
       await api.setMicLevels({ id: "Gone (Windows)#0", gain: 10 }, admin("x")),
       false,
     );
-    assert.deepEqual(store.getState().mics, [
-      { ...mic(1), gain: 150 },
-      { ...mic(2), echo: 0 },
+    assert.deepEqual(published, [
+      { type: "micLevels", id: mic(1).id, gain: 150 },
+      { type: "micLevels", id: mic(2).id, echo: 0 },
     ]);
+    // The display owns them: the phones see them once it lists its mics
+    // again (setMics).
+    assert.deepEqual(store.getState().mics, [mic(1), mic(2)]);
   });
 });
 

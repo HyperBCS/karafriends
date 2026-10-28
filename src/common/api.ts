@@ -261,14 +261,17 @@ export interface LiveState {
 // event comes first on every (re)connect, and again whenever the state
 // changes (at most about 4 a second). Its sentAt is the server's clock when
 // it was made (ms since the epoch), so a phone can tell how far off its own
-// clock is.
+// clock is. The other events are the display's only.
 export type LiveEvent =
   | { type: "state"; state: LiveState; sentAt: number }
   | { type: "emote"; emote: string; user: PublicUser }
   | { type: "queueAdded"; item: SharedQueueItem }
-  // A song's download failed, so it won't join the queue. Only the phone
-  // that queued it and the display hear about it.
-  | { type: "queueFailed"; item: SharedQueueItem; reason: string };
+  // A song's download failed, so it won't join the queue. (The phone that
+  // queued it sees the failure in the state's downloads.)
+  | { type: "queueFailed"; item: SharedQueueItem; reason: string }
+  // An admin's setMicLevels, with just the levels it gave. The display
+  // applies them, and its setMics shows them to the phones.
+  | { type: "micLevels"; id: string; gain?: number; echo?: number };
 
 export type LiveEventType = LiveEvent["type"];
 

@@ -8,7 +8,8 @@
 //                       ADMIN_LOGIN_LIMIT tries from one address, or
 //                       ADMIN_LOGIN_TOTAL_LIMIT from all.
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
-//                       every change, plus emote and queueAdded events. A
+//                       every change (the other events are the display's,
+//                       over IPC). A
 //                       phone adds ?deviceId=<its ID> to see which songs are
 //                       its own; no device IDs are sent. 503 when too many
 //                       are open (STREAM_LIMITS).

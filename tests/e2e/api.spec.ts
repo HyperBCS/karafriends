@@ -877,7 +877,10 @@ test.describe("the song volume and the mics", () => {
 
     const { state } = await liveState(remoconUrl, other);
     expect(state.songVolume).toBe(50);
-    expect(state.mics).toEqual([{ ...MIC, gain: 150 }]);
+    // The levels go to the display, which applies them to the mics it has
+    // open and lists them again (settings.spec has that). This one it
+    // doesn't really have, so the list stays as it sent it.
+    expect(state.mics).toEqual([MIC]);
   });
 });
 
