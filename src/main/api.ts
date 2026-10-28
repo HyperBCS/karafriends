@@ -277,12 +277,16 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     );
   };
 
-  // Seconds until a song added to the end of the queue would start.
-  const queueEta = () => {
+  // Seconds until a song queued now would start: what is left of the current
+  // song and the playtimes ahead of it, the whole queue's, or for a song
+  // pushed to the head (which goes in second: pushSongToQueue) the next
+  // song's only.
+  const queueEta = (pushToHead: boolean) => {
     const state = store.getState();
+    const ahead = pushToHead ? state.songQueue.slice(0, 1) : state.songQueue;
     return (
       currentSongSecondsLeft(state, now()) +
-      state.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
+      ahead.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
     );
   };
 
@@ -614,7 +618,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
       const pushToHead = input.tryHeadOfQueue === true && isAdmin(caller);
       console.log(`queueSong: ${input.kind}, pushToHead=${pushToHead}`);
-      const eta = queueEta();
+      const eta = queueEta(pushToHead);
       const base = {
         songId: input.songId,
         name: input.name,

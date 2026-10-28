@@ -1519,6 +1519,45 @@ describe("queueSong", () => {
     );
   });
 
+  test("an admin's song for the head of the queue waits for the current song and the next", async () => {
+    // Song 1 (100 s) has played 30 s; four more wait.
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.currentSongStartedAt = 30_000;
+      state.songQueue.push(song(2, alice), song(3, alice), song(4, alice));
+    });
+    const api = makeApi({}, { now: () => 60_000 });
+    const result = await api.queueSong(
+      {
+        kind: "dam",
+        songId: "1234-56",
+        name: "",
+        artistName: "",
+        streamingUrlIdx: 0,
+        tryHeadOfQueue: true,
+      },
+      admin("x"),
+    );
+    // It goes in second (after song 2).
+    assert.equal(store.getState().songQueue[1].songId, "1234-56");
+    assert.deepEqual(result, { ok: true, eta: 70 + 100 });
+    // A guest's goes to the end, as before (the DAM song came with no
+    // playtime).
+    assert.deepEqual(
+      await api.queueSong(
+        {
+          kind: "nico",
+          songId: "sm9",
+          name: "",
+          artistName: "",
+          tryHeadOfQueue: true,
+        },
+        bob,
+      ),
+      { ok: true, eta: 70 + 300 },
+    );
+  });
+
   test("passes a DAM song's readings on to the queue item", async () => {
     const api = makeApi();
     await api.queueSong(
