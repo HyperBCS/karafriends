@@ -153,4 +153,4 @@ Two Opus fix sessions: native and display (#1 to #10 and the first two cuts, plu
 
 ### Status
 
-Fixes in progress; this section is updated when they merge.
+All 15 rows fixed and merged on 2026-10-28 (native and display `7b1adf82`, phone remote `a354df65`), and every simplicity cut made. Deviations: #4 is the simplest form (the watchdog never gives up; it retries every 2 s and the row shows why the mic is down); #11 releases the thumb on pointerup only when the value is back where the drag began, because pointerup lands before change and clearing it always would reset the dragged value. Not covered by a test: the fake audio device always opens and always reports ok, so a mic that fails to open at launch, the retry, the output fallback and the "isn't connected" note are for the test on the other machine. Seen once: the unit test "GET /api/events answers 503 past the limit" failed in a worktree under load (3 of 4 runs) and passes every time on master; pre-existing and timing-related.
