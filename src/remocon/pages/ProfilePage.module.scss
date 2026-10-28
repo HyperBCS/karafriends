@@ -39,16 +39,12 @@
   list-style: none;
 }
 
-.mic {
-  display: flex;
-  flex-direction: column;
-}
-
 // An admin's level slider: the label, then the slider, a full tap target
-// tall. The labels take one width, so the sliders line up.
+// tall. The labels, with their values, take one width, so the sliders
+// line up.
 .slider {
   display: grid;
-  grid-template-columns: 8rem 1fr;
+  grid-template-columns: 10rem 1fr;
   align-items: center;
   gap: $kf-space-3;
   color: $kf-text;

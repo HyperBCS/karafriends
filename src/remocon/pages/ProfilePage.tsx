@@ -167,6 +167,11 @@ const Notifications = () => {
 
 interface LevelSliderProps {
   label: string;
+  // The slider's accessible name: the label without the value, or one that
+  // says whose when the label alone doesn't.
+  name?: string;
+  // What the value is multiplied by to show as a percent.
+  scale?: number;
   min: number;
   max: number;
   step: number;
@@ -177,9 +182,13 @@ interface LevelSliderProps {
 // An admin's level slider. While the thumb is dragged it moves here only;
 // letting go (the input's change event, which a key press also fires) sends
 // the level once, so the echo of an earlier step can't pull the thumb back
-// or settle on a stale level.
+// or settle on a stale level. A drag that ends where it started fires no
+// change, so letting go there lets the thumb follow the live level again.
+// The label shows the level in percent, as the display does.
 const LevelSlider = ({
   label,
+  name = label,
+  scale = 1,
   min,
   max,
   step,
@@ -188,6 +197,10 @@ const LevelSlider = ({
 }: LevelSliderProps) => {
   const [held, setHeld] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // The value when the drag began. Only a drag back to it is let go of on
+  // pointerup: any other comes with a change after it, which needs the
+  // input's value as dragged.
+  const start = useRef("");
   // React's onChange is the input event, which comes with every step.
   useEffect(() => {
     const el = input.current;
@@ -202,15 +215,22 @@ const LevelSlider = ({
 
   return (
     <label className={styles.slider}>
-      {label}
+      {`${label} ${Math.round((held ?? value) * scale)}%`}
       <input
         ref={input}
+        aria-label={name}
         type="range"
         min={min}
         max={max}
         step={step}
         value={held ?? value}
         onChange={(e) => setHeld(Number(e.target.value))}
+        onPointerDown={(e) => (start.current = e.currentTarget.value)}
+        onPointerUp={(e) => {
+          if (e.currentTarget.value === start.current) setHeld(null);
+        }}
+        onPointerCancel={() => setHeld(null)}
+        onBlur={() => setHeld(null)}
       />
     </label>
   );
@@ -223,6 +243,7 @@ const GuideMelodySlider = () => {
     <>
       <LevelSlider
         label={t("guideMelody.label")}
+        scale={100}
         min={0}
         max={1}
         step={0.1}
@@ -277,9 +298,10 @@ const MicLevelSlider = ({
   return (
     <LevelSlider
       label={t(`mics.${level}`)}
+      name={`${mic.label}: ${t(`mics.${level}`)}`}
       min={0}
       max={level === "gain" ? 200 : 100}
-      step={5}
+      step={1}
       value={value}
       onSend={(next) => {
         setPending(next);
@@ -292,7 +314,8 @@ const MicLevelSlider = ({
 // One empty list, so the live state's selector gives the same one each time.
 const NO_MICS: MicInfo[] = [];
 
-// The display's mics, each with its gain and echo.
+// The display's mics, each with its gain and echo. The display can open
+// one device and channel twice, so a row's key is its id and place.
 const Mics = () => {
   const mics = useLiveState((state) => state?.mics ?? NO_MICS);
   return (
@@ -302,8 +325,8 @@ const Mics = () => {
         <p className={styles.text}>{t("mics.none")}</p>
       ) : (
         <ul className={styles.mics}>
-          {mics.map((mic) => (
-            <li key={mic.id} className={styles.mic}>
+          {mics.map((mic, index) => (
+            <li key={`${mic.id}-${index}`}>
               <span className={styles.text}>{mic.label}</span>
               <MicLevelSlider mic={mic} level="gain" />
               <MicLevelSlider mic={mic} level="echo" />

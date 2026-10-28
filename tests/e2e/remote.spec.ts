@@ -1488,6 +1488,8 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(0.7);
     await expect(slider).toHaveValue("0.7");
+    // Its label shows the level in percent.
+    await expect(remote.getByText("Guide melody 70%")).toBeVisible();
 
     // Dragged down across several steps, it sends the level once, when
     // let go.
@@ -1559,6 +1561,53 @@ test.describe("the song volume and mic sliders", () => {
       .poll(async () => (await liveState(karafriends.remoconUrl)).songVolume)
       .toBe(40);
     await expect(volume).toHaveValue("40");
+    await expect(remote.getByText("Song volume 40%")).toBeVisible();
+  });
+
+  test("a slider dragged back to where it started follows the live level again", async ({
+    display,
+    remote,
+  }) => {
+    const setSongVolume = (volume: number) =>
+      display.evaluate(
+        (volume) =>
+          (
+            window as unknown as {
+              karafriends: {
+                api: { call(method: string, input: object): Promise<unknown> };
+              };
+            }
+          ).karafriends.api.call("setSongVolume", { volume }),
+        volume,
+      );
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setSongVolume")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    await signIn(remote);
+    const volume = remote.getByRole("slider", { name: "Song volume" });
+    await setSongVolume(50);
+    await expect(volume).toHaveValue("50");
+
+    // From the thumb, in the middle, out and back: no change, nothing sent.
+    const box = (await volume.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await remote.mouse.move(x, y);
+    await remote.mouse.down();
+    await remote.mouse.move(box.x + box.width * 0.8, y, { steps: 5 });
+    await expect(volume).not.toHaveValue("50");
+    await remote.mouse.move(x, y, { steps: 5 });
+    await remote.mouse.up();
+    await expect(volume).toHaveValue("50");
+    expect(sent).toEqual([]);
+
+    // The display changes it: the thumb follows.
+    await setSongVolume(30);
+    await expect(volume).toHaveValue("30");
+    expect(sent).toEqual([]);
   });
 
   test("the display's mics show with their gain and echo, which send setMicLevels", async ({
@@ -1576,7 +1625,7 @@ test.describe("the song volume and mic sliders", () => {
       {
         id: "Focusrite USB (USB)#2",
         label: "Focusrite USB (USB), channel 2",
-        gain: 120,
+        gain: 123,
         echo: 0,
       },
     ];
@@ -1602,27 +1651,26 @@ test.describe("the song volume and mic sliders", () => {
     await signIn(remote);
 
     await expect(remote.getByText("No microphones")).toHaveCount(0);
-    const row = (label: string) =>
-      remote.getByRole("listitem").filter({ hasText: label });
-    const yeti = row(mics[0].label);
-    const focusrite = row(mics[1].label);
-    await expect(yeti.getByRole("slider", { name: "Gain" })).toHaveValue("100");
-    await expect(yeti.getByRole("slider", { name: "Echo" })).toHaveValue("40");
-    await expect(focusrite.getByRole("slider", { name: "Gain" })).toHaveValue(
-      "120",
-    );
-    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
-      "0",
-    );
+    // Each slider is named for its mic, so two mics' sliders aren't alike.
+    const slider = (mic: (typeof mics)[number], level: "Gain" | "Echo") =>
+      remote.getByRole("slider", {
+        name: `${mic.label}: ${level}`,
+        exact: true,
+      });
+    await expect(slider(mics[0], "Gain")).toHaveValue("100");
+    await expect(slider(mics[0], "Echo")).toHaveValue("40");
+    await expect(slider(mics[1], "Gain")).toHaveValue("123");
+    await expect(slider(mics[1], "Echo")).toHaveValue("0");
+    // The labels show the levels, as the display's do.
+    await expect(remote.getByText("Gain 123%")).toBeVisible();
+    await expect(remote.getByText("Echo 40%")).toBeVisible();
 
-    await focusrite.getByRole("slider", { name: "Echo" }).fill("60");
-    await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 60 }]);
+    await slider(mics[1], "Echo").fill("63");
+    await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
     await expect
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
-      .toEqual([mics[0], { ...mics[1], echo: 60 }]);
-    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
-      "60",
-    );
+      .toEqual([mics[0], { ...mics[1], echo: 63 }]);
+    await expect(slider(mics[1], "Echo")).toHaveValue("63");
   });
 });
 
