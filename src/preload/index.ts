@@ -86,9 +86,9 @@ ipcRenderer
   .catch((err) => console.error("Couldn't ask about the remote:", err));
 
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
-// is ever opened, or even listed. Two fake inputs and two fake outputs, and
-// every call is kept, for the tests to read with
-// window.karafriendsFakeAudio.calls().
+// is ever opened, or even listed. Two fake inputs (ids like Windows'
+// endpoint ids, and labels) and two fake outputs, and every call is kept,
+// for the tests to read with window.karafriendsFakeAudio.calls().
 type FakeAudioCall = [string, ...unknown[]];
 const fakeAudioCalls: FakeAudioCall[] | null =
   process.env.KARAFRIENDS_FAKE_AUDIO === "1" ? [] : null;
@@ -102,14 +102,15 @@ function fakeNativeAudio(calls: FakeAudioCall[]) {
       return answer();
     };
   return {
-    inputDevices: fake("inputDevices", (): [string, number][] => [
-      ["E2E Mic (Windows)", 1],
-      ["E2E Interface (Windows)", 2],
+    inputDevices: fake("inputDevices", (): [string, string, number][] => [
+      ["{0.0.1.00000000}.{e2e-mic} (USB)", "E2E Mic (USB)", 1],
+      ["{0.0.1.00000000}.{e2e-interface} (USB)", "E2E Interface (USB)", 2],
     ]),
     outputDevices: fake("outputDevices", () => [
       "E2E Speakers (Windows)",
       "E2E Interface (ASIO)",
     ]),
+    asioStatus: fake("asioStatus", () => "ASIO: E2E Interface"),
     setOutputDevice: fake("setOutputDevice", () => undefined),
     inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
     inputDevice_delete: fake("inputDevice_delete", () => undefined),
@@ -154,6 +155,8 @@ contextBridge.exposeInMainWorld("karafriends", {
         // Outputs are listed again each time Settings opens, so an interface
         // switched on after launch can be picked.
         outputDevices: nativeAudio.outputDevices,
+        // Found once, as the first device is listed.
+        asioStatus: nativeAudio.asioStatus,
         setOutputDevice(name: string | null) {
           return nativeAudio.setOutputDevice(name);
         },

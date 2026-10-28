@@ -15,9 +15,15 @@ declare global {
       onRemoconProblem(listener: (message: string) => void): () => void;
       api: DisplayApi;
       nativeAudio: {
-        inputDevices: () => [string, number][];
+        // Each input's id (the key mics are saved and sent by), its label
+        // (what the system calls it) and its channel count; both end with
+        // the host, " (USB)" or " (ASIO)".
+        inputDevices: () => [string, string, number][];
         // Every output device, with the host in parentheses.
         outputDevices: () => string[];
+        // "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO
+        // isn't in this build".
+        asioStatus: () => string;
         // Where every mic plays; null for the default output.
         setOutputDevice: (name: string | null) => void;
         inputDevice_new: (name: string, channelSelection: number) => number;

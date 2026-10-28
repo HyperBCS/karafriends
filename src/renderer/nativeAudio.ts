@@ -15,6 +15,22 @@ export function setOutputDevice(name: string | null) {
   native.setOutputDevice(name);
 }
 
+// "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO isn't in
+// this build".
+export function asioStatus(): string {
+  return native.asioStatus();
+}
+
+// What the system calls an input, from its id; the id if it isn't listed.
+function inputLabel(name: string): string {
+  return native.inputDevices().find(([id]) => id === name)?.[1] ?? name;
+}
+
+// How Settings and the phones show one channel of an input.
+export function channelLabel(label: string, channel: number): string {
+  return `${label}, channel ${channel + 1}`;
+}
+
 // "ok", or "ok: <a note>" (the chosen output is missing, say): the mic works.
 function working(status: string) {
   return status === "ok" || status.startsWith("ok: ");
@@ -22,7 +38,11 @@ function working(status: string) {
 
 export class InputDevice {
   deviceId: number;
+  // The input's id: the key it is saved and sent by.
   name: string;
+  // What the system calls it, with the channel: what Settings and the
+  // phones show.
+  label: string;
   channelSelection: number;
   // Why it was last reopened, while it works again.
   reopenedAfter: string | null = null;
@@ -35,6 +55,7 @@ export class InputDevice {
 
   constructor(name: string, channelSelection: number) {
     this.name = name;
+    this.label = channelLabel(inputLabel(name), channelSelection);
     this.channelSelection = channelSelection;
     this.deviceId = this.create();
     this.watchdog = setInterval(() => this.check(), WATCH_MS);
@@ -54,7 +75,7 @@ export class InputDevice {
     if (working(status)) return;
     this.close();
     if (this.error === null) {
-      console.warn(`Mic ${this.name} stopped (${status}); reopening`);
+      console.warn(`Mic ${this.label} stopped (${status}); reopening`);
     }
     try {
       this.deviceId = this.create();
@@ -103,7 +124,7 @@ export class InputDevice {
     try {
       native.inputDevice_stop(this.deviceId);
     } catch (err) {
-      console.warn(`Mic ${this.name} didn't stop cleanly:`, err);
+      console.warn(`Mic ${this.label} didn't stop cleanly:`, err);
     }
     native.inputDevice_delete(this.deviceId);
   }
