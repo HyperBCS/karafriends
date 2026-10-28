@@ -1,3 +1,5 @@
+// First: a second launch leaves here, before anything below loads.
+import "./singleInstance";
 // The native module is copied next to the bundle and loaded with require().
 import nativeAudio from "../../native/index.node";
 
@@ -38,6 +40,7 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  powerSaveBlocker,
   protocol,
 } from "electron";
 import isDev from "electron-is-dev";
@@ -50,7 +53,7 @@ import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
-import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
+import { createCrashReloads } from "./rendererRecovery";
 import { apiRouter, shouldCompress } from "./server";
 import { api, hub } from "./services";
 
@@ -93,7 +96,10 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-let rendererWindow: BrowserWindow | null;
+let rendererWindow: BrowserWindow | undefined;
+
+// When to reload the display after a crash.
+const crashReloads = createCrashReloads();
 
 // The built pages, next to this bundle (see electron.vite.config.ts).
 const WEB_DIR = path.join(__dirname, "..", "web");
@@ -163,6 +169,8 @@ ipcMain.handle(IPC_CHANNELS.openTextFile, async (event) => {
   return fs.promises.readFile(filePaths[0], "utf8");
 });
 
+// Once, at launch: the display's window, the karafriends:// protocol and the
+// phones' server. (Closing the window quits the app.)
 function createWindow() {
   rendererWindow = new BrowserWindow({
     frame: isDev,
@@ -186,11 +194,19 @@ function createWindow() {
   });
 
   // A renderer crash (GPU reset, OOM, native fault) would otherwise leave the
-  // karaoke display permanently blank. Reload the window so the show goes on.
+  // karaoke display permanently blank. Reload the window so the show goes on,
+  // after a wait, and not in a loop (rendererRecovery.ts).
   rendererWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error(`Renderer process gone (${details.reason})`);
-    if (details.reason !== "clean-exit") {
-      rendererWindow?.reload();
+    if (details.reason === "clean-exit") return;
+    const wait = crashReloads.crashed();
+    if (wait !== null) {
+      setTimeout(reloadDisplay, wait);
+    } else {
+      console.error("The display keeps crashing: asking before reloading it");
+      askAfterCrashes(details.reason).catch((err) =>
+        console.error("Failed to ask about the crashes:", err),
+      );
     }
   });
   // (A reloaded page subscribes again, which replaces its old subscription.)
@@ -245,10 +261,8 @@ function createWindow() {
 
   expressApp.use("/api", apiRouter(api, hub));
 
-  expressApp.use(remoconServiceWorkerAllowed());
-
-  // The phone remote: its page at /, and the assets and service worker it
-  // loads. (With the pages on the Vite dev server, phones use that instead.)
+  // The phone remote: its page at /, and the assets it loads. (With the
+  // pages on the Vite dev server, phones use that instead.)
   if (!devServerUrl) {
     expressApp.use(express.static(path.join(WEB_DIR, "remocon")));
     expressApp.use(express.static(WEB_DIR, { index: false }));
@@ -271,6 +285,7 @@ function createWindow() {
     // would leave the karaoke display blank, and the unhandled loadURL
     // rejection would reach the process-level handler. Catch it and retry a few
     // times so the show still comes up.
+    // Since the last good load.
     let rendererLoadAttempts = 0;
     const loadRenderer = () => {
       rendererWindow
@@ -292,11 +307,46 @@ function createWindow() {
         }
       },
     );
+    rendererWindow.webContents.on("did-finish-load", () => {
+      rendererLoadAttempts = 0;
+    });
     loadRenderer();
   }
 }
 
+function reloadDisplay() {
+  if (rendererWindow && !rendererWindow.isDestroyed()) rendererWindow.reload();
+}
+
+// The display crashed three times in a minute: say so on the TV, and
+// reload only when the host asks. (Not with the window hidden: tests.)
+async function askAfterCrashes(reason: string) {
+  if (!rendererWindow || HIDE_WINDOW) return;
+  const { response } = await dialog.showMessageBox(rendererWindow, {
+    type: "error",
+    message: "The karaoke display keeps crashing",
+    detail: `It stopped 3 times in a minute (${reason}). Reload it to try again, or quit and start karafriends again.`,
+    buttons: ["Reload", "Quit"],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response === 1) {
+    app.quit();
+    return;
+  }
+  crashReloads.reset();
+  reloadDisplay();
+}
+
 app.on("ready", () => {
+  // Keep the TV on, and the computer awake, for as long as the app runs.
+  // Between songs nothing plays, so nothing else stops the screen blanking
+  // after the OS's idle timeout (5 minutes on GNOME, which also locks the
+  // session): the QR code would be gone and later songs would play behind a
+  // black or locked screen. Taken at launch, because taking it once the
+  // screen has blanked doesn't bring the screen back. (Not for a hidden
+  // window: the tests and checks.)
+  if (!HIDE_WINDOW) powerSaveBlocker.start("prevent-display-sleep");
   // Start warming the external resource cache as soon as the app is ready so
   // the binaries are usually in place before the first song is queued. This is
   // best-effort: failures are logged and retried on demand by the downloader,
@@ -307,31 +357,49 @@ app.on("ready", () => {
   createWindow();
 });
 
+// A second launch (singleInstance.ts) brings this display back to the front.
+app.on("second-instance", () => {
+  if (!rendererWindow || rendererWindow.isDestroyed()) return;
+  if (rendererWindow.isMinimized()) rendererWindow.restore();
+  if (!HIDE_WINDOW) rendererWindow.show();
+  rendererWindow.focus();
+});
+
 app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("activate", () => {
-  if (rendererWindow === null) {
-    createWindow();
-  }
-});
-
-function refreshRendererWindow() {
-  if (!rendererWindow) return;
-  if (
-    dialog.showMessageBoxSync(rendererWindow, {
+// F5 or Ctrl+R on the host's keyboard asks first. The dialog doesn't block
+// the main process, so phones, live updates and downloads carry on while
+// it's up; a second press while it's up does nothing.
+let confirmingReload = false;
+async function refreshRendererWindow() {
+  if (!rendererWindow || confirmingReload) return;
+  confirmingReload = true;
+  try {
+    const { response } = await dialog.showMessageBox(rendererWindow, {
       message: "Are you sure you want to reload the renderer window?",
       buttons: ["Reload", "Cancel"],
-    }) === 0
-  ) {
-    rendererWindow.reload();
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) {
+      crashReloads.reset();
+      reloadDisplay();
+    }
+  } finally {
+    confirmingReload = false;
   }
 }
+const onReloadKey = () => {
+  refreshRendererWindow().catch((err) =>
+    console.error("Failed to ask about reloading:", err),
+  );
+};
 
 app.on("browser-window-focus", () => {
-  globalShortcut.register("CommandOrControl+R", refreshRendererWindow);
-  globalShortcut.register("F5", refreshRendererWindow);
+  globalShortcut.register("CommandOrControl+R", onReloadKey);
+  globalShortcut.register("F5", onReloadKey);
 });
 
 app.on("browser-window-blur", () => {

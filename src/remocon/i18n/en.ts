@@ -115,10 +115,6 @@ export const en = {
   "emotes.edit": "Change emotes",
   "emotes.prompt": "Type the emoji to show here",
 
-  // Notifications on the phone.
-  "notification.upSoon": "{name} is up in about {eta}.",
-  "notification.failed": "Couldn't download {name}: {reason}",
-
   // History.
   "history.heading": "History",
   "history.empty": "No history",
@@ -135,11 +131,6 @@ export const en = {
   "settings.nickname": "Nickname",
   "settings.start": "Start",
   "settings.saveNickname": "Save nickname",
-  "settings.notifications": "Notifications",
-  "settings.notificationsOn": "Turn on notifications",
-  "settings.notificationsAllowed":
-    "On: this phone tells you when your song is up soon.",
-  "settings.notificationsBlocked": "Off. Allow them in the browser's settings.",
   "settings.admin": "Admin",
   "settings.adminPassword": "Admin password",
   "settings.signIn": "Sign in",
