@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 
-import type { PoppedDamSong, PoppedSong } from "../common/api";
+import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
 import useGuideMelodyLevel from "../common/hooks/useGuideMelodyLevel";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
@@ -24,7 +24,7 @@ const NON_DAM_GAIN = 0.8;
 export type Overlay =
   | { kind: "dam"; scoringData: readonly number[] }
   // telop: the song's .joy_02 lyrics, once loaded.
-  | { kind: "joysound"; telop: ArrayBuffer | null; isRomaji: boolean }
+  | { kind: "joysound"; telop: ArrayBuffer | null; lyricsMode: LyricsMode }
   | { kind: "youtube"; adhocLyrics: boolean }
   | { kind: "nico" }
   | null;
@@ -168,7 +168,7 @@ export default function useSongPlayer({
     video: HTMLVideoElement,
     song: Extract<PoppedSong, { kind: "joysound" }>,
   ) => {
-    setOverlay({ kind: "joysound", telop: null, isRomaji: song.isRomaji });
+    setOverlay({ kind: "joysound", telop: null, lyricsMode: song.lyricsMode });
     const background = song.youtubeVideoId ?? "default";
     video.src = `karafriends://local/joysound-${song.songId}-${background}.mp4`;
     let telop: ArrayBuffer;
@@ -183,7 +183,7 @@ export default function useSongPlayer({
     }
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
-    setOverlay({ kind: "joysound", telop, isRomaji: song.isRomaji });
+    setOverlay({ kind: "joysound", telop, lyricsMode: song.lyricsMode });
     // At the gain the previous song left, as always.
     video.play();
   };

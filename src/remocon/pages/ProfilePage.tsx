@@ -7,6 +7,11 @@ import {
   ApiCallError,
   useIsAdmin,
 } from "../../common/apiClient";
+import {
+  LyricsModeTabs,
+  saveLyricsMode,
+  savedLyricsMode,
+} from "../components/QueueButtons";
 import { Button, InlineError, Tabs, TextField } from "../components/ui";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
@@ -178,6 +183,25 @@ const Admin = () => {
   );
 };
 
+// How this phone's Joysound songs show their lyrics on the TV, unless the
+// song page says otherwise.
+const LyricsOnTheTv = () => {
+  const [mode, setMode] = useState(savedLyricsMode);
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.heading}>{t("lyricsMode.label")}</h2>
+      <LyricsModeTabs
+        selected={mode}
+        onSelect={(next) => {
+          saveLyricsMode(next);
+          setMode(next);
+        }}
+      />
+      <p className={styles.text}>{t("lyricsMode.help")}</p>
+    </div>
+  );
+};
+
 // The phone's nickname, language, notifications and admin sign-in. On a
 // first visit, just the nickname (and the language, to read the rest in).
 const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
@@ -188,6 +212,7 @@ const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
       <>
         <Notifications />
         <Admin />
+        <LyricsOnTheTv />
       </>
     )}
   </div>

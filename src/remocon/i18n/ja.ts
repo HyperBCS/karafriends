@@ -66,7 +66,6 @@ export const ja: Messages = {
   "lyrics.sendLine": "タップして次の行を表示",
 
   "queueButton.song": "予約する",
-  "queueButton.songRomaji": "予約する（ローマ字歌詞）",
   "queueButton.guide": "予約する（ガイドボーカル付き）",
   "queueButton.guideMale": "予約する（男性ガイドボーカル）",
   "queueButton.guideFemale": "予約する（女性ガイドボーカル）",
@@ -130,4 +129,12 @@ export const ja: Messages = {
 
   "queue.dragToReorder": "ドラッグで並べ替え",
   "queue.moveFailed": "曲を移動できませんでした：{reason}",
+
+  "lyricsMode.label": "テレビの歌詞",
+  "lyricsMode.kana": "ふりがな",
+  "lyricsMode.romaji": "ローマ字",
+  "lyricsMode.both": "両方",
+  "lyricsMode.help":
+    "JOYSOUNDの曲で使います。曲ごとに曲のページでも変えられます。",
+  "guideMelody.label": "ガイドメロディ",
 };

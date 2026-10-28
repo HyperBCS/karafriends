@@ -1,6 +1,7 @@
 import React from "react";
 
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
+import useGuideMelodyLevel from "../../../common/hooks/useGuideMelodyLevel";
 import usePitchShiftSemis from "../../../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import { t } from "../../i18n";
@@ -10,7 +11,8 @@ import * as styles from "./NowPlayingSheet.module.scss";
 
 // Restart, play or pause, skip, and the key. In supervised mode they're
 // dimmed for anyone but an admin and the current singer, as the server
-// would refuse them (setPlaybackState in src/main/api.ts).
+// would refuse them (setPlaybackState in src/main/api.ts). During a
+// Joysound song, the guide melody's level too, for admins.
 const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
@@ -19,6 +21,12 @@ const PlaybackControls = () => {
   );
   const isMine = useLiveState((state) => state?.currentSong?.isMine === true);
   const isAdmin = useIsAdmin();
+  // Only Joysound songs have a guide melody to mix in (setGuideMelodyLevel,
+  // admins only).
+  const isJoysound = useLiveState(
+    (state) => state?.currentSong?.kind === "joysound",
+  );
+  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
 
   const isEntitled = !supervisedMode || isAdmin === true || isMine;
   const disabled =
@@ -65,6 +73,20 @@ const PlaybackControls = () => {
           onClick={() => setPitchShiftSemis(pitchShiftSemis + 1)}
         />
       </div>
+      {isJoysound && (
+        <label className={styles.guideMelody}>
+          {t("guideMelody.label")}
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.1}
+            value={guideMelodyLevel}
+            disabled={isAdmin !== true}
+            onChange={(e) => setGuideMelodyLevel(Number(e.target.value))}
+          />
+        </label>
+      )}
     </>
   );
 };

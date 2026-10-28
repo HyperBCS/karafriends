@@ -100,6 +100,64 @@ button.handle {
   text-align: center;
 }
 
+// The guide melody's level: a row of its own under the buttons, the
+// slider a full tap target tall.
+.guideMelody {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: $kf-space-3;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: $kf-tap;
+    margin: 0;
+    background: none;
+    appearance: none;
+    cursor: pointer;
+
+    &::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background-color: $kf-border;
+    }
+
+    &::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background-color: $kf-border;
+    }
+
+    &::-webkit-slider-thumb {
+      width: 24px;
+      height: 24px;
+      margin-top: -10px;
+      border: none;
+      border-radius: 50%;
+      background-color: $kf-accent;
+      appearance: none;
+    }
+
+    &::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 50%;
+      background-color: $kf-accent;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.4;
+    }
+
+    @include kf-focus-visible;
+  }
+}
+
 @media (max-width: 360px) {
   .controls {
     gap: $kf-space-1;

@@ -194,7 +194,7 @@ const joysoundItem = (youtubeVideoId: string | null): JoysoundQueueItem => ({
   playtime: null,
   timestamp: "1",
   user: USER,
-  isRomaji: false,
+  lyricsMode: "kana",
   youtubeVideoId,
 });
 

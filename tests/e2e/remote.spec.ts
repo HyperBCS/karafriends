@@ -1,4 +1,12 @@
-import type { Locator, Page, Route } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+
+import type {
+  ElectronApplication,
+  Locator,
+  Page,
+  Route,
+} from "@playwright/test";
 
 import { adminPasswordConfig, expect, NICKNAME, test } from "./fixtures";
 
@@ -911,5 +919,168 @@ test.describe("dragging the queue", () => {
       "Couldn't move the song: Only an admin can reorder the queue",
     );
     await expectOrder(3, 4, 2);
+  });
+});
+
+// Joysound songs, offline: each looks downloaded before (its lyrics and
+// video in the app's temp folder), so queueSong queues it at once. The
+// lyrics file is just enough for its playtime (getSongDuration), so the
+// display plays a minute of black video without lyrics.
+async function fakeJoysoundDownload(app: ElectronApplication, songId: string) {
+  const temp = await app.evaluate(({ app }) => app.getPath("temp"));
+  const dir = path.join(temp, "karafriends_tmp");
+  fs.mkdirSync(dir, { recursive: true });
+  const telop = Buffer.alloc(32);
+  telop.writeUInt32LE(10, 6); // where the metadata starts
+  telop.writeUInt16LE(60, 10 + 18); // the playtime, in seconds
+  fs.writeFileSync(path.join(dir, `joysound-${songId}.joy_02`), telop);
+  fs.copyFileSync(
+    path.join(__dirname, "..", "fixtures", "black.mp4"),
+    path.join(dir, `joysound-${songId}-default.mp4`),
+  );
+}
+
+// The server's live state: the first event of a fresh /api/events stream.
+async function liveState(remoconUrl: string) {
+  const controller = new AbortController();
+  const res = await fetch(new URL("api/events", remoconUrl), {
+    signal: controller.signal,
+  });
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error(`The stream ended early: ${text}`);
+      text += value;
+      const data = text.match(/^data: (.*)$/m);
+      if (data) return JSON.parse(data[1]).state;
+    }
+  } finally {
+    controller.abort();
+  }
+}
+
+test.describe("the lyrics mode", () => {
+  // Three songs from one phone.
+  test.use({ appConfig: { paxSongQueueLimit: 0 } });
+
+  test("a Joysound song is queued with the lyrics mode picked, preset from the profile", async ({
+    karafriends,
+    remote,
+  }) => {
+    const { app, remoconUrl } = karafriends;
+    const LABELS = { kana: "Kana", romaji: "Romaji", both: "Both" };
+    for (const mode of Object.keys(LABELS)) {
+      await fakeJoysoundDownload(app, `e2e-${mode}`);
+    }
+    await remote.route("**/api/joysoundSong", (route) => {
+      const { id } = route.request().postDataJSON();
+      return route.fulfill({
+        json: {
+          id,
+          name: `E2E Joysound ${id}`,
+          artistName: "E2E artist",
+          lyricsPreview: null,
+          tieUp: null,
+        },
+      });
+    });
+    const choice = remote.getByRole("tablist", { name: "Lyrics on the TV" });
+    const selected = choice.locator('[aria-selected="true"]');
+
+    // The phone's default: kana, until the profile says otherwise.
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await expect(choice.getByRole("tab")).toHaveText(Object.values(LABELS));
+    await expect(selected).toHaveText("Kana");
+    await choice.getByRole("tab", { name: "Romaji" }).click();
+    await expect(selected).toHaveText("Romaji");
+    expect(
+      await remote.evaluate(() => localStorage.getItem("lyricsMode")),
+    ).toBe("romaji");
+
+    for (const mode of ["romaji", "kana", "both"] as const) {
+      await remote.goto(new URL(`#/joysoundSong/e2e-${mode}`, remoconUrl).href);
+      await expect(
+        remote.getByRole("heading", { name: `E2E Joysound e2e-${mode}` }),
+      ).toBeVisible();
+      // Each song page starts at the profile's choice.
+      await expect(selected).toHaveText("Romaji");
+      await choice.getByRole("tab", { name: LABELS[mode] }).click();
+      await expect(selected).toHaveText(LABELS[mode]);
+      await Promise.all([
+        remote.waitForResponse("**/api/queueSong"),
+        remote.getByRole("button", { name: "Queue song", exact: true }).click(),
+      ]);
+    }
+
+    // The first is playing by now and the others wait, each with its mode.
+    await expect
+      .poll(async () => {
+        const { currentSong, queue } = await liveState(remoconUrl);
+        return Object.fromEntries(
+          [currentSong, ...queue]
+            .filter(Boolean)
+            .map((item) => [item.songId, item.lyricsMode]),
+        );
+      })
+      .toEqual({
+        "e2e-romaji": "romaji",
+        "e2e-kana": "kana",
+        "e2e-both": "both",
+      });
+  });
+});
+
+test.describe("the guide melody slider", () => {
+  const PASSWORD = "e2e guide melody";
+  test.use({ appConfig: adminPasswordConfig(PASSWORD) });
+
+  test("shows during a Joysound song, disabled for a guest; an admin sets the level", async ({
+    karafriends,
+    remote,
+  }) => {
+    const { app, remoconUrl } = karafriends;
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const slider = remote.getByRole("slider", { name: "Guide melody" });
+    await expect(remote.getByText("Nothing playing")).toBeVisible();
+    await expect(slider).toHaveCount(0);
+
+    await fakeJoysoundDownload(app, "e2e-melody");
+    const res = await fetch(new URL("api/queueSong", remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Device-Id": "e2e-someone",
+        "X-Karafriends-Nickname": "someone",
+      },
+      body: JSON.stringify({
+        kind: "joysound",
+        songId: "e2e-melody",
+        name: "E2E melody song",
+        artistName: "E2E artist",
+        lyricsMode: "kana",
+        youtubeVideoId: null,
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    // The display starts it at once.
+    await expect(slider).toBeVisible({ timeout: 15_000 });
+    await expect(slider).toBeDisabled();
+    await expect(slider).toHaveValue("0");
+
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Admin password").fill(PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+
+    await expect(slider).toBeEnabled();
+    expect((await slider.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await slider.fill("0.7");
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
+      .toBe(0.7);
+    await expect(slider).toHaveValue("0.7");
   });
 });

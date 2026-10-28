@@ -22,6 +22,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Search results from DAM and Joysound come in one list, best match first, instead of all of DAM's and then all of Joysound's: an exact title before one that starts with the words, before one that contains them, and shorter titles first. Kana, kanji, romaji and full-width queries match DAM's readings too ("koi" finds 恋). Artist searches are ranked the same way.
 - Admins reorder the queue on the phone by dragging a song's grip (or with the arrow keys on it) instead of the up and down buttons; Move to top stays.
 - Admins can turn up Joysound's guide melody, which was never heard before (`setGuideMelodyLevel`, 0 to 1, muted by default and kept across songs and restarts).
+- A Joysound song's lyrics show on the TV with kana over the kanji, in romaji, or both (romaji under the kanji line), picked on its page when queueing, with the phone's default on the profile screen ("Lyrics on the TV"); the romaji queue button is gone. Admins set the guide melody with a slider in the playback controls while a Joysound song plays.
 
 ## 0.1.0
 

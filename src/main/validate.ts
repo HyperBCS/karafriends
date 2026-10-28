@@ -13,7 +13,7 @@ import type {
   QueueSongInput,
   SettingsChanges,
 } from "../common/api";
-import { PLAYBACK_STATES } from "../common/api";
+import { LYRICS_MODES, PLAYBACK_STATES } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
 import { ApiError } from "./api";
 import { SETTABLE_KEYS } from "./settings";
@@ -154,7 +154,7 @@ const QUEUE_FIELDS = [
 
 const QUEUE_KIND_FIELDS: Record<QueueItemKind, string[]> = {
   dam: ["streamingUrlIdx"],
-  joysound: ["isRomaji", "youtubeVideoId"],
+  joysound: ["lyricsMode", "youtubeVideoId"],
   youtube: ["adhocLyrics", "captionCode", "gainValue"],
   nico: [],
 };
@@ -199,7 +199,7 @@ function queueSong(raw: unknown): QueueSongInput {
       return {
         kind,
         ...song,
-        isRomaji: boolean(input, "isRomaji"),
+        lyricsMode: oneOf(input, "lyricsMode", LYRICS_MODES),
         youtubeVideoId:
           youtubeVideoId === null
             ? null

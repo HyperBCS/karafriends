@@ -1,11 +1,13 @@
 import formatDuration from "format-duration";
 import React, { useState } from "react";
 
-import type {
-  DamSongDetail,
-  JoysoundSongDetail,
-  QueueSongInput,
-  VocalType,
+import {
+  LYRICS_MODES,
+  type DamSongDetail,
+  type JoysoundSongDetail,
+  type LyricsMode,
+  type QueueSongInput,
+  type VocalType,
 } from "../../common/api";
 import useDownloadButtonText, {
   DOWNLOADING,
@@ -15,7 +17,7 @@ import useDownloadButtonText, {
 } from "../hooks/useDownloadButtonText";
 import useQueueSong from "../hooks/useQueueSong";
 import { t } from "../i18n";
-import { Button, type ButtonVariant } from "./ui";
+import { Button, Tabs, type ButtonVariant } from "./ui";
 import * as styles from "./QueueButtons.module.scss";
 
 interface QueueButtonProps {
@@ -90,11 +92,45 @@ type Props =
       disabled: boolean;
     };
 
+const LYRICS_MODE_KEY = "lyricsMode";
+
+// The phone's choice of how Joysound lyrics show on the TV (the profile's
+// "Lyrics on the TV"), kept in localStorage; kana without one.
+export function savedLyricsMode(): LyricsMode {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(LYRICS_MODE_KEY);
+  } catch {
+    // Storage blocked: the default.
+  }
+  return LYRICS_MODES.find((mode) => mode === saved) ?? "kana";
+}
+
+export function saveLyricsMode(mode: LyricsMode) {
+  try {
+    localStorage.setItem(LYRICS_MODE_KEY, mode);
+  } catch {
+    // Not saved; the song page still starts at kana.
+  }
+}
+
+export const LyricsModeTabs = (props: {
+  selected: LyricsMode;
+  onSelect: (mode: LyricsMode) => void;
+}) => (
+  <Tabs<LyricsMode>
+    label={t("lyricsMode.label")}
+    tabs={LYRICS_MODES.map((id) => ({ id, label: t(`lyricsMode.${id}`) }))}
+    {...props}
+  />
+);
+
 // A DAM or Joysound song's queue buttons: one per DAM vocal type (with or
-// without a guide vocal), or Joysound's kana and romaji lyrics. One at a
-// time.
+// without a guide vocal), or Joysound's one button with the lyrics' mode
+// above it. One at a time.
 const QueueButtons = (props: Props) => {
   const [busy, setBusy] = useState(false);
+  const [lyricsMode, setLyricsMode] = useState(savedLyricsMode);
   const { song } = props;
   const base = {
     songId: song.id,
@@ -112,19 +148,27 @@ const QueueButtons = (props: Props) => {
             streamingUrlIdx: i,
           },
         }))
-      : [false, true].map((isRomaji) => ({
-          label: isRomaji ? t("queueButton.songRomaji") : t("queueButton.song"),
-          input: {
-            ...base,
-            kind: "joysound",
-            playtime: null,
-            isRomaji,
-            youtubeVideoId: props.youtubeVideoId,
+      : [
+          {
+            label: t("queueButton.song"),
+            input: {
+              ...base,
+              kind: "joysound",
+              playtime: null,
+              lyricsMode,
+              youtubeVideoId: props.youtubeVideoId,
+            },
           },
-        }));
+        ];
 
   return (
     <div className={styles.buttons}>
+      {props.kind === "joysound" && (
+        <>
+          <h3 className={styles.heading}>{t("lyricsMode.label")}</h3>
+          <LyricsModeTabs selected={lyricsMode} onSelect={setLyricsMode} />
+        </>
+      )}
       {buttons.map(({ label, input }, i) => (
         <QueueButton
           key={i}
