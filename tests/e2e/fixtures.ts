@@ -360,6 +360,10 @@ async function launchKarafriends(
       KARAFRIENDS_LOCAL_ONLY: "1",
       // Keep the full-screen display window off the user's screen.
       KARAFRIENDS_HIDE_WINDOW: "1",
+      // Fake mics and outputs (src/preload/index.ts): no test opens a real
+      // device, and the display's calls can be read from
+      // window.karafriendsFakeAudio.calls().
+      KARAFRIENDS_FAKE_AUDIO: "1",
       ...options.appEnv,
     });
 
