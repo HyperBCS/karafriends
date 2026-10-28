@@ -13,12 +13,13 @@ import path from "path";
 
 import type {
   AdhocLyricsEntry,
+  LyricsMode,
   PlaybackState,
   QueueItem,
   QueueItemKind,
   UserIdentity,
 } from "../common/api";
-import { PLAYBACK_STATES } from "../common/api";
+import { LYRICS_MODES, PLAYBACK_STATES } from "../common/api";
 
 // A download in progress, or one that failed in the last
 // FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
@@ -378,7 +379,12 @@ function parseQueueItem(raw: unknown): QueueItem | null {
       return {
         kind,
         ...base,
-        isRomaji: raw.isRomaji === true,
+        // Items saved before the three modes had isRomaji instead.
+        lyricsMode: LYRICS_MODES.includes(raw.lyricsMode as LyricsMode)
+          ? (raw.lyricsMode as LyricsMode)
+          : raw.isRomaji === true
+            ? "romaji"
+            : "kana",
         youtubeVideoId:
           typeof raw.youtubeVideoId === "string" ? raw.youtubeVideoId : null,
       };

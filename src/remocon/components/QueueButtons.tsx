@@ -118,7 +118,7 @@ const QueueButtons = (props: Props) => {
             ...base,
             kind: "joysound",
             playtime: null,
-            isRomaji,
+            lyricsMode: isRomaji ? "romaji" : "kana",
             youtubeVideoId: props.youtubeVideoId,
           },
         }));

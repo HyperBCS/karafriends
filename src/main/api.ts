@@ -600,7 +600,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           const item: JoysoundQueueItem = {
             kind: "joysound",
             ...base,
-            isRomaji: input.isRomaji,
+            lyricsMode: input.lyricsMode,
             youtubeVideoId: input.youtubeVideoId,
           };
           deps.downloads.joysound(

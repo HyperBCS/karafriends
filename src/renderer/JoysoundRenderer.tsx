@@ -3,6 +3,7 @@ import invariant from "ts-invariant";
 
 import "./JoysoundRenderer.css";
 
+import type { LyricsMode } from "../common/api";
 import parseJoysoundData, {
   decodeJoysoundText,
   JoysoundLyricsBlock,
@@ -81,6 +82,24 @@ const MAIN_FONT_STROKE = 4;
 
 const ROMAJI_FONT_SIZE = 20;
 const ROMAJI_FONT_STROKE = 2;
+
+// A line of a lyrics block: its font size and stroke.
+interface LineSize {
+  size: number;
+  stroke: number;
+}
+
+const lineHeight = (line: LineSize) => line.size + line.stroke * 2;
+
+// "kana" draws the ruby above the main line, "romaji" the romaji there
+// instead. "both" adds the romaji under the main line, in the same height
+// (so it can't run into the next line): its three lines are smaller.
+const RUBY_LINE = { size: RUBY_FONT_SIZE, stroke: RUBY_FONT_STROKE };
+const MAIN_LINE = { size: MAIN_FONT_SIZE, stroke: MAIN_FONT_STROKE };
+const ROMAJI_LINE = { size: ROMAJI_FONT_SIZE, stroke: ROMAJI_FONT_STROKE };
+const BOTH_RUBY_LINE = { size: 14, stroke: 2 };
+const BOTH_MAIN_LINE = { size: 36, stroke: 3 };
+const BOTH_ROMAJI_LINE = { size: 14, stroke: 2 };
 
 const SCREEN_WIDTH = 720;
 const SCREEN_HEIGHT = 480;
@@ -297,8 +316,9 @@ function drawTitleRowsToCanvas(
 function createTitleTexture(
   gl: WebGL2RenderingContext,
   metadata: JoysoundMetadata,
-  isRomaji: boolean,
+  lyricsMode: LyricsMode,
 ): WebGLTexture {
+  const isRomaji = lyricsMode === "romaji";
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
 
@@ -411,16 +431,32 @@ function createLyricsBlockTexture(
   lyricsBlock: JoysoundLyricsBlock,
   fillColor: number[],
   strokeColor: number[],
-  isRomaji: boolean,
+  lyricsMode: LyricsMode,
 ): WebGLTexture {
   setupTextCanvas(textCtx, lyricsBlock, fillColor, strokeColor);
 
-  drawMainTextToCanvas(textCtx, lyricsBlock);
-
-  if (isRomaji) {
-    drawRomajiTextToCanvas(textCtx, lyricsBlock);
+  if (lyricsMode === "both") {
+    const mainY = lineHeight(BOTH_RUBY_LINE);
+    drawFuriganaTextToCanvas(textCtx, lyricsBlock, BOTH_RUBY_LINE);
+    drawMainTextToCanvas(textCtx, lyricsBlock, BOTH_MAIN_LINE, mainY);
+    drawRomajiTextToCanvas(
+      textCtx,
+      lyricsBlock,
+      BOTH_ROMAJI_LINE,
+      mainY + lineHeight(BOTH_MAIN_LINE),
+    );
   } else {
-    drawFuriganaTextToCanvas(textCtx, lyricsBlock);
+    drawMainTextToCanvas(
+      textCtx,
+      lyricsBlock,
+      MAIN_LINE,
+      lineHeight(RUBY_LINE),
+    );
+    if (lyricsMode === "romaji") {
+      drawRomajiTextToCanvas(textCtx, lyricsBlock, ROMAJI_LINE, 0);
+    } else {
+      drawFuriganaTextToCanvas(textCtx, lyricsBlock, RUBY_LINE);
+    }
   }
 
   return createTextureFromImage(gl, textCtx.canvas);
@@ -521,6 +557,8 @@ function drawTextToCanvas(
 function drawMainTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   lyricsBlock: JoysoundLyricsBlock,
+  line: LineSize,
+  yPos: number,
 ): void {
   let currX = 0;
 
@@ -531,17 +569,17 @@ function drawMainTextToCanvas(
       lyricsBlock.flags,
     );
 
-    textCtx.font = `${MAIN_FONT_SIZE}px ${getFontFace(glyphChar.font)}`;
-    textCtx.lineWidth = MAIN_FONT_STROKE * 2;
+    textCtx.font = `${line.size}px ${getFontFace(glyphChar.font)}`;
+    textCtx.lineWidth = line.stroke * 2;
 
     const xPos = currX + getTextOffset(textCtx, text, glyphChar.width);
 
     drawTextToCanvas(
       textCtx,
-      MAIN_FONT_SIZE,
-      MAIN_FONT_STROKE,
+      line.size,
+      line.stroke,
       xPos,
-      RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2,
+      yPos,
       text,
       glyphChar.font,
     );
@@ -550,26 +588,26 @@ function drawMainTextToCanvas(
   }
 }
 
+// The ruby, at the top of the block. Smaller ruby stays centred where the
+// full-size ruby would be.
 function drawFuriganaTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   lyricsBlock: JoysoundLyricsBlock,
+  line: LineSize,
 ): void {
+  const advance = line.size + line.stroke;
+  const fullAdvance = RUBY_FONT_SIZE + RUBY_FONT_STROKE;
+
   for (const furiganaBlock of lyricsBlock.furigana) {
-    let currX = furiganaBlock.xPos;
+    const count = furiganaBlock.chars.length;
+    let currX = furiganaBlock.xPos + ((fullAdvance - advance) * count) / 2;
 
     for (const charCode of furiganaBlock.chars) {
       const unicodeChar = decodeJoysoundText(charCode);
 
-      drawTextToCanvas(
-        textCtx,
-        RUBY_FONT_SIZE,
-        RUBY_FONT_STROKE,
-        currX,
-        0,
-        unicodeChar,
-      );
+      drawTextToCanvas(textCtx, line.size, line.stroke, currX, 0, unicodeChar);
 
-      currX += RUBY_FONT_SIZE + RUBY_FONT_STROKE;
+      currX += advance;
     }
   }
 }
@@ -577,12 +615,14 @@ function drawFuriganaTextToCanvas(
 function drawRomajiTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   lyricsBlock: JoysoundLyricsBlock,
+  line: LineSize,
+  yPos: number,
 ): void {
   const sortedRomaji = lyricsBlock.romaji.sort((a, b) => a.xPos - b.xPos);
 
   for (const romajiBlock of sortedRomaji) {
-    textCtx.font = `${ROMAJI_FONT_SIZE}px ${getFontFace(0)}`;
-    textCtx.lineWidth = ROMAJI_FONT_STROKE * 2;
+    textCtx.font = `${line.size}px ${getFontFace(0)}`;
+    textCtx.lineWidth = line.stroke * 2;
 
     const xPos = romajiBlock.xPos;
     const xOff = getRomajiTextOffset(
@@ -593,10 +633,10 @@ function drawRomajiTextToCanvas(
 
     drawTextToCanvas(
       textCtx,
-      ROMAJI_FONT_SIZE,
-      ROMAJI_FONT_STROKE,
+      line.size,
+      line.stroke,
       xPos + xOff,
-      0,
+      yPos,
       romajiBlock.phrase,
     );
   }
@@ -605,7 +645,7 @@ function drawRomajiTextToCanvas(
 function createLyricsBlockTextures(
   gl: WebGL2RenderingContext,
   lyricsData: JoysoundLyricsBlock[],
-  isRomaji: boolean,
+  lyricsMode: LyricsMode,
 ): LyricsBlockTextures[] {
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
@@ -619,7 +659,7 @@ function createLyricsBlockTextures(
       lyricsBlock,
       lyricsBlock.preFill.rgb,
       lyricsBlock.preBorder.rgb,
-      isRomaji,
+      lyricsMode,
     );
 
     const postTexture = createLyricsBlockTexture(
@@ -628,7 +668,7 @@ function createLyricsBlockTextures(
       lyricsBlock,
       lyricsBlock.postFill.rgb,
       lyricsBlock.postBorder.rgb,
-      isRomaji,
+      lyricsMode,
     );
 
     lyricsBlockTextures.push({ preTexture, postTexture });
@@ -782,7 +822,7 @@ export default function JoysoundRenderer(props: {
   telop: ArrayBuffer;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   kuroshiro: KuroshiroSingleton;
-  isRomaji: boolean;
+  lyricsMode: LyricsMode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -833,11 +873,11 @@ export default function JoysoundRenderer(props: {
       });
       invariant(gl);
 
-      const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
+      const titleTexture = createTitleTexture(gl, metadata, props.lyricsMode);
       const lyricsBlockTextures = createLyricsBlockTextures(
         gl,
         lyricsData,
-        props.isRomaji,
+        props.lyricsMode,
       );
 
       const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
@@ -958,7 +998,7 @@ export default function JoysoundRenderer(props: {
       window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(animationFrameRequestRef.current);
     };
-  }, [props.telop, props.isRomaji]);
+  }, [props.telop, props.lyricsMode]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;
 }

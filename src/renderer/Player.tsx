@@ -30,7 +30,7 @@ function Player(props: {
       {overlay?.kind === "joysound" && overlay.telop !== null ? (
         <JoysoundRenderer
           telop={overlay.telop}
-          isRomaji={overlay.isRomaji}
+          lyricsMode={overlay.lyricsMode}
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
         />

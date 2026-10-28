@@ -230,7 +230,7 @@ describe("loadState", () => {
         playtime: null,
         timestamp: "2",
         user,
-        isRomaji: true,
+        lyricsMode: "romaji",
         youtubeVideoId: null,
       },
       {
@@ -243,6 +243,35 @@ describe("loadState", () => {
         user,
       },
     ]);
+  });
+
+  test("reads a Joysound song's isRomaji, saved before the lyrics modes, as its mode", () => {
+    const joysound = (n: number, fields: object) => ({
+      kind: "joysound",
+      songId: String(n),
+      name: `Song ${n}`,
+      artistName: "Artist",
+      timestamp: String(n),
+      user: { deviceId: "d", nickname: "n" },
+      youtubeVideoId: null,
+      ...fields,
+    });
+    write({
+      songQueue: [
+        joysound(1, { isRomaji: true }),
+        joysound(2, { isRomaji: false }),
+        joysound(3, {}),
+        joysound(4, { lyricsMode: "both" }),
+        joysound(5, { lyricsMode: "romaji" }),
+        joysound(6, { lyricsMode: "furigana", isRomaji: true }),
+      ],
+    });
+    assert.deepEqual(
+      loadState(file).songQueue.map(
+        (item) => item.kind === "joysound" && item.lyricsMode,
+      ),
+      ["romaji", "kana", "kana", "both", "romaji", "romaji"],
+    );
   });
 
   test("drops entries it can't read and keeps the rest", () => {

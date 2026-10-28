@@ -168,7 +168,7 @@ test.describe("a queued song whose files are missing", () => {
           playtime: 60,
           timestamp: at(0),
           user,
-          isRomaji: false,
+          lyricsMode: "kana",
           youtubeVideoId: null,
         },
         nico(1),

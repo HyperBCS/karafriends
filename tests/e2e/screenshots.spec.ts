@@ -154,7 +154,7 @@ const QUEUE = [
     playtime: 304,
     timestamp: at(57),
     user: user("Mio"),
-    isRomaji: false,
+    lyricsMode: "kana",
     youtubeVideoId: null,
   },
   {
@@ -246,7 +246,7 @@ test.describe("phase C", () => {
       user: user(who as string),
       ...(kind === "dam"
         ? { streamingUrlIdx: 0 }
-        : { isRomaji: false, youtubeVideoId: null }),
+        : { lyricsMode: "kana", youtubeVideoId: null }),
     },
   }));
 

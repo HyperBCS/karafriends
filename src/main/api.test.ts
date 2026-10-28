@@ -944,7 +944,7 @@ describe("queueSong", () => {
           songId: "123",
           name: "",
           artistName: "",
-          isRomaji: false,
+          lyricsMode: "kana",
           youtubeVideoId: "../x",
         },
         alice,
@@ -1089,7 +1089,7 @@ describe("a failed download", () => {
           name: "j",
           artistName: "",
           playtime: 1,
-          isRomaji: false,
+          lyricsMode: "kana",
           youtubeVideoId,
         },
         bob,
@@ -1154,7 +1154,7 @@ describe("a failed download", () => {
         songId: "123",
         name: "j",
         artistName: "",
-        isRomaji: false,
+        lyricsMode: "kana",
         youtubeVideoId: "jNQXAC9IVRw",
       },
       alice,
@@ -1288,7 +1288,7 @@ describe("validators", () => {
         name: "Song",
         artistName: "Artist",
         playtime: 200,
-        isRomaji: false,
+        lyricsMode: "kana",
       }),
       {
         kind: "joysound",
@@ -1297,10 +1297,21 @@ describe("validators", () => {
         artistName: "Artist",
         playtime: 200,
         tryHeadOfQueue: undefined,
-        isRomaji: false,
+        lyricsMode: "kana",
         youtubeVideoId: null,
       },
     );
+    for (const lyricsMode of ["romaji", "both"]) {
+      const input = validators.queueSong({
+        kind: "joysound",
+        songId: "123",
+        name: "Song",
+        artistName: "Artist",
+        lyricsMode,
+        youtubeVideoId: null,
+      });
+      assert.equal(input.kind === "joysound" && input.lyricsMode, lyricsMode);
+    }
     assert.equal(
       validators.queueSong({
         kind: "youtube",
@@ -1334,9 +1345,15 @@ describe("validators", () => {
       ...nico,
       kind: "joysound",
       songId: "123",
-      isRomaji: false,
+      lyricsMode: "kana",
       youtubeVideoId: "../x",
     });
+    const joysound = { ...nico, kind: "joysound", songId: "123" };
+    invalid("queueSong", { ...joysound });
+    invalid("queueSong", { ...joysound, lyricsMode: "hiragana" });
+    invalid("queueSong", { ...joysound, lyricsMode: true });
+    // The field it replaced.
+    invalid("queueSong", { ...joysound, isRomaji: true });
     invalid("queueSong", { ...nico, kind: undefined });
     invalid("queueSong", { ...nico, songId: 9 });
     invalid("queueSong", { ...nico, name: undefined });

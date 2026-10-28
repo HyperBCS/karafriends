@@ -72,9 +72,14 @@ export interface DamQueueItem extends QueueItemBase {
   streamingUrlIdx: number;
 }
 
+// How a Joysound song's lyrics show on the display: kanji with kana ruby,
+// romaji, or the romaji line under the kanji line.
+export const LYRICS_MODES = ["kana", "romaji", "both"] as const;
+export type LyricsMode = (typeof LYRICS_MODES)[number];
+
 export interface JoysoundQueueItem extends QueueItemBase {
   kind: "joysound";
-  isRomaji: boolean;
+  lyricsMode: LyricsMode;
   youtubeVideoId: string | null;
 }
 
@@ -136,7 +141,7 @@ export type QueueSongInput =
   | (SongToQueueBase & { kind: "dam"; streamingUrlIdx: number })
   | (SongToQueueBase & {
       kind: "joysound";
-      isRomaji: boolean;
+      lyricsMode: LyricsMode;
       youtubeVideoId: string | null;
     })
   | (SongToQueueBase & {
