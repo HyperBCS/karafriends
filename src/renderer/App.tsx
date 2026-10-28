@@ -161,11 +161,13 @@ function App(props: {
     _setMics(newMics);
   };
 
-  // One mic's new levels, on its device (and any other row on the same
-  // channel), and saved.
-  const changeLevels = (id: string, newLevels: MicLevels) => {
-    const allLevels = { ...levels, [id]: newLevels };
-    for (const mic of mics.filter((m) => idOf(m) === id)) {
+  // New levels for some mics, by micId: on their devices (and any other row
+  // on the same channel), and saved, all in one update.
+  const changeLevels = (changes: Record<string, MicLevels>) => {
+    const allLevels = { ...levels, ...changes };
+    for (const mic of mics) {
+      const newLevels = changes[idOf(mic)];
+      if (!newLevels) continue;
       mic.setGain(newLevels.gain / 100);
       mic.setEcho(newLevels.echo / 100);
     }
@@ -198,13 +200,18 @@ function App(props: {
       sentMics.current = sentMics.current.slice(sent);
       return;
     }
+    const changes: Record<string, MicLevels> = {};
     for (const { id, gain, echo } of liveMics) {
       if (!mics.some((mic) => idOf(mic) === id)) continue;
       const own = levelsOf(id);
-      if (own.gain !== gain || own.echo !== echo) {
-        changeLevels(id, { gain, echo });
-      }
+      if (own.gain !== gain || own.echo !== echo) changes[id] = { gain, echo };
     }
+    if (Object.keys(changes).length === 0) return;
+    // The server already holds the list this display sends next, so that
+    // one never comes back to trim the older ones: an admin's later return
+    // to one of them would be taken for an echo.
+    sentMics.current = [];
+    changeLevels(changes);
   });
 
   // Kept only once it opened (or fell back to the default), so a choice
@@ -335,7 +342,7 @@ function App(props: {
             micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}
             onChangeLevels={(mic, newLevels) =>
-              changeLevels(idOf(mic), newLevels)
+              changeLevels({ [idOf(mic)]: newLevels })
             }
             onRemoveMic={removeMic}
             micOutput={micOutput}
