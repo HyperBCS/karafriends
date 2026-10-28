@@ -6,7 +6,15 @@
   height: 90%;
 }
 
+/* Each line hangs from the bottom of the container, --line lines up from
+   the newest (1): 15.3vw a line, as the old canvas measurement gave
+   (3.4 × a 4vw font's height). */
 .entry-container {
+  margin-top: calc(var(--line) * -15.3vw + 64px);
+  margin-left: 32px;
+  width: calc(100% - 128px);
+  text-align: center;
+  line-height: 1.25em;
   font-size: 44px;
   /* Replace with real stroke when https://bugs.chromium.org/p/chromium/issues/detail?id=815111 is fixed */
   text-shadow:

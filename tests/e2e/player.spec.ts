@@ -10,7 +10,7 @@ import path from "path";
 import type { Page } from "@playwright/test";
 
 import { buildJoy02, type Joy02Event, joy02Events } from "../fixtures/joy02";
-import { expect, test } from "./fixtures";
+import { displayCall, expect, test } from "./fixtures";
 
 const fakeYtdlp = (name: string) =>
   path.resolve(
@@ -555,5 +555,70 @@ test.describe("a Joysound song's lyrics", () => {
       .toBeGreaterThanOrEqual(4);
 
     expect(karafriends.displayErrors).toEqual([]);
+  });
+});
+
+test.describe("a YouTube song's adhoc lyrics", () => {
+  const VIDEO = "e2eAdhocVid";
+  const LYRICS = ["E2E first line", "E2E second line", "E2E third line"];
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "youtube",
+          songId: VIDEO,
+          name: "E2E lyrics song",
+          artistName: "",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-player-device", nickname: "e2e" },
+          hasAdhocLyrics: true,
+          hasCaptions: false,
+          gainValue: 1,
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+      idToAdhocLyrics: { [VIDEO]: LYRICS },
+    },
+  });
+
+  test("show each pushed line at the bottom, the older ones a line apart above it", async ({
+    karafriends,
+    display,
+  }) => {
+    await expect
+      .poll(() => nowPlaying(karafriends.remoconUrl))
+      .toEqual(["E2E lyrics song", "PLAYING"]);
+    for (const lyricIndex of [0, 1, 2]) {
+      expect(
+        await displayCall(display, "pushAdhocLyrics", { lyricIndex }),
+      ).toEqual({ ok: true, output: true });
+    }
+
+    const lines = display.locator(".lyrics-container .entry-container");
+    await expect(lines).toHaveText(LYRICS);
+    // Only the newest fades in.
+    await expect(lines.locator(".lyric-fade-in")).toHaveText([LYRICS[2]]);
+    // No measuring canvas: the CSS places them, 15.3vw apart, once they've
+    // slid into place.
+    await expect(display.locator(".lyrics-container canvas")).toHaveCount(0);
+    const vw = await display.evaluate(() => window.innerWidth / 100);
+    await expect
+      .poll(async () => {
+        const tops = await lines.evaluateAll((elements) =>
+          elements.map((e) => e.getBoundingClientRect().top),
+        );
+        return tops.slice(1).map((top, i) => Math.round(top - tops[i]));
+      })
+      .toEqual([Math.round(15.3 * vw), Math.round(15.3 * vw)]);
+    // The newest is on screen, above the container's bottom.
+    const container = await display.locator(".lyrics-container").boundingBox();
+    const newest = await lines.last().boundingBox();
+    expect(newest!.y + newest!.height).toBeLessThanOrEqual(
+      container!.y + container!.height,
+    );
+    expect(newest!.y).toBeGreaterThan(container!.y);
   });
 });
