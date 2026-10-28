@@ -49,6 +49,25 @@ function killTree(proc: ChildProcess, label: string): void {
   }
 }
 
+// Passes the text pushed to it on to onLine a line at a time: a line ends
+// in "\n", "\r\n" or "\r" (ffmpeg's and yt-dlp's progress lines), and the
+// rest waits for more, or for end().
+function lineSplitter(onLine: ((line: string) => void) | undefined) {
+  let rest = "";
+  return {
+    push(text: string) {
+      if (!onLine) return;
+      const lines = (rest + text).split(/\r\n|\r|\n/);
+      rest = lines.pop() ?? "";
+      for (const line of lines) onLine(line);
+    },
+    end() {
+      if (onLine && rest !== "") onLine(rest);
+      rest = "";
+    },
+  };
+}
+
 // The longest one yt-dlp or ffmpeg run may take before it's stopped. A song
 // downloads in a minute or two; this is for one that hangs.
 const TOOL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -65,8 +84,10 @@ export interface ToolRun {
   logFilename: string;
   freshLog?: boolean;
   stdin?: Buffer | string | null;
-  onStdout?: (text: string) => void;
-  onStderr?: (text: string) => void;
+  // Get the tool's output a line at a time (ended by "\n" or "\r", which
+  // they leave off): a tool writes a line in pieces at times.
+  onStdout?: (line: string) => void;
+  onStderr?: (line: string) => void;
   // The reason for guests when the tool exits non-zero, from the end of
   // its output.
   reasonForExit: (output: string) => string;
@@ -141,16 +162,18 @@ export function runTool(run: ToolRun): Promise<void> {
     proc.stdout.pipe(log, { end: false });
     proc.stderr.pipe(process.stderr);
     proc.stderr.pipe(log, { end: false });
-    proc.stdout.on("data", (data: Buffer) => {
-      const text = data.toString();
-      keep(text);
-      run.onStdout?.(text);
-    });
-    proc.stderr.on("data", (data: Buffer) => {
-      const text = data.toString();
-      keep(text);
-      run.onStderr?.(text);
-    });
+    for (const [stream, onLine] of [
+      [proc.stdout, run.onStdout],
+      [proc.stderr, run.onStderr],
+    ] as const) {
+      const lines = lineSplitter(onLine);
+      stream.on("data", (data: Buffer) => {
+        const text = data.toString();
+        keep(text);
+        lines.push(text);
+      });
+      stream.on("end", lines.end);
+    }
 
     // Emitted when the tool can't be launched (missing, not executable).
     // Unhandled, an "error" event crashes the app.

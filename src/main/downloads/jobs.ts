@@ -20,7 +20,7 @@ import { songFileNames } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
 import { withDamSlot, withYtdlpSlot } from "./queue";
-import { probeDuration, runTool, type ToolRun } from "./run";
+import { parseDuration, probeDuration, runTool, type ToolRun } from "./run";
 
 // Where the jobs write (TEMP_FOLDER, in the app) and the tools they run.
 export interface JobPaths {
@@ -288,20 +288,13 @@ function downloadJoysoundVideoPromise(
     tempFilename,
   ];
 
-  const onStderr = (ffmpegLog: string) => {
-    const durationMatchData = ffmpegLog.match(/Duration:\s*(\d+):(\d+):(\d+)/);
-
-    if (durationMatchData) {
-      let songDuration = 0;
-
-      songDuration += parseInt(durationMatchData[1], 10) * 3600;
-      songDuration += parseInt(durationMatchData[2], 10) * 60;
-      songDuration += parseInt(durationMatchData[3], 10);
-
-      songFrames = songDuration * 30;
+  const onStderr = (line: string) => {
+    const duration = parseDuration(line);
+    if (duration !== null) songFrames = duration * 30;
+    // Not before the length is known: progress would be NaN, then stick.
+    if (songFrames > 0) {
+      handleFFmpegDownloadLog(line, songFrames, downloadQueueItem);
     }
-
-    handleFFmpegDownloadLog(ffmpegLog, songFrames, downloadQueueItem);
   };
 
   // ffmpeg fetches the video from Joysound's servers.
@@ -382,19 +375,12 @@ async function composeJoysoundVideoPromise(
     videoFilename,
   ];
 
-  const onStderr = (ffmpegLog: string) => {
-    const durationMatchData = ffmpegLog.match(
-      /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
-    );
-
-    // XXX: We assume that the video duration always comes first
-    if (durationMatchData && videoPlaytime === 0) {
-      videoPlaytime += parseInt(durationMatchData[1], 10) * 3600;
-      videoPlaytime += parseInt(durationMatchData[2], 10) * 60;
-      videoPlaytime += parseInt(durationMatchData[3], 10);
-      videoPlaytime =
-        videoPlaytime * 1000 + parseInt(durationMatchData[4], 10) * 10;
-    }
+  const onStderr = (line: string) => {
+    // The video's Duration comes first, as it's the first input. (The ogg
+    // on stdin says "Duration: N/A", which parseDuration skips.)
+    if (videoPlaytime !== 0) return;
+    const duration = parseDuration(line);
+    if (duration !== null) videoPlaytime = Math.round(duration * 1000);
   };
 
   try {
