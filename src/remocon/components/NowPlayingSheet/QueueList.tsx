@@ -1,11 +1,15 @@
 import formatDuration from "format-duration";
 import React, { memo, useCallback, useState } from "react";
 
-import type { SharedQueueItem } from "../../../common/api";
-import { useIsAdmin, useLiveState } from "../../../common/apiClient";
+import type { ApiInput, SharedQueueItem } from "../../../common/api";
+import { call, useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
-import useOptimisticValue from "../../../common/hooks/useOptimisticValue";
-import useQueue, { useWait, withETAs } from "../../../common/hooks/useQueue";
+import useLiveSetter from "../../../common/hooks/useLiveSetter";
+import useQueue, {
+  type QueueEntry,
+  useWait,
+  withETAs,
+} from "../../../common/hooks/useQueue";
 import { reading } from "../../../common/readings";
 import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
@@ -147,34 +151,36 @@ const QueueRow = memo(function QueueRow({
 // queue, not every second.
 const QueueList = () => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
-  const [queue, setPending, clearPending] = useOptimisticValue(useQueue(false));
-  const isAdmin = useIsAdmin() === true;
   const [moveError, setMoveError] = useState<string | null>(null);
-  const { mutate: moveSong } = useApiMutation("moveSong", {
-    onSuccess: ({ ok }) => {
-      // Gone from the queue meanwhile: nothing moved.
-      if (!ok) clearPending();
-    },
-    onError: (err) => {
-      clearPending();
-      setMoveError(err.message);
-    },
-  });
+  // The queue as moved; each move goes in turn. Gone from the queue
+  // meanwhile (ok false), nothing moved.
+  const [queue, setQueue] = useLiveSetter(
+    useQueue(false),
+    (_moved: QueueEntry[], move: ApiInput<"moveSong">) =>
+      call("moveSong", move).then(
+        ({ ok }) => ok,
+        (err: Error) => {
+          setMoveError(err.message);
+          throw err;
+        },
+      ),
+    "move the song",
+  );
+  const isAdmin = useIsAdmin() === true;
 
   const move = useCallback(
     (from: number, to: number) => {
       const items = queue.map(([item]) => item);
       const [item] = items.splice(from, 1);
       items.splice(to, 0, item);
-      setPending(withETAs(currentSong, items));
       setMoveError(null);
-      moveSong({
+      setQueue(withETAs(currentSong, items), {
         songId: item.songId,
         timestamp: item.timestamp,
         toIndex: to,
       });
     },
-    [queue, currentSong, setPending, moveSong],
+    [queue, currentSong, setQueue],
   );
   const handleProps = useDragReorder(queue.length, move);
 

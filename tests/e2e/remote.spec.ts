@@ -955,6 +955,32 @@ test.describe("the now-playing bar", () => {
     await remote.waitForTimeout(500);
     await expect(key).toHaveText("0");
   });
+
+  test("quick ♯ taps each count", async ({ karafriends, remote }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const raise = remote.getByRole("button", {
+      name: "Raise the key",
+      exact: true,
+    });
+    await expect(raise).toHaveAttribute("aria-disabled", "false", {
+      timeout: 15_000,
+    });
+    const key = remote.getByRole("status", { name: "Key" });
+    // Faster than the live state's 250 ms: each tap's echo comes after the
+    // next tap, and used to undo it.
+    for (let i = 0; i < 5; i++) {
+      await raise.click();
+      await remote.waitForTimeout(60);
+    }
+    await expect(key).toHaveText("+5");
+    await expect
+      .poll(
+        async () => (await liveState(karafriends.remoconUrl)).pitchShiftSemis,
+      )
+      .toBe(5);
+    await remote.waitForTimeout(1_500);
+    await expect(key).toHaveText("+5");
+  });
 });
 
 // Picking a background video changes the song page's address in place. Back
