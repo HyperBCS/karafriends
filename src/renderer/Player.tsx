@@ -1,8 +1,10 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
-import { KuroshiroSingleton } from "../common/joysoundParser";
+import type { SharedQueueItem } from "../common/api";
+import { useLiveState } from "../common/apiClient";
 import AdhocLyrics from "./AdhocLyrics";
 import JoysoundRenderer from "./JoysoundRenderer";
+import loadKuroshiro from "./kuroshiro";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
@@ -10,10 +12,12 @@ import useGuideMelody from "./useGuideMelody";
 import useSongPlayer, { type Announcement } from "./useSongPlayer";
 import KarafriendsAudio from "./webAudio";
 
+const showsRomaji = (song: SharedQueueItem | null) =>
+  song?.kind === "joysound" && song.lyricsMode !== "kana";
+
 // The video, with the song's lyrics and pitch bars over it.
 function Player(props: {
   mics: InputDevice[];
-  kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
   announce: (announcement: Announcement) => void;
   avOffsetMs: number;
@@ -42,6 +46,16 @@ function Player(props: {
       : overlay?.kind === "joysound"
         ? guideMelody
         : null;
+  // Kuromoji's dictionary loads once a Joysound song with romaji is queued,
+  // so it's ready by the song's title card.
+  const romajiSoon = useLiveState(
+    (state) =>
+      showsRomaji(state?.currentSong ?? null) ||
+      (state?.queue.some(showsRomaji) ?? false),
+  );
+  useEffect(() => {
+    if (romajiSoon) loadKuroshiro().catch(console.error);
+  }, [romajiSoon]);
 
   return (
     <div className="karaVidContainer">
@@ -49,9 +63,9 @@ function Player(props: {
         <JoysoundRenderer
           telop={overlay.telop}
           lyricsMode={overlay.lyricsMode}
-          kuroshiro={props.kuroshiro}
           videoRef={videoRef}
           avOffsetMs={props.avOffsetMs}
+          pitchBars={props.pitchBars}
         />
       ) : null}
       {melody ? (

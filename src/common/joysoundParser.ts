@@ -1,5 +1,3 @@
-import invariant from "ts-invariant";
-
 import Kuroshiro from "kuroshiro";
 import KuromojiAnalyzer, { AnalyzerResult } from "kuroshiro-analyzer-kuromoji";
 
@@ -8,10 +6,11 @@ import kanjiToReading from "./dictionary.json";
 
 type DictionaryKanji = keyof typeof kanjiToReading;
 
+// Kuroshiro with its kuromoji analyzer, initialised: what the romaji comes
+// from (src/renderer/kuroshiro.ts loads it in the display).
 export interface KuroshiroSingleton {
   kuroshiro: Kuroshiro;
   analyzer: KuromojiAnalyzer;
-  analyzerInitPromise: Promise<void>;
 }
 
 export interface JoysoundPaletteColor {
@@ -233,39 +232,28 @@ function getMainRomajiBlocks(
       currPhraseWidth = 0;
     }
 
+    // The glyph's token: none once the tokens run out.
+    const token = tokenizedLyrics[tokenizedLyricsIndex];
+
     // XXX: Welcome hell
     if (!isKanaUnicodeChar(unicodeChar) || unicodeChar === "・") {
       currXPos += currGlyph.width;
     } else {
       if (
-        tokenizedLyrics[tokenizedLyricsIndex].pronunciation &&
-        !Kuroshiro.Util.hasKanji(
-          tokenizedLyrics[tokenizedLyricsIndex].surface_form,
-        ) &&
-        tokenizedLyrics[tokenizedLyricsIndex].pronunciation[
-          tokenizedLyricsCharIndex
-        ] !== undefined &&
-        tokenizedLyrics[tokenizedLyricsIndex].pronunciation[
-          tokenizedLyricsCharIndex
-        ] !== "ー" &&
-        !(
-          tokenizedLyricsIndex === 0 &&
-          tokenizedLyrics[tokenizedLyricsIndex].surface_form === "は"
-        )
+        token?.pronunciation &&
+        !Kuroshiro.Util.hasKanji(token.surface_form) &&
+        token.pronunciation[tokenizedLyricsCharIndex] !== undefined &&
+        token.pronunciation[tokenizedLyricsCharIndex] !== "ー" &&
+        !(tokenizedLyricsIndex === 0 && token.surface_form === "は")
       ) {
-        currPhrase +=
-          tokenizedLyrics[tokenizedLyricsIndex].pronunciation[
-            tokenizedLyricsCharIndex
-          ];
+        currPhrase += token.pronunciation[tokenizedLyricsCharIndex];
       } else if (
-        tokenizedLyrics[tokenizedLyricsIndex].pronunciation &&
-        tokenizedLyrics[tokenizedLyricsIndex].surface_form.length > 1 &&
-        tokenizedLyricsCharIndex ===
-          tokenizedLyrics[tokenizedLyricsIndex].surface_form.length - 1 &&
-        tokenizedLyrics[tokenizedLyricsIndex].surface_form.slice(-1) === "は"
+        token?.pronunciation &&
+        token.surface_form.length > 1 &&
+        tokenizedLyricsCharIndex === token.surface_form.length - 1 &&
+        token.surface_form.slice(-1) === "は"
       ) {
-        currPhrase +=
-          tokenizedLyrics[tokenizedLyricsIndex].pronunciation.slice(-1);
+        currPhrase += token.pronunciation.slice(-1);
       } else {
         currPhrase += unicodeChar;
       }
@@ -277,10 +265,7 @@ function getMainRomajiBlocks(
 
     tokenizedLyricsCharIndex += 1;
 
-    if (
-      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-      tokenizedLyricsCharIndex
-    ) {
+    if (token?.surface_form.length === tokenizedLyricsCharIndex) {
       tokenizedLyricsIndex += 1;
       tokenizedLyricsCharIndex = 0;
     }
@@ -337,14 +322,14 @@ function getNonKanaRomajiBlocks(
 
   for (const currGlyph of chars) {
     const unicodeChar = decodeJoysoundText(currGlyph.charCode, currGlyph.font);
+    const token = tokenizedLyrics[tokenizedLyricsIndex];
 
     if (
+      token !== undefined &&
       isKanjiUnicodeChar(unicodeChar) &&
       currGlyph.font === 0 &&
       (currPhrase.length > 0 || currGlyph.furiganaIndex < 0) &&
-      !Kuroshiro.Util.hasKana(
-        tokenizedLyrics[tokenizedLyricsIndex].surface_form,
-      )
+      !Kuroshiro.Util.hasKana(token.surface_form)
     ) {
       // XXX: This is a mega hack
       currGlyph.furiganaIndex = 6969;
@@ -352,7 +337,7 @@ function getNonKanaRomajiBlocks(
       currPhraseWidth += currGlyph.width;
 
       if (tokenizedLyricsCharIndex === 0) {
-        hiraganaPhrase += tokenizedLyrics[tokenizedLyricsIndex].pronunciation;
+        hiraganaPhrase += token.pronunciation;
       }
     } else {
       if (currPhrase.length > 0) {
@@ -372,10 +357,7 @@ function getNonKanaRomajiBlocks(
 
     tokenizedLyricsCharIndex += 1;
 
-    if (
-      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-      tokenizedLyricsCharIndex
-    ) {
+    if (token?.surface_form.length === tokenizedLyricsCharIndex) {
       tokenizedLyricsIndex += 1;
       tokenizedLyricsCharIndex = 0;
     }
@@ -543,12 +525,49 @@ function deleteOverwrittenFuriganaRomaji(
   }
 }
 
+// A block's romaji. The passes must run in this order: each marks the
+// glyphs it covered in chars[].furiganaIndex, which the later ones read.
+async function getRomaji(
+  chars: JoysoundLyricsChar[],
+  furigana: JoysoundLyricsFurigana[],
+  kuroshiro: KuroshiroSingleton,
+): Promise<JoysoundLyricsRomaji[]> {
+  const rawLyrics = getRawLyrics(chars);
+  // Kuromoji gives a block of only spaces no tokens, and it has no romaji.
+  if (rawLyrics.trim() === "") return [];
+  const tokenizedLyrics = await kuroshiro.analyzer.parse(rawLyrics);
+  const okuriganaLyrics = await kuroshiro.kuroshiro.convert(rawLyrics, {
+    mode: "okurigana",
+    to: "hiragana",
+    delimiter_start: "¬",
+    delimiter_end: "¬",
+  });
+
+  const mainRomaji = getMainRomajiBlocks(chars, tokenizedLyrics);
+  const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
+  // XXX: For kanji without furigana and no kana (i.e. 空), we trust
+  //      dictionary.json and fallback to kuroshiro
+  const nonKanaRomaji = getNonKanaRomajiBlocks(chars, tokenizedLyrics);
+  // XXX: For kanji without furigana and kana (i.e. 下げる), we trust
+  //      kuroshiro's okurigana format
+  const fillerRomaji = getFillerRomajiBlocks(chars, okuriganaLyrics);
+
+  deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
+
+  return mainRomaji
+    .concat(furiganaRomaji)
+    .concat(nonKanaRomaji)
+    .concat(fillerRomaji);
+}
+
+// kuroshiro is null when the song shows no romaji (kana mode): its blocks
+// get none, and kuromoji's dictionary needn't be loaded.
 async function parseLyricsBlock(
   view: DataView,
   offset: number,
   palette: JoysoundPaletteColor[],
-  kuroshiro: KuroshiroSingleton,
-) {
+  kuroshiro: KuroshiroSingleton | null,
+): Promise<JoysoundLyricsBlock> {
   let currOffset = offset;
 
   const blockSize = view.getUint16(currOffset, true);
@@ -607,32 +626,15 @@ async function parseLyricsBlock(
 
   mapCharsToFurigana(chars, furigana);
 
-  await kuroshiro.analyzerInitPromise;
-
-  const rawLyrics = getRawLyrics(chars);
-  const tokenizedLyrics = await kuroshiro.analyzer.parse(rawLyrics);
-  const okuriganaLyrics = await kuroshiro.kuroshiro.convert(rawLyrics, {
-    mode: "okurigana",
-    to: "hiragana",
-    delimiter_start: "¬",
-    delimiter_end: "¬",
-  });
-
-  const mainRomaji = getMainRomajiBlocks(chars, tokenizedLyrics);
-  const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
-  // XXX: For kanji without furigana and no kana (i.e. 空), we trust
-  //      dictionary.json and fallback to kuroshiro
-  const nonKanaRomaji = getNonKanaRomajiBlocks(chars, tokenizedLyrics);
-  // XXX: For kanji without furigana and kana (i.e. 下げる), we trust
-  //      kuroshiro's okurigana format
-  const fillerRomaji = getFillerRomajiBlocks(chars, okuriganaLyrics);
-
-  deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
-
-  const romaji = mainRomaji
-    .concat(furiganaRomaji)
-    .concat(nonKanaRomaji)
-    .concat(fillerRomaji);
+  let romaji: JoysoundLyricsRomaji[] = [];
+  if (kuroshiro) {
+    try {
+      romaji = await getRomaji(chars, furigana, kuroshiro);
+    } catch (error) {
+      // This line goes without romaji; the others keep theirs.
+      console.error("Couldn't work out a line's romaji:", error);
+    }
+  }
 
   return {
     blockSize,
@@ -763,7 +765,7 @@ async function parseJoy02LyricsData(
   data: ArrayBuffer,
   offset: number,
   size: number,
-  kuroshiro: KuroshiroSingleton,
+  kuroshiro: KuroshiroSingleton | null,
 ): Promise<JoysoundLyricsBlock[]> {
   const lyricsView = new DataView(data, offset, size);
   const lyricsBlocks = [];
@@ -840,6 +842,9 @@ function processTimeline(
   let currLyricsBlockIndex = -1;
   let scrollLyricsBlockIndex = -1;
 
+  // An event that points at no block (a wipe change before any wipe, more
+  // wipes or fade-ins than blocks, a fade-out with nothing on screen) is
+  // skipped: one bad event mustn't cost the song its lyrics.
   for (const currEvent of timeline) {
     const eventCode = currEvent.payload[0];
 
@@ -847,13 +852,14 @@ function processTimeline(
       if (eventCode % 2 === 0) {
         scrollLyricsBlockIndex += 1;
 
-        while (lyricsData[scrollLyricsBlockIndex].flags === 0xff) {
+        while (lyricsData[scrollLyricsBlockIndex]?.flags === 0xff) {
           scrollLyricsBlockIndex += 1;
         }
       }
 
       const scrollSpeed = currEvent.payload[1] * (eventCode <= 1 ? 10 : 1);
       const scrollLyricsBlock = lyricsData[scrollLyricsBlockIndex];
+      if (!scrollLyricsBlock) continue;
 
       scrollLyricsBlock.scrollEvents.push({
         time: currEvent.currTime,
@@ -864,12 +870,13 @@ function processTimeline(
     } else if (currEvent.payload[0] === 5) {
       for (let i = 0; i < currEvent.payload[1]; i++) {
         const fadeoutIndex = activeLyricsBlocks.shift();
-        invariant(fadeoutIndex !== undefined);
+        if (fadeoutIndex === undefined) break;
 
         lyricsData[fadeoutIndex].fadeoutTime = currEvent.currTime;
       }
     } else if (currEvent.payload[0] === 6) {
       for (let i = 0; i < currEvent.payload[1]; i++) {
+        if (currLyricsBlockIndex + 1 >= lyricsData.length) break;
         currLyricsBlockIndex += 1;
 
         lyricsData[currLyricsBlockIndex].fadeinTime = currEvent.currTime;
@@ -879,9 +886,10 @@ function processTimeline(
   }
 }
 
+// kuroshiro: null for no romaji (see parseLyricsBlock).
 async function parseJoysoundData(
   data: ArrayBuffer,
-  kuroshiro: KuroshiroSingleton,
+  kuroshiro: KuroshiroSingleton | null,
 ): Promise<JoysoundTelopData> {
   const view = new DataView(data, 6, 3 * 4);
 
