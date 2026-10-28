@@ -80,22 +80,16 @@ export function clearPlaceholders(values: Record<string, unknown>): void {
 // collect.
 export const OBSOLETE_KEYS = ["adminDeviceIds", "adminNicks"] as const;
 
-// The config from a parsed config.yaml (anything YAML can hold): the
-// defaults, with the file's values over them. Obsolete keys are dropped, so
-// the write-back removes them, and named in `problems` with anything else
-// worth a log line.
-export function configFromFile(parsed: unknown): {
+// The config from a parsed config.yaml (a mapping, or null for an empty
+// file; configStore.ts sets anything else aside): the defaults, with the
+// file's values over them. Obsolete keys are dropped, so the write-back
+// removes them, and named in `problems` with anything else worth a log line.
+export function configFromFile(parsed: object | null | undefined): {
   config: KarafriendsConfig;
   problems: string[];
 } {
   const problems: string[] = [];
-  const isMapping =
-    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-  // An empty file parses as null.
-  if (!isMapping && parsed !== null && parsed !== undefined) {
-    problems.push("config.yaml isn't a list of settings; using the defaults");
-  }
-  const local: Record<string, unknown> = isMapping ? { ...parsed } : {};
+  const local: Record<string, unknown> = { ...parsed };
 
   clearPlaceholders(local);
 

@@ -51,16 +51,23 @@ function loadAtLaunch(filePath: string): KarafriendsConfig {
     try {
       // No warnings: the parser prints them with the line they're about,
       // which may hold a password.
-      const result = configFromFile(
-        parse(fs.readFileSync(filePath, { encoding: "utf8" }), {
-          logLevel: "error",
-        }),
+      const parsed: unknown = parse(
+        fs.readFileSync(filePath, { encoding: "utf8" }),
+        { logLevel: "error" },
       );
+      // An empty file parses as null.
+      if (
+        parsed != null &&
+        (typeof parsed !== "object" || Array.isArray(parsed))
+      ) {
+        throw new Error("it isn't a list of settings");
+      }
+      const result = configFromFile(parsed as object | null);
       for (const problem of result.problems) console.warn(problem);
       config = result.config;
     } catch (err) {
-      // config.yaml is often hand-edited, so a YAML typo must not crash the
-      // app. Use the defaults for this session, and keep a copy of the file:
+      // config.yaml is often hand-edited, so a YAML typo (or a file that
+      // isn't settings at all) must not crash the app. Use the defaults for this session, and keep a copy of the file:
       // a change on the settings screen writes config.yaml, and the copy
       // keeps the logins in it.
       const copy = `${filePath}.broken`;
@@ -74,7 +81,7 @@ function loadAtLaunch(filePath: string): KarafriendsConfig {
       const why =
         err instanceof YAMLParseError
           ? `line ${err.linePos?.[0]?.line ?? "?"} isn't valid YAML`
-          : String(err);
+          : (err as Error).message;
       console.error(
         `Failed to parse ${filePath} (${why}); using defaults for this ` +
           `session. A copy is in ${copy}. Fix the YAML and relaunch to ` +

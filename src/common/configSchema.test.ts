@@ -68,14 +68,6 @@ describe("configFromFile", () => {
     assert.equal(config.adminPasswordSalt, "");
     assert.match(problems[0], /adminPasswordSalt .* must be text in quotes/);
   });
-
-  test("uses the defaults for a file that isn't a mapping", () => {
-    for (const parsed of [["a"], "text", 5]) {
-      const { config, problems } = configFromFile(parsed);
-      assert.deepEqual(config, DEFAULT_CONFIG);
-      assert.equal(problems.length, 1);
-    }
-  });
 });
 
 describe("configProblems", () => {

@@ -59,6 +59,23 @@ describe("createConfigStore at launch", () => {
     assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), broken);
   });
 
+  test("sets aside a file that isn't a list of settings too", () => {
+    for (const text of ["- damUsername: me\n", "just text\n"]) {
+      fs.writeFileSync(filePath, text);
+      const store = open();
+      assert.deepEqual(store.get(), DEFAULT_CONFIG);
+      assert.equal(fs.readFileSync(filePath, "utf8"), text);
+      assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), text);
+    }
+  });
+
+  test("an empty file is the defaults, written back", () => {
+    fs.writeFileSync(filePath, "");
+    assert.deepEqual(open().get(), DEFAULT_CONFIG);
+    assert.deepEqual(onDisk(), DEFAULT_CONFIG);
+    assert.equal(fs.existsSync(`${filePath}.broken`), false);
+  });
+
   test("logs a parse error's line number, never the line", (t) => {
     fs.writeFileSync(filePath, "damPassword: secret-pw\n  bad: [\n");
     const logged: string[] = [];
