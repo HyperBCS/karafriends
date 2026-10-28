@@ -744,6 +744,7 @@ test.describe("the pitch bars", () => {
     await expect(roll).toBeVisible();
     await expect.poll(() => rollDrew(display)).toBe(true);
     await expect(crashed(display)).toHaveCount(0);
+    expect(karafriends.displayErrors).toEqual([]);
   });
 
   test("without WebGL2 the bars don't show, and the song plays on", async ({
@@ -780,6 +781,7 @@ test.describe("the pitch bars", () => {
       )
       .toBeGreaterThan(0);
     await expect(crashed(display)).toHaveCount(0);
+    expect(karafriends.displayErrors).toEqual([]);
     await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(0);
     await expect
       .poll(() =>
