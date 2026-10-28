@@ -71,8 +71,8 @@ mod reverb_module;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::{FromIterator, Iterator};
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering::Relaxed};
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, TryLockError, Weak};
 use std::time::{Duration, Instant};
 
 #[cfg(not(target_os = "linux"))]
@@ -294,6 +294,221 @@ impl Stream {
 
 unsafe impl Send for Stream {}
 
+// A mic's open stream, held to be dropped, which closes it.
+trait MicStream: Send {
+    // The mic stopped sending sound (see Stall): a stream other mics share
+    // isn't joined again.
+    fn stalled(&self, _why: &str) {}
+}
+
+impl MicStream for Stream {}
+
+// Streams that several mics read: in exclusive mode Windows gives a mic to
+// one stream at a time, and each packet has every channel, so the mics on
+// its channels share one. Built everywhere, so its tests run everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
+mod shared {
+    use super::*;
+
+    // A mic's callback, given its stream's samples (every channel,
+    // interleaved).
+    pub(crate) type MicCallback = Box<dyn FnMut(&[f32]) + Send>;
+
+    // One mic reading a shared stream: its callback, and its status, which
+    // the stream sets when it stops.
+    struct Tap {
+        id: u64,
+        callback: MicCallback,
+        status: Arc<Mutex<Option<String>>>,
+    }
+
+    // What a shared stream's thread shares with the mics on it: their
+    // callbacks, why it stopped (or stalled), why it isn't real-time, and
+    // the packets it lost.
+    #[derive(Clone, Default)]
+    pub(crate) struct Taps {
+        taps: Arc<Mutex<Vec<Tap>>>,
+        failed: Arc<Mutex<Option<String>>>,
+        pub(crate) realtime: Arc<Mutex<Option<String>>>,
+        pub(crate) lost: Arc<AtomicU32>,
+    }
+
+    impl Taps {
+        // For the stream's thread: hands each packet to every mic. While a
+        // mic is added or removed (the JS thread holds the lock only for
+        // that), the packet is dropped rather than the thread made to wait.
+        pub(crate) fn on_data(&self) -> impl FnMut(&[f32]) + Send + 'static {
+            let taps = self.taps.clone();
+            move |data| {
+                let mut taps = match taps.try_lock() {
+                    Ok(taps) => taps,
+                    Err(TryLockError::Poisoned(e)) => e.into_inner(),
+                    Err(TryLockError::WouldBlock) => return,
+                };
+                for tap in taps.iter_mut() {
+                    (tap.callback)(data);
+                }
+            }
+        }
+
+        // For the stream's thread, when the stream stops by itself.
+        pub(crate) fn on_error(&self) -> impl FnOnce(String) + Send + 'static {
+            let taps = self.clone();
+            move |e| {
+                eprintln!("Mic stopped: {e}");
+                taps.fail(&e);
+            }
+        }
+
+        // The stream is done: every mic on it says why (the first reason
+        // stands), so the display reopens them.
+        fn fail(&self, why: &str) {
+            lock(&self.failed).get_or_insert_with(|| why.to_string());
+            for tap in lock(&self.taps).iter() {
+                lock(&tap.status).get_or_insert_with(|| why.to_string());
+            }
+        }
+    }
+
+    // One stream, `S`, that several mics read, opened with `request` at
+    // `format`.
+    pub(crate) struct SharedInput<S, F, R> {
+        request: R,
+        pub(crate) format: F,
+        // None once closed.
+        stream: Mutex<Option<S>>,
+        pub(crate) taps: Taps,
+        next_id: AtomicU64,
+    }
+
+    impl<S, F, R> SharedInput<S, F, R> {
+        // Whether it still runs: open, and it hasn't failed or stalled.
+        pub(crate) fn running(&self) -> bool {
+            lock(&self.stream).is_some() && lock(&self.taps.failed).is_none()
+        }
+
+        // Closes the stream now, letting the device go, and has the mics on
+        // it reopened.
+        fn close(&self, why: &str) {
+            let stream = lock(&self.stream).take();
+            drop(stream);
+            self.taps.fail(why);
+        }
+
+        // A mic on the stream, with its callback and status, until dropped.
+        pub(crate) fn tap(
+            self: &Arc<Self>,
+            callback: MicCallback,
+            status: Arc<Mutex<Option<String>>>,
+        ) -> SharedTap<S, F, R> {
+            let id = self.next_id.fetch_add(1, Relaxed);
+            lock(&self.taps.taps).push(Tap {
+                id,
+                callback,
+                status,
+            });
+            SharedTap {
+                input: self.clone(),
+                id,
+            }
+        }
+    }
+
+    // A mic's place on a shared stream: dropping it takes its callback off,
+    // and the last one off closes the stream.
+    pub(crate) struct SharedTap<S, F, R> {
+        input: Arc<SharedInput<S, F, R>>,
+        id: u64,
+    }
+
+    impl<S, F, R> Drop for SharedTap<S, F, R> {
+        fn drop(&mut self) {
+            let mut taps = lock(&self.input.taps.taps);
+            let gone = taps
+                .iter()
+                .position(|tap| tap.id == self.id)
+                .map(|i| taps.remove(i));
+            drop(taps);
+            // The callback goes after the lock: it holds the mic's buffers.
+            drop(gone);
+        }
+    }
+
+    impl<S: Send, F: Send + Sync, R: Send + Sync> MicStream for SharedTap<S, F, R> {
+        fn stalled(&self, why: &str) {
+            lock(&self.input.taps.failed).get_or_insert_with(|| why.to_string());
+        }
+    }
+
+    // The shared streams open now, by device.
+    pub(crate) struct SharedInputs<S, F, R> {
+        inputs: HashMap<String, Weak<SharedInput<S, F, R>>>,
+    }
+
+    impl<S, F, R> Default for SharedInputs<S, F, R> {
+        fn default() -> Self {
+            SharedInputs {
+                inputs: HashMap::new(),
+            }
+        }
+    }
+
+    impl<S, F, R: PartialEq> SharedInputs<S, F, R> {
+        // The stream open on `key` if it was opened with `request` and
+        // still runs. Else a new one that `open` opens, given what its
+        // thread shares with the mics, at the format it returns. Another
+        // stream on `key` is closed first, as the device takes one at a
+        // time, and the mics on it are reopened onto the new one.
+        pub(crate) fn get_or_open(
+            &mut self,
+            key: &str,
+            request: R,
+            open: impl FnOnce(&Taps) -> Result<(S, F)>,
+        ) -> Result<Arc<SharedInput<S, F, R>>> {
+            if let Some(input) = self.inputs.get(key).and_then(Weak::upgrade) {
+                if input.request == request && input.running() {
+                    return Ok(input);
+                }
+                input.close("Another mic on this device reopened it with new settings");
+            }
+            self.inputs.retain(|_, input| input.strong_count() > 0);
+            let taps = Taps::default();
+            let (stream, format) = open(&taps)?;
+            let input = Arc::new(SharedInput {
+                request,
+                format,
+                stream: Mutex::new(Some(stream)),
+                taps,
+                next_id: AtomicU64::new(0),
+            });
+            self.inputs.insert(key.to_string(), Arc::downgrade(&input));
+            Ok(input)
+        }
+
+        // Closes the stream on `key`, if one is open, and has the mics on it
+        // reopened.
+        pub(crate) fn close(&mut self, key: &str, why: &str) {
+            if let Some(input) = self.inputs.remove(key).and_then(|input| input.upgrade()) {
+                input.close(why);
+            }
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+use shared::SharedInputs;
+#[cfg(test)]
+use shared::{MicCallback, SharedInput};
+
+// Windows' exclusive streams, by endpoint id, opened at a rate and buffer
+// size.
+#[cfg(windows)]
+type ExclusiveInputs =
+    SharedInputs<exclusive::ExclusiveInput, exclusive::ExclusiveFormat, (u32, Option<u32>)>;
+
+#[cfg(windows)]
+static EXCLUSIVE: LazyLock<Mutex<ExclusiveInputs>> = LazyLock::new(Mutex::default);
+
 // A rate and a buffer size as Settings shows them: "48 kHz, 512 samples
 // (10.7 ms)", or "48 kHz" before the first callback.
 fn describe(rate: cpal::SampleRate, frames: u32) -> String {
@@ -431,7 +646,7 @@ pub struct InputDevice {
     // The open stream, a cpal one or an exclusive one, held to be dropped:
     // None once stopped, which lets the device go at once, not when JS gets
     // round to collecting this.
-    input_stream: Option<Box<dyn Send>>,
+    input_stream: Option<Box<dyn MicStream>>,
     // How the mic is open ("Shared", "Exclusive", "ASIO"), and why not as
     // asked if it isn't; its rate (see format), and its meters.
     kind: &'static str,
@@ -442,8 +657,10 @@ pub struct InputDevice {
     levels: Arc<Levels>,
     // Why the input stream stopped, or why the mixer wants it reopened.
     status: Arc<Mutex<Option<String>>>,
-    // Why its thread isn't real-time, if the system refused.
+    // Why its thread isn't real-time, if the system refused, and how many
+    // packets the system lost (exclusive mode says).
     realtime: Arc<Mutex<Option<String>>>,
+    lost: Arc<AtomicU32>,
     // Whether its callbacks stopped (see Stall).
     stall: Mutex<Stall>,
     pitch_rx: ringbuf::HeapCons<f32>,
@@ -499,6 +716,14 @@ impl InputDevice {
     ) -> Result<Self> {
         let mode = *lock(&MIC_MODE);
         let exclusive = mode.exclusive && !device_type.is_asio();
+        // Windows won't share a mic that another mic's row holds in exclusive
+        // mode (after Mic mode changes to Shared): that row reopens shared.
+        #[cfg(windows)]
+        if !exclusive && !device_type.is_asio() {
+            let id = input_device.id()?.to_string();
+            let endpoint = id.strip_prefix("wasapi:").unwrap_or(&id);
+            lock(&EXCLUSIVE).close(endpoint, "The mic mode changed to Shared");
+        }
         // What the mic takes, asked before the output opens: a mic that is
         // gone then fails without opening and closing the output (and on
         // Windows loading every ASIO driver) each time the display tries
@@ -624,7 +849,7 @@ impl InputDevice {
     // mixer. `status` is where the stream says why it stopped, `realtime`
     // why its thread isn't real-time.
     #[allow(clippy::too_many_arguments)]
-    fn assemble<Sample, S: Send + 'static>(
+    fn assemble<Sample, S: MicStream + 'static>(
         input_config: &cpal::StreamConfig,
         output_rate: cpal::SampleRate,
         channel_selection: usize,
@@ -669,6 +894,7 @@ impl InputDevice {
             levels,
             status,
             realtime,
+            lost: Arc::default(),
             stall: Mutex::new(Stall::new(Instant::now())),
             pitch_rx,
             pitch_sample_count,
@@ -677,7 +903,9 @@ impl InputDevice {
     }
 
     // A Windows mic in exclusive mode (see exclusive.rs), at the output's
-    // rate if it takes it.
+    // rate if it takes it. Every channel of the mic comes in each packet, and
+    // Windows gives the mic to one exclusive stream at a time, so the mics
+    // on its channels share one stream.
     #[cfg(windows)]
     fn open_exclusive(
         input_device: &cpal::Device,
@@ -686,35 +914,20 @@ impl InputDevice {
         buffer: Option<u32>,
         mixer: &mut mixer::Mixer,
     ) -> Result<Self> {
-        type Callback = Box<dyn FnMut(&[f32]) + Send>;
         let id = input_device.id()?.to_string();
         let endpoint = id.strip_prefix("wasapi:").unwrap_or(&id);
-        let status: Arc<Mutex<Option<String>>> = Arc::default();
-        // The stream runs before its format is known, and so before the
-        // mic's callback can be made: until it is (a period or two), the
-        // sound is dropped.
-        let slot: Arc<Mutex<Option<Callback>>> = Arc::default();
-        let feed = slot.clone();
-        let failed = status.clone();
-        let (input, format) = exclusive::ExclusiveInput::open(
-            endpoint,
-            output_rate,
-            buffer,
-            move |data| {
-                if let Ok(mut callback) = feed.try_lock() {
-                    if let Some(callback) = callback.as_mut() {
-                        callback(data);
-                    }
-                }
-            },
-            move |e| {
-                eprintln!("Mic stopped: {e}");
-                let mut status = lock(&failed);
-                if status.is_none() {
-                    *status = Some(e);
-                }
-            },
-        )?;
+        let input = lock(&EXCLUSIVE).get_or_open(endpoint, (output_rate, buffer), |taps| {
+            exclusive::ExclusiveInput::open(
+                endpoint,
+                output_rate,
+                buffer,
+                taps.realtime.clone(),
+                taps.lost.clone(),
+                taps.on_data(),
+                taps.on_error(),
+            )
+        })?;
+        let format = input.format;
         if channel_selection >= format.channels as usize {
             return Err(
                 format!("The mic has {} channels in exclusive mode", format.channels).into(),
@@ -725,20 +938,24 @@ impl InputDevice {
             sample_rate: format.rate,
             buffer_size: cpal::BufferSize::Fixed(format.frames),
         };
-        println!("Created input device {id} in exclusive mode with config {input_config:#?}");
-        Self::assemble::<f32, _>(
+        println!(
+            "Created input device {id} channel {channel_selection} in exclusive mode with config \
+             {input_config:#?}"
+        );
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        let tap_status = status.clone();
+        let mut device = Self::assemble::<f32, _>(
             &input_config,
             output_rate,
             channel_selection,
             mixer,
             "Exclusive",
             status,
-            Arc::default(),
-            |callback| {
-                *lock(&slot) = Some(callback);
-                Ok(input)
-            },
-        )
+            input.taps.realtime.clone(),
+            |callback| Ok(input.tap(callback, tap_status)),
+        )?;
+        device.lost = input.taps.lost.clone();
+        Ok(device)
     }
 
     #[cfg(not(windows))]
@@ -782,6 +999,9 @@ impl InputDevice {
         if lock(&self.stall).stalled(callbacks, Instant::now()) {
             let stalled = "The mic stopped sending sound (nothing for 2 seconds)".to_string();
             eprintln!("{stalled}");
+            if let Some(stream) = &self.input_stream {
+                stream.stalled(&stalled);
+            }
             return lock(&self.status).get_or_insert(stalled).clone();
         }
         lock(&mixer::MIXER).status()
@@ -800,6 +1020,10 @@ impl InputDevice {
         }
         if let Some(why) = lock(&self.realtime).as_ref() {
             format = format!("{format}. Not real-time: {why}");
+        }
+        let lost = self.lost.load(Relaxed);
+        if lost > 0 {
+            format = format!("{format}. Packets lost: {lost} (a larger Mic buffer may help)");
         }
         format
     }
@@ -1585,6 +1809,135 @@ mod tests {
         }
         assert_eq!(meters.callbacks.load(Relaxed), 3);
         Ok(())
+    }
+
+    // A fake shared stream: its thread's half, as a test drives it.
+    struct FakeStream(Arc<AtomicUsize>);
+
+    impl Drop for FakeStream {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Relaxed);
+        }
+    }
+
+    type FakeInputs = SharedInputs<FakeStream, u16, u32>;
+
+    // Opens a fake stream at `request`, counting opens and closes.
+    fn fake_open(
+        inputs: &mut FakeInputs,
+        request: u32,
+        opens: &AtomicUsize,
+        closes: &Arc<AtomicUsize>,
+        data: &mut Vec<MicCallback>,
+    ) -> Arc<SharedInput<FakeStream, u16, u32>> {
+        inputs
+            .get_or_open("mic", request, |taps| {
+                opens.fetch_add(1, Relaxed);
+                data.push(Box::new(taps.on_data()));
+                Ok((FakeStream(closes.clone()), 2))
+            })
+            .unwrap()
+    }
+
+    // Collects what a mic's callback gets.
+    fn heard() -> (Arc<Mutex<Vec<f32>>>, MicCallback) {
+        let heard: Arc<Mutex<Vec<f32>>> = Arc::default();
+        let into = heard.clone();
+        (
+            heard,
+            Box::new(move |data: &[f32]| lock(&into).extend_from_slice(data)),
+        )
+    }
+
+    // Two mics on the channels of one exclusive device share its stream:
+    // it opens once, each gets every packet, and it closes when the last
+    // one leaves.
+    #[test]
+    fn test_mics_on_one_device_share_its_stream() {
+        let mut inputs = FakeInputs::default();
+        let (opens, closes) = (AtomicUsize::new(0), Arc::new(AtomicUsize::new(0)));
+        let mut data = Vec::new();
+        let first = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let (heard_1, callback) = heard();
+        let tap_1 = first.tap(callback, Arc::default());
+        let second = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let (heard_2, callback) = heard();
+        let tap_2 = second.tap(callback, Arc::default());
+        assert_eq!(opens.load(Relaxed), 1);
+        assert_eq!(second.format, 2);
+        data[0](&[0.25, -0.5]);
+        assert_eq!(*lock(&heard_1), [0.25, -0.5]);
+        assert_eq!(*lock(&heard_2), [0.25, -0.5]);
+
+        drop((first, second));
+        drop(tap_1);
+        data[0](&[1.0, 1.0]);
+        assert_eq!(lock(&heard_1).len(), 2);
+        assert_eq!(lock(&heard_2).len(), 4);
+        assert_eq!(closes.load(Relaxed), 0);
+        drop(tap_2);
+        assert_eq!(closes.load(Relaxed), 1);
+        // Opened again once nothing holds it.
+        let _again = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        assert_eq!(opens.load(Relaxed), 2);
+    }
+
+    // A mic asking for other settings (an output at another rate, a new
+    // buffer size) closes the stream first, as the device takes one at a
+    // time, and the mics on the old one are told to reopen.
+    #[test]
+    fn test_new_settings_reopen_a_shared_stream() {
+        let mut inputs = FakeInputs::default();
+        let (opens, closes) = (AtomicUsize::new(0), Arc::new(AtomicUsize::new(0)));
+        let mut data = Vec::new();
+        let old = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        let (_, callback) = heard();
+        let _old_tap = old.tap(callback, status.clone());
+        let _new = fake_open(&mut inputs, 44100, &opens, &closes, &mut data);
+        assert_eq!((opens.load(Relaxed), closes.load(Relaxed)), (2, 1));
+        assert!(lock(&status).is_some());
+        assert!(!old.running());
+    }
+
+    // A stream that stopped, by itself or by stalling, isn't joined: the
+    // next mic opens a new one, and every mic on it is told why.
+    #[test]
+    fn test_a_failed_shared_stream_isnt_joined() {
+        let mut inputs = FakeInputs::default();
+        let (opens, closes) = (AtomicUsize::new(0), Arc::new(AtomicUsize::new(0)));
+        let mut data = Vec::new();
+        let input = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let statuses: [Arc<Mutex<Option<String>>>; 2] = Default::default();
+        let taps: Vec<_> = statuses
+            .iter()
+            .map(|status| input.tap(heard().1, status.clone()))
+            .collect();
+        input.taps.on_error()("The mic was unplugged or turned off".to_string());
+        for status in &statuses {
+            assert_eq!(
+                lock(status).as_deref(),
+                Some("The mic was unplugged or turned off")
+            );
+        }
+        let _next = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        assert_eq!(opens.load(Relaxed), 2);
+
+        let stalled = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let tap = stalled.tap(heard().1, Arc::default());
+        tap.stalled("The mic stopped sending sound");
+        let _next = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        assert_eq!(opens.load(Relaxed), 3);
+        drop(taps);
+
+        // Closed outright (the mic mode is now Shared), with its mics told.
+        let input = fake_open(&mut inputs, 48000, &opens, &closes, &mut data);
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        let _tap = input.tap(heard().1, status.clone());
+        let closed = closes.load(Relaxed);
+        inputs.close("mic", "The mic mode changed to Shared");
+        assert_eq!(closes.load(Relaxed), closed + 1);
+        assert!(lock(&status).is_some());
     }
 
     #[test]
