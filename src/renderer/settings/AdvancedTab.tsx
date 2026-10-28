@@ -124,6 +124,8 @@ export default function AdvancedTab(props: {
 }) {
   const { messages, actions } = props;
   const { tools, updating, update } = props.tools;
+  // An import says so while it runs (see importConfig).
+  const importing = messages.config?.tone === "busy";
   return (
     <>
       <DownloadsSection />
@@ -152,6 +154,7 @@ export default function AdvancedTab(props: {
           <button
             type="button"
             className="kfButton"
+            disabled={importing}
             onClick={actions.exportConfig}
           >
             Export config
@@ -159,6 +162,7 @@ export default function AdvancedTab(props: {
           <button
             type="button"
             className="kfButton"
+            disabled={importing}
             onClick={actions.importConfig}
           >
             Import config

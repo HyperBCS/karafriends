@@ -245,11 +245,17 @@ export function createSettingsActions(deps: SettingsDeps) {
     });
 
   // The tabs whose settings it changed get a dot. Passwords show masked,
-  // so a new one alone doesn't count.
+  // so a new one alone doesn't count. The app tests both logins before it
+  // answers (up to 15 s), so it says so meanwhile; the Config file buttons
+  // are off while it does, and saves wait for it.
   const importConfig = () =>
     act("config", async () => {
       const yaml = await deps.files.openTextFile();
       if (yaml === null) return null;
+      say("config", {
+        text: "Importing, and testing the logins in it…",
+        tone: "busy",
+      });
       const before = (await call("getSettings", {})).settings;
       const result = await call("importConfig", { yaml });
       const after = (await reload()).settings;

@@ -166,11 +166,32 @@ describe("Settings' actions", () => {
     });
     actions.saveNumber("network", "remoconPort", "abc");
     assert.equal(last("network")?.refused, "remoconPort");
-    // A save of two settings names neither.
+    // A save of two settings names neither (the checkboxes go back by
+    // themselves).
     await actions.save("queue", {
       supervisedMode: true,
       everyoneIsAdmin: true,
     });
     assert.equal(last("queue")?.refused, undefined);
+  });
+
+  test("an import says it's busy while the app tests its logins, and what it did after", async () => {
+    let answer: (output: unknown) => void = () => undefined;
+    const { actions, shown, last } = setUp({
+      importConfig: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const done = actions.importConfig();
+    await new Promise((resolve) => setTimeout(resolve));
+    assert.deepEqual(last("config"), {
+      text: "Importing, and testing the logins in it…",
+      tone: "busy",
+    });
+    answer({ ok: true, problems: ["The DAM login didn't sign in"] });
+    await done;
+    assert.deepEqual(shown("config"), [
+      "Importing, and testing the logins in it…",
+      "Imported.",
+    ]);
+    assert.deepEqual(last("config")?.list, ["The DAM login didn't sign in"]);
   });
 });
