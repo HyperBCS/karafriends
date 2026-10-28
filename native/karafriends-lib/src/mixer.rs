@@ -231,11 +231,18 @@ fn plan_read(
     (skip, read)
 }
 
-// Adds every mic into `mix` (silence where one has nothing). Returns
-// whether any ran dry and whether any dropped samples.
-fn mix_into(sources: &mut [Source], mix: &mut [f32], target: usize) -> (bool, bool) {
+// Adds every mic into `mix` (silence where one has nothing). A mic still
+// resampling to an old output rate would play at the wrong pitch: it stays
+// silent until the display reopens it. Returns whether any ran dry and
+// whether any dropped samples.
+fn mix_into(
+    sources: &mut [Source],
+    mix: &mut [f32],
+    target: usize,
+    rate: cpal::SampleRate,
+) -> (bool, bool) {
     let (mut ran_dry, mut dropped) = (false, false);
-    for source in sources {
+    for source in sources.iter_mut().filter(|s| s.rate == rate) {
         let was_playing = source.playing;
         let (skip, read) = plan_read(
             source.rx.occupied_len(),
@@ -274,7 +281,7 @@ fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
             Err(TryLockError::WouldBlock) => None,
         };
         if let Some(mut sources) = sources {
-            let (ran_dry, dropped) = mix_into(&mut sources, &mut mix, target);
+            let (ran_dry, dropped) = mix_into(&mut sources, &mut mix, target, rate);
             if ran_dry && dry_prints.ready() {
                 eprintln!("mic fell behind: refilling");
             }
@@ -337,7 +344,7 @@ mod tests {
         Source {
             id,
             rx,
-            rate: 48000,
+            rate: RATE,
             playing: false,
             status: Arc::new(Mutex::new(None)),
         }
@@ -358,6 +365,17 @@ mod tests {
         for (a, b) in out.iter().zip(expected) {
             assert!((a - b).abs() < 1e-6, "{:?}", out);
         }
+    }
+
+    #[test]
+    fn test_a_mic_at_another_rate_is_silent() {
+        let mut stale = source(1, &[0.5; 4], 16);
+        stale.rate = RATE * 2;
+        let sources = Arc::new(Mutex::new(vec![stale, source(2, &[0.25; 4], 16)]));
+        let mut callback = output_data_callback::<f32>(sources, 1, RATE);
+        let mut out = [9.0; 4];
+        callback(&mut out);
+        assert_eq!(out, [0.25; 4]);
     }
 
     #[test]
