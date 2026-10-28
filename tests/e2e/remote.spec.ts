@@ -246,6 +246,32 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
 });
 
+test("the playback controls fit on a narrow phone", async ({ remote }) => {
+  await remote.getByRole("button", { name: "Show queue" }).click();
+  const sheetBody = await remote
+    .getByRole("button", { name: "Hide queue" })
+    .getAttribute("aria-controls");
+  const first = remote.getByRole("button", { name: "Show emotes" });
+  const last = remote.getByRole("button", { name: "Raise the key" });
+  for (const width of [360, 320]) {
+    await remote.setViewportSize({ width, height: 700 });
+    // One row, inside the screen, and nothing to scroll sideways.
+    const [a, b] = [await first.boundingBox(), await last.boundingBox()];
+    expect(a!.x, `${width}px`).toBeGreaterThanOrEqual(0);
+    expect(b!.x + b!.width, `${width}px`).toBeLessThanOrEqual(width);
+    expect(Math.abs(a!.y - b!.y), `${width}px`).toBeLessThan(1);
+    expect(
+      await remote.evaluate((id) => {
+        const scrolls = (el: Element) => el.scrollWidth > el.clientWidth;
+        return [document.documentElement, document.getElementById(id)!].some(
+          scrolls,
+        );
+      }, sheetBody!),
+      `${width}px`,
+    ).toBe(false);
+  }
+});
+
 // Picking a background video changes the song page's address in place. Back
 // must still walk the remote's history: the artist, the song, the search.
 test("a Joysound song with a background keeps the way back", async ({
