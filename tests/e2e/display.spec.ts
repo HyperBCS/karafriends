@@ -6,13 +6,18 @@ test("the display opens on its idle screen without console errors", async ({
 }) => {
   await expect(display).toHaveTitle("karafriends");
 
-  // A fresh profile has no DAM or Joysound login, so Settings opens first.
+  // A fresh profile has no DAM or Joysound login, so Settings opens first,
+  // on Accounts.
   const settings = display.getByRole("dialog", { name: "Settings" });
   await expect(
     settings.getByText(
       "Add your DAM or Joysound login to search their catalogs. YouTube works without one.",
     ),
   ).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await display.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
 
@@ -33,18 +38,20 @@ test("the display opens on its idle screen without console errors", async ({
     display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
   ).toHaveCount(0);
 
-  // S, or the gear, opens Settings: the QR code's address and the
-  // microphones are there.
+  // S, or the gear, opens Settings: the QR code's address is under Party,
+  // the microphones under Sound.
   await display.keyboard.press("s");
   await expect(settings).toBeVisible();
+  await settings.getByRole("tab", { name: "Party" }).click();
   await expect(
     settings.locator(`option[value="karafriends.local:${port}"]`),
   ).toHaveCount(1);
+  await settings.getByRole("tab", { name: "Sound" }).click();
   await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
   await display.getByRole("button", { name: "Settings" }).click();
-  await expect(settings).toBeVisible();
+  await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await display.keyboard.press("Escape");
 
   // Nothing is playing.

@@ -1,11 +1,21 @@
-/* Over the whole screen but the notice bar, scrolling. */
+/* Over the whole screen but the notice bar: the tabs down the left, the
+   open one's sections beside them, scrolling. --settings-edge is the space
+   at the screen's sides, less in a narrow window (or at a big UI scale). */
 .settings {
+  --settings-edge: 6rem;
   position: absolute;
   inset: 0;
   z-index: 20;
   display: flex;
   flex-direction: column;
   background-color: var(--kf-surface);
+  container-type: inline-size;
+}
+
+@container (max-width: 90rem) {
+  .settings > * {
+    --settings-edge: 3rem;
+  }
 }
 
 .settingsHeader {
@@ -13,7 +23,7 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
-  padding: var(--kf-space-4) 6rem;
+  padding: var(--kf-space-4) var(--settings-edge);
   border-bottom: 1px solid var(--kf-border);
 }
 
@@ -24,14 +34,81 @@
 }
 
 .settingsLoading {
-  padding: var(--kf-space-6) 6rem;
+  padding: var(--kf-space-6) var(--settings-edge);
   font-size: var(--kf-text-body);
 }
 
-.settingsBody {
+.settingsMain {
+  display: flex;
   flex: 1;
+  min-height: 0;
+}
+
+/* The tabs' labels line up with the title above them, past the bar. */
+.settingsTabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--kf-space-2);
+  width: calc(var(--settings-edge) + 18rem);
+  padding: var(--kf-space-6) var(--kf-space-5) var(--kf-space-6)
+    calc(var(--settings-edge) - var(--kf-space-5) - 0.5rem);
+  border-right: 1px solid var(--kf-border);
   overflow-y: auto;
-  padding: 0 6rem var(--kf-space-6);
+}
+
+/* A tab: muted text on the surface. The open one is filled, in full white,
+   with the accent's bar down its left edge. */
+.settingsTab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kf-space-4);
+  min-height: 5.5rem;
+  padding: 0 var(--kf-space-5);
+  border: none;
+  border-left: 0.5rem solid transparent;
+  border-radius: var(--kf-radius);
+  background-color: transparent;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settingsTab:active,
+.settingsTab[aria-selected="true"] {
+  background-color: var(--kf-surface-pressed);
+}
+
+.settingsTab[aria-selected="true"] {
+  border-left-color: var(--kf-accent);
+  color: var(--kf-text);
+}
+
+.settingsTab:focus-visible {
+  outline: 0.1875rem solid var(--kf-accent);
+  outline-offset: 0.1875rem;
+}
+
+/* Something on that tab to look at: a refused value, a failed sign-in, a
+   restart to do, or what an import changed. */
+.settingsTabDot {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: auto;
+  border-radius: 50%;
+  background-color: var(--kf-danger);
+}
+
+.settingsPanel {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 var(--settings-edge) var(--kf-space-6) var(--kf-space-6);
+  container-type: inline-size;
 }
 
 .settingsBanner {
@@ -44,13 +121,17 @@
   font-size: var(--kf-text-body);
 }
 
+/* A line between one section and the next. */
 .settingsSection {
   display: flex;
   flex-direction: column;
   gap: var(--kf-space-4);
   max-width: 100rem;
   padding: var(--kf-space-6) 0;
-  border-bottom: 1px solid var(--kf-border);
+}
+
+.settingsSection + .settingsSection {
+  border-top: 1px solid var(--kf-border);
 }
 
 .settingsSection h2 {
@@ -94,6 +175,14 @@
 
 .settingsFields.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* A panel too narrow for fields side by side: one to a row. */
+@container (max-width: 50rem) {
+  .settingsFields,
+  .settingsFields.three {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .settingsActions,
