@@ -1,6 +1,11 @@
 // The pitch shifter, bundled as its own script for addModule().
 import phazeAudioWorkletUrl from "./audio/phazeAudioWorklet.ts?worker&url";
 import { AV_OFFSETS, audioDelay } from "./playback";
+import {
+  type OutputContext,
+  type OutputPlace,
+  SongOutputKeeper,
+} from "./songOutput";
 
 // A centred channel mixed into left and right at this gain each keeps its
 // loudness (-3 dB per side).
@@ -41,6 +46,9 @@ export default class KarafriendsAudio {
   // video, say) on the left only.
   private splitter: ChannelSplitterNode;
   private guideGain: GainNode;
+  // Where the songs play, kept through the output going away (see
+  // songOutput.ts).
+  private output: SongOutputKeeper;
 
   audioContext: AudioContext;
   // What the video's media element source connects to, once.
@@ -48,6 +56,10 @@ export default class KarafriendsAudio {
 
   constructor() {
     this.audioContext = new AudioContext({ latencyHint: "interactive" });
+    this.output = new SongOutputKeeper(
+      this.audioContext as unknown as OutputContext,
+      navigator.mediaDevices,
+    );
     this.input = this.audioContext.createGain();
     this.delayNode = this.audioContext.createDelay(
       audioDelay(Math.max(...AV_OFFSETS)),
@@ -151,14 +163,23 @@ export default class KarafriendsAudio {
     );
   }
 
-  // Where the songs play: an output's device id (from
-  // enumerateDevices), or "" for the system default. Chromium has
-  // setSinkId on AudioContext; TypeScript's DOM types don't yet.
+  // Where the songs play: an output's device id (from enumerateDevices),
+  // or "" for the system default. Rejects, keeping the output before, when
+  // the songs can't play there.
   setOutput(deviceId: string): Promise<void> {
-    const context = this.audioContext as AudioContext & {
-      setSinkId(sinkId: string): Promise<void>;
-    };
-    return context.setSinkId(deviceId);
+    return this.output.choose(deviceId);
+  }
+
+  // The saved output, at launch: used now if it's there (else the promise
+  // rejects), and whenever it's listed again.
+  wantOutput(deviceId: string): Promise<void> {
+    return this.output.want(deviceId);
+  }
+
+  // Whether the songs play on that output now, on the system default, or
+  // silently (it went away).
+  outputPlace(): OutputPlace {
+    return this.output.place();
   }
 
   // How loud the Joysound guide melody plays, 0 to 1.

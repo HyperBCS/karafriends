@@ -315,13 +315,13 @@ function App(props: {
     setMicOutput(output);
   };
 
-  // The saved song output, once: one that isn't connected leaves the
-  // songs on the system default.
+  // The saved song output: one that isn't connected leaves the songs on
+  // the system default until it is.
   useEffect(() => {
     const saved = savedSongOutput();
     if (saved) {
-      props.audio.setOutput(saved.id).catch((err) => {
-        console.warn(`The song output ${saved.label} isn't there:`, err);
+      props.audio.wantOutput(saved.id).catch((err) => {
+        console.warn(`The song output ${saved.label} isn't there yet:`, err);
       });
     }
   }, [props.audio]);
