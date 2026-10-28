@@ -10,12 +10,22 @@ describe("reading", () => {
   });
 
   test("gives DAM's kana, or the kana in romaji", () => {
-    assert.equal(reading("恋", "コイ", "kana"), "コイ");
-    assert.equal(reading("星野源", "ホシノ ゲン", "romaji"), "hoshino gen");
+    assert.equal(reading("恋", "こい", "kana"), "こい");
+    assert.equal(reading("星野 源", "ほしのげん", "romaji"), "hoshinogen");
   });
 
   test("both is the kana, then the romaji", () => {
-    assert.equal(reading("恋", "コイ", "both"), "コイ · koi");
+    assert.equal(reading("恋", "こい", "both"), "こい · koi");
+  });
+
+  test("the kana are hiragana, whichever DAM gives", () => {
+    assert.equal(reading("恋", "コイ", "both"), "こい · koi");
+    assert.equal(reading("恋愛", "レンアイ", "kana"), "れんあい");
+    assert.equal(
+      reading("小さな恋のうた", "ちいさなこいのうた", "kana"),
+      "ちいさなこいのうた",
+    );
+    assert.equal(reading("愛ラーメン", "アイラーメン", "kana"), "あいらーめん");
   });
 
   test("a song with no reading, such as Joysound's, is just its title", () => {

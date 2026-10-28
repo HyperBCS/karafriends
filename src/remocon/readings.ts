@@ -1,4 +1,4 @@
-import { isRomaji, toRomaji } from "wanakana";
+import { isRomaji, toHiragana, toRomaji } from "wanakana";
 
 import { normalize } from "./rank";
 
@@ -21,7 +21,9 @@ export function pickReadings(saved: string | null): Readings {
 // What to show with a title or an artist's name, given its kana reading:
 // the kana, the romaji, or both. Null when there's nothing to add: as
 // written, no reading (Joysound gives none), or a name already in Latin
-// letters. Kana that only repeat a name written in kana are left out.
+// letters. Kana that only repeat a name written in kana are left out. The
+// kana are hiragana, as furigana are: DAM's search gives hiragana, its song
+// details katakana.
 export function reading(
   written: string,
   yomi: string | undefined,
@@ -29,7 +31,10 @@ export function reading(
 ): string | null {
   if (mode === "written" || !yomi?.trim()) return null;
   if (isRomaji(written.normalize("NFKC"))) return null;
-  const kana = normalize(yomi) === normalize(written) ? null : yomi;
+  const kana =
+    normalize(yomi) === normalize(written)
+      ? null
+      : toHiragana(yomi, { convertLongVowelMark: false, passRomaji: true });
   const romaji = toRomaji(yomi);
   const parts =
     mode === "kana" ? [kana] : mode === "romaji" ? [romaji] : [kana, romaji];
