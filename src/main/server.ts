@@ -32,12 +32,16 @@ import { SETTINGS_METHODS } from "./settings";
 
 export const EVENTS_PATH = "/api/events";
 
-// Methods only the display may call, over IPC: the settings and setMics. A
-// phone gets 403 before its body is read, whoever it is signed in as.
-// (popSong is the display's too; api.ts checks.)
+// Methods only the display may call, over IPC: the settings, setMics and
+// the downloads folder's. A phone gets 403 before its body is read,
+// whoever it is signed in as. (popSong is the display's too; api.ts
+// checks.)
 export const DISPLAY_ONLY_METHODS: ReadonlySet<ApiMethod> = new Set<ApiMethod>([
   ...SETTINGS_METHODS,
   "setMics",
+  "downloadsInfo",
+  "clearDownloads",
+  "clearDownload",
 ]);
 
 const HEARTBEAT_MS = 20_000;

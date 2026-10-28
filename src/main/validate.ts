@@ -326,6 +326,15 @@ export const validators: {
     }
     return { mics: mics.map(mic) };
   },
+  downloadsInfo: nothing,
+  clearDownloads: nothing,
+  clearDownload: (raw) => {
+    const input = fields(raw, ["songId", "suffix"]);
+    return {
+      songId: string(input, "songId", 64),
+      suffix: string(input, "suffix", 64),
+    };
+  },
   popSong: nothing,
   whoami: nothing,
   adminLogin: (raw) => {

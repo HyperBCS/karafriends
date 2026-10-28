@@ -8,6 +8,7 @@ import { promisify } from "util";
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
 import {
   DownloadFailure,
+  failureReason,
   REASONS,
   toolCommand,
 } from "../../common/downloadFailure";
@@ -24,6 +25,12 @@ import {
 } from "../../common/nicoVideoInfo";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
+import {
+  clearFolder,
+  deleteDamVideo,
+  folderInfo,
+  type SongFiles,
+} from "./folder";
 import {
   damJob,
   deleteJoysoundTempFiles,
@@ -53,27 +60,47 @@ async function jobPaths(): Promise<JobPaths> {
   return { folder: TEMP_FOLDER, ...getResourcePaths() };
 }
 
-// The DAM videos downloading now, as <songId>-<suffix>. They aren't in the
+// The DAM videos downloading now, by <songId>-<suffix>. They aren't in the
 // download queue, as their songs are queued at once.
-const damDownloads = new Set<string>();
+const damDownloads = new Map<string, SongFiles>();
 
 // DAM songs join the queue at once and stream until their download is
-// done, so a failure here is only logged. A second request while one runs
-// returns at once: both would write the same .tmp.
+// done, so a failure here is only logged; but a sample DAM sent instead of
+// the song (playtime seconds long, if known) goes to onFailed too, for the
+// guest. A second request while one runs returns at once: both would write
+// the same .tmp.
 export function downloadDamVideo(
   m3u8Url: string,
   songId: string,
   suffix: string,
+  playtime: number | null,
+  onFailed: (reason: string) => void,
 ): void {
   const key = `${songId}-${suffix}`;
   if (damDownloads.has(key)) return;
-  damDownloads.add(key);
+  damDownloads.set(key, { kind: "dam", songId, suffix });
   jobPaths()
-    .then((paths) => damJob(paths, m3u8Url, songId, suffix))
-    .catch((err) =>
-      console.error(`Error downloading DAM video with ID ${songId}:`, err),
-    )
+    .then((paths) => damJob(paths, m3u8Url, songId, suffix, playtime))
+    .catch((err) => {
+      console.error(`Error downloading DAM video with ID ${songId}:`, err);
+      if (failureReason(err) === REASONS.damSample) onFailed(REASONS.damSample);
+    })
     .finally(() => damDownloads.delete(key));
+}
+
+// How many files the downloads folder holds, and their bytes.
+export const downloadsInfo = () => folderInfo(TEMP_FOLDER);
+
+// Deletes the downloads but inUse's songs' files and the DAM videos
+// downloading now (see clearFolder).
+export const clearDownloads = (inUse: readonly SongFiles[]) =>
+  clearFolder(TEMP_FOLDER, [...inUse, ...damDownloads.values()]);
+
+// Deletes a DAM song's downloaded video, unless it's downloading now.
+// Whether there was one.
+export function clearDamDownload(songId: string, suffix: string): boolean {
+  if (damDownloads.has(`${songId}-${suffix}`)) return false;
+  return deleteDamVideo(TEMP_FOLDER, songId, suffix);
 }
 
 // Downloads a Joysound song and its video, then queues it with

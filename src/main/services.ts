@@ -10,10 +10,13 @@ import { Innertube } from "youtubei.js";
 import { configStore } from "../common/config";
 import { toolsStatus, updateTools } from "../common/externalResources";
 import {
+  clearDamDownload,
+  clearDownloads,
   downloadDamVideo,
   downloadJoysoundData,
   downloadNicoVideo,
   downloadYoutubeVideo,
+  downloadsInfo,
   getNicoVideoInfo,
   TEMP_FOLDER,
 } from "./downloads";
@@ -123,6 +126,9 @@ const queueApi = createApi({
   getNicoVideoInfo,
   downloads: {
     dam: downloadDamVideo,
+    info: downloadsInfo,
+    clear: clearDownloads,
+    clearDam: clearDamDownload,
     joysound: (item, pushToHead, onReady, onFailed) =>
       downloadJoysoundData(
         store.getState().downloadQueue,

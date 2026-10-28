@@ -5,11 +5,31 @@ import { describe, test } from "node:test";
 import {
   DownloadFailure,
   failureReason,
+  isDamSample,
   isToolProblem,
   REASONS,
   toolCommand,
   ytdlpFailureReason,
 } from "./downloadFailure";
+
+describe("isDamSample", () => {
+  test("a video under 60 % of the song is a sample", () => {
+    assert.equal(isDamSample(30, 240), true);
+    assert.equal(isDamSample(143.9, 240), true);
+  });
+
+  test("a video of 60 % of the song or more is the song", () => {
+    assert.equal(isDamSample(144, 240), false);
+    assert.equal(isDamSample(238.5, 240), false);
+    assert.equal(isDamSample(300, 240), false);
+  });
+
+  test("without the playtime or the duration, nothing is a sample", () => {
+    assert.equal(isDamSample(30, null), false);
+    assert.equal(isDamSample(30, 0), false);
+    assert.equal(isDamSample(NaN, 240), false);
+  });
+});
 
 describe("isToolProblem", () => {
   test("a reason about the video is not the tools'", () => {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { hashAdminPassword } from "../common/adminPassword";
 import type { PlaybackState, QueueItem } from "../common/api";
+import { REASONS } from "../common/downloadFailure";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import { shareQueueItem, type HubMessage } from "./live";
@@ -65,6 +66,14 @@ let adminSessions: AdminSessions;
 let adminToken: string;
 let published: HubMessage[];
 let downloads: string[];
+// The DAM downloads' playtimes and onFailed.
+let damDownloads: {
+  playtime: number | null;
+  onFailed: (reason: string) => void;
+}[];
+// What clearDownloads kept, and the DAM videos clearDownload deleted.
+let clearedInUse: unknown[][];
+let clearedDam: [string, string][];
 let dkwebsysCalls: unknown[][];
 let joysoundCalls: unknown[][];
 
@@ -75,6 +84,9 @@ beforeEach(() => {
   adminToken = adminSessions.create();
   published = [];
   downloads = [];
+  damDownloads = [];
+  clearedInUse = [];
+  clearedDam = [];
   dkwebsysCalls = [];
   joysoundCalls = [];
 });
@@ -164,7 +176,25 @@ function makeApi(
       throw new Error("offline");
     },
     downloads: {
-      dam: (url: string) => downloads.push(url),
+      dam: (
+        url: string,
+        _songId: string,
+        _suffix: string,
+        playtime: number | null,
+        onFailed: (reason: string) => void,
+      ) => {
+        downloads.push(url);
+        damDownloads.push({ playtime, onFailed });
+      },
+      info: () => ({ files: 3, bytes: 3000 }),
+      clear: (inUse: unknown[]) => {
+        clearedInUse.push(inUse);
+        return { deleted: 2, bytes: 2000, kept: inUse.length };
+      },
+      clearDam: (songId: string, suffix: string) => {
+        clearedDam.push([songId, suffix]);
+        return true;
+      },
       // Ready at once.
       joysound: (
         item: QueueItem,
@@ -720,6 +750,82 @@ describe("the song volume and the mics", () => {
   });
 });
 
+describe("the downloads folder", () => {
+  test("is the display's only", async () => {
+    const api = makeApi();
+    for (const caller of [bob, admin("x")]) {
+      await rejectsWith(api.downloadsInfo({}, caller), 403);
+      await rejectsWith(api.clearDownloads({}, caller), 403);
+      await rejectsWith(
+        api.clearDownload({ songId: "1234-56", suffix: "0" }, caller),
+        403,
+      );
+    }
+    assert.deepEqual(clearedInUse, []);
+    assert.deepEqual(clearedDam, []);
+    assert.deepEqual(await api.downloadsInfo({}, display), {
+      files: 3,
+      bytes: 3000,
+    });
+  });
+
+  test("clearing keeps the current song's files and the running downloads'", async () => {
+    const api = makeApi();
+    store.update((state) => {
+      state.currentSong = {
+        ...song(1, alice),
+        kind: "dam",
+        songId: "1234-56",
+        streamingUrlIdx: 2,
+      } as QueueItem;
+      // Queued, not playing: its files go.
+      state.songQueue.push(song(2, alice));
+      startDownload(state.downloadQueue, {
+        kind: "joysound",
+        songId: "777",
+        suffix: "bg",
+        userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      });
+      const failed = startDownload(state.downloadQueue, {
+        kind: "youtube",
+        songId: "gone",
+        suffix: null,
+        userIdentity: { deviceId: "bob-device", nickname: "bob" },
+      });
+      failDownload(state.downloadQueue, failed, "Video unavailable");
+    });
+    assert.deepEqual(await api.clearDownloads({}, display), {
+      deleted: 2,
+      bytes: 2000,
+      kept: 2,
+    });
+    assert.deepEqual(clearedInUse, [
+      [
+        { kind: "joysound", songId: "777", suffix: "bg" },
+        { kind: "dam", songId: "1234-56", suffix: "2" },
+      ],
+    ]);
+  });
+
+  test("clearDownload deletes one DAM video, by a safe name", async () => {
+    const api = makeApi();
+    assert.equal(
+      await api.clearDownload({ songId: "1234-56", suffix: "0" }, display),
+      true,
+    );
+    assert.deepEqual(clearedDam, [["1234-56", "0"]]);
+    await rejectsWith(
+      api.clearDownload({ songId: "../queue", suffix: "0" }, display),
+      400,
+    );
+    await rejectsWith(
+      api.clearDownload({ songId: "1234-56", suffix: "0.mp4/.." }, display),
+      400,
+    );
+    assert.equal(clearedDam.length, 1);
+  });
+});
+
 describe("admin sign-in", () => {
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
@@ -941,6 +1047,15 @@ describe("queueSong", () => {
     // The download starts once DAM answers.
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(downloads, ["https://dam/high1"]);
+    // With the playtime, to refuse a sample; which the phone then hears of.
+    assert.equal(damDownloads[0].playtime, 200);
+    damDownloads[0].onFailed(REASONS.damSample);
+    assert.deepEqual(published.at(-1), {
+      type: "queueFailed",
+      item,
+      reason: REASONS.damSample,
+    });
+    published.pop();
 
     const next = await api.queueSong(
       { kind: "nico", songId: "sm9", name: "", artistName: "" },

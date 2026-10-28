@@ -632,3 +632,48 @@ test.describe("@jp with the installed app's logins", () => {
     );
   });
 });
+
+test.describe("the downloads", () => {
+  test("Settings shows the downloads and clears them; a phone can do neither", async ({
+    karafriends,
+    display,
+  }) => {
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, "yt-e2evideo.mp4"), "x".repeat(1.5e6));
+    fs.writeFileSync(path.join(folder, "yt-e2evideo.log"), "x".repeat(5e5));
+
+    // Settings opens on first launch; opened again, it counts the files.
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("button", { name: "Close" }).click();
+    await display.getByRole("button", { name: "Settings" }).click();
+    const section = settings.getByRole("region", { name: "Downloads" });
+    await expect(section.getByText("2 files, 2.0 MB")).toBeVisible();
+
+    await section.getByRole("button", { name: "Clear downloads" }).click();
+    await expect(section.getByRole("status")).toHaveText("Freed 2.0 MB.");
+    await expect(section.getByText("0 files, 0.0 MB")).toBeVisible();
+    expect(
+      fs.readdirSync(folder).filter((name) => name.startsWith("yt-")),
+    ).toEqual([]);
+
+    for (const [method, input] of [
+      ["downloadsInfo", {}],
+      ["clearDownloads", {}],
+      ["clearDownload", { songId: "1234-56", suffix: "0" }],
+    ] as const) {
+      const res = await fetch(
+        new URL(`api/${method}`, karafriends.remoconUrl),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      expect(res.status, method).toBe(403);
+    }
+  });
+});
