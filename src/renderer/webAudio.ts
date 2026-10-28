@@ -5,10 +5,21 @@ import phazeAudioWorkletUrl from "./audio/phazeAudioWorklet.ts?worker&url";
 // loudness (-3 dB per side).
 const CENTRE_TO_SIDE = 0.7;
 
+// The vocoder's level, even at no shift: it overlap-adds 16 frames (2048
+// samples, hop 128), each windowed by Hann on the way in and out, and
+// divides by 16. Hann squared averages 3/8, so the frames sum to 16 * 3/8 = 6
+// and come out at 6 / 16 = 0.375 (-8.5 dB). The bypass plays at that level
+// too, so a song is as loud at key 0 as at any other key, and as loud as
+// before the bypass. Making the vocoder up to 1 instead would raise every
+// song by 8.5 dB, and a loud YouTube gain could clip.
+const VOCODER_LEVEL = 0.375;
+
 // The display's sound: input → [Joysound routing] → gain → vocoder (once its
-// worklet loads, and only while the key is changed) → speakers.
+// worklet loads, and only while the key is changed; otherwise bypassGain) →
+// speakers.
 export default class KarafriendsAudio {
   private gainNode: GainNode;
+  private bypassGain: GainNode;
   private vocoderNode: AudioWorkletNode | null;
   private semitones = 0;
   // Joysound's ogg is 3-channel: 0 left, 1 right, 2 a synthesised guide
@@ -29,7 +40,10 @@ export default class KarafriendsAudio {
     this.input = this.audioContext.createGain();
     this.gainNode = this.audioContext.createGain();
     this.input.connect(this.gainNode);
-    this.gainNode.connect(this.audioContext.destination);
+    this.bypassGain = this.audioContext.createGain();
+    this.bypassGain.gain.value = VOCODER_LEVEL;
+    this.bypassGain.connect(this.audioContext.destination);
+    this.gainNode.connect(this.bypassGain);
 
     this.splitter = this.audioContext.createChannelSplitter(3);
     const merger = this.audioContext.createChannelMerger(2);
@@ -74,8 +88,8 @@ export default class KarafriendsAudio {
   }
 
   // The vocoder is in the chain only while the key is changed: even at no
-  // shift it costs about 8.5 dB and 44 ms (measured in M8, see
-  // notes/PLAN-mobile.md), so at 0 the gain goes straight to the speakers.
+  // shift it adds 44 ms (measured in M8, see notes/PLAN-mobile.md), so at 0
+  // the gain goes through bypassGain instead, at the vocoder's level.
   pitchShift(semitones: number) {
     this.semitones = semitones;
     const vocoder = this.vocoderNode;
@@ -85,7 +99,7 @@ export default class KarafriendsAudio {
     }
     this.gainNode.disconnect();
     this.gainNode.connect(
-      vocoder && semitones !== 0 ? vocoder : this.audioContext.destination,
+      vocoder && semitones !== 0 ? vocoder : this.bypassGain,
     );
   }
 
