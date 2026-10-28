@@ -48,6 +48,29 @@
   -webkit-overflow-scrolling: touch;
 }
 
+// The grip an admin drags a queued row by (useDragReorder). Only the grip
+// takes the touch for itself, so the queue still scrolls from the rest of
+// a row.
+button.handle {
+  touch-action: none;
+  cursor: grab;
+  -webkit-touch-callout: none;
+}
+
+// While a row is held, the others slide out of its way; the held row
+// follows the pointer, a step lighter, over the rest.
+.queue [data-reordering] > li {
+  transition: transform 150ms ease-out;
+}
+
+.queue li[data-dragging] {
+  z-index: 1;
+  outline: 1px solid $kf-border-strong;
+  background-color: $kf-surface-pressed;
+  transition: none;
+  cursor: grabbing;
+}
+
 // Below the queue, always in view. One row down to 320px wide (tighter
 // under 360px); narrower than that, it wraps.
 .controls {

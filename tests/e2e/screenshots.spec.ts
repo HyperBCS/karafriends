@@ -402,3 +402,39 @@ test.describe("phase M2", () => {
     await shoot(remote, `m-song-${browserName}`);
   });
 });
+
+// Phase M3's, the same way with -g "phase M3": the open sheet with a
+// handle on every queued row, one of them held halfway up.
+test.describe("phase M3", () => {
+  test.use({
+    appConfig: { everyoneIsAdmin: true },
+    seedQueue: {
+      currentSong: null,
+      songQueue: QUEUE,
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("the queue mid-drag", async ({ remote, browserName }) => {
+    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+      timeout: 15_000,
+    });
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const handles = remote
+      .getByRole("region", { name: "Queue" })
+      .getByRole("button", { name: "Drag to reorder" });
+    await expect(handles).toHaveCount(4);
+
+    // マリーゴールド, held above 紅蓮華's middle: 紅蓮華 slides down.
+    const grip = (await handles.nth(1).boundingBox())!;
+    const row = (await handles.nth(0).boundingBox())!;
+    const x = grip.x + grip.width / 2;
+    const y = grip.y + grip.height / 2;
+    await remote.mouse.move(x, y);
+    await remote.mouse.down();
+    await remote.mouse.move(x, y - (grip.y - row.y) * 0.7, { steps: 6 });
+    await shoot(remote, `m-queue-drag-${browserName}`);
+    await remote.mouse.up();
+  });
+});
