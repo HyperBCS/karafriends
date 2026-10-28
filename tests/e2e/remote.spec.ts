@@ -1749,6 +1749,8 @@ test.describe("a queued DAM song", () => {
     // DAM's song details give no artist reading: the artist as written.
     await expect(row).toContainText("koiDAM星野 源");
     await expect(row).not.toContainText("恋");
+    // Its accessible name starts with the title as shown.
+    await expect(row.getByRole("button", { name: /^koi, / })).toBeVisible();
     // This phone's choice, not the one the song was queued with.
     await pickReadings(remote, "Kana");
     await expect(row).toContainText("こいDAM星野 源");

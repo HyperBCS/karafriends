@@ -6,6 +6,8 @@ import { useIsAdmin, useLiveState } from "../../../common/apiClient";
 import { useApiMutation } from "../../../common/apiQueries";
 import useOptimisticValue from "../../../common/hooks/useOptimisticValue";
 import useQueue, { useWait, withETAs } from "../../../common/hooks/useQueue";
+import { reading } from "../../../common/readings";
+import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
 import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
@@ -70,6 +72,7 @@ const QueueRow = memo(function QueueRow({
   handleProps,
 }: RowProps) {
   const [expanded, setExpanded] = useState(false);
+  const readings = useReadings();
   const supervisedMode = useLiveState(
     (state) => state?.config.supervisedMode ?? false,
   );
@@ -118,7 +121,8 @@ const QueueRow = memo(function QueueRow({
       source={sourceOf(item)}
       onPress={() => setExpanded(!expanded)}
       expanded={expanded}
-      aria-label={`${item.name}, ${queuedBy}`}
+      // The title as the row shows it, so "Tap koi" finds it.
+      aria-label={`${reading(item.name, item.nameYomi, readings) ?? item.name}, ${queuedBy}`}
       trailing={
         <>
           {expanded ? actions : <Wait eta={eta} />}
