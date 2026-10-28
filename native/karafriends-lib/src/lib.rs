@@ -83,7 +83,7 @@ use ringbuf::traits::{Consumer, Producer, Split};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::Resampler;
 
-pub use mixer::{output_devices, output_format, output_options, set_output_device};
+pub use mixer::{output_devices, output_format, output_options, output_status, set_output_device};
 
 // How the platform's mics open: exclusive (Windows only, see exclusive.rs)
 // with a buffer size in frames (None: the mic's smallest), or shared. On

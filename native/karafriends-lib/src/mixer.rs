@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, TryLockError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
@@ -81,6 +81,11 @@ pub fn set_output_device(
     lock(&MIXER).choose(choice, Mixer::reopen)
 }
 
+// How often a chosen mic output that is missing, or won't open, is tried
+// again while the default plays instead (see Mixer::retry_choice). Not
+// every time a mic is asked: listing ASIO's outputs loads every driver.
+const RETRY_OUTPUT: Duration = Duration::from_secs(10);
+
 // The rates Settings offers: the usual PCM ones. Drivers also list DSD
 // rates (2.8 MHz and up), which aren't for us.
 const PCM_RATES: [cpal::SampleRate; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
@@ -129,6 +134,15 @@ fn buffer_choices(min: u32, max: u32) -> Vec<u32> {
     choices
 }
 
+// Where the mics play: "ok", "ok: <a note>" (the chosen output is missing,
+// and the default plays instead), or why the output stopped. None while no
+// mic is open. Settings can show it whichever mics are up.
+pub fn output_status() -> Option<String> {
+    let mut mixer = lock(&MIXER);
+    mixer.output.as_ref()?;
+    Some(mixer.status())
+}
+
 // What the mic output runs at: "48 kHz, 512 samples (10.7 ms)", and why
 // its thread isn't real-time if the system refused. None while no mic is
 // open.
@@ -168,8 +182,10 @@ pub(crate) struct Mixer {
     output_error: Arc<Mutex<Option<String>>>,
     // Why its thread isn't real-time, if the system refused.
     output_realtime: Arc<Mutex<Option<String>>>,
-    // Set when the chosen device is missing and the default plays instead.
+    // Set when the chosen device is missing and the default plays instead,
+    // and when to try the choice again (see retry_choice).
     note: Option<String>,
+    retry_at: Option<Instant>,
     // The output callback only ever try_locks this, so the audio thread
     // never waits; the JS thread holds it just to add or remove a mic.
     sources: Arc<Mutex<Vec<Source>>>,
@@ -242,14 +258,10 @@ impl Mixer {
         let opened = self.build();
         match opened {
             Ok((stream, rate, note)) => {
-                self.output = Some((stream, rate));
+                let now = Instant::now();
+                self.retry_at = note.as_ref().map(|_| now + RETRY_OUTPUT);
                 self.note = note;
-                self.stall = Some(Stall::new(Instant::now()));
-                // A mic resampling to another rate would play at the wrong
-                // pitch: its status has the display reopen it.
-                for source in lock(&self.sources).iter().filter(|s| s.rate != rate) {
-                    *lock(&source.status) = Some(format!("The mic output changed to {rate} Hz"));
-                }
+                self.opened(stream, rate, now);
                 Ok(rate)
             }
             Err(e) => {
@@ -257,6 +269,63 @@ impl Mixer {
                     "The mic output couldn't open: {e}"
                 ))));
                 Err(e)
+            }
+        }
+    }
+
+    // `stream` is the output now, at `rate`.
+    fn opened(&mut self, stream: Stream, rate: cpal::SampleRate, now: Instant) {
+        self.output = Some((stream, rate));
+        self.stall = Some(Stall::new(now));
+        // A mic resampling to another rate would play at the wrong pitch:
+        // its status has the display reopen it.
+        for source in lock(&self.sources).iter().filter(|s| s.rate != rate) {
+            *lock(&source.status) = Some(format!("The mic output changed to {rate} Hz"));
+        }
+    }
+
+    // The choice to try again, while the default output plays for it, once
+    // RETRY_OUTPUT has passed since the last try.
+    fn retry_due(&mut self, now: Instant) -> Option<OutputChoice> {
+        if self.retry_at.is_none_or(|at| now < at) {
+            return None;
+        }
+        self.retry_at = Some(now + RETRY_OUTPUT);
+        self.choice.clone()
+    }
+
+    // While the default output plays for a chosen one that was missing or
+    // wouldn't open (a TV in standby, an interface switched off), the
+    // choice is tried again now and then. Once it is listed and opens, the
+    // mics move back to it. It opens beside the default, which plays on
+    // until it does.
+    fn retry_choice(&mut self, now: Instant) {
+        if self.output.is_none() || lock(&self.output_error).is_some() {
+            return;
+        }
+        let Some(OutputChoice { name, rate, buffer }) = self.retry_due(now) else {
+            return;
+        };
+        let Ok(Some((device, device_type))) = find_output(&name) else {
+            return;
+        };
+        match self.build_on(&device, &device_type, rate, buffer) {
+            Ok((stream, rate)) => {
+                println!("The mic output {name} is back");
+                self.note = None;
+                self.retry_at = None;
+                let default = self.output.take();
+                self.opened(stream, rate, now);
+                drop(default);
+            }
+            Err(e) => {
+                let note = format!(
+                    "ok: {name} couldn't open ({e}); the mics play through the default output"
+                );
+                if self.note.as_ref() != Some(&note) {
+                    eprintln!("The mic output {name} couldn't open: {e}");
+                    self.note = Some(note);
+                }
             }
         }
     }
@@ -362,6 +431,7 @@ impl Mixer {
         if let Some(error) = lock(&self.output_error).clone() {
             return error;
         }
+        self.retry_choice(Instant::now());
         self.note.clone().unwrap_or_else(|| "ok".to_string())
     }
 
@@ -1176,6 +1246,31 @@ mod tests {
         assert_eq!(*lock(&other_status), None);
         // No output, no ASIO buffer.
         assert_eq!(mixer.asio_buffer(), None);
+    }
+
+    // While the default plays for a missing choice, the choice is tried
+    // again every RETRY_OUTPUT, not each time a mic is asked.
+    #[test]
+    fn test_a_missing_choice_is_tried_again_now_and_then() {
+        let start = Instant::now();
+        let mut mixer = Mixer {
+            choice: Some(OutputChoice {
+                name: "TV".to_string(),
+                rate: None,
+                buffer: None,
+            }),
+            ..Mixer::default()
+        };
+        // Playing on the choice (or the default when none is chosen): no
+        // retries.
+        assert!(mixer.retry_due(start + RETRY_OUTPUT * 2).is_none());
+        mixer.retry_at = Some(start + RETRY_OUTPUT);
+        assert!(mixer.retry_due(start).is_none());
+        assert!(mixer.retry_due(start + RETRY_OUTPUT / 2).is_none());
+        let due = start + RETRY_OUTPUT;
+        assert_eq!(mixer.retry_due(due).map(|c| c.name).as_deref(), Some("TV"));
+        assert!(mixer.retry_due(due + Duration::from_secs(1)).is_none());
+        assert!(mixer.retry_due(due + RETRY_OUTPUT).is_some());
     }
 
     #[test]
