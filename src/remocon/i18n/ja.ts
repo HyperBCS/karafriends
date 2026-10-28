@@ -65,7 +65,7 @@ export const ja: Messages = {
   "lyrics.adhocPlaceholder":
     "ここに歌詞を貼り付けてください（1行ずつ表示します）",
   "lyrics.adhocHelp":
-    "演奏中に予約リストの自分の曲をタップすると、1行ずつ表示できます。",
+    "曲が始まると、このページが歌詞を1行ずつ表示する操作画面に変わります。ほかのページからは、「演奏中」を開いて自分の曲をタップしてください。",
   "lyrics.sendLine": "タップして次の行を表示",
 
   "queueButton.song": "予約する",

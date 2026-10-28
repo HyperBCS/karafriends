@@ -73,7 +73,7 @@ export const en = {
   "lyrics.adhoc": "Your own lyrics",
   "lyrics.adhocPlaceholder": "Paste the lyrics here, one line per line.",
   "lyrics.adhocHelp":
-    "While your song plays, tap it in the queue to show these line by line.",
+    "When your song starts, this page turns into the controls that show these line by line. From another page, open Now playing and tap your song.",
   "lyrics.sendLine": "Tap here to show the next line",
 
   // Queueing a song, and the download that comes before it.
