@@ -29,6 +29,7 @@ export const en = {
   "language.ja": "日本語",
 
   // Header and navigation.
+  "nav.home": "Home",
   "nav.history": "History",
   "nav.profile": "Profile",
 

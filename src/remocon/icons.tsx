@@ -81,6 +81,12 @@ export const MdEdit = () => (
   </Svg>
 );
 
+export const MdHome = () => (
+  <Svg viewBox="0 0 24 24">
+    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+  </Svg>
+);
+
 export const MdPause = () => (
   <Svg viewBox="0 0 24 24">
     <path d="M6 19h4V5H6zm8-14v14h4V5z" />
