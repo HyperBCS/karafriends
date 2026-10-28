@@ -1581,6 +1581,37 @@ test.describe("devices that won't open", () => {
     await expect(note).toHaveCount(0);
   });
 
+  test("at a big UI scale, a mic's device gets a line of its own", async ({
+    display,
+  }) => {
+    // A 1080p TV at 200%.
+    await display.setViewportSize({ width: 1920, height: 1080 });
+    await display.evaluate(() => localStorage.setItem("uiScale", "200"));
+    await display.reload();
+    await openTab(display, "Sound");
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Microphones" });
+    await section
+      .getByLabel("Add a microphone")
+      .selectOption("E2E Mic (USB), channel 1");
+    const mic = section.getByRole("group", {
+      name: "E2E Mic (USB), channel 1",
+    });
+    const row = (await mic.locator(".settingsMicRow").boundingBox())!;
+    const device = (await mic.getByLabel("Microphone").boundingBox())!;
+    expect(device.width).toBeGreaterThan(row.width * 0.9);
+    // The levels and Remove share the line under it.
+    const gain = (await mic.getByLabel(/^Gain/).boundingBox())!;
+    const remove = (await mic
+      .getByRole("button", { name: "Remove" })
+      .boundingBox())!;
+    expect(gain.y).toBeGreaterThan(device.y + device.height);
+    expect(remove.y + remove.height).toBeCloseTo(gain.y + gain.height, -1);
+    const add = (await section.getByLabel("Add a microphone").boundingBox())!;
+    expect(add.width).toBeGreaterThan(row.width * 0.9);
+  });
+
   test("a device list that won't read leaves the display up: Settings says why, a mic keeps its row, and a launch opens with the saved mics kept", async ({
     display,
   }) => {
