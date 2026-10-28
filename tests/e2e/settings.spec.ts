@@ -10,30 +10,9 @@ import path from "path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { parse } from "yaml";
 
-import { adminPasswordConfig, expect, test } from "./fixtures";
+import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
 
 const MASK = "••••••";
-
-type Answer = { ok: boolean; output?: any; status?: number; error?: string };
-
-// A call from the display, over IPC through its preload.
-async function displayCall(
-  display: Page,
-  method: string,
-  input: object,
-): Promise<Answer> {
-  return display.evaluate(
-    ([method, input]) =>
-      (
-        window as unknown as {
-          karafriends: {
-            api: { call(method: string, input: object): Promise<Answer> };
-          };
-        }
-      ).karafriends.api.call(method, input),
-    [method, input] as const,
-  );
-}
 
 async function output(display: Page, method: string, input: object = {}) {
   const answer = await displayCall(display, method, input);

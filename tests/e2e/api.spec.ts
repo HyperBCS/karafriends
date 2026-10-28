@@ -5,7 +5,7 @@ import net from "net";
 
 import type { Page } from "@playwright/test";
 
-import { adminPasswordConfig, expect, test } from "./fixtures";
+import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
 
 const DEVICE_ID = "e2e-remote-device";
 const NICKNAME = "e2e";
@@ -53,22 +53,6 @@ async function liveState(remoconUrl: string, deviceId?: string) {
   } finally {
     controller.abort();
   }
-}
-
-// A call from the display, over IPC through its preload: { ok, output } or
-// { ok: false, status, error }.
-async function displayCall(display: Page, method: string, input: object) {
-  return display.evaluate(
-    ([method, input]) =>
-      (
-        window as unknown as {
-          karafriends: {
-            api: { call(method: string, input: object): Promise<unknown> };
-          };
-        }
-      ).karafriends.api.call(method, input),
-    [method, input] as const,
-  );
 }
 
 test("/api refuses a form-encoded POST", async ({ karafriends }) => {
