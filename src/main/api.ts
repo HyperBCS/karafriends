@@ -47,6 +47,7 @@ import {
   type PendingSong,
   type StateStore,
 } from "./state";
+import { withTimeout } from "./timeout";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -160,16 +161,6 @@ export interface ApiDeps {
 // start the song without them: a downloaded song plays from its file, and a
 // song without scoring data still plays.
 const DAM_POP_TIMEOUT_MS = 10_000;
-
-// promise's outcome, or a rejection after ms. (promise carries on, but its
-// outcome is ignored.)
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
 
 // The most adhoc lyrics one song can show (pushAdhocLyrics). Every live-state
 // event carries them all, to every phone, so they must stay small. A singer
@@ -1154,10 +1145,16 @@ export function createApi(
         return [];
       };
       const [urls, scoringData] = await Promise.all([
-        withTimeout(streamingUrls(song.songId), timeoutMs).catch(
-          failed("streaming URLs"),
-        ),
-        withTimeout(deps.minsei.getScoringData(song.songId), timeoutMs)
+        withTimeout(
+          streamingUrls(song.songId),
+          timeoutMs,
+          "DAM's streaming URLs",
+        ).catch(failed("streaming URLs")),
+        withTimeout(
+          deps.minsei.getScoringData(song.songId),
+          timeoutMs,
+          "DAM's scoring data",
+        )
           .then((data) => Array.from(new Uint8Array(data)))
           .catch(failed("scoring data")),
       ]);

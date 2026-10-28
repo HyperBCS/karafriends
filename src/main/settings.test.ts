@@ -293,6 +293,28 @@ describe("testLogin", () => {
     ]);
   });
 
+  test("gives up on a service that doesn't answer in 15 seconds", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { api, store } = setup({
+      logins: { dam: () => new Promise(() => {}) },
+    });
+    store.update(LOGINS);
+    const { warn } = console;
+    console.warn = () => {};
+    try {
+      const result = api.testLogin({ service: "dam" }, display);
+      await Promise.resolve();
+      t.mock.timers.tick(15_000);
+      assert.deepEqual(await result, {
+        ok: false,
+        reason:
+          "DAM didn't answer within 15 seconds. Check this computer's internet connection and VPN.",
+      });
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test("says when no login is set, without asking", async () => {
     const { api, tried } = setup();
     assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {

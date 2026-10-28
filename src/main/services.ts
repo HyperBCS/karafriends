@@ -23,12 +23,13 @@ import {
 } from "./downloads/folder";
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
-import { createCredentialProviders } from "./credentials";
+import { createCredentialProviders, memoizeSuccess } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
 import { createLiveHub } from "./live";
 import { createSettingsHandlers } from "./settings";
 import { createStateStore } from "./state";
+import { withTimeout } from "./timeout";
 
 // The running config, kept up to date by configStore.update().
 const karafriendsConfig = configStore.get();
@@ -102,41 +103,12 @@ const upstreamClients = {
   dkwebsys: new DkwebsysAPI(),
 };
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() =>
-    clearTimeout(timer),
-  ) as Promise<T>;
-}
-
 // Only youtubeInfo needs the YouTube client, so it is created on first use
-// there: a YouTube outage then only affects YouTube lookups. memoize would
-// cache a rejected promise forever, so use a manual singleton that times out
-// and clears itself on failure so the next lookup retries.
-let innertubePromise: Promise<Innertube> | null = null;
-function innertubeApiProvider(): Promise<Innertube> {
-  if (!innertubePromise) {
-    innertubePromise = withTimeout(
-      Innertube.create(),
-      30000,
-      "Innertube.create",
-    ).catch((err) => {
-      innertubePromise = null;
-      throw err;
-    });
-  }
-  return innertubePromise;
-}
+// there: a YouTube outage then only affects YouTube lookups. A failure (or
+// a timeout) isn't kept, so the next lookup tries again.
+const innertubeApiProvider = memoizeSuccess(() =>
+  withTimeout(Innertube.create(), 30_000, "Innertube.create"),
+);
 
 const { resumeDownloads: resume, ...queueApi } = createApi({
   config: karafriendsConfig,

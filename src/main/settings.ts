@@ -27,6 +27,7 @@ import {
 import type { ConfigStore } from "../common/configStore";
 import { ApiError, type ApiHandlers, type Caller } from "./api";
 import { HttpStatusError } from "./http";
+import { TimeoutError, withTimeout } from "./timeout";
 
 export const SETTINGS_METHODS = [
   "getSettings",
@@ -74,15 +75,13 @@ export interface SettingsDeps {
   };
 }
 
-const TIMED_OUT = new Error("timed out");
-
 // Why a login failed, in a sentence for the host.
 export function loginFailureReason(
   service: LoginService,
   err: unknown,
 ): string {
   const name = SERVICE_NAMES[service];
-  if (err === TIMED_OUT) {
+  if (err instanceof TimeoutError) {
     return (
       `${name} didn't answer within ${LOGIN_TIMEOUT_MS / 1000} seconds. ` +
       "Check this computer's internet connection and VPN."
@@ -139,14 +138,12 @@ export function createSettingsHandlers(
         reason: `No ${SERVICE_NAMES[service]} login is set: enter the ${what} and password first.`,
       };
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([
+      await withTimeout(
         deps.logins[service](username, password),
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(TIMED_OUT), LOGIN_TIMEOUT_MS);
-        }),
-      ]);
+        LOGIN_TIMEOUT_MS,
+        `${SERVICE_NAMES[service]}'s login`,
+      );
       return { ok: true };
     } catch (err) {
       console.warn(
@@ -154,8 +151,6 @@ export function createSettingsHandlers(
         (err as Error)?.message ?? err,
       );
       return { ok: false, reason: loginFailureReason(service, err) };
-    } finally {
-      clearTimeout(timer);
     }
   };
 
