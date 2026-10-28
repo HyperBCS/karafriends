@@ -194,7 +194,7 @@ export interface LiveState {
   downloads: DownloadProgress[];
   // Only what every phone may see: no credentials, no admin list (ask
   // whoami instead).
-  config: { supervisedMode: boolean };
+  config: { supervisedMode: boolean; everyoneIsAdmin: boolean };
   // ToolsStatus's problem, for the display's notice. Phones ignore it.
   toolsProblem: string | null;
 }

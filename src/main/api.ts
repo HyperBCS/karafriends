@@ -67,6 +67,7 @@ export interface ApiDeps {
     KarafriendsConfig,
     | "adminPasswordHash"
     | "adminPasswordSalt"
+    | "everyoneIsAdmin"
     | "paxSongQueueLimit"
     | "supervisedMode"
     | "useLowBitrateUrl"
@@ -161,12 +162,15 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
-  // The display, or a phone signed in with the admin password. Nicknames
-  // grant nothing, since anyone can pick any nickname and every phone sees
-  // everyone's. Device IDs never leave the server, so they decide whose a
-  // song is, but not who is an admin.
+  // The display, or a phone signed in with the admin password, or every
+  // phone while everyoneIsAdmin is on. Nicknames grant nothing, since anyone
+  // can pick any nickname and every phone sees everyone's. Device IDs never
+  // leave the server, so they decide whose a song is, but not who is an
+  // admin.
   const isAdmin = (caller: Caller) =>
-    caller.isDisplay || deps.adminSessions.has(caller.adminToken);
+    config.everyoneIsAdmin ||
+    caller.isDisplay ||
+    deps.adminSessions.has(caller.adminToken);
 
   // Whether the caller queued item, from the same device (isMine, to the
   // phones).

@@ -71,8 +71,9 @@ const credentials = createCredentialProviders({
 setProxy(karafriendsConfig);
 
 configStore.onChange(({ keys }) => {
-  // The phones' live state shows supervisedMode.
-  if (keys.includes("supervisedMode")) hub.refresh();
+  // The phones' live state shows supervisedMode and everyoneIsAdmin.
+  if (keys.includes("supervisedMode") || keys.includes("everyoneIsAdmin"))
+    hub.refresh();
   // For DAM and Joysound requests from now on. (The display's own proxy,
   // for DAM streams, changes on restart.)
   if (keys.some((key) => PROXY_KEYS.includes(key))) setProxy(karafriendsConfig);

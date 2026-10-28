@@ -21,7 +21,7 @@ const liveState: LiveState = {
   pitchShiftSemis: 0,
   adhocLyrics: [],
   downloads: [],
-  config: { supervisedMode: false },
+  config: { supervisedMode: false, everyoneIsAdmin: false },
   toolsProblem: null,
 };
 
