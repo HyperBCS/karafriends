@@ -5,11 +5,13 @@ import { describe, test } from "node:test";
 import type { PoppedDamSong, PoppedSong } from "../common/api";
 import {
   AV_OFFSETS,
+  FRAGMENT_RETRIES,
   UI_SCALES,
   audioDelay,
   drawTime,
   lowBitrateFallback,
   pitchTime,
+  retryFragment,
   savedChoice,
   songGain,
 } from "./playback";
@@ -96,6 +98,20 @@ describe("lowBitrateFallback", () => {
       lowBitrateFallback({ ...song(false), streamingUrls: [] }, 3),
       null,
     );
+  });
+});
+
+describe("retryFragment", () => {
+  test("a fragment that got no answer is tried again, up to the limit", () => {
+    assert.equal(retryFragment(0, 0, false), true);
+    assert.equal(retryFragment(FRAGMENT_RETRIES - 1, 0, false), true);
+    assert.equal(retryFragment(FRAGMENT_RETRIES, 0, false), false);
+  });
+
+  test("otherwise it goes by what hls.js would do", () => {
+    assert.equal(retryFragment(0, 404, false), false);
+    assert.equal(retryFragment(0, undefined, false), false);
+    assert.equal(retryFragment(2, 503, true), true);
   });
 });
 

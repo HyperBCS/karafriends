@@ -14,7 +14,12 @@ import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { damMelody, type Melody } from "./melody";
-import { lowBitrateFallback, songGain } from "./playback";
+import {
+  FRAGMENT_RETRIES,
+  lowBitrateFallback,
+  retryFragment,
+  songGain,
+} from "./playback";
 import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
@@ -162,8 +167,28 @@ export default function useSongPlayer({
     // From startPosition seconds in (-1: the start).
     const load = (url: string, startPosition: number) => {
       hlsRef.current?.destroy();
-      const hls = new Hls({ maxBufferLength: 90 /* seconds */, startPosition });
+      const hls = new Hls({
+        maxBufferLength: 90 /* seconds */,
+        startPosition,
+        fragLoadPolicy: {
+          default: {
+            ...Hls.DefaultConfig.fragLoadPolicy.default,
+            errorRetry: {
+              maxNumRetry: FRAGMENT_RETRIES,
+              retryDelayMs: 1000,
+              maxRetryDelayMs: 8000,
+              shouldRetry: (_config, retries, _timeout, response, retry) =>
+                retryFragment(retries, response?.code, retry),
+            },
+          },
+        },
+      });
       hlsRef.current = hls;
+      // Some streams end without the video's 'ended' (a stall right at the
+      // end): hls.js says so, and the next song starts.
+      hls.on(Hls.Events.MEDIA_ENDED, () => {
+        if (songRef.current === song) pollQueue();
+      });
       // hls.js retries the others itself.
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (songRef.current !== song) return;

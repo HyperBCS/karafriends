@@ -54,6 +54,24 @@ export function lowBitrateFallback(
   return song.streamingUrls[song.streamingUrlIdx]?.low ?? null;
 }
 
+// How many times hls.js tries a DAM fragment again after it fails to load:
+// about a minute in all (1, 2 and 4 s apart, then 8), while up to 90 s of
+// the song are buffered.
+export const FRAGMENT_RETRIES = 10;
+
+// Whether hls.js tries a failed DAM fragment again, given whether it would
+// itself (retry). Also when no answer came at all (status 0: a reset
+// connection, a VPN reconnecting after a Wi-Fi blip or a resume, DNS),
+// which hls.js retries only while the browser says it's offline. Otherwise
+// one such request is fatal and ends the song.
+export function retryFragment(
+  retries: number,
+  status: number | undefined,
+  retry: boolean,
+): boolean {
+  return retry || (status === 0 && retries < FRAGMENT_RETRIES);
+}
+
 // The song's gain in the audio graph. Every song sets its own, so none plays
 // at the gain the one before it left. Joysound plays as DAM does; a YouTube
 // song's comes from YouTube's loudness figure (queueSong).
