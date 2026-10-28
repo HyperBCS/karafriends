@@ -64,7 +64,7 @@ function DeviceSelect(props: {
 }
 
 // Re-renders every STATUS_MS, for what the native side says now.
-function useTick() {
+export function useTick() {
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick((tick) => tick + 1), STATUS_MS);

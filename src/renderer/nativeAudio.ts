@@ -94,8 +94,14 @@ function working(status: string) {
   return status === "ok" || status.startsWith("ok: ");
 }
 
+// Each InputDevice's key, for as long as it lives.
+let nextKey = 0;
+
 export class InputDevice {
-  deviceId: number;
+  // Its row's key in Settings: the native handle changes on every reopen.
+  readonly key = nextKey++;
+  // The native handle, while it's open.
+  private deviceId = -1;
   // The input's id: the key it is saved and sent by.
   name: string;
   // What the system calls it, with the channel: what Settings and the
@@ -108,14 +114,18 @@ export class InputDevice {
   error: string | null = null;
   private gain = 1;
   private echo = 0.4;
-  private open = true;
+  private open = false;
   private watchdog: ReturnType<typeof setInterval>;
 
+  // One that won't open (busy, or the mic output won't: a TV asleep)
+  // starts down, with why in error, and the watchdog keeps trying it.
   constructor(name: string, channelSelection: number) {
     this.name = name;
     this.label = channelLabel(inputLabel(name), channelSelection);
     this.channelSelection = channelSelection;
-    this.deviceId = this.create();
+    if (!this.openAgain()) {
+      console.warn(`Mic ${this.label} didn't open (${this.error}); retrying`);
+    }
     this.watchdog = setInterval(() => this.check(), WATCH_MS);
   }
 

@@ -249,8 +249,17 @@ test("the songs' output can be picked; a saved one that isn't connected says so"
   await expect(output.locator("option:checked")).toHaveText(
     "E2E Gone (not connected)",
   );
+  // Kept, to be used once it's listed, and said where the songs play
+  // meanwhile.
+  const sound = display.getByRole("region", { name: "Sound", exact: true });
+  await expect(
+    sound.getByText(
+      "The songs play on System default until E2E Gone is connected.",
+    ),
+  ).toBeVisible();
   await output.selectOption("System default");
   await expect(output).toHaveValue("");
+  await expect(sound.getByText(/until E2E Gone/)).toHaveCount(0);
   await expect
     .poll(() => display.evaluate(() => localStorage.getItem("songOutput")))
     .toBeNull();
@@ -639,6 +648,20 @@ function fakeAudioCalls(display: Page): Promise<unknown[][]> {
         karafriendsFakeAudio: { calls(): unknown[][] };
       }
     ).karafriendsFakeAudio.calls(),
+  );
+}
+
+// The fake inputs and outputs that won't open from now on, by id; kept
+// through a reload.
+function failOpen(display: Page, names: string[]) {
+  return display.evaluate(
+    (names) =>
+      (
+        window as unknown as {
+          karafriendsFakeAudio: { failOpen(names: string[]): void };
+        }
+      ).karafriendsFakeAudio.failOpen(names),
+    names,
   );
 }
 
@@ -1071,6 +1094,124 @@ test.describe("the microphones", () => {
       .getByRole("group", { name: MIC.label });
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
     await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+  });
+
+  test("a saved mic that won't open at launch starts down and opens by itself; it and one not plugged in stay saved", async ({
+    display,
+  }) => {
+    const GONE = { name: "{0.0.1.00000000}.{e2e-gone} (USB)", channel: 0 };
+    await failOpen(display, [MIC_DEVICE]);
+    await display.evaluate(
+      (mics) => localStorage.setItem("mics", JSON.stringify(mics)),
+      [
+        { name: MIC_DEVICE, channel: 0, gain: 150, echo: 40 },
+        { ...GONE, gain: 70, echo: 10 },
+      ],
+    );
+    await display.reload();
+    await openTab(display, "Sound");
+    const mic = display
+      .getByRole("region", { name: "Microphones" })
+      .getByRole("group", { name: MIC.label });
+    await expect(
+      mic.getByText("Error: The device is busy (fake)"),
+    ).toBeVisible();
+
+    // A level change saves every mic, the one down and the one not
+    // plugged in too.
+    await mic.getByLabel("Gain 150%").fill("120");
+    await expect
+      .poll(() =>
+        display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
+      )
+      .toEqual([
+        { name: MIC_DEVICE, channel: 0, gain: 120, echo: 40 },
+        { ...GONE, gain: 70, echo: 10 },
+      ]);
+
+    // The watchdog opens it once it can, at its levels.
+    await failOpen(display, []);
+    await expect(
+      mic.getByText("Reopened after: Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await expect(mic.getByText(/device is busy/)).toHaveCount(1);
+    expect(
+      (await fakeAudioCalls(display)).filter(
+        ([call]) => call === "inputDevice_setGain",
+      ),
+    ).toContainEqual(["inputDevice_setGain", expect.any(Number), 1.2]);
+  });
+});
+
+test.describe("devices that won't open", () => {
+  const MIC_DEVICE = "{0.0.1.00000000}.{e2e-mic} (USB)";
+  const INTERFACE_DEVICE = "{0.0.1.00000000}.{e2e-interface} (USB)";
+
+  test.beforeEach(async ({ display }) => {
+    await openTab(display, "Sound");
+  });
+
+  test("Settings says why a mic or the mic output didn't open; a new mic that won't is added down, a row keeps its mic", async ({
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const section = settings.getByRole("region", { name: "Microphones" });
+    const problem = section.locator(".settingsMessage.problem").last();
+    await failOpen(display, [INTERFACE_DEVICE, "E2E Speakers (Windows)"]);
+
+    // The mic output: the choice isn't kept.
+    const output = section.getByLabel("Mic output");
+    await output.selectOption("E2E Speakers (Windows)");
+    await expect(
+      section.getByText(
+        "Couldn't switch the mic output to E2E Speakers (Windows): E2E Speakers (Windows) won't open (fake)",
+      ),
+    ).toBeVisible();
+    await expect(output).toHaveValue("");
+    expect(
+      await display.evaluate(() => localStorage.getItem("micOutput")),
+    ).toBeNull();
+    // Seen from another tab, Sound has something to look at.
+    await openTab(display, "Display");
+    await expect(
+      settings.getByRole("tab", { name: "Sound" }).locator(".settingsTabDot"),
+    ).toHaveCount(1);
+    await openTab(display, "Sound");
+
+    // A new mic that won't open: its row says why.
+    const add = section.getByLabel("Add a microphone");
+    await add.selectOption("E2E Interface (USB), channel 2");
+    const down = section.getByRole("group", {
+      name: "E2E Interface (USB), channel 2",
+    });
+    await expect(
+      down.getByText("Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await down.getByRole("button", { name: "Remove" }).click();
+    await expect(down).toHaveCount(0);
+
+    // A row keeps its mic rather than change to one that won't open.
+    await add.selectOption("E2E Mic (USB), channel 1");
+    const mic = section.getByRole("group", {
+      name: "E2E Mic (USB), channel 1",
+    });
+    await mic
+      .getByLabel("Microphone")
+      .selectOption("E2E Interface (USB), channel 1");
+    await expect(problem).toHaveText(
+      "Couldn't open E2E Interface (USB), channel 1: Error: The device is busy (fake)",
+    );
+    await expect(mic).toBeVisible();
+    await expect(mic.getByLabel("Microphone")).toHaveValue(`${MIC_DEVICE}_0`);
+    expect(
+      await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
+    ).toEqual([{ name: MIC_DEVICE, channel: 0, gain: 100, echo: 40 }]);
+
+    // One that opens clears the message.
+    await failOpen(display, []);
+    await output.selectOption("E2E Speakers (Windows)");
+    await expect(output).toHaveValue("E2E Speakers (Windows)");
+    await expect(section.locator(".settingsMessage.problem")).toHaveCount(0);
   });
 });
 

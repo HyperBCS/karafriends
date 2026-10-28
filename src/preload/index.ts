@@ -98,6 +98,18 @@ function fakeNativeAudio(calls: FakeAudioCall[]) {
     : fakeWindowsAudio(calls);
 }
 
+// Inputs and outputs that won't open, by id, for the tests to set with
+// window.karafriendsFakeAudio.failOpen(). Kept in sessionStorage, so a
+// reload (the next launch, to the display) finds them too.
+const FAIL_OPEN_KEY = "karafriendsFakeAudioFailOpen";
+
+function failsToOpen(name: string | null): boolean {
+  const failing: string[] = JSON.parse(
+    sessionStorage.getItem(FAIL_OPEN_KEY) ?? "[]",
+  );
+  return name !== null && failing.includes(name);
+}
+
 // Records each call of a fake, then answers it.
 function faker(calls: FakeAudioCall[]) {
   return <T>(name: string, answer: (...args: any[]) => T) =>
@@ -123,7 +135,9 @@ function fakeWindowsAudio(calls: FakeAudioCall[]) {
       "E2E Interface (ASIO)",
     ]),
     asioStatus: fake("asioStatus", () => "ASIO: E2E Interface"),
-    setOutputDevice: fake("setOutputDevice", () => undefined),
+    setOutputDevice: fake("setOutputDevice", (name: string | null) => {
+      if (failsToOpen(name)) throw new Error(`${name} won't open (fake)`);
+    }),
     // The ASIO output has options; the Windows one has none.
     outputOptions: fake("outputOptions", (name: string) =>
       name.endsWith(" (ASIO)")
@@ -142,7 +156,10 @@ function fakeWindowsAudio(calls: FakeAudioCall[]) {
         ? "Exclusive, 48 kHz, 144 samples (3.0 ms)"
         : "Shared, 48 kHz, 480 samples (10.0 ms)",
     ),
-    inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
+    inputDevice_new: fake("inputDevice_new", (name: string) => {
+      if (failsToOpen(name)) throw new Error("The device is busy (fake)");
+      return nextDeviceId++;
+    }),
     inputDevice_delete: fake("inputDevice_delete", () => undefined),
     inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
     inputDevice_setEcho: fake("inputDevice_setEcho", () => undefined),
@@ -211,6 +228,8 @@ function fakeLinuxAudio(calls: FakeAudioCall[]) {
 if (fakeAudioCalls) {
   contextBridge.exposeInMainWorld("karafriendsFakeAudio", {
     calls: (): FakeAudioCall[] => fakeAudioCalls,
+    failOpen: (names: string[]) =>
+      sessionStorage.setItem(FAIL_OPEN_KEY, JSON.stringify(names)),
   });
 }
 

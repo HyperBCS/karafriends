@@ -132,36 +132,44 @@ function openMic(name: string, channel: number, levels: MicLevels) {
   return mic;
 }
 
+// An error's message, to show in Settings.
+const reason = (err: unknown) => String((err as Error)?.message ?? err);
+
 // Opened once per page: StrictMode calls App's initializer twice in
 // `yarn dev`, and a second set would play every mic twice.
 let openedSavedMics: InputDevice[] | null = null;
 
-// The mic output and the microphones picked last time, those still plugged
-// in and that open. The output and the mode first, so the mics open on the
-// one and in the other.
+// Saved mics that weren't listed at launch (unplugged): kept in the saved
+// list, to open at a later launch, unless the host picks one meanwhile.
+let unlistedSavedMics: SavedMic[] = [];
+
+// The mic output and the microphones picked last time that are still
+// listed. One that won't open (busy, or the mic output won't) starts down,
+// and its watchdog keeps trying it. The output and the mode first, so the
+// mics open on the one and in the other.
 function savedMics(): InputDevice[] {
   openedSavedMics ??= openSavedMics();
   return openedSavedMics;
 }
 
 function openSavedMics(): InputDevice[] {
-  setOutputDevice(savedMicOutput());
+  try {
+    setOutputDevice(savedMicOutput());
+  } catch (err) {
+    // The mics start down, and say why.
+    console.warn("The saved mic output won't open:", err);
+  }
   setMicMode(savedMicMode());
   const channelCounts = new Map(
     window.karafriends.nativeAudio
       .inputDevices()
       .map(([id, , channels]) => [id, channels]),
   );
-  return readSavedMics()
-    .filter(({ name, channel }) => channel < (channelCounts.get(name) ?? 0))
-    .flatMap((mic) => {
-      try {
-        return [openMic(mic.name, mic.channel, mic)];
-      } catch (err) {
-        console.warn(`Couldn't open the saved mic ${mic.name}:`, err);
-        return [];
-      }
-    });
+  const listed = ({ name, channel }: SavedMic) =>
+    channel < (channelCounts.get(name) ?? 0);
+  const saved = readSavedMics();
+  unlistedSavedMics = saved.filter((mic) => !listed(mic));
+  return saved.filter(listed).map((mic) => openMic(mic.name, mic.channel, mic));
 }
 
 function savedLevels(): Record<string, MicLevels> {
@@ -229,6 +237,7 @@ function App(props: {
   const idOf = (mic: InputDevice) => micId(mic.name, mic.channelSelection);
   const levelsOf = (id: string) => levels[id] ?? DEFAULT_LEVELS;
 
+  // Every row, down or not, and the saved mics that weren't listed.
   const saveMics = (
     newMics: InputDevice[],
     newLevels: Record<string, MicLevels>,
@@ -238,7 +247,10 @@ function App(props: {
       channel: mic.channelSelection,
       ...(newLevels[idOf(mic)] ?? DEFAULT_LEVELS),
     }));
-    localStorage.setItem("mics", JSON.stringify(micsToSave));
+    localStorage.setItem(
+      "mics",
+      JSON.stringify([...micsToSave, ...unlistedSavedMics]),
+    );
   };
 
   const setMics = (newMics: InputDevice[]) => {
@@ -300,43 +312,51 @@ function App(props: {
   });
 
   // Kept only once it opened (or fell back to the default), so a choice
-  // that fails can't break the next launch.
-  const changeMicOutput = (output: MicOutput) => {
+  // that fails can't break the next launch. Returns why it didn't, for
+  // Settings to show.
+  const changeMicOutput = (output: MicOutput): string | null => {
     try {
       setOutputDevice(output);
     } catch (err) {
       console.error(`Couldn't switch the mic output to ${output.name}:`, err);
-      return;
+      const name = output.name ?? "System default";
+      return `Couldn't switch the mic output to ${name}: ${reason(err)}`;
     }
     // Mics that went down with the old output, or that resample to its old
     // rate, reopen now rather than at the watchdog's next look.
     for (const mic of mics) mic.check();
     saveMicOutput(output);
     setMicOutput(output);
+    return null;
   };
 
-  // The saved song output, once: one that isn't connected leaves the
-  // songs on the system default.
+  // The saved song output: one that isn't connected leaves the songs on
+  // the system default until it is.
   useEffect(() => {
     const saved = savedSongOutput();
     if (saved) {
-      props.audio.setOutput(saved.id).catch((err) => {
-        console.warn(`The song output ${saved.label} isn't there:`, err);
+      props.audio.wantOutput(saved.id).catch((err) => {
+        console.warn(`The song output ${saved.label} isn't there yet:`, err);
       });
     }
   }, [props.audio]);
 
-  // Kept only once the songs play there.
-  const changeSongOutput = async (output: SongOutput | null) => {
+  // Kept only once the songs play there. Resolves to why they don't, for
+  // Settings to show.
+  const changeSongOutput = async (
+    output: SongOutput | null,
+  ): Promise<string | null> => {
+    const name = output?.label ?? "System default";
     try {
       await props.audio.setOutput(output?.id ?? "");
     } catch (err) {
-      console.error(`Couldn't switch the songs to ${output?.label}:`, err);
-      return;
+      console.error(`Couldn't switch the songs to ${name}:`, err);
+      return `Couldn't play the songs on ${name}: ${reason(err)}`;
     }
     if (output) localStorage.setItem(SONG_OUTPUT_KEY, JSON.stringify(output));
     else localStorage.removeItem(SONG_OUTPUT_KEY);
     setSongOutput(output);
+    return null;
   };
 
   // Every mic reopens in the new mode.
@@ -380,13 +400,29 @@ function App(props: {
   }, [uiScale]);
 
   // A row's new device, or a new row at index mics.length, at the levels it
-  // had last.
-  const onChangeMic = (index: number, name: string, channel: number) => {
+  // had last. A new row that won't open is added down (it says why, and
+  // opens once it can); a row keeps its mic rather than change to one that
+  // won't open, and why is returned, for Settings to show.
+  const onChangeMic = (
+    index: number,
+    name: string,
+    channel: number,
+  ): string | null => {
     const newMic = openMic(name, channel, levelsOf(micId(name, channel)));
+    const oldMic = mics[index];
+    if (oldMic && newMic.error !== null) {
+      newMic.stop();
+      return `Couldn't open ${newMic.label}: ${newMic.error}`;
+    }
+    // Picked again: saved as a row from now on.
+    unlistedSavedMics = unlistedSavedMics.filter(
+      (mic) => micId(mic.name, mic.channel) !== micId(name, channel),
+    );
     const updatedMics = [...mics];
-    const oldMic = updatedMics.splice(index, 1, newMic)[0];
+    updatedMics.splice(index, 1, newMic);
     if (oldMic) oldMic.stop();
     setMics(updatedMics);
+    return null;
   };
 
   const removeMic = (index: number) => {
@@ -486,13 +522,14 @@ function App(props: {
             onMicModeChange={changeMicMode}
             songOutput={songOutput}
             onSongOutputChange={changeSongOutput}
+            songOutputPlace={() => props.audio.outputPlace()}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}
             onUiScaleChange={changeUiScale}
             pitchBars={pitchBars}
             onPitchBarsChange={changePitchBars}
-            audioLatencyMs={props.audio.latencyMs()}
+            audioLatencyMs={() => props.audio.latencyMs()}
           />
         ) : null}
       </main>
