@@ -40,14 +40,15 @@ Merge each branch as it is reviewed. Then: place U1's progress line in U3's shee
 
 ## Follow-ups (same day)
 
-| Step                          | State   | Branch / commit | Notes |
-| ----------------------------- | ------- | --------------- | ----- |
-| J1: pitch bars for Joysound   | running |                 |       |
-| S1: sliders that read as such | running |                 |       |
-| C1: a darker color scheme     | options |                 |       |
+| Step                          | State   | Branch / commit | Notes                                                                                      |
+| ----------------------------- | ------- | --------------- | ------------------------------------------------------------------------------------------ |
+| J1: pitch bars for Joysound   | running |                 |                                                                                            |
+| S1: sliders that read as such | running |                 |                                                                                            |
+| C1: a darker color scheme     | running |                 | Graphite picked from the palette page (https://claude.ai/artifact/FhMAb9yoV7mRsF1cXnF7GN). |
 
 - **Joysound readings: no.** Checked with the login on this PC (Osaka IP): Joysound's song search gives `selSongNo`, `songName`, `artistName`, `serviceTypeList`, `outsideUrlInfo` (iTunes/Amazon links) and `artistId_digi`, and `getFME` gives only `telop` and `ogg`: no readings and no melody notes. Guessed readings (kuroshiro) were offered and declined.
 - **J1: pitch bars for Joysound.** DAM sends the melody's notes (its scoring data); Joysound doesn't, but its ogg's third channel is a synthesized guide melody ([M8](M8-guide-vocal-spike.md)). The display reads the notes from that channel and draws the same pitch bars, the mics' pitch over them. The Pitch bars switch covers both.
 - **S1: sliders.** The user saw "a blue circle with glass around it" in Settings: the TV's native range inputs (Chromium's Windows thumb: a blue dot in a ring) and the phone's lone dot on a faint track (Guide melody at 0 % looks like a stray circle). Both get a clear track with the filled part in the accent and a solid thumb.
 - **C1: colors.** "Too bright for a dark mode." Darker palettes, shown side by side on mock phone and TV screens for the user to pick before anything changes.
 - **The phone's progress line is gone** (the user doesn't need it): `SongProgress` and `useSongProgress` removed; the countdown fixes stay.
+- **C1 decision: Graphite**, with the page's layers: page `#0c0d0f` (flat), lists and setting groups as rounded cards on `#16181b` with a soft shadow and a faint light top edge, the queue sheet `#2a2d33` with a light top edge and a long shadow, the top bar with a hairline and short shadow, fields and slider tracks sunken (`#08090a`, inner shadow), the picked segment and slider thumbs raised; lines `#2f333a`/`#3a3e46`, text `#e4e6e9`, grey text `#9ca3ad`, accent `#43aee6` (on-accent `#0c0d0f`). A matching light theme for the phone. The TV the same (its video area stays black).
