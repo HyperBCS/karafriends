@@ -10,6 +10,7 @@ import { afterEach, beforeEach, test } from "node:test";
 
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
 import { failureReason, REASONS } from "../../common/downloadFailure";
+import { songFileNames, type SongFiles } from "../../common/songFiles";
 import type { DownloadQueueItem } from "../state";
 import {
   damJob,
@@ -88,6 +89,20 @@ function download<T>(
 
 const files = () => fs.readdirSync(folder).sort();
 
+// The folder holds song's video, and only files named as songFileNames says
+// (with the files of others, songs downloaded before): the files the
+// downloads folder keeps with the song, and the display plays.
+function assertFilesOf(song: SongFiles, ...others: SongFiles[]) {
+  assert.ok(files().includes(songFileNames(song).video));
+  const prefixes = [song, ...others].flatMap((s) => songFileNames(s).prefixes);
+  for (const name of files()) {
+    assert.ok(
+      prefixes.some((prefix) => name.startsWith(prefix)),
+      `${name} isn't named after ${JSON.stringify(song)}`,
+    );
+  }
+}
+
 test("a YouTube download reports its progress and leaves its video", async () => {
   const queue: DownloadQueueItem[] = [];
   const outcome = await download(queue, ["youtube", "jNQXAC9IVRw"], (item) =>
@@ -98,6 +113,7 @@ test("a YouTube download reports its progress and leaves its video", async () =>
   assert.equal(outcome.item.progress, 1);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), ["yt-jNQXAC9IVRw.log", "yt-jNQXAC9IVRw.mp4"]);
+  assertFilesOf({ kind: "youtube", songId: "jNQXAC9IVRw", suffix: null });
 });
 
 test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", async (t) => {
@@ -152,6 +168,7 @@ test("a Niconico download leaves its video", async () => {
   assert.equal(outcome.ok, true);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), ["nico-sm9.log", "nico-sm9.mp4"]);
+  assertFilesOf({ kind: "nico", songId: "sm9", suffix: null });
 });
 
 // Joysound's getFME answer: base64 with its last 30 characters moved to
@@ -220,10 +237,11 @@ test("a Joysound download without a background leaves its video and lyrics", asy
   assert.ok(outcome.item.progress > 0);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), [
+    "joysound-123456-default.log",
     "joysound-123456-default.mp4",
     "joysound-123456.joy_02",
-    "joysound-123456.log",
   ]);
+  assertFilesOf({ kind: "joysound", songId: "123456", suffix: null });
 });
 
 test("a Joysound download with a YouTube background pads it and leaves only the song's files", async () => {
@@ -248,11 +266,12 @@ test("a Joysound download with a YouTube background pads it and leaves only the 
   assert.equal(outcome.item.progress, 1);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.log",
     "joysound-123456-bgVideo0001.mp4",
+    "joysound-123456-bgVideo0001.yt.log",
     "joysound-123456.joy_02",
-    "joysound-123456.log",
-    "yt-bgVideo0001.log",
   ]);
+  assertFilesOf({ kind: "joysound", songId: "123456", suffix: "bgVideo0001" });
 });
 
 test("a Joysound download that fails putting the video together leaves only its logs", async () => {
@@ -275,9 +294,15 @@ test("a Joysound download that fails putting the video together leaves only its 
   assert.equal(!outcome.ok && outcome.reason, REASONS.videoProcessing);
   assert.equal(queue[0].status, "failed");
   assert.equal(queue[0].reason, REASONS.videoProcessing);
-  assert.deepEqual(files(), ["joysound-123456.log", "yt-bgVideo0001.log"]);
+  assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.log",
+    "joysound-123456-bgVideo0001.yt.log",
+  ]);
   assert.match(
-    fs.readFileSync(path.join(folder, "joysound-123456.log"), "utf8"),
+    fs.readFileSync(
+      path.join(folder, "joysound-123456-bgVideo0001.log"),
+      "utf8",
+    ),
     /Invalid data found when processing input/,
   );
 });
@@ -305,10 +330,11 @@ test("a failed Joysound background leaves the song's other backgrounds and lyric
 
   assert.equal(outcome.ok, false);
   assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.log",
+    "joysound-123456-bgVideo0001.yt.log",
+    "joysound-123456-default.log",
     "joysound-123456-default.mp4",
     "joysound-123456.joy_02",
-    "joysound-123456.log",
-    "yt-bgVideo0001.log",
   ]);
 });
 
@@ -336,11 +362,11 @@ test("a Joysound background left half-done by a crash goes before it's downloade
   assert.ok(outcome.ok);
   assert.equal(fs.readFileSync(other, "utf8"), "another background's video");
   assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001.log",
     "joysound-123456-bgVideo0001.mp4",
+    "joysound-123456-bgVideo0001.yt.log",
     "joysound-123456-default.mp4",
     "joysound-123456.joy_02",
-    "joysound-123456.log",
-    "yt-bgVideo0001.log",
   ]);
   assert.notEqual(
     fs.readFileSync(
@@ -389,9 +415,12 @@ test("a Joysound download whose song data fails stops its background download", 
   assert.equal(!outcome.ok && outcome.reason, REASONS.joysound);
   // Cleaned up after yt-dlp stopped: had it gone on, it would have left
   // its video behind.
-  assert.deepEqual(files(), ["yt-bgVideo0001.log"]);
+  assert.deepEqual(files(), ["joysound-123456-bgVideo0001.yt.log"]);
   assert.match(
-    fs.readFileSync(path.join(folder, "yt-bgVideo0001.log"), "utf8"),
+    fs.readFileSync(
+      path.join(folder, "joysound-123456-bgVideo0001.yt.log"),
+      "utf8",
+    ),
     /was stopped/,
   );
 });
@@ -434,17 +463,18 @@ test("a DAM video much shorter than the song is deleted, and its download fails"
     damJob(paths, "https://dam/song.m3u8", "1234-56", "0", 240),
     (err) => failureReason(err) === REASONS.damSample,
   );
-  assert.deepEqual(files(), ["dam-1234-56.log"]);
+  assert.deepEqual(files(), ["dam-1234-56-0.log"]);
 });
 
 test("a DAM video about as long as the song stays", async () => {
   await damJob(paths, "https://dam/song.m3u8", "1234-56", "0", 3);
-  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56.log"]);
+  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56-0.log"]);
+  assertFilesOf({ kind: "dam", songId: "1234-56", suffix: "0" });
 });
 
 test("a DAM video stays when the song's playtime isn't known", async () => {
   await damJob(paths, "https://dam/song.m3u8", "1234-56", "0", null);
-  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56.log"]);
+  assert.deepEqual(files(), ["1234-56-0.mp4", "dam-1234-56-0.log"]);
 });
 
 test("parseDuration reads ffmpeg's Duration line", () => {

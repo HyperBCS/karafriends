@@ -6,34 +6,7 @@
 import fs from "fs";
 import path from "path";
 
-import type { QueueItem } from "../../common/api";
-
-// A song's files, by what jobs.ts names them after: its kind, its song or
-// video ID, and the streaming URL index for DAM, the YouTube background for
-// Joysound (null: Joysound's own).
-export interface SongFiles {
-  kind: QueueItem["kind"];
-  songId: string;
-  suffix: string | null;
-}
-
-// How the names of a song's files start: its videos, the half-made ones,
-// its lyrics and its logs.
-export function filePrefixes({ kind, songId, suffix }: SongFiles): string[] {
-  switch (kind) {
-    case "dam":
-      return [`${songId}-${suffix}.`, `dam-${songId}.`];
-    case "joysound":
-      return [
-        `joysound-${songId}.`,
-        `joysound-${songId}-${suffix ?? "default"}`,
-      ];
-    case "youtube":
-      return [`yt-${songId}.`];
-    case "nico":
-      return [`nico-${songId}.`];
-  }
-}
+import { songFileNames, type SongFiles } from "../../common/songFiles";
 
 // The files in folder but the saved queue's, with their sizes; none if it
 // can't be listed.
@@ -71,7 +44,7 @@ export function clearFolder(
   folder: string,
   inUse: readonly SongFiles[],
 ): { deleted: number; bytes: number; kept: number } {
-  const prefixes = inUse.flatMap(filePrefixes);
+  const prefixes = inUse.flatMap((song) => songFileNames(song).prefixes);
   const result = { deleted: 0, bytes: 0, kept: 0 };
   for (const file of downloadFiles(folder)) {
     if (prefixes.some((prefix) => file.name.startsWith(prefix))) {
@@ -96,7 +69,10 @@ export function deleteDamVideo(
   songId: string,
   suffix: string,
 ): boolean {
-  const filename = path.join(folder, `${songId}-${suffix}.mp4`);
+  const filename = path.join(
+    folder,
+    songFileNames({ kind: "dam", songId, suffix }).video,
+  );
   if (!fs.existsSync(filename)) return false;
   try {
     fs.rmSync(filename);

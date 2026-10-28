@@ -50,12 +50,13 @@ test("clearing keeps the saved queue and the files in use", () => {
     10,
     // A DAM song playing, and its log.
     "1234-56-0.mp4",
-    "dam-1234-56.log",
+    "dam-1234-56-0.log",
     // The same song at another streaming URL, which isn't.
     "1234-56-1.mp4",
+    "dam-1234-56-1.log",
     // A Joysound song downloading with a YouTube background.
     "joysound-777.joy_02",
-    "joysound-777.log",
+    "joysound-777-bg.log",
     "joysound-777-bg.mp4.tmp",
     "joysound-777-bg-no-sound.mp4",
     // Another Joysound song, and the same one's own video.
@@ -75,14 +76,14 @@ test("clearing keeps the saved queue and the files in use", () => {
     { kind: "youtube", songId: "abc", suffix: null },
   ]);
 
-  assert.deepEqual(result, { deleted: 5, bytes: 50, kept: 8 });
+  assert.deepEqual(result, { deleted: 6, bytes: 60, kept: 8 });
   assert.deepEqual(files(), [
     "1234-56-0.mp4",
-    "dam-1234-56.log",
+    "dam-1234-56-0.log",
     "joysound-777-bg-no-sound.mp4",
+    "joysound-777-bg.log",
     "joysound-777-bg.mp4.tmp",
     "joysound-777.joy_02",
-    "joysound-777.log",
     "queue.json",
     "yt-abc.mp4",
     "yt-abc.vtt",
@@ -90,8 +91,8 @@ test("clearing keeps the saved queue and the files in use", () => {
 });
 
 test("deleteDamVideo deletes one DAM song's video", () => {
-  write(10, "1234-56-0.mp4", "1234-56-1.mp4", "dam-1234-56.log");
+  write(10, "1234-56-0.mp4", "1234-56-1.mp4", "dam-1234-56-0.log");
   assert.equal(deleteDamVideo(folder, "1234-56", "0"), true);
   assert.equal(deleteDamVideo(folder, "1234-56", "0"), false);
-  assert.deepEqual(files(), ["1234-56-1.mp4", "dam-1234-56.log"]);
+  assert.deepEqual(files(), ["1234-56-1.mp4", "dam-1234-56-0.log"]);
 });

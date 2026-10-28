@@ -23,14 +23,10 @@ import {
   nicoWatchUrl,
   parseNicoVideoInfo,
 } from "../../common/nicoVideoInfo";
+import type { SongFiles } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
-import {
-  clearFolder,
-  deleteDamVideo,
-  folderInfo,
-  type SongFiles,
-} from "./folder";
+import { clearFolder, deleteDamVideo, folderInfo } from "./folder";
 import {
   damJob,
   deleteJoysoundTempFiles,
