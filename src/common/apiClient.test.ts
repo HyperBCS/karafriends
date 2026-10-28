@@ -2,7 +2,7 @@
 // window, so these run as a phone would, unless a test gives one with the
 // display's preload API.
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, test } from "node:test";
+import { afterEach, beforeEach, describe, mock, test } from "node:test";
 
 import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
 import {
@@ -48,6 +48,8 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   playbackState: "WAITING",
   pitchShiftSemis: 0,
   guideMelodyLevel: 0,
+  songVolume: 100,
+  mics: [],
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },
@@ -286,17 +288,18 @@ describe("openLiveStream on a phone", () => {
     sentAt: 0,
   });
 
-  beforeEach((t) => {
+  beforeEach(() => {
     FakeEventSource.made = made = [];
     ge.EventSource = FakeEventSource;
-    t.mock.timers.enable({ apis: ["setTimeout"] });
+    mock.timers.enable({ apis: ["setTimeout"] });
     fakeStorage({ deviceId: "phone-1" });
   });
   afterEach(() => {
     delete ge.EventSource;
+    mock.timers.reset();
   });
 
-  test("passes on events, opens on each (re)connect, and starts over 5 s after the server refuses", (t) => {
+  test("passes on events, opens on each (re)connect, and starts over 5 s after the server refuses", () => {
     let opened = 0;
     const events: LiveEvent[] = [];
     const close = openLiveStream(
@@ -311,7 +314,7 @@ describe("openLiveStream on a phone", () => {
 
     // EventSource reconnects by itself: no new one.
     made[0].fail(FakeEventSource.CONNECTING);
-    t.mock.timers.tick(10_000);
+    mock.timers.tick(10_000);
     assert.equal(made.length, 1);
     made[0].open();
     assert.equal(opened, 2);
@@ -320,9 +323,9 @@ describe("openLiveStream on a phone", () => {
     // as it is then.
     fakeStorage({ deviceId: "phone-2" });
     made[0].fail(FakeEventSource.CLOSED);
-    t.mock.timers.tick(4_999);
+    mock.timers.tick(4_999);
     assert.equal(made.length, 1);
-    t.mock.timers.tick(1);
+    mock.timers.tick(1);
     assert.equal(made.length, 2);
     assert.equal(latest().url, "/api/events?deviceId=phone-2");
     latest().open();
@@ -332,11 +335,11 @@ describe("openLiveStream on a phone", () => {
     // Closed while waiting to start over: nothing more.
     latest().fail(FakeEventSource.CLOSED);
     close();
-    t.mock.timers.tick(60_000);
+    mock.timers.tick(60_000);
     assert.equal(made.length, 2);
   });
 
-  test("a stream silent for 45 s is replaced; the server's pings keep it", (t) => {
+  test("a stream silent for 45 s is replaced; the server's pings keep it", () => {
     let opened = 0;
     const close = openLiveStream(
       () => opened++,
@@ -344,28 +347,28 @@ describe("openLiveStream on a phone", () => {
     );
     made[0].open();
     for (let i = 0; i < 5; i++) {
-      t.mock.timers.tick(20_000);
+      mock.timers.tick(20_000);
       made[0].ping();
     }
     assert.equal(made.length, 1);
 
     // The connection died without a word.
-    t.mock.timers.tick(44_999);
+    mock.timers.tick(44_999);
     assert.equal(made.length, 1);
-    t.mock.timers.tick(1);
+    mock.timers.tick(1);
     assert.equal(made.length, 2);
     assert.equal(made[0].readyState, FakeEventSource.CLOSED);
     latest().open();
     assert.equal(opened, 2);
 
     // One that never even opens is replaced too.
-    t.mock.timers.tick(45_000);
+    mock.timers.tick(45_000);
     assert.equal(made.length, 3);
-    t.mock.timers.tick(45_000);
+    mock.timers.tick(45_000);
     assert.equal(made.length, 4);
 
     close();
-    t.mock.timers.tick(60_000);
+    mock.timers.tick(60_000);
     assert.equal(made.length, 4);
     assert.equal(latest().readyState, FakeEventSource.CLOSED);
   });

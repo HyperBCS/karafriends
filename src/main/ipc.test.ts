@@ -22,6 +22,8 @@ const liveState: LiveState = {
   playbackState: "WAITING",
   pitchShiftSemis: 0,
   guideMelodyLevel: 0,
+  songVolume: 100,
+  mics: [],
   adhocLyrics: [],
   downloads: [],
   config: { supervisedMode: false, everyoneIsAdmin: false },
