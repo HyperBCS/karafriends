@@ -1602,6 +1602,34 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
   await pickReadings(remote, "Romaji");
   await remote.getByRole("tab", { name: "Artist" }).click();
   await expect(results).toHaveText(["hoshinogenDAM9 songs"]);
+  // And the artist's page: the artist and the songs.
+  await remote.route("**/api/damArtist", (route) =>
+    route.fulfill({
+      json: {
+        id: "e2e-gen",
+        name: "星野 源",
+        nameYomi: "ほしのげん",
+        songCount: 1,
+        songs: {
+          items: [
+            {
+              id: "5860-12",
+              name: "恋",
+              nameYomi: "こい",
+              artistName: "星野 源",
+              artistNameYomi: "ほしのげん",
+            },
+          ],
+          nextOffset: null,
+        },
+      },
+    }),
+  );
+  await results.first().click();
+  await expect(remote.getByRole("heading", { level: 2 })).toHaveText(
+    "hoshinogen",
+  );
+  await expect(results).toHaveText(["koiDAM"]);
 });
 
 test("an older phone's saved Both reads as written", async ({ remote }) => {

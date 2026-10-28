@@ -5,6 +5,7 @@ import { usePagedApiQuery } from "../../common/apiQueries";
 import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
 import { List, ListRow } from "../components/ui";
+import WithReading from "../components/WithReading";
 import { t } from "../i18n";
 import * as styles from "./SongPage.module.scss";
 
@@ -17,6 +18,7 @@ function useDamArtist(id: string) {
   );
   return {
     name: paged.first.name,
+    nameYomi: paged.first.nameYomi as string | undefined,
     songCount: paged.first.songCount as number | null,
     paged,
   };
@@ -29,7 +31,12 @@ function useJoysoundArtist(id: string) {
     (page) => page,
     (song) => song.id,
   );
-  return { name: paged.items[0]?.artistName ?? "", songCount: null, paged };
+  return {
+    name: paged.items[0]?.artistName ?? "",
+    nameYomi: undefined,
+    songCount: null,
+    paged,
+  };
 }
 
 const SONG_PAGES = { dam: "/song/", joysound: "/joysoundSong/" };
@@ -39,14 +46,16 @@ const SONG_PAGES = { dam: "/song/", joysound: "/joysoundSong/" };
 const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
   const { id } = useParams<{ id: string }>();
   const useArtist = kind === "dam" ? useDamArtist : useJoysoundArtist;
-  const { name, songCount, paged } = useArtist(id!);
+  const { name, nameYomi, songCount, paged } = useArtist(id!);
   const source = t(kind === "dam" ? "source.dam" : "source.joysound");
 
   return (
     <>
       <div className={styles.page}>
         <div className={styles.about}>
-          <h2 className={styles.title}>{name}</h2>
+          <h2 className={styles.title}>
+            <WithReading text={name} yomi={nameYomi} />
+          </h2>
           <p className={styles.source}>
             {source}
             {songCount !== null &&
@@ -58,7 +67,12 @@ const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
         {paged.items.map((song) => (
           <ListRow
             key={song.id}
-            title={song.name}
+            title={
+              <WithReading
+                text={song.name}
+                yomi={"nameYomi" in song ? song.nameYomi : undefined}
+              />
+            }
             source={source}
             to={`${SONG_PAGES[kind]}${song.id}`}
           />
