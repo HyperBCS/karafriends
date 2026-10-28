@@ -1,3 +1,5 @@
+// First: a second launch leaves here, before anything below loads.
+import "./singleInstance";
 // The native module is copied next to the bundle and loaded with require().
 import nativeAudio from "../../native/index.node";
 
@@ -302,6 +304,14 @@ app.on("ready", () => {
     console.error(`Error preparing external resources: ${err}`),
   );
   createWindow();
+});
+
+// A second launch (singleInstance.ts) brings this display back to the front.
+app.on("second-instance", () => {
+  if (!rendererWindow || rendererWindow.isDestroyed()) return;
+  if (rendererWindow.isMinimized()) rendererWindow.restore();
+  if (!HIDE_WINDOW) rendererWindow.show();
+  rendererWindow.focus();
 });
 
 app.on("window-all-closed", () => {
