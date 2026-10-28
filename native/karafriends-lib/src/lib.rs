@@ -290,6 +290,10 @@ impl Stream {
             _asio: asio,
         }
     }
+
+    fn is_asio(&self) -> bool {
+        self._asio.is_some()
+    }
 }
 
 unsafe impl Send for Stream {}
@@ -299,9 +303,24 @@ trait MicStream: Send {
     // The mic stopped sending sound (see Stall): a stream other mics share
     // isn't joined again.
     fn stalled(&self, _why: &str) {}
+
+    // Whether it holds an ASIO driver (see Mixer::release_asio).
+    fn is_asio(&self) -> bool {
+        false
+    }
 }
 
-impl MicStream for Stream {}
+impl MicStream for Stream {
+    fn is_asio(&self) -> bool {
+        Stream::is_asio(self)
+    }
+}
+
+// Where a mic's stream is held: None once stopped, which lets the device go
+// at once, not when JS gets round to collecting the mic. Shared with the
+// mixer for an ASIO mic, which it may have to let go of first (see
+// Mixer::release_asio).
+type StreamSlot = Arc<Mutex<Option<Box<dyn MicStream>>>>;
 
 // Streams that several mics read: in exclusive mode Windows gives a mic to
 // one stream at a time, and each packet has every channel, so the mics on
@@ -646,7 +665,7 @@ pub struct InputDevice {
     // The open stream, a cpal one or an exclusive one, held to be dropped:
     // None once stopped, which lets the device go at once, not when JS gets
     // round to collecting this.
-    input_stream: Option<Box<dyn MicStream>>,
+    input_stream: StreamSlot,
     // How the mic is open ("Shared", "Exclusive", "ASIO"), and why not as
     // asked if it isn't; its rate (see format), and its meters.
     kind: &'static str,
@@ -672,6 +691,7 @@ impl Finalize for InputDevice {}
 
 impl Drop for InputDevice {
     fn drop(&mut self) {
+        self.stop_stream();
         lock(&mixer::MIXER).deregister(self.source_id);
     }
 }
@@ -810,7 +830,20 @@ impl InputDevice {
             Some(configs) => configs,
             None => InputConfigs::probe(input_device, channel_selection)?,
         };
-        let (input_config, sample_format) = input_stream_config(configs, output_rate);
+        let (mut input_config, sample_format) = input_stream_config(configs, output_rate);
+        if device_type.is_asio() {
+            // The mic output's buffer size, when it is on this driver: the
+            // driver's buffers are one size for both, and the input would
+            // otherwise rebuild them at the driver's own.
+            if let Some(frames) = mixer.asio_buffer() {
+                input_config.buffer_size = cpal::BufferSize::Fixed(frames);
+            }
+            // A mic on this driver that failed (after an ASIO reset, every
+            // stream on it fails) would keep the dead driver loaded, and
+            // this one would open on it: let it go first, so the driver
+            // really reloads.
+            mixer.release_asio(None);
+        }
 
         println!(
             "Created input device {} with config {:#?}, sample format {:#?}",
@@ -881,11 +914,18 @@ impl InputDevice {
             pitch_tx,
             output_tx,
         )?;
-        let stream = start(Box::new(callback))?;
+        let stream: Box<dyn MicStream> = Box::new(start(Box::new(callback))?);
+        let asio = stream.is_asio();
+        let stream = Arc::new(Mutex::new(Some(stream)));
 
-        let source_id = mixer.register(output_rx, output_rate, status.clone());
+        let source_id = mixer.register(
+            output_rx,
+            output_rate,
+            status.clone(),
+            asio.then(|| stream.clone()),
+        );
         Ok(InputDevice {
-            input_stream: Some(Box::new(stream)),
+            input_stream: stream,
             kind,
             note: None,
             rate: input_config.sample_rate,
@@ -999,7 +1039,7 @@ impl InputDevice {
         if lock(&self.stall).stalled(callbacks, Instant::now()) {
             let stalled = "The mic stopped sending sound (nothing for 2 seconds)".to_string();
             eprintln!("{stalled}");
-            if let Some(stream) = &self.input_stream {
+            if let Some(stream) = lock(&self.input_stream).as_ref() {
                 stream.stalled(&stalled);
             }
             return lock(&self.status).get_or_insert(stalled).clone();
@@ -1035,12 +1075,19 @@ impl InputDevice {
     }
 
     pub fn stop(&mut self) {
-        lock(&mixer::MIXER).deregister(self.source_id);
         // A stream closing can say its device went (PipeWire's do): that
         // isn't news, so it goes unsaid (the error callback keeps only the
         // first error).
         lock(&self.status).get_or_insert_with(|| "stopped".to_string());
-        self.input_stream = None;
+        // The stream first: closing the output while an ASIO mic still held
+        // the driver would leave it looping the output's last buffers.
+        self.stop_stream();
+        lock(&mixer::MIXER).deregister(self.source_id);
+    }
+
+    fn stop_stream(&self) {
+        let stream = lock(&self.input_stream).take();
+        drop(stream);
     }
 
     // The input callback: the chosen channel goes to the pitch buffer as it

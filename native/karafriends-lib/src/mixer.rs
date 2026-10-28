@@ -9,7 +9,7 @@ use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
     _output_devices, _output_name, describe, error_callback, find_output, lock, system_host,
-    DeviceType, RateLimit, Result, Stall, Stream,
+    DeviceType, RateLimit, Result, Stall, Stream, StreamSlot,
 };
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
@@ -152,14 +152,18 @@ pub(crate) struct Source {
     pacer: Pacer,
     // The mic's status, to have it reopened when the output rate changes.
     status: Arc<Mutex<Option<String>>>,
+    // An ASIO mic's stream, to let go of its driver (see release_asio).
+    asio: Option<StreamSlot>,
 }
 
 #[derive(Default)]
 pub(crate) struct Mixer {
     // The output device picked in Settings; None for the default.
     choice: Option<OutputChoice>,
-    // The stream and its rate, open while any mic is registered.
+    // The stream and its rate, open while any mic is registered, and on
+    // ASIO the buffer size it was asked for.
     output: Option<(Stream, cpal::SampleRate)>,
+    asio_buffer: Option<u32>,
     // Why the stream stopped or couldn't open.
     output_error: Arc<Mutex<Option<String>>>,
     // Why its thread isn't real-time, if the system refused.
@@ -183,6 +187,7 @@ pub(crate) struct Mixer {
 impl Mixer {
     // The output rate, opening the stream if it isn't open or has stopped.
     pub fn open_if_needed(&mut self) -> Result<cpal::SampleRate> {
+        self.check_stall();
         match &self.output {
             Some((_, rate)) if lock(&self.output_error).is_none() => Ok(*rate),
             _ => self.open(),
@@ -220,6 +225,17 @@ impl Mixer {
         #[cfg(test)]
         {
             self.opens += 1;
+        }
+        // An ASIO output closing while ASIO mics hold its driver would leave
+        // the driver looping its last output buffers (a buzz), and a new one
+        // on the driver would get the old buffers, whatever size was asked
+        // for. So the mics let the driver go first, and reopen after.
+        if self
+            .output
+            .as_ref()
+            .is_some_and(|(stream, _)| stream.is_asio())
+        {
+            self.release_asio(Some("The mic output changed"));
         }
         // ASIO allows one stream per driver: close the old one first.
         self.close();
@@ -332,34 +348,75 @@ impl Mixer {
         );
         self.output_error = output_error;
         self.output_realtime = output_realtime;
+        self.asio_buffer = match config.buffer_size {
+            cpal::BufferSize::Fixed(frames) if device_type.is_asio() => Some(frames),
+            _ => None,
+        };
         Ok((Stream::new(stream, device_type), config.sample_rate))
     }
 
     // "ok", the note, or why the output stopped: an error, or its
     // callbacks stopping, which has the mics reopen it.
     pub fn status(&mut self) -> String {
-        let mut error = lock(&self.output_error);
-        if let Some(error) = error.clone() {
+        self.check_stall();
+        if let Some(error) = lock(&self.output_error).clone() {
             return error;
         }
-        let callbacks = self.callbacks.load(Relaxed);
-        let open = self.output.is_some();
-        if let Some(stall) = self.stall.as_mut().filter(|_| open) {
-            if stall.stalled(callbacks, Instant::now()) {
-                let stalled = "The mic output stopped playing (nothing for 2 seconds)";
-                eprintln!("{stalled}");
-                return error.insert(stalled.to_string()).clone();
-            }
-        }
-        drop(error);
         self.note.clone().unwrap_or_else(|| "ok".to_string())
     }
 
+    // An open stream whose callbacks stopped is as good as failed: its
+    // error says so, and the next mic to open reopens it.
+    fn check_stall(&mut self) {
+        let callbacks = self.callbacks.load(Relaxed);
+        let mut error = lock(&self.output_error);
+        let (Some(stall), Some(_)) = (self.stall.as_mut(), &self.output) else {
+            return;
+        };
+        if error.is_none() && stall.stalled(callbacks, Instant::now()) {
+            let stalled = "The mic output stopped playing (nothing for 2 seconds)";
+            eprintln!("{stalled}");
+            *error = Some(stalled.to_string());
+        }
+    }
+
+    // The buffer size, in frames, an ASIO mic on the output's driver opens
+    // with; None when the output isn't ASIO or took the driver's own.
+    pub fn asio_buffer(&self) -> Option<u32> {
+        self.asio_buffer.filter(|_| self.output.is_some())
+    }
+
+    // Closes the ASIO mics' streams, so their driver can go: with `why`
+    // every one, saying so in its status, else those that already failed.
+    // The display then reopens them.
+    pub fn release_asio(&mut self, why: Option<&str>) {
+        let streams: Vec<_> = lock(&self.sources)
+            .iter()
+            .filter_map(|source| {
+                let slot = source.asio.as_ref()?;
+                let mut status = lock(&source.status);
+                match why {
+                    Some(why) => {
+                        status.get_or_insert_with(|| why.to_string());
+                    }
+                    None if status.is_none() => return None,
+                    None => {}
+                }
+                lock(slot).take()
+            })
+            .collect();
+        // Dropped once the output callback can have the sources again.
+        drop(streams);
+    }
+
+    // Adds a mic, reading from `rx` at `rate`, with its status and, for an
+    // ASIO mic, its stream (see release_asio).
     pub fn register(
         &mut self,
         rx: ringbuf::HeapCons<f32>,
         rate: cpal::SampleRate,
         status: Arc<Mutex<Option<String>>>,
+        asio: Option<StreamSlot>,
     ) -> u64 {
         self.next_id += 1;
         lock(&self.sources).push(Source {
@@ -368,6 +425,7 @@ impl Mixer {
             rate,
             pacer: Pacer::new(rate),
             status,
+            asio,
         });
         self.next_id
     }
@@ -874,6 +932,7 @@ mod tests {
             rate: RATE,
             pacer: Pacer::new(RATE),
             status: Arc::new(Mutex::new(None)),
+            asio: None,
         }
     }
 
@@ -1060,12 +1119,71 @@ mod tests {
         assert_eq!(callbacks.load(Relaxed), 3);
     }
 
+    // An ASIO mic's stream, counting when it closes.
+    struct FakeAsio(Arc<AtomicU32>);
+
+    impl crate::MicStream for FakeAsio {
+        fn is_asio(&self) -> bool {
+            true
+        }
+    }
+
+    impl Drop for FakeAsio {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Relaxed);
+        }
+    }
+
+    // The ASIO mics let go of their driver: those that failed, or all of
+    // them, saying why. Other mics are left alone.
+    #[test]
+    fn test_asio_mics_release_their_driver() {
+        let closed = Arc::new(AtomicU32::new(0));
+        let mut mixer = Mixer::default();
+        let asio = |status: Option<&str>| {
+            let slot: StreamSlot = Arc::new(Mutex::new(Some(Box::new(FakeAsio(closed.clone())))));
+            let status = Arc::new(Mutex::new(status.map(str::to_string)));
+            (slot, status)
+        };
+        let (failed, failed_status) = asio(Some("The driver was reset"));
+        let (working, working_status) = asio(None);
+        let other_status: Arc<Mutex<Option<String>>> = Arc::default();
+        for (slot, status) in [
+            (Some(failed.clone()), failed_status.clone()),
+            (Some(working.clone()), working_status.clone()),
+            (None, other_status.clone()),
+        ] {
+            let (_tx, rx) = ringbuf::HeapRb::new(4).split();
+            mixer.register(rx, 48000, status, slot);
+        }
+        mixer.release_asio(None);
+        assert_eq!(closed.load(Relaxed), 1);
+        assert!(lock(&failed).is_none());
+        assert!(lock(&working).is_some());
+        assert_eq!(*lock(&working_status), None);
+
+        mixer.release_asio(Some("The mic output changed"));
+        assert_eq!(closed.load(Relaxed), 2);
+        assert!(lock(&working).is_none());
+        assert_eq!(
+            lock(&working_status).as_deref(),
+            Some("The mic output changed")
+        );
+        assert_eq!(
+            lock(&failed_status).as_deref(),
+            Some("The driver was reset")
+        );
+        assert_eq!(*lock(&other_status), None);
+        // No output, no ASIO buffer.
+        assert_eq!(mixer.asio_buffer(), None);
+    }
+
     #[test]
     fn test_mixer_registers_and_deregisters() {
         let mut mixer = Mixer::default();
         assert_eq!(mixer.status(), "ok");
         let (_tx, rx) = ringbuf::HeapRb::new(4).split();
-        let id = mixer.register(rx, 48000, Arc::new(Mutex::new(None)));
+        let id = mixer.register(rx, 48000, Arc::new(Mutex::new(None)), None);
         assert_eq!(lock(&mixer.sources).len(), 1);
         mixer.deregister(id);
         assert!(lock(&mixer.sources).is_empty());
