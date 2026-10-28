@@ -10,7 +10,7 @@ The polish round ([`PLAN-polish.md`](PLAN-polish.md)) is landing. The user then 
 | ------------------------------------------------------------ | -------------------------------- | ---------------------------------- | ----- |
 | N1: native: one output, device choice, gain/echo, no cutout  | not started                      |                                    |       |
 | S1: server: song volume, mic list and levels over the API    | done in worktree, awaiting merge | `worktree-agent-ad50ee1e2486e954c` |       |
-| R1: remote: Home rightmost, song volume and mic sliders      | not started                      |                                    |       |
+| R1: remote: Home rightmost, song volume and mic sliders      | done in worktree, awaiting merge | `worktree-agent-aa3c4d17e560990ac` |       |
 | D1: display: QR always, mic rows, output device, song volume | not started                      |                                    |       |
 | N2: review and fixes                                         | not started                      |                                    |       |
 | Final: mic and ASIO check by the user on the other machine   | not started                      |                                    |       |
