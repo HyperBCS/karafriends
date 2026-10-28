@@ -117,7 +117,11 @@ describe("call", () => {
     const blocked = () => {
       throw new DOMException("The operation is insecure.", "SecurityError");
     };
-    g.localStorage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+    g.localStorage = {
+      getItem: blocked,
+      setItem: blocked,
+      removeItem: blocked,
+    };
     setItem("nickname", "ken");
     const headers: Record<string, string>[] = [];
     globalThis.fetch = async (_url, init) => {
