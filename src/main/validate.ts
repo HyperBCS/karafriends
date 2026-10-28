@@ -294,6 +294,23 @@ export const validators: {
       PLAYBACK_STATES,
     ),
   }),
+  reportSongPosition: (raw) => {
+    const input = fields(raw, [
+      "songId",
+      "timestamp",
+      "position",
+      "length",
+      "playing",
+    ]);
+    return {
+      songId: string(input, "songId", 64),
+      timestamp: string(input, "timestamp", 32),
+      position: number(input, "position", 0, 24 * 60 * 60),
+      length:
+        input.length === null ? null : number(input, "length", 0, 24 * 60 * 60),
+      playing: boolean(input, "playing"),
+    };
+  },
   setPitchShiftSemis: (raw) => ({
     semis: integer(fields(raw, ["semis"]), "semis", -24, 24),
   }),

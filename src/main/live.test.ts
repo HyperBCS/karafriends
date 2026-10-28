@@ -181,6 +181,24 @@ describe("toLiveState", () => {
     const all = JSON.stringify(toLiveState(store.getState(), config, "d"));
     assert.doesNotMatch(all, /deviceId|"other"|"d"/);
   });
+
+  test("gives the current song its video's length, once the display knows it", () => {
+    store.update((state) => {
+      state.currentSong = item;
+      state.songQueue.push(otherItem);
+    });
+    const playtimes = () => {
+      const live = toLiveState(store.getState(), config);
+      return [live.currentSong?.playtime, live.queue[0].playtime];
+    };
+    assert.deepEqual(playtimes(), [100, 100]);
+    store.update((state) => {
+      state.currentSongLength = 245;
+    });
+    assert.deepEqual(playtimes(), [245, 100]);
+    // The song itself keeps what it was queued with.
+    assert.equal(store.getState().currentSong?.playtime, 100);
+  });
 });
 
 describe("createLiveHub: who sees what", () => {
@@ -314,9 +332,13 @@ describe("createLiveHub", () => {
   test("sends the state on subscribe, then changes and messages", async () => {
     const hub = createLiveHub(store, config, INTERVAL_MS);
     const events: LiveEvent[] = [];
+    const before = Date.now();
     const stop = hub.subscribe((event) => events.push(event));
     assert.equal(events.length, 1);
     assert.equal(events[0].type, "state");
+    // With the server's time, for the phones' clocks.
+    const { sentAt } = events[0] as Extract<LiveEvent, { type: "state" }>;
+    assert.ok(sentAt >= before && sentAt <= Date.now());
 
     store.update((state) => state.songQueue.push(item));
     hub.publish({ type: "queueAdded", item });

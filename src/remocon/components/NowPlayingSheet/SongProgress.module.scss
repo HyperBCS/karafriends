@@ -1,0 +1,39 @@
+@use "../../tokens" as *;
+
+// The bar takes the row, the time sits on its right.
+.progress {
+  display: flex;
+  align-items: center;
+  gap: $kf-space-2;
+  width: 100%;
+  min-width: 0;
+}
+
+.track {
+  display: block;
+  flex: 1 1 auto;
+  height: 3px;
+  overflow: hidden;
+  background-color: $kf-border;
+}
+
+// Each width comes a second after the last, so sliding to it for a second
+// keeps the bar moving at the song's pace.
+.played {
+  display: block;
+  height: 100%;
+  background-color: $kf-accent;
+  transition: width 1s linear;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+.time {
+  flex: none;
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

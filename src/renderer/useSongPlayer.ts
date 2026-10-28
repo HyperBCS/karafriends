@@ -18,6 +18,9 @@ import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
 const POLL_INTERVAL_MS = 5 * 1000;
+// How often the display tells the server where the song is, besides on
+// every start, pause, stall and seek.
+const POSITION_REPORT_MS = 10 * 1000;
 // XXX: Another idea is to add some gain to the DAM videos?
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
@@ -45,7 +48,8 @@ export interface Announcement {
 // the next song (popSong, which only the display may call) every 5 seconds,
 // and at once when the live queue stops being empty; it loads each song by
 // kind, follows the live playback state (pause, restart, skip), the key and
-// the guide melody level, and asks again when a song ends.
+// the guide melody level, tells the server where the song really is, and
+// asks again when a song ends.
 export default function useSongPlayer({
   videoRef,
   trackRef,
@@ -335,6 +339,35 @@ export default function useSongPlayer({
     };
     // Only on mount: the poll keeps itself going from then on.
   }, []);
+
+  // Tells the server where the song really is, for every countdown: as it
+  // loads, starts, pauses, stalls, seeks (the video's own controls) and
+  // resumes, and every 10 s in case one went missing. Not the video before
+  // a new song's loads (it has ended), nor one that failed.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const report = () => {
+      const song = songRef.current;
+      if (!song || video.ended || video.readyState < video.HAVE_METADATA) {
+        return;
+      }
+      call("reportSongPosition", {
+        songId: song.songId,
+        timestamp: song.timestamp,
+        position: video.currentTime,
+        length: isFinite(video.duration) ? video.duration : null,
+        playing: !video.paused && video.readyState >= video.HAVE_FUTURE_DATA,
+      }).catch((err) => console.error("Couldn't report the position:", err));
+    };
+    const events = ["loadedmetadata", "playing", "pause", "waiting", "seeked"];
+    for (const event of events) video.addEventListener(event, report);
+    const timer = setInterval(report, POSITION_REPORT_MS);
+    return () => {
+      for (const event of events) video.removeEventListener(event, report);
+      clearInterval(timer);
+    };
+  }, [videoRef]);
 
   // A song queued while nothing plays starts at once, not at the next poll
   // (which stays as the fallback). Only while a poll is armed: with none,

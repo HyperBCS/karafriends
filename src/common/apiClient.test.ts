@@ -13,9 +13,11 @@ import {
   eventsUrl,
   liveStore,
   mergeLiveState,
+  noteStateSentAt,
   onAdminTokenChange,
   openLiveStream,
   parseLiveEvent,
+  serverNow,
   storedAdminToken,
 } from "./apiClient";
 import type { ApiResponse, DisplayApi } from "./ipc";
@@ -188,7 +190,7 @@ describe("openLiveStream on the display", () => {
       (event) => events.push(event),
     );
     assert.equal(opened, 1);
-    const event: LiveEvent = { type: "state", state: state() };
+    const event: LiveEvent = { type: "state", state: state(), sentAt: 0 };
     listener!(event);
     assert.deepEqual(events, [event]);
     close();
@@ -344,5 +346,21 @@ describe("liveStore", () => {
     stop();
     store.set(state({ playbackState: "PAUSED" }));
     assert.equal(calls, 2);
+  });
+});
+
+describe("serverNow", () => {
+  test("takes off how far ahead this clock is, from the quickest state event", () => {
+    const close = (a: number, b: number) =>
+      assert.ok(Math.abs(a - b) < 50, `${a} is not about ${b}`);
+    // This phone's clock is 5 s ahead, and the first event took 300 ms.
+    noteStateSentAt(1_000_000, 1_005_300);
+    close(serverNow(), Date.now() - 5300);
+    // One that took 20 ms is closer to the truth.
+    noteStateSentAt(2_000_000, 2_005_020);
+    close(serverNow(), Date.now() - 5020);
+    // One held up for 9 s (a phone asleep) changes nothing.
+    noteStateSentAt(3_000_000, 3_014_000);
+    close(serverNow(), Date.now() - 5020);
   });
 });
