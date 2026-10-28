@@ -88,7 +88,8 @@ ipcRenderer
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
 // endpoint ids, and labels) and two fake outputs, and every call is kept,
-// for the tests to read with window.karafriendsFakeAudio.calls().
+// for the tests to read with window.karafriendsFakeAudio.calls(). The
+// tests can have devices fail (failOpen, stopMics below).
 // KARAFRIENDS_FAKE_AUDIO=linux: the same, as on Linux with PipeWire.
 type FakeAudioCall = [string, ...unknown[]];
 const fakeAudio = process.env.KARAFRIENDS_FAKE_AUDIO;
@@ -102,9 +103,14 @@ function fakeNativeAudio(calls: FakeAudioCall[]): NativeAudio {
 }
 
 // Inputs and outputs that won't open, by id, for the tests to set with
-// window.karafriendsFakeAudio.failOpen(). Kept in sessionStorage, so a
-// reload (the next launch, to the display) finds them too.
+// window.karafriendsFakeAudio.failOpen(): as if unplugged, so a mic of one
+// that is open stops too. Kept in sessionStorage, so a reload (the next
+// launch, to the display) finds them too.
 const FAIL_OPEN_KEY = "karafriendsFakeAudioFailOpen";
+
+// The open fake mics, by number: the input each is of, and why it stopped
+// (window.karafriendsFakeAudio.stopMics()), if it did.
+const fakeMics = new Map<number, { name: string; stopped: string | null }>();
 
 function failsToOpen(name: string | null): boolean {
   const failing: string[] = JSON.parse(
@@ -147,9 +153,11 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
         ? { rates: [44100, 48000, 96000], bufferSizes: [64, 128, 256, 512] }
         : null,
     ),
-    outputFormat: fake("outputFormat", () => "48 kHz, 256 samples (5.3 ms)"),
+    outputFormat: fake("outputFormat", () =>
+      fakeMics.size > 0 ? "48 kHz, 256 samples (5.3 ms)" : undefined,
+    ),
     // Not kept with the calls, as inputDevice_level.
-    outputStatus: () => "ok",
+    outputStatus: () => (fakeMics.size > 0 ? "ok" : undefined),
     setMicMode: fake("setMicMode", (on: boolean) => {
       exclusive = on;
     }),
@@ -163,12 +171,20 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
     ),
     inputDevice_new: fake("inputDevice_new", (name: string) => {
       if (failsToOpen(name)) throw new Error("The device is busy (fake)");
+      fakeMics.set(nextDeviceId, { name, stopped: null });
       return nextDeviceId++;
     }),
-    inputDevice_delete: fake("inputDevice_delete", () => undefined),
+    inputDevice_delete: fake("inputDevice_delete", (deviceId: number) => {
+      fakeMics.delete(deviceId);
+    }),
     inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
     inputDevice_setEcho: fake("inputDevice_setEcho", () => undefined),
-    inputDevice_status: fake("inputDevice_status", () => "ok"),
+    inputDevice_status: fake("inputDevice_status", (deviceId: number) => {
+      const mic = fakeMics.get(deviceId);
+      if (!mic) return "stopped";
+      if (failsToOpen(mic.name)) return "The device was unplugged (fake)";
+      return mic.stopped ?? "ok";
+    }),
     inputDevice_getPitch: fake("inputDevice_getPitch", () => ({
       midiNumber: 0,
       confidence: 0,
@@ -194,7 +210,6 @@ const LINUX_USB_MIC: FakeInput = [
 
 function fakeLinuxAudio(calls: FakeAudioCall[]): NativeAudio {
   const fake = faker(calls);
-  let nextDeviceId = 0;
   let bufferSize: number | null = null;
   let listings = 0;
   const windows = fakeWindowsAudio(calls);
@@ -209,9 +224,8 @@ function fakeLinuxAudio(calls: FakeAudioCall[]): NativeAudio {
     outputDevices: fake("outputDevices", () => ["E2E Speakers (Linux)"]),
     asioStatus: fake("asioStatus", () => "ASIO isn't in this build"),
     outputOptions: fake("outputOptions", () => null),
-    outputFormat: fake(
-      "outputFormat",
-      () => `48 kHz, ${bufferSize ?? 128} samples`,
+    outputFormat: fake("outputFormat", () =>
+      fakeMics.size > 0 ? `48 kHz, ${bufferSize ?? 128} samples` : undefined,
     ),
     setMicMode: fake("setMicMode", (_: boolean, size: number | null) => {
       bufferSize = size;
@@ -222,7 +236,6 @@ function fakeLinuxAudio(calls: FakeAudioCall[]): NativeAudio {
       bufferSizes: [64, 128, 256, 512, 1024],
       defaultBufferSize: 128,
     })),
-    inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
     inputDevice_format: fake(
       "inputDevice_format",
       () => `PipeWire, 48 kHz, ${bufferSize ?? 128} samples`,
@@ -235,6 +248,15 @@ if (fakeAudioCalls) {
     calls: (): FakeAudioCall[] => fakeAudioCalls,
     failOpen: (names: string[]) =>
       sessionStorage.setItem(FAIL_OPEN_KEY, JSON.stringify(names)),
+    // The open mics of these inputs stop, as a stream that stops calling
+    // back does; they open again as usual.
+    stopMics: (names: string[]) => {
+      for (const mic of fakeMics.values()) {
+        if (names.includes(mic.name)) {
+          mic.stopped = "The mic stopped sending sound (fake)";
+        }
+      }
+    },
   });
 }
 

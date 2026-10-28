@@ -660,6 +660,20 @@ function failOpen(display: Page, names: string[]) {
   );
 }
 
+// The open fake mics of these inputs stop, as a stream that stops calling
+// back does; they open again as usual.
+function stopMics(display: Page, names: string[]) {
+  return display.evaluate(
+    (names) =>
+      (
+        window as unknown as {
+          karafriendsFakeAudio: { stopMics(names: string[]): void };
+        }
+      ).karafriendsFakeAudio.stopMics(names),
+    names,
+  );
+}
+
 test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
@@ -1135,6 +1149,32 @@ test.describe("the microphones", () => {
         ([call]) => call === "inputDevice_setGain",
       ),
     ).toContainEqual(["inputDevice_setGain", expect.any(Number), 1.2]);
+  });
+
+  test("a mic that stops reopens by itself; one unplugged is down until it is back", async ({
+    display,
+  }) => {
+    const section = display.getByRole("region", { name: "Microphones" });
+    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    const mic = section.getByRole("group", { name: MIC.label });
+    await expect(mic.getByText(/^In use:/)).toBeVisible();
+
+    await stopMics(display, [MIC_DEVICE]);
+    await expect(
+      mic.getByText("Reopened after: The mic stopped sending sound (fake)"),
+    ).toBeVisible();
+
+    await failOpen(display, [MIC_DEVICE]);
+    await expect(
+      mic.getByText("Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await expect(mic.getByText(/^In use:/)).toHaveCount(0);
+
+    await failOpen(display, []);
+    await expect(
+      mic.getByText("Reopened after: Error: The device is busy (fake)"),
+    ).toBeVisible();
+    await expect(mic.getByText(/^In use:/)).toBeVisible();
   });
 });
 
