@@ -131,54 +131,15 @@ function joysoundFailure(err: unknown): never {
 // A tool exited non-zero while making the video out of downloaded files.
 const processingFailed = () => REASONS.videoProcessing;
 
-function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
-  const FIELD_TAG = new Uint8Array([
-    0x70, 0x6c, 0x61, 0x79, 0x74, 0x69, 0x6d, 0x65, 0x3d,
-  ]);
-
-  let fieldOffset = 0;
-  let fieldLength = 0;
-
-  for (let i = 0; i < oggBuffer.length; i++) {
-    const oggSlice = oggBuffer.subarray(i, i + FIELD_TAG.length);
-
-    let isFieldTag = true;
-
-    for (let j = 0; j < oggSlice.length; j++) {
-      if (oggSlice[j] !== FIELD_TAG[j]) {
-        isFieldTag = false;
-        break;
-      }
-    }
-
-    if (!isFieldTag) {
-      continue;
-    }
-
-    fieldOffset = i + FIELD_TAG.length;
-
-    const fieldLengthView = new DataView(
-      oggBuffer.buffer,
-      oggBuffer.byteOffset + i - 4,
-      4,
-    );
-    fieldLength = fieldLengthView.getUint32(0, true) - FIELD_TAG.length;
-
-    break;
-  }
-
-  const playtimeBuffer = oggBuffer.subarray(
-    fieldOffset,
-    fieldOffset + fieldLength,
-  );
-
-  let playtimeString = "";
-
-  for (const char of playtimeBuffer) {
-    playtimeString += String.fromCharCode(char);
-  }
-
-  return parseInt(playtimeString, 10);
+// The song's length in ms, from the "playtime=<ms>" comment in Joysound's
+// ogg (a Vorbis comment: its length, 4 bytes little-endian, then the text).
+// NaN if it has none.
+export function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
+  const tag = "playtime=";
+  const at = oggBuffer.indexOf(tag);
+  if (at < 4) return NaN;
+  const end = at + oggBuffer.readUInt32LE(at - 4);
+  return parseInt(oggBuffer.toString("latin1", at + tag.length, end), 10);
 }
 
 // Downloads a DAM song's video, which streams meanwhile, to

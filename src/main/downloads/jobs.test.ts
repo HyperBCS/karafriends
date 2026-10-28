@@ -15,6 +15,7 @@ import type { DownloadQueueItem } from "../state";
 import {
   damJob,
   deleteJoysoundTempFiles,
+  getJoysoundOggPlaytime,
   joysoundJob,
   queueDownloadedJoysoundSong,
   ytdlpVideoJob,
@@ -255,6 +256,18 @@ function ogg(playtimeMs: number): Buffer {
   length.writeUInt32LE(field.length);
   return Buffer.concat([Buffer.from("OggS fake header "), length, field]);
 }
+
+test("getJoysoundOggPlaytime reads the ogg's playtime comment", () => {
+  assert.equal(getJoysoundOggPlaytime(ogg(183_456)), 183_456);
+  // What follows the comment isn't part of it.
+  assert.equal(
+    getJoysoundOggPlaytime(Buffer.concat([ogg(5_000), Buffer.from("999")])),
+    5_000,
+  );
+  assert.ok(Number.isNaN(getJoysoundOggPlaytime(Buffer.from("OggS no tag"))));
+  // No room for the length before it.
+  assert.ok(Number.isNaN(getJoysoundOggPlaytime(Buffer.from("playtime=1"))));
+});
 
 const movieUrls = async () => ({
   movie: { mov1: "https://example.invalid/mov1.mp4" },
