@@ -17,7 +17,7 @@ import useDownloadButtonText, {
 } from "../hooks/useDownloadButtonText";
 import useQueueSong from "../hooks/useQueueSong";
 import { t } from "../i18n";
-import { Button, Tabs, type ButtonVariant } from "./ui";
+import { Button, SegmentedControl, type ButtonVariant } from "./ui";
 import * as styles from "./QueueButtons.module.scss";
 
 interface QueueButtonProps {
@@ -94,8 +94,8 @@ type Props =
 
 const LYRICS_MODE_KEY = "lyricsMode";
 
-// The phone's choice of how Joysound lyrics show on the TV (the profile's
-// "Lyrics on the TV"), kept in localStorage; kana without one.
+// The phone's choice of how Joysound lyrics show on the TV (in the
+// settings, under "On the TV"), kept in localStorage; kana without one.
 export function savedLyricsMode(): LyricsMode {
   let saved: string | null = null;
   try {
@@ -114,13 +114,14 @@ export function saveLyricsMode(mode: LyricsMode) {
   }
 }
 
-export const LyricsModeTabs = (props: {
+// Kana, romaji or both: on a Joysound song's page, and in the settings.
+export const LyricsModeChoice = (props: {
+  label: string;
   selected: LyricsMode;
   onSelect: (mode: LyricsMode) => void;
 }) => (
-  <Tabs<LyricsMode>
-    label={t("lyricsMode.label")}
-    tabs={LYRICS_MODES.map((id) => ({ id, label: t(`lyricsMode.${id}`) }))}
+  <SegmentedControl<LyricsMode>
+    choices={LYRICS_MODES.map((id) => ({ id, label: t(`lyricsMode.${id}`) }))}
     {...props}
   />
 );
@@ -169,10 +170,11 @@ const QueueButtons = (props: Props) => {
   return (
     <div className={styles.buttons}>
       {props.kind === "joysound" && (
-        <>
-          <h3 className={styles.heading}>{t("lyricsMode.label")}</h3>
-          <LyricsModeTabs selected={lyricsMode} onSelect={setLyricsMode} />
-        </>
+        <LyricsModeChoice
+          label={t("lyricsMode.label")}
+          selected={lyricsMode}
+          onSelect={setLyricsMode}
+        />
       )}
       {buttons.map(({ label, input }, i) => (
         <QueueButton

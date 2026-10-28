@@ -7,6 +7,15 @@
   padding: $kf-space-3 $kf-space-4 0;
 }
 
+// One short row under the search box: Title or Artist, and the source's
+// button at the far end.
+.options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: $kf-tap;
+}
+
 .hint {
   padding: $kf-space-4;
   color: $kf-muted;

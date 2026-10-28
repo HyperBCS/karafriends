@@ -13,7 +13,10 @@ async function searchTitle(
   catalog: (typeof CATALOGS)[number],
   title: string,
 ) {
-  await remote.getByRole("tab", { name: catalog, exact: true }).click();
+  await remote.getByRole("button", { name: /^Source:/ }).click();
+  await remote
+    .getByRole("menuitemradio", { name: catalog, exact: true })
+    .click();
   await remote.getByRole("searchbox", { name: "Search" }).fill(title);
   return remote
     .getByRole("list", { name: "Results" })

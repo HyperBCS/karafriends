@@ -1,4 +1,4 @@
-// The remote's theme (the profile's Theme): light, dark, or auto, which
+// The remote's theme (the settings' Theme): light, dark, or auto, which
 // follows the phone's light or dark mode, also when it changes. Kept in
 // localStorage ("theme"), auto until the guest picks. It shows as
 // data-theme="light" | "dark" on <html>, which picks the tokens' colors

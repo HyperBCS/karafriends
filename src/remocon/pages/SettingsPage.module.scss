@@ -1,31 +1,71 @@
 @use "../tokens" as *;
 
-.profile {
+.page {
   display: flex;
   flex-direction: column;
+  gap: $kf-space-5;
+  padding-top: $kf-space-4;
 }
 
-.section {
+// A group: its heading on the page, then its settings on the lists'
+// surface, edge to edge as a list is.
+.group {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: $kf-space-3;
-  padding: $kf-space-4;
-  border-bottom: 1px solid $kf-border;
-
-  > button {
-    align-self: flex-start;
-  }
+  gap: $kf-space-2;
 }
 
 .heading {
+  padding: 0 $kf-space-4;
+  color: $kf-text;
+  font-size: $kf-text-title;
+  font-weight: 700;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-5;
+  padding: $kf-space-4;
+  border-top: 1px solid $kf-border;
+  border-bottom: 1px solid $kf-border;
+  background-color: $kf-surface;
+}
+
+// One setting: its control, then a button or help text for it.
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-2;
+}
+
+.settings,
+.setting {
+  > button {
+    align-self: flex-start;
+
+    // A button that can't be pressed yet is filled with the surface: on
+    // the surface, its outline still shows it's a button.
+    &:disabled {
+      border-color: $kf-border;
+    }
+  }
+}
+
+// A label above what it names, as a text field's is.
+.label {
   color: $kf-muted;
   font-size: $kf-text-label;
-  font-weight: 600;
+  font-weight: normal;
 }
 
 .text {
   color: $kf-text;
+  font-size: $kf-text-body;
+}
+
+.help {
+  color: $kf-muted;
   font-size: $kf-text-body;
 }
 

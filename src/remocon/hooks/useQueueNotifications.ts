@@ -17,7 +17,7 @@ async function registerServiceWorker() {
 async function showNotification(
   ...args: ConstructorParameters<typeof Notification>
 ) {
-  // Until the phone allows them (on the profile screen), showing one
+  // Until the phone allows them (on the settings screen), showing one
   // only throws.
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;

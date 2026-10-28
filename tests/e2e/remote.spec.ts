@@ -20,25 +20,132 @@ test("the remote opens on the search screen", async ({ remote }) => {
   await expect(
     remote.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
-  await expect(remote.getByRole("searchbox", { name: "Search" })).toBeVisible();
-  for (const [group, tabs] of [
-    ["Search by", ["Title", "Artist"]],
-    ["Source", ["All", "DAM", "Joysound"]],
-  ] as const) {
-    await expect(
-      remote.getByRole("tablist", { name: group }).getByRole("tab"),
-    ).toHaveText([...tabs]);
-  }
+  const field = remote.getByRole("searchbox", { name: "Search" });
+  await expect(field).toBeVisible();
+  // Under the field, one short row: Title or Artist, and at its end the
+  // source's button, on All.
+  const by = remote.getByRole("radiogroup", { name: "Search by" });
+  await expect(by.getByRole("radio")).toHaveText(["Title", "Artist"]);
+  await expect(by.getByRole("radio", { name: "Title" })).toBeChecked();
+  const source = remote.getByRole("button", { name: "Source: All" });
+  await expect(source).toHaveAttribute("aria-haspopup", "menu");
+  const [main, fieldBox, byBox, sourceBox] = await Promise.all(
+    [remote.getByRole("main"), field, by, source].map(
+      async (locator) => (await locator.boundingBox())!,
+    ),
+  );
+  const middle = (box: typeof byBox) => box.y + box.height / 2;
+  expect(Math.abs(middle(byBox) - middle(sourceBox))).toBeLessThan(1);
+  expect(byBox.y).toBeGreaterThan(fieldBox.y + fieldBox.height);
+  expect(
+    Math.abs(sourceBox.x + sourceBox.width - (fieldBox.x + fieldBox.width)),
+  ).toBeLessThanOrEqual(2);
+  // So the results start close under it (they started 170px down with
+  // the two rows of tabs).
+  expect(sourceBox.y + sourceBox.height - main.y).toBeLessThan(120);
   // The empty search screen has no History row: the top bar has it.
   await expect(remote.getByRole("main").getByRole("link")).toHaveCount(0);
 });
 
-// History, Profile and Home: the top bar's three, in that order.
-const PLACES = ["History", "Profile", "Home"] as const;
+// Picks a source in the search's source menu.
+async function pickSource(
+  remote: Page,
+  source: "All" | "DAM" | "Joysound",
+): Promise<void> {
+  await remote.getByRole("button", { name: /^Source:/ }).click();
+  await remote
+    .getByRole("menu", { name: "Source" })
+    .getByRole("menuitemradio", { name: source, exact: true })
+    .click();
+}
+
+test("the search's source is picked from a menu, and the button names it", async ({
+  remote,
+}) => {
+  const searched: string[] = [];
+  for (const catalog of ["dam", "joysound"]) {
+    await remote.route(`**/api/${catalog}SearchSongs`, (route) => {
+      searched.push(catalog);
+      return route.fulfill({ json: { items: [], nextOffset: null } });
+    });
+  }
+  const button = remote.getByRole("button", { name: /^Source:/ });
+  const menu = remote.getByRole("menu", { name: "Source" });
+  const items = menu.getByRole("menuitemradio");
+  // On All, the button shows only its icon.
+  await expect(button).toHaveAccessibleName("Source: All");
+  await expect(button).toHaveText("");
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  await expect(menu).toHaveCount(0);
+
+  // Open: the three sources, the picked one ticked and focused.
+  await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(items).toHaveText(["All", "DAM", "Joysound"]);
+  await expect(menu.getByRole("menuitemradio", { checked: true })).toHaveText(
+    "All",
+  );
+  await expect(items.first().locator("svg")).toHaveCount(1);
+  await expect(items.nth(1).locator("svg")).toHaveCount(0);
+  await expect(items.first()).toBeFocused();
+
+  // A pick closes it, puts the focus back on the button, and the button
+  // names the source.
+  await items.nth(1).click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  await expect(button).toHaveAccessibleName("Source: DAM");
+  await expect(button).toHaveText("DAM");
+  await expect(remote).toHaveURL(/[?&]source=dam(&|$)/);
+  await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
+  await expect(remote.getByText("No results found")).toBeVisible();
+  expect(searched).toEqual(["dam"]);
+
+  // From the keyboard: the arrow keys go round the menu, and Escape closes
+  // it as it was.
+  await button.focus();
+  await remote.keyboard.press("Enter");
+  await expect(items.nth(1)).toBeFocused();
+  await remote.keyboard.press("ArrowDown");
+  await expect(items.nth(2)).toBeFocused();
+  await remote.keyboard.press("ArrowDown");
+  await expect(items.nth(0)).toBeFocused();
+  await remote.keyboard.press("ArrowUp");
+  await expect(items.nth(2)).toBeFocused();
+  await remote.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAccessibleName("Source: DAM");
+
+  // Enter picks.
+  await remote.keyboard.press("Enter");
+  await remote.keyboard.press("End");
+  await expect(items.nth(2)).toBeFocused();
+  await remote.keyboard.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(button).toHaveText("Joysound");
+
+  // A tap anywhere else closes it, changing nothing.
+  await button.click();
+  await expect(menu).toBeVisible();
+  await remote.getByRole("heading", { name: "Find a song" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveAccessibleName("Source: Joysound");
+
+  // Back on All, the icon alone again.
+  await pickSource(remote, "All");
+  await expect(button).toHaveText("");
+  await expect(remote).toHaveURL(/[?&]source=all(&|$)/);
+});
+
+// History, Settings and Home: the top bar's three, in that order.
+const PLACES = ["History", "Settings", "Home"] as const;
 const places = (page: Page) =>
   page
     .getByRole("banner")
-    .getByRole("link", { name: /^(Home|History|Profile)$/ });
+    .getByRole("link", { name: /^(Home|History|Settings)$/ });
 
 // "#1cb3ff" as getComputedStyle gives a color: "rgb(28, 179, 255)".
 // (The build may shorten a custom property's "#666666" to "#666".)
@@ -49,7 +156,7 @@ const rgb = (hex: string) => {
   return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
 };
 
-test("the top bar has History, Profile and Home in the same place on every screen", async ({
+test("the top bar has History, Settings and Home in the same place on every screen", async ({
   karafriends,
   remote,
 }) => {
@@ -68,7 +175,7 @@ test("the top bar has History, Profile and Home in the same place on every scree
   for (const [hash, current] of [
     ["#/", "Home"],
     ["#/history", "History"],
-    ["#/profile", "Profile"],
+    ["#/settings", "Settings"],
     ["#/song/e2e-1", null],
   ] as const) {
     await remote.goto(new URL(hash, karafriends.remoconUrl).href);
@@ -113,6 +220,25 @@ test("the top bar has History, Profile and Home in the same place on every scree
   }
 });
 
+test("Settings in the top bar is a gear, and the old Profile address opens it", async ({
+  karafriends,
+  remote,
+}) => {
+  const settings = places(remote).nth(1);
+  // The gear's teeth: Material's settings icon, not the person.
+  await expect(settings.locator("path")).toHaveAttribute(
+    "d",
+    /^M19\.14 12\.94/,
+  );
+  await settings.click();
+  await expect(remote).toHaveURL(/#\/settings$/);
+  await expect(remote.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+  await remote.goto(new URL("#/profile", karafriends.remoconUrl).href);
+  await expect(remote).toHaveURL(/#\/settings$/);
+  await expect(remote.getByRole("heading", { name: "Settings" })).toBeVisible();
+});
+
 test("History in the top bar opens the history", async ({ remote }) => {
   await places(remote).nth(0).click();
   await expect(remote.getByRole("heading", { name: "History" })).toBeVisible();
@@ -128,10 +254,19 @@ test("a new phone picks a nickname before anything else", async ({
   page,
 }) => {
   await page.goto(new URL("#/history", karafriends.remoconUrl).href);
-  await expect(page).toHaveURL(/#\/profile$/);
-  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   const nickname = page.getByLabel("Nickname");
   await expect(nickname).toBeFocused();
+  // Just the nickname, and the language to read it in.
+  await expect(page.getByRole("main").getByRole("heading")).toHaveText([
+    "You",
+    "This phone",
+  ]);
+  await expect(page.getByRole("radiogroup")).toHaveCount(1);
+  await expect(
+    page.getByRole("radiogroup", { name: "Language" }).getByRole("radio"),
+  ).toHaveText(["English", "日本語"]);
   // Nothing else until it has one: the top bar's three are there but
   // disabled, there's no way back, and no sheet.
   await expect(places(page)).toHaveCount(3);
@@ -155,8 +290,8 @@ test("a new phone picks a nickname before anything else", async ({
     "ken",
   );
 
-  // It can change it later, on the profile screen.
-  await page.getByRole("link", { name: "Profile" }).click();
+  // It can change it later, in the settings.
+  await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByLabel("Nickname")).toHaveValue("ken");
   await page.getByLabel("Nickname").fill("ken2");
   await page.getByRole("button", { name: "Save nickname" }).click();
@@ -168,11 +303,10 @@ test("a new phone picks a nickname before anything else", async ({
 test("the language toggle switches the remote to Japanese", async ({
   remote,
 }) => {
-  await remote.getByRole("link", { name: "Profile" }).click();
-  await remote.getByRole("tab", { name: "日本語" }).click();
-  await expect(
-    remote.getByRole("heading", { name: "プロフィール" }),
-  ).toBeVisible();
+  await remote.getByRole("link", { name: "Settings" }).click();
+  await remote.getByRole("radio", { name: "日本語" }).click();
+  await expect(remote.getByRole("heading", { name: "設定" })).toBeVisible();
+  await expect(remote.getByRole("radio", { name: "日本語" })).toBeChecked();
   await remote.getByRole("button", { name: "戻る" }).click();
   await expect(remote.getByRole("heading", { name: "曲を探す" })).toBeVisible();
   await expect(remote.locator("html")).toHaveAttribute("lang", "ja");
@@ -185,10 +319,9 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   const body = remote.locator("body");
   const LIGHT = "rgb(245, 245, 245)";
   const DARK = "rgb(18, 18, 18)";
-  const tab = (name: string) =>
-    remote
-      .getByRole("tablist", { name: "Theme" })
-      .getByRole("tab", { name, exact: true });
+  const theme = remote.getByRole("radiogroup", { name: "Theme" });
+  const choice = (name: string) =>
+    theme.getByRole("radio", { name, exact: true });
 
   // Auto at first, following the phone's mode as it changes.
   await remote.emulateMedia({ colorScheme: "light" });
@@ -201,16 +334,14 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   await expect(html).toHaveAttribute("data-theme", "dark");
   await expect(body).toHaveCSS("background-color", DARK);
 
-  await remote.getByRole("link", { name: "Profile" }).click();
-  await expect(remote.getByRole("tablist", { name: "Theme" })).toBeVisible();
-  await expect(
-    remote.getByRole("tablist", { name: "Theme" }).getByRole("tab"),
-  ).toHaveText(["Light", "Dark", "Auto"]);
-  await expect(tab("Auto")).toHaveAttribute("aria-selected", "true");
+  await remote.getByRole("link", { name: "Settings" }).click();
+  await expect(theme).toBeVisible();
+  await expect(theme.getByRole("radio")).toHaveText(["Light", "Dark", "Auto"]);
+  await expect(choice("Auto")).toBeChecked();
 
   // Light stays light in dark mode, and the sheet and the top bar go with
   // it.
-  await tab("Light").click();
+  await choice("Light").click();
   await expect(html).toHaveAttribute("data-theme", "light");
   await expect(body).toHaveCSS("background-color", LIGHT);
   await expect(remote.getByRole("banner").locator("div").first()).toHaveCSS(
@@ -226,16 +357,16 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   );
 
   // Dark stays dark in light mode, and after a reload.
-  await tab("Dark").click();
+  await choice("Dark").click();
   await remote.emulateMedia({ colorScheme: "light" });
   await expect(html).toHaveAttribute("data-theme", "dark");
   await expect(body).toHaveCSS("background-color", DARK);
   await remote.reload();
   await expect(html).toHaveAttribute("data-theme", "dark");
-  await expect(tab("Dark")).toHaveAttribute("aria-selected", "true");
+  await expect(choice("Dark")).toBeChecked();
 
   // Auto follows the phone again.
-  await tab("Auto").click();
+  await choice("Auto").click();
   await expect(html).toHaveAttribute("data-theme", "light");
   await remote.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveAttribute("data-theme", "dark");
@@ -243,6 +374,58 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
     "auto",
   );
+});
+
+test("a setting's choices read as picked, and the arrow keys move the pick", async ({
+  remote,
+}) => {
+  await remote.getByRole("link", { name: "Settings" }).click();
+  const theme = remote.getByRole("radiogroup", { name: "Theme" });
+  const choice = (name: string) =>
+    theme.getByRole("radio", { name, exact: true });
+  const html = remote.locator("html");
+  await expect(choice("Auto")).toBeChecked();
+
+  // The picked one filled in the accent, with a tick; the others plain.
+  const fill = await remote.evaluate(() =>
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--kf-accent-fill")
+      .trim(),
+  );
+  await expect(choice("Auto")).toHaveCSS("background-color", rgb(fill));
+  await expect(choice("Auto").locator("svg")).toHaveCount(1);
+  await expect(choice("Light")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  await expect(choice("Light").locator("svg")).toHaveCount(0);
+
+  // One tab stop: the picked one.
+  await expect(theme.locator('[tabindex="0"]')).toHaveCount(1);
+  await expect(choice("Auto")).toHaveAttribute("tabindex", "0");
+  await choice("Auto").focus();
+  for (const [key, name, mode] of [
+    ["ArrowLeft", "Dark", "dark"],
+    ["Home", "Light", "light"],
+    // Round from either end.
+    ["ArrowLeft", "Auto", "light"],
+    ["ArrowRight", "Light", "light"],
+    ["ArrowDown", "Dark", "dark"],
+    ["End", "Auto", "light"],
+  ] as const) {
+    await remote.keyboard.press(key);
+    await expect(choice(name), key).toBeChecked();
+    await expect(choice(name), key).toBeFocused();
+    await expect(choice(name), key).toHaveAttribute("tabindex", "0");
+    await expect(html, key).toHaveAttribute("data-theme", mode);
+  }
+  expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
+    "auto",
+  );
+
+  // Tab leaves the group.
+  await remote.keyboard.press("Tab");
+  await expect(theme.locator(":focus")).toHaveCount(0);
 });
 
 // DAM and Joysound only answer Japanese IPs, so the remote's searches and
@@ -309,7 +492,7 @@ test.describe("a DAM title search", () => {
       });
     });
 
-    await remote.getByRole("tab", { name: "DAM" }).click();
+    await pickSource(remote, "DAM");
     await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
 
     // The failure shows in place of the results; the page around it stays.
@@ -381,7 +564,7 @@ test("the top bar and the now-playing sheet stay put while results scroll", asyn
   await remote.route("**/api/damSearchSongs", (route) =>
     fakePages(route, PAGE_SIZE, damSong),
   );
-  await remote.getByRole("tab", { name: "DAM" }).click();
+  await pickSource(remote, "DAM");
   await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
   const main = remote.getByRole("main");
   await expect(main.getByRole("link", { name: /E2E DAM song/ })).toHaveCount(
@@ -450,7 +633,7 @@ test("an artist search from both catalogs takes turns on equal matches, and More
     fakePages(route, 35, artist("JOY")),
   );
 
-  await remote.getByRole("tab", { name: "Artist" }).click();
+  await remote.getByRole("radio", { name: "Artist" }).click();
   await remote.getByRole("searchbox", { name: "Search" }).fill("E2E");
   const results = remote
     .getByRole("list", { name: "Results" })
@@ -685,7 +868,7 @@ test("a Joysound song with a background keeps the way back", async ({
     }),
   );
 
-  await remote.getByRole("tab", { name: "Joysound" }).click();
+  await pickSource(remote, "Joysound");
   const search = remote.getByRole("searchbox", { name: "Search" });
   await search.fill("E2E");
   await remote
@@ -828,7 +1011,7 @@ test("signing in without an admin password says there is none", async ({
       json: { error: "No admin password is set" },
     }),
   );
-  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("link", { name: "Settings" }).click();
   await remote.getByLabel("Admin password").fill("anything");
   await remote.getByRole("button", { name: "Sign in" }).click();
   await expect(remote.getByRole("alert")).toHaveText(
@@ -888,7 +1071,7 @@ test.describe("an admin's queue", () => {
       queue.getByRole("button", { name: "Drag to reorder" }),
     ).toHaveCount(0);
 
-    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
     await expect(remote.getByText("You're an admin")).toBeVisible();
@@ -1381,7 +1564,7 @@ test.describe("the lyrics mode", () => {
   // Three songs from one phone.
   test.use({ appConfig: { paxSongQueueLimit: 0 } });
 
-  test("a Joysound song is queued with the lyrics mode picked, preset from the profile", async ({
+  test("a Joysound song is queued with the lyrics mode picked, preset from the settings", async ({
     karafriends,
     remote,
   }) => {
@@ -1402,14 +1585,21 @@ test.describe("the lyrics mode", () => {
         },
       });
     });
-    const choice = remote.getByRole("tablist", { name: "Lyrics on the TV" });
-    const selected = choice.locator('[aria-selected="true"]');
+    // "Lyrics" under "On the TV" in the settings; "Lyrics on the TV" on a
+    // song's page.
+    const choice = remote.getByRole("radiogroup", { name: /^Lyrics/ });
+    const selected = choice.getByRole("radio", { checked: true });
 
-    // The phone's default: kana, until the profile says otherwise.
-    await remote.getByRole("link", { name: "Profile" }).click();
-    await expect(choice.getByRole("tab")).toHaveText(Object.values(LABELS));
+    // The phone's default: kana, until the settings say otherwise.
+    await remote.getByRole("link", { name: "Settings" }).click();
+    await expect(
+      remote
+        .getByRole("region", { name: "On the TV" })
+        .getByRole("radiogroup", { name: "Lyrics", exact: true }),
+    ).toBeVisible();
+    await expect(choice.getByRole("radio")).toHaveText(Object.values(LABELS));
     await expect(selected).toHaveText("Kana");
-    await choice.getByRole("tab", { name: "Romaji" }).click();
+    await choice.getByRole("radio", { name: "Romaji" }).click();
     await expect(selected).toHaveText("Romaji");
     expect(
       await remote.evaluate(() => localStorage.getItem("lyricsMode")),
@@ -1420,9 +1610,12 @@ test.describe("the lyrics mode", () => {
       await expect(
         remote.getByRole("heading", { name: `E2E Joysound e2e-${mode}` }),
       ).toBeVisible();
-      // Each song page starts at the profile's choice.
+      // Each song page starts at the settings' choice.
+      await expect(
+        remote.getByRole("radiogroup", { name: "Lyrics on the TV" }),
+      ).toBeVisible();
       await expect(selected).toHaveText("Romaji");
-      await choice.getByRole("tab", { name: LABELS[mode] }).click();
+      await choice.getByRole("radio", { name: LABELS[mode] }).click();
       await expect(selected).toHaveText(LABELS[mode]);
       await Promise.all([
         remote.waitForResponse("**/api/queueSong"),
@@ -1462,7 +1655,7 @@ test.describe("the guide melody slider", () => {
   const PASSWORD = "e2e guide melody";
   test.use({ appConfig: adminPasswordConfig(PASSWORD) });
 
-  test("is in the profile's Admin section for an admin only, always enabled", async ({
+  test("is in the settings' Admin group for an admin only, always enabled", async ({
     karafriends,
     remote,
   }) => {
@@ -1476,14 +1669,19 @@ test.describe("the guide melody slider", () => {
     ).toBeVisible();
     await expect(slider).toHaveCount(0);
 
-    // A guest's profile: the sign-in, no slider.
-    await remote.getByRole("link", { name: "Profile" }).click();
+    // A guest's settings: the sign-in, no slider.
+    await remote.getByRole("link", { name: "Settings" }).click();
     await expect(remote.getByLabel("Admin password")).toBeVisible();
     await expect(slider).toHaveCount(0);
 
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
     await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(
+      remote.getByRole("region", { name: "Admin" }).getByRole("slider", {
+        name: "Guide melody",
+      }),
+    ).toBeVisible();
 
     // With nothing playing, as with anything else.
     await expect(slider).toBeEnabled();
@@ -1533,7 +1731,7 @@ test.describe("the song volume and mic sliders", () => {
   test.use({ appConfig: adminPasswordConfig(PASSWORD) });
 
   async function signIn(remote: Page) {
-    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
     await expect(remote.getByText("You're an admin")).toBeVisible();
@@ -1666,14 +1864,16 @@ test.describe("the song volume and mic sliders", () => {
   });
 });
 
-// Picks a Readings choice on the profile screen and goes back.
+// Picks a Readings choice in the settings and goes back. Back is
+// history.back(), which lands later: a goto() before it would be undone.
 async function pickReadings(remote: Page, choice: string) {
-  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("link", { name: "Settings" }).click();
   await remote
-    .getByRole("tablist", { name: "Readings" })
-    .getByRole("tab", { name: choice, exact: true })
+    .getByRole("radiogroup", { name: "Readings" })
+    .getByRole("radio", { name: choice, exact: true })
     .click();
   await remote.getByRole("button", { name: "Back" }).click();
+  await expect(remote).not.toHaveURL(/#\/settings$/);
 }
 
 test("the Readings setting puts DAM's readings in place of the search rows' text", async ({
@@ -1712,9 +1912,9 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
   const joysound = "恋Joysound星野源";
   await expect(results).toHaveText(["恋DAM星野 源", joysound]);
   // The choices: no "Both" any more.
-  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("link", { name: "Settings" }).click();
   await expect(
-    remote.getByRole("tablist", { name: "Readings" }).getByRole("tab"),
+    remote.getByRole("radiogroup", { name: "Readings" }).getByRole("radio"),
   ).toHaveText(["Written", "Kana", "Romaji"]);
   await remote.getByRole("button", { name: "Back" }).click();
   for (const [choice, dam] of [
@@ -1749,7 +1949,7 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
     route.fulfill({ json: { items: [], nextOffset: null } }),
   );
   await pickReadings(remote, "Romaji");
-  await remote.getByRole("tab", { name: "Artist" }).click();
+  await remote.getByRole("radio", { name: "Artist" }).click();
   await expect(results).toHaveText(["hoshinogenDAM9 songs"]);
   // And the artist's page: the artist and the songs.
   await remote.route("**/api/damArtist", (route) =>
@@ -1805,12 +2005,12 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
 test("an older phone's saved Both reads as written", async ({ remote }) => {
   await remote.evaluate(() => localStorage.setItem("readings", "both"));
   await remote.reload();
-  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByRole("link", { name: "Settings" }).click();
   await expect(
     remote
-      .getByRole("tablist", { name: "Readings" })
-      .getByRole("tab", { name: "Written" }),
-  ).toHaveAttribute("aria-selected", "true");
+      .getByRole("radiogroup", { name: "Readings" })
+      .getByRole("radio", { name: "Written" }),
+  ).toBeChecked();
 });
 
 test.describe("a DAM song's page", () => {
