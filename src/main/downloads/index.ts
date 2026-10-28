@@ -5,7 +5,11 @@ import { execFile } from "child_process";
 import { app } from "electron";
 import { promisify } from "util";
 
-import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
+import type {
+  JoysoundQueueItem,
+  NicoQueueItem,
+  YoutubeQueueItem,
+} from "../../common/api";
 import {
   DownloadFailure,
   failureReason,
@@ -25,7 +29,8 @@ import {
 } from "../../common/nicoVideoInfo";
 import type { SongFiles } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
-import type { DownloadQueueItem } from "../state";
+import type { ApiDeps } from "../api";
+import { isDownloading, type DownloadQueueItem } from "../state";
 import { clearFolder, deleteDamVideo, folderInfo } from "./folder";
 import {
   damJob,
@@ -35,7 +40,7 @@ import {
   ytdlpVideoJob,
   type JobPaths,
 } from "./jobs";
-import { alreadyDownloading, runDownload } from "./queue";
+import { runDownload } from "./queue";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,137 +60,117 @@ async function jobPaths(): Promise<JobPaths> {
   return { folder: TEMP_FOLDER, ...getResourcePaths() };
 }
 
-// The DAM videos downloading now, by <songId>-<suffix>. They aren't in the
-// download queue, as their songs are queued at once.
-const damDownloads = new Map<string, SongFiles>();
+// What a Joysound download says when the same song and background is
+// downloading already. (queueSong refuses it first, with the same words.)
+const ALREADY_DOWNLOADING = "Someone is already adding this song";
 
-// DAM songs join the queue at once and stream until their download is
-// done, so a failure here is only logged; but a sample DAM sent instead of
-// the song (playtime seconds long, if known) goes to onFailed too, for the
-// guest. A second request while one runs returns at once: both would write
-// the same .tmp.
-export function downloadDamVideo(
-  m3u8Url: string,
-  songId: string,
-  suffix: string,
-  playtime: number | null,
-  onFailed: (reason: string) => void,
-): void {
-  const key = `${songId}-${suffix}`;
-  if (damDownloads.has(key)) return;
-  damDownloads.set(key, { kind: "dam", songId, suffix });
-  jobPaths()
-    .then((paths) => damJob(paths, m3u8Url, songId, suffix, playtime))
-    .catch((err) => {
-      console.error(`Error downloading DAM video with ID ${songId}:`, err);
-      if (failureReason(err) === REASONS.damSample) onFailed(REASONS.damSample);
-    })
-    .finally(() => damDownloads.delete(key));
-}
-
-// How many files the downloads folder holds, and their bytes.
-export const downloadsInfo = () => folderInfo(TEMP_FOLDER);
-
-// Deletes the downloads but inUse's songs' files and the DAM videos
-// downloading now (see clearFolder).
-export const clearDownloads = (inUse: readonly SongFiles[]) =>
-  clearFolder(TEMP_FOLDER, [...inUse, ...damDownloads.values()]);
-
-// Deletes a DAM song's downloaded video, unless it's downloading now.
-// Whether there was one.
-export function clearDamDownload(songId: string, suffix: string): boolean {
-  if (damDownloads.has(`${songId}-${suffix}`)) return false;
-  return deleteDamVideo(TEMP_FOLDER, songId, suffix);
-}
-
-// Downloads a Joysound song and its video, then queues it with
-// pushSongToQueue; or calls onFailed with the reason for guests.
-export function downloadJoysoundData(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
+// The downloads, for the API (ApiDeps["downloads"]): the download queue they
+// show their progress in, and the Joysound client their songs come from.
+export function createDownloads(
+  downloadQueue: () => DownloadQueueItem[],
   joysoundApi: JoysoundAPI,
-  queueItem: JoysoundQueueItem,
-  pushToHead: boolean,
-  pushSongToQueue: (queueItem: JoysoundQueueItem, pushToHead: boolean) => void,
-  onFailed: (reason: string) => void,
-): void {
-  const songId = queueItem.songId;
-  const key = {
-    kind: "joysound" as const,
-    songId,
-    suffix: queueItem.youtubeVideoId,
+): ApiDeps["downloads"] {
+  // The DAM videos downloading now, by <songId>-<suffix>. They aren't in
+  // the download queue, as their songs are queued at once.
+  const damDownloads = new Map<string, SongFiles>();
+
+  // A YouTube or Niconico video (and a YouTube video's captions, if
+  // captionCode).
+  const video = (
+    item: YoutubeQueueItem | NicoQueueItem,
+    captionCode: string | null,
+    onReady: () => void,
+    onFailed: (reason: string) => void,
+  ) =>
+    runDownload(
+      downloadQueue(),
+      {
+        kind: item.kind,
+        songId: item.songId,
+        suffix: null,
+        userIdentity: item.user,
+      },
+      {
+        description: `${item.kind === "youtube" ? "YouTube" : "Niconico"} video ${item.songId}`,
+        job: async (download) =>
+          ytdlpVideoJob(await jobPaths(), download, captionCode),
+        onReady,
+        onFailed,
+      },
+    );
+
+  return {
+    // DAM songs join the queue at once and stream until their download is
+    // done, so a failure here is only logged; but a sample DAM sent instead
+    // of the song (playtime seconds long, if known) goes to onFailed too,
+    // for the guest. A second request while one runs returns at once: both
+    // would write the same .tmp.
+    dam(m3u8Url, songId, suffix, playtime, onFailed) {
+      const key = `${songId}-${suffix}`;
+      if (damDownloads.has(key)) return;
+      damDownloads.set(key, { kind: "dam", songId, suffix });
+      jobPaths()
+        .then((paths) => damJob(paths, m3u8Url, songId, suffix, playtime))
+        .catch((err) => {
+          console.error(`Error downloading DAM video with ID ${songId}:`, err);
+          if (failureReason(err) === REASONS.damSample) {
+            onFailed(REASONS.damSample);
+          }
+        })
+        .finally(() => damDownloads.delete(key));
+    },
+
+    // How many files the downloads folder holds, and their bytes.
+    info: () => folderInfo(TEMP_FOLDER),
+
+    // Deletes the downloads but inUse's songs' files and the DAM videos
+    // downloading now (see clearFolder).
+    clear: (inUse) =>
+      clearFolder(TEMP_FOLDER, [...inUse, ...damDownloads.values()]),
+
+    // Deletes a DAM song's downloaded video, unless it's downloading now.
+    // Whether there was one.
+    clearDam(songId, suffix) {
+      if (damDownloads.has(`${songId}-${suffix}`)) return false;
+      return deleteDamVideo(TEMP_FOLDER, songId, suffix);
+    },
+
+    // Downloads a Joysound song and its video, then queues it with onReady;
+    // or calls onFailed with the reason for guests.
+    joysound(queueItem, pushToHead, onReady, onFailed) {
+      const key = {
+        kind: "joysound" as const,
+        songId: queueItem.songId,
+        suffix: queueItem.youtubeVideoId,
+      };
+      // First: while it downloads, its video is there but half-made, and
+      // queueDownloadedJoysoundSong would delete the running download's
+      // files.
+      if (isDownloading(downloadQueue(), key)) {
+        onFailed(ALREADY_DOWNLOADING);
+        return;
+      }
+      const queue = (item: JoysoundQueueItem) => onReady(item, pushToHead);
+      // Downloaded before: queue it at once.
+      if (queueDownloadedJoysoundSong(TEMP_FOLDER, queueItem, queue)) return;
+
+      runDownload(
+        downloadQueue(),
+        { ...key, userIdentity: queueItem.user },
+        {
+          description: `Joysound song ${queueItem.songId}`,
+          job: async (item) =>
+            joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
+          onReady: queue,
+          cleanUp: () => deleteJoysoundTempFiles(TEMP_FOLDER, queueItem),
+          onFailed,
+        },
+      );
+    },
+
+    youtube: video,
+    nico: (item, onReady, onFailed) => video(item, null, onReady, onFailed),
   };
-  const description = `Joysound song ${songId}`;
-  // First: while it downloads, its video is there but half-made.
-  if (alreadyDownloading(downloadQueue, key, description)) return;
-
-  // Downloaded before: queue it at once.
-  if (
-    queueDownloadedJoysoundSong(TEMP_FOLDER, queueItem, (item) =>
-      pushSongToQueue(item, pushToHead),
-    )
-  ) {
-    return;
-  }
-
-  runDownload(
-    downloadQueue,
-    { ...key, userIdentity },
-    description,
-    async (item) => joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
-    (item) => pushSongToQueue(item, pushToHead),
-    () => deleteJoysoundTempFiles(TEMP_FOLDER, queueItem),
-    onFailed,
-  );
-}
-
-// Downloads a YouTube video (and its captions, if captionCode), then calls
-// onComplete; or onFailed with the reason for guests.
-export function downloadYoutubeVideo(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
-  videoId: string,
-  captionCode: string | null,
-  onComplete: () => void,
-  onFailed: (reason: string) => void,
-): void {
-  const key = { kind: "youtube" as const, songId: videoId, suffix: null };
-  const description = `YouTube video ${videoId}`;
-  if (alreadyDownloading(downloadQueue, key, description)) return;
-
-  runDownload(
-    downloadQueue,
-    { ...key, userIdentity },
-    description,
-    async (item) => ytdlpVideoJob(await jobPaths(), item, captionCode),
-    onComplete,
-    () => {},
-    onFailed,
-  );
-}
-
-// Downloads a Niconico video, then calls onComplete; or onFailed with the
-// reason for guests.
-export function downloadNicoVideo(
-  downloadQueue: DownloadQueueItem[],
-  userIdentity: UserIdentity,
-  videoId: string,
-  onComplete: () => void,
-  onFailed: (reason: string) => void,
-): void {
-  const key = { kind: "nico" as const, songId: videoId, suffix: null };
-  const description = `Niconico video ${videoId}`;
-  if (alreadyDownloading(downloadQueue, key, description)) return;
-
-  runDownload(
-    downloadQueue,
-    { ...key, userIdentity },
-    description,
-    async (item) => ytdlpVideoJob(await jobPaths(), item, null),
-    onComplete,
-    () => {},
-    onFailed,
-  );
 }
 
 // Look up a Niconico video's metadata with yt-dlp, which already downloads

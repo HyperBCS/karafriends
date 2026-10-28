@@ -40,11 +40,12 @@ test("a tool that runs too long fails its download as timed out", async () => {
         suffix: null,
         userIdentity: { nickname: "test", deviceId: "test-device" },
       },
-      "test download",
-      () => runTool({ ...hangs(), timeoutMs: 300 }),
-      () => reject(new Error("it finished")),
-      () => {},
-      resolve,
+      {
+        description: "test download",
+        job: () => runTool({ ...hangs(), timeoutMs: 300 }),
+        onReady: () => reject(new Error("it finished")),
+        onFailed: resolve,
+      },
     ),
   );
 

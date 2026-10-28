@@ -19,6 +19,7 @@ import { nicoWatchUrl } from "../../common/nicoVideoInfo";
 import { songFileNames } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
+import { withDamSlot, withYtdlpSlot } from "./queue";
 import { probeDuration, runTool, type ToolRun } from "./run";
 
 // Where the jobs write (TEMP_FOLDER, in the app) and the tools they run.
@@ -207,25 +208,27 @@ export async function damJob(
   console.info(`Downloading DAM video to ${filename}`);
 
   try {
-    await runTool({
-      label: `ffmpeg (DAM ${songId})`,
-      bin: paths.ffmpeg,
-      args: [
-        "-y",
-        "-i",
-        m3u8Url,
-        "-c",
-        "copy",
-        "-movflags",
-        "faststart",
-        "-f",
-        "mp4",
-        tempFilename,
-      ],
-      logFilename: path.join(paths.folder, names.log),
-      freshLog: true,
-      reasonForExit: () => REASONS.other,
-    });
+    await withDamSlot(() =>
+      runTool({
+        label: `ffmpeg (DAM ${songId})`,
+        bin: paths.ffmpeg,
+        args: [
+          "-y",
+          "-i",
+          m3u8Url,
+          "-c",
+          "copy",
+          "-movflags",
+          "faststart",
+          "-f",
+          "mp4",
+          tempFilename,
+        ],
+        logFilename: path.join(paths.folder, names.log),
+        freshLog: true,
+        reasonForExit: () => REASONS.other,
+      }),
+    );
   } catch (err) {
     safeUnlink(tempFilename);
     throw err;
@@ -318,31 +321,35 @@ async function downloadJoysoundYoutubeVideoPromise(
   ytdlpLogFilename: string,
   signal: AbortSignal,
 ): Promise<void> {
-  await runTool({
-    label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
-    bin: paths.ytdlp,
-    args: [
-      "-S",
-      "res:720,ext:mp4",
-      "-f",
-      "bv",
-      "--recode",
-      "mp4",
-      "-N",
-      "4",
-      "--ffmpeg-location",
-      paths.ffmpeg,
-      "-o",
-      tempFilename + ".mp4",
-      "--",
-      youtubeVideoId,
-    ],
-    logFilename: ytdlpLogFilename,
-    freshLog: true,
-    onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-    reasonForExit: ytdlpFailureReason,
+  await withYtdlpSlot(
+    () =>
+      runTool({
+        label: `yt-dlp (Joysound ${songId}, background ${youtubeVideoId})`,
+        bin: paths.ytdlp,
+        args: [
+          "-S",
+          "res:720,ext:mp4",
+          "-f",
+          "bv",
+          "--recode",
+          "mp4",
+          "-N",
+          "4",
+          "--ffmpeg-location",
+          paths.ffmpeg,
+          "-o",
+          tempFilename + ".mp4",
+          "--",
+          youtubeVideoId,
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+        signal,
+      }),
     signal,
-  });
+  );
   safeUnlink(tempFilename);
   safeRename(tempFilename + ".mp4", tempFilename);
 }
@@ -562,8 +569,8 @@ export function queueDownloadedJoysoundSong(
     queueItem,
   );
   if (!fs.existsSync(videoFilename)) return false;
-  // The marker of a download that never finished. (downloadJoysoundData has
-  // checked that none is running.)
+  // The marker of a download that never finished. (None is running: queueSong
+  // and the downloads' joysound check first.)
   if (fs.existsSync(tempFilename)) {
     console.error(`${videoFilename} is half-done; downloading it again`);
     deleteJoysoundTempFiles(folder, queueItem);
@@ -779,26 +786,28 @@ export async function ytdlpVideoJob(
     : [];
 
   try {
-    await runTool({
-      label: `yt-dlp (${site} ${videoId})`,
-      bin: paths.ytdlp,
-      args: [
-        ...captionArgs,
-        ...formatArgs,
-        "-N",
-        "4",
-        "--ffmpeg-location",
-        paths.ffmpeg,
-        "-o",
-        videoFilename,
-        "--",
-        youtube ? videoId : nicoWatchUrl(videoId),
-      ],
-      logFilename: ytdlpLogFilename,
-      freshLog: true,
-      onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
-      reasonForExit: ytdlpFailureReason,
-    });
+    await withYtdlpSlot(() =>
+      runTool({
+        label: `yt-dlp (${site} ${videoId})`,
+        bin: paths.ytdlp,
+        args: [
+          ...captionArgs,
+          ...formatArgs,
+          "-N",
+          "4",
+          "--ffmpeg-location",
+          paths.ffmpeg,
+          "-o",
+          videoFilename,
+          "--",
+          youtube ? videoId : nicoWatchUrl(videoId),
+        ],
+        logFilename: ytdlpLogFilename,
+        freshLog: true,
+        onStdout: (text) => handleYoutubeDownloadLog(text, downloadQueueItem),
+        reasonForExit: ytdlpFailureReason,
+      }),
+    );
   } finally {
     safeUnlink(tempFilename);
   }

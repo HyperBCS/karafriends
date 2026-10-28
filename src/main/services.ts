@@ -9,17 +9,7 @@ import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
 import { toolsStatus, updateTools } from "../common/externalResources";
-import {
-  clearDamDownload,
-  clearDownloads,
-  downloadDamVideo,
-  downloadJoysoundData,
-  downloadNicoVideo,
-  downloadYoutubeVideo,
-  downloadsInfo,
-  getNicoVideoInfo,
-  TEMP_FOLDER,
-} from "./downloads";
+import { createDownloads, getNicoVideoInfo, TEMP_FOLDER } from "./downloads";
 import {
   createAdminSessions,
   createSetAdminPassword,
@@ -124,39 +114,10 @@ const queueApi = createApi({
   ...upstreamClients,
   youtube: innertubeApiProvider,
   getNicoVideoInfo,
-  downloads: {
-    dam: downloadDamVideo,
-    info: downloadsInfo,
-    clear: clearDownloads,
-    clearDam: clearDamDownload,
-    joysound: (item, pushToHead, onReady, onFailed) =>
-      downloadJoysoundData(
-        store.getState().downloadQueue,
-        item.user,
-        upstreamClients.joysound,
-        item,
-        pushToHead,
-        onReady,
-        onFailed,
-      ),
-    youtube: (item, captionCode, onReady, onFailed) =>
-      downloadYoutubeVideo(
-        store.getState().downloadQueue,
-        item.user,
-        item.songId,
-        captionCode,
-        onReady,
-        onFailed,
-      ),
-    nico: (item, onReady, onFailed) =>
-      downloadNicoVideo(
-        store.getState().downloadQueue,
-        item.user,
-        item.songId,
-        onReady,
-        onFailed,
-      ),
-  },
+  downloads: createDownloads(
+    () => store.getState().downloadQueue,
+    upstreamClients.joysound,
+  ),
   publish: hub.publish,
 });
 

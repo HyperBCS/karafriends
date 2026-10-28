@@ -20,7 +20,7 @@ import {
   ytdlpVideoJob,
   type JobPaths,
 } from "./jobs";
-import { runDownload, YTDLP_SLOTS } from "./queue";
+import { createLimiter, DAM_SLOTS, runDownload, YTDLP_SLOTS } from "./queue";
 import { parseDuration } from "./run";
 
 const fake = (name: string) =>
@@ -58,10 +58,11 @@ type Outcome<T> =
   | { ok: false; reason: string; item: DownloadQueueItem };
 
 // Runs job through the download queue as the app does, until it's ready or
-// failed. cleanUp is what services.ts passes for its kind.
+// failed. cleanUp is what downloads/index.ts passes for its kind.
 function download<T>(
   queue: DownloadQueueItem[],
-  kind: DownloadQueueItem["kind"] | [DownloadQueueItem["kind"], string],
+  key: Pick<DownloadQueueItem, "kind"> &
+    Partial<Pick<DownloadQueueItem, "songId" | "suffix">>,
   job: (item: DownloadQueueItem) => Promise<T>,
   cleanUp: () => void = () => {},
 ): Promise<Outcome<T>> {
@@ -69,22 +70,24 @@ function download<T>(
     let item!: DownloadQueueItem;
     runDownload(
       queue,
+      { songId: "song", suffix: null, ...key, userIdentity: USER },
       {
-        kind: Array.isArray(kind) ? kind[0] : kind,
-        songId: Array.isArray(kind) ? kind[1] : "song",
-        suffix: null,
-        userIdentity: USER,
+        description: `test ${key.kind} download`,
+        job: (started) => {
+          item = started;
+          return job(started);
+        },
+        onReady: (result) => resolve({ ok: true, result, item }),
+        cleanUp,
+        onFailed: (reason) => resolve({ ok: false, reason, item }),
       },
-      `test ${kind} download`,
-      (started) => {
-        item = started;
-        return job(started);
-      },
-      (result) => resolve({ ok: true, result, item }),
-      cleanUp,
-      (reason) => resolve({ ok: false, reason, item }),
     );
   });
+}
+
+// Waits until done() says so, checking every 10 ms.
+async function until(done: () => boolean): Promise<void> {
+  while (!done()) await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
 const files = () => fs.readdirSync(folder).sort();
@@ -105,8 +108,10 @@ function assertFilesOf(song: SongFiles, ...others: SongFiles[]) {
 
 test("a YouTube download reports its progress and leaves its video", async () => {
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, ["youtube", "jNQXAC9IVRw"], (item) =>
-    ytdlpVideoJob(paths, item, null),
+  const outcome = await download(
+    queue,
+    { kind: "youtube", songId: "jNQXAC9IVRw" },
+    (item) => ytdlpVideoJob(paths, item, null),
   );
 
   assert.equal(outcome.ok, true);
@@ -116,53 +121,108 @@ test("a YouTube download reports its progress and leaves its video", async () =>
   assertFilesOf({ kind: "youtube", songId: "jNQXAC9IVRw", suffix: null });
 });
 
-test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", async (t) => {
+test("a limiter runs two at once; a third waits for one to finish", async () => {
   assert.equal(YTDLP_SLOTS, 2);
-  const queue: DownloadQueueItem[] = [];
+  assert.equal(DAM_SLOTS, 2);
+  // Its own, so nothing here can keep the app's slots taken.
+  const limit = createLimiter(2);
   const started: string[] = [];
-  // Each job runs until finish(name).
+  // Each runs until finish(name).
   const finishers = new Map<string, () => void>();
   const finish = (name: string) => finishers.get(name)?.();
-  // The slots are the module's: a failed assertion mustn't keep them taken,
-  // or every later yt-dlp download in this file would wait for ever.
-  t.after(() => {
-    for (const resolve of finishers.values()) resolve();
-  });
-  const job = (name: string) => (item: DownloadQueueItem) => {
-    started.push(name);
-    item.progress = 0.5;
-    return new Promise<void>((resolve) => finishers.set(name, resolve));
-  };
-  const outcomes = [
-    download(queue, "youtube", job("first")),
-    download(queue, "nico", job("second")),
-    download(queue, "youtube", job("third")),
-  ];
-  // Joysound's own video doesn't use yt-dlp, so it doesn't wait.
-  const joysound = download(queue, "joysound", job("joysound"));
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  const run = (name: string) =>
+    limit(() => {
+      started.push(name);
+      return new Promise<void>((resolve) => finishers.set(name, resolve));
+    });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
+  const runs = [run("first"), run("second"), run("third")];
   await settle();
-  assert.deepEqual(started.sort(), ["first", "joysound", "second"]);
-  const third = queue[2];
-  assert.equal(third.status, "downloading");
-  assert.equal(third.progress, 0);
+  assert.deepEqual(started, ["first", "second"]);
 
   finish("second");
   await settle();
-  assert.deepEqual(started.sort(), ["first", "joysound", "second", "third"]);
+  assert.deepEqual(started, ["first", "second", "third"]);
 
-  for (const name of ["first", "third", "joysound"]) finish(name);
-  for (const outcome of [...outcomes, joysound]) {
-    assert.equal((await outcome).ok, true);
+  finish("first");
+  finish("third");
+  await Promise.all(runs);
+});
+
+test("a limited run stopped while it waits never runs, and doesn't take a turn", async () => {
+  const limit = createLimiter(1);
+  let finishFirst!: () => void;
+  const first = limit(
+    () => new Promise<void>((resolve) => (finishFirst = resolve)),
+  );
+  const stop = new AbortController();
+  let stoppedRan = false;
+  const stopped = limit(async () => {
+    stoppedRan = true;
+  }, stop.signal);
+  const next = limit(async () => "next");
+
+  stop.abort();
+  await assert.rejects(stopped, /stopped while waiting/);
+  finishFirst();
+  await first;
+  assert.equal(await next, "next");
+  assert.equal(stoppedRan, false);
+  await assert.rejects(
+    limit(async () => {}, AbortSignal.abort()),
+    /stopped while waiting/,
+  );
+});
+
+test("a Joysound background holds a yt-dlp slot only while yt-dlp runs", async (t) => {
+  // Joysound's song data comes once released, as over a slow VPN, or after
+  // its retries when Joysound is down.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  t.after(() => release());
+  const slowSongData = async () => {
+    await released;
+    return songData();
+  };
+  const queue: DownloadQueueItem[] = [];
+  // One for each slot.
+  const joysounds = ["bgVideo0001", "bgVideo0002"].map((background) =>
+    download(
+      queue,
+      { kind: "joysound", songId: "123456", suffix: background },
+      (item) =>
+        joysoundJob(
+          paths,
+          item,
+          joysoundApi(slowSongData),
+          joysoundItem(background),
+        ),
+    ),
+  );
+  // Both backgrounds have downloaded, and wait for the song data...
+  await until(() => queue.length === 2 && queue.every((i) => i.progress === 1));
+
+  // ...while a YouTube video downloads.
+  const youtube = await download(
+    queue,
+    { kind: "youtube", songId: "jNQXAC9IVRw" },
+    (item) => ytdlpVideoJob(paths, item, null),
+  );
+  assert.equal(youtube.ok, true);
+
+  release();
+  for (const outcome of await Promise.all(joysounds)) {
+    assert.equal(outcome.ok, true);
   }
-  assert.deepEqual(queue, []);
 });
 
 test("a Niconico download leaves its video", async () => {
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, ["nico", "sm9"], (item) =>
-    ytdlpVideoJob(paths, item, null),
+  const outcome = await download(
+    queue,
+    { kind: "nico", songId: "sm9" },
+    (item) => ytdlpVideoJob(paths, item, null),
   );
 
   assert.equal(outcome.ok, true);
@@ -228,7 +288,7 @@ const joysoundItem = (youtubeVideoId: string | null): JoysoundQueueItem => ({
 
 test("a Joysound download without a background leaves its video and lyrics", async () => {
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, "joysound", (item) =>
+  const outcome = await download(queue, { kind: "joysound" }, (item) =>
     joysoundJob(paths, item, joysoundApi(songData), joysoundItem(null)),
   );
 
@@ -252,7 +312,7 @@ test("a Joysound download with a YouTube background pads it and leaves only the 
     ogg: scrambled(ogg(5_000)),
   });
   const queue: DownloadQueueItem[] = [];
-  const outcome = await download(queue, "joysound", (item) =>
+  const outcome = await download(queue, { kind: "joysound" }, (item) =>
     joysoundJob(
       paths,
       item,
@@ -279,7 +339,7 @@ test("a Joysound download that fails putting the video together leaves only its 
   const queue: DownloadQueueItem[] = [];
   const outcome = await download(
     queue,
-    "joysound",
+    { kind: "joysound" },
     (item) =>
       joysoundJob(
         paths,
@@ -309,7 +369,7 @@ test("a Joysound download that fails putting the video together leaves only its 
 
 test("a failed Joysound background leaves the song's other backgrounds and lyrics", async () => {
   // The song with Joysound's own video, downloaded before.
-  const done = await download([], "joysound", (item) =>
+  const done = await download([], { kind: "joysound" }, (item) =>
     joysoundJob(paths, item, joysoundApi(songData), joysoundItem(null)),
   );
   assert.ok(done.ok);
@@ -317,7 +377,7 @@ test("a failed Joysound background leaves the song's other backgrounds and lyric
   paths.ffmpeg = fake("ffmpeg-fails");
   const outcome = await download(
     [],
-    "joysound",
+    { kind: "joysound" },
     (item) =>
       joysoundJob(
         paths,
@@ -350,7 +410,7 @@ test("a Joysound background left half-done by a crash goes before it's downloade
     fs.writeFileSync(path.join(folder, name), "half-done");
   }
 
-  const outcome = await download([], "joysound", (item) =>
+  const outcome = await download([], { kind: "joysound" }, (item) =>
     joysoundJob(
       paths,
       item,
@@ -400,7 +460,7 @@ test("a Joysound download whose song data fails stops its background download", 
   const queue: DownloadQueueItem[] = [];
   const outcome = await download(
     queue,
-    "joysound",
+    { kind: "joysound" },
     (item) =>
       joysoundJob(
         paths,
@@ -437,7 +497,7 @@ test("a Joysound download whose song data fails doesn't wait for the video's URL
   };
   const outcome = await download(
     [],
-    "joysound",
+    { kind: "joysound" },
     (item) =>
       joysoundJob(
         paths,
