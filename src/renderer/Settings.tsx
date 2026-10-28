@@ -362,8 +362,6 @@ export default function Settings(props: {
     );
   };
 
-  const port = window.karafriends.remoconPort();
-
   return (
     <div className="settings" role="dialog" aria-label="Settings">
       {header}
@@ -524,7 +522,6 @@ export default function Settings(props: {
           </p>
           <HostnameSetting
             hostname={props.hostname}
-            port={port}
             onChange={props.onHostnameChange}
           />
         </SettingsSection>
