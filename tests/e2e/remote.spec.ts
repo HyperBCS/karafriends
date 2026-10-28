@@ -817,6 +817,34 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
   await expect(play).toBeVisible();
 });
 
+test.describe("in supervised mode", () => {
+  test.use({ appConfig: { supervisedMode: true } });
+
+  test("dimmed controls do nothing from the keyboard either", async ({
+    remote,
+  }) => {
+    const sent: string[] = [];
+    for (const method of ["setPlaybackState", "setPitchShiftSemis"]) {
+      await remote.route(`**/api/${method}`, (route) => {
+        sent.push(method);
+        return route.fulfill({ json: null });
+      });
+    }
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    // Someone else's song, so the transport and the key are dimmed.
+    for (const name of ["Restart", "Play", "Skip", "Lower the key"]) {
+      const control = remote.getByRole("button", { name, exact: true });
+      await expect(control).toHaveAttribute("aria-disabled", "true");
+      await control.focus();
+      await expect(control).toBeFocused();
+      await remote.keyboard.press("Enter");
+      await remote.keyboard.press("Space");
+    }
+    await remote.waitForTimeout(300);
+    expect(sent).toEqual([]);
+  });
+});
+
 test.describe("the now-playing bar", () => {
   const NICKNAME_LONG = "someone with a really very long nickname";
   test.use({
@@ -1135,7 +1163,8 @@ test("a video's line says 1 view, and leaves out a count it doesn't have", async
     new URL("#/search/niconico/sm10", karafriends.remoconUrl).href,
   );
   await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
-  await expect(remote.getByText("Niconico", { exact: true })).toBeVisible();
+  // No length and no views: the line is just the source.
+  await expect(remote.getByText(/ · |views?$/)).toHaveCount(0);
   await expect(
     remote.getByRole("button", { name: "Queue video" }),
   ).toBeEnabled();

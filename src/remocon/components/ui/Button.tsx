@@ -47,18 +47,28 @@ export interface IconButtonProps extends Omit<
 }
 
 // A 44px square button with a 28px icon and no text. Pass aria-pressed for
-// a toggle; it shows in the accent when on.
+// a toggle; it shows in the accent when on. aria-disabled: a control the
+// server would refuse, dimmed but still focusable; no press of it does
+// anything, from a finger, the keyboard or a screen reader.
 export const IconButton = ({
   label,
   icon,
   tone = "default",
   className,
   type = "button",
+  onClick,
   ...rest
 }: IconButtonProps) => (
   <button
     type={type}
     aria-label={label}
+    onClick={(e) => {
+      if (rest["aria-disabled"] === true || rest["aria-disabled"] === "true") {
+        e.preventDefault();
+        return;
+      }
+      onClick?.(e);
+    }}
     className={classnames(
       styles.iconButton,
       {
