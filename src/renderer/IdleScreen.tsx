@@ -1,6 +1,5 @@
 import React from "react";
 
-import { useLiveState } from "../common/apiClient";
 import "./IdleScreen.css";
 import QRCode from "./QRCode";
 import UpNext from "./UpNext";
@@ -10,7 +9,6 @@ export default function IdleScreen(props: {
   hostname: string;
   onOpenSettings: () => void;
 }) {
-  const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
   return (
     <div className="idleScreen">
       <button
@@ -33,11 +31,7 @@ export default function IdleScreen(props: {
         <p className="idleScan">Scan to join</p>
         <p className="idleAddress">{props.hostname}</p>
       </div>
-      {hasQueue ? (
-        <div className="idleUpNext">
-          <UpNext layout="rows" />
-        </div>
-      ) : null}
+      <UpNext layout="rows" />
     </div>
   );
 }

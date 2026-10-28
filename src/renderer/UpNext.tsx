@@ -4,16 +4,17 @@ import React from "react";
 import useQueue from "../common/hooks/useQueue";
 import "./UpNext.css";
 
-// The queue after the current song: rows on the idle screen, or one line
-// along the bottom while a song plays.
+// The queue after the current song: rows on the idle screen (none when it's
+// empty), or one line along the bottom while a song plays.
 export default function UpNext({ layout }: { layout: "rows" | "strip" }) {
   const queue = useQueue();
+  if (queue.length === 0 && layout === "rows") return null;
   return (
     <section className={`upNext upNext-${layout}`} aria-labelledby="upNext">
       <h2 id="upNext" className="upNextHeading">
         Up next
       </h2>
-      {queue.length === 0 && layout === "strip" ? (
+      {queue.length === 0 ? (
         <p className="upNextEmpty">Nothing queued</p>
       ) : null}
       <ol className="upNextList" role="list" aria-label="Queue">
