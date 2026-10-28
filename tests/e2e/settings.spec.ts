@@ -105,6 +105,7 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
 }) => {
   expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
     supervisedMode: false,
+    everyoneIsAdmin: false,
   });
   expect(await output(display, "getSettings")).toMatchObject({
     isFirstRun: true,
@@ -119,6 +120,7 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
   // A phone's new stream, and the display's own live state.
   expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
     supervisedMode: true,
+    everyoneIsAdmin: false,
   });
   await expect
     .poll(() =>
@@ -162,6 +164,7 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
   });
   expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
     supervisedMode: true,
+    everyoneIsAdmin: false,
   });
 });
 
@@ -186,6 +189,16 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   );
   expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
     supervisedMode: true,
+    everyoneIsAdmin: false,
+  });
+  await queue.getByLabel("Everyone is an admin", { exact: false }).check();
+  await expect(queue.getByRole("status")).toHaveText("Saved.");
+  expect((await output(display, "getSettings")).settings.everyoneIsAdmin).toBe(
+    true,
+  );
+  expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
+    supervisedMode: true,
+    everyoneIsAdmin: true,
   });
 
   // A field saves when the host leaves it; a refused value says why.
@@ -304,6 +317,7 @@ test.describe("export, then import on a second launch", () => {
     });
     expect((await phoneLiveState(karafriends.remoconUrl)).config).toEqual({
       supervisedMode: true,
+      everyoneIsAdmin: false,
     });
 
     // The imported admin password works on a phone.

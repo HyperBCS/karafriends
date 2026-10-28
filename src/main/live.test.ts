@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { LiveEvent, QueueItem } from "../common/api";
+import type { LiveEvent, LiveState, QueueItem } from "../common/api";
 import { createLiveHub, toLiveState, type Viewer } from "./live";
 import {
   createStateStore,
@@ -28,7 +28,7 @@ const item: QueueItem = {
   user: { deviceId: "d", nickname: "n" },
 };
 
-const config = { supervisedMode: false };
+const config = { supervisedMode: false, everyoneIsAdmin: false };
 
 let dir: string;
 let store: StateStore;
@@ -79,10 +79,14 @@ describe("toLiveState", () => {
     });
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
+      everyoneIsAdmin: true,
       // Not passed on.
       adminPasswordHash: "secret",
-    } as { supervisedMode: boolean });
-    assert.deepEqual(live.config, { supervisedMode: true });
+    } as LiveState["config"]);
+    assert.deepEqual(live.config, {
+      supervisedMode: true,
+      everyoneIsAdmin: true,
+    });
     assert.equal(live.toolsProblem, "Update the tools");
     assert.deepEqual(live.queue, [shared(false)]);
     const [download, failed] = store.getState().downloadQueue;
@@ -287,7 +291,7 @@ describe("createLiveHub: who sees what", () => {
 
 describe("createLiveHub", () => {
   test("sends the state on subscribe, then changes and messages", async () => {
-    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const hub = createLiveHub(store, config, INTERVAL_MS);
     const events: LiveEvent[] = [];
     const stop = hub.subscribe((event) => events.push(event));
     assert.equal(events.length, 1);
@@ -313,11 +317,11 @@ describe("createLiveHub", () => {
   });
 
   test("refresh() sends the state when the config changed", async () => {
-    const config = { supervisedMode: false };
+    const config = { supervisedMode: false, everyoneIsAdmin: false };
     const hub = createLiveHub(store, config, INTERVAL_MS);
-    const modes: boolean[] = [];
+    const modes: LiveState["config"][] = [];
     const stop = hub.subscribe((event) => {
-      if (event.type === "state") modes.push(event.state.config.supervisedMode);
+      if (event.type === "state") modes.push(event.state.config);
     });
     await sleep(INTERVAL_MS * 2);
     // Nothing changed: nothing sent.
@@ -326,12 +330,19 @@ describe("createLiveHub", () => {
     config.supervisedMode = true;
     hub.refresh();
     await sleep(INTERVAL_MS * 2);
+    config.everyoneIsAdmin = true;
+    hub.refresh();
+    await sleep(INTERVAL_MS * 2);
     stop();
-    assert.deepEqual(modes, [false, true]);
+    assert.deepEqual(modes, [
+      { supervisedMode: false, everyoneIsAdmin: false },
+      { supervisedMode: true, everyoneIsAdmin: false },
+      { supervisedMode: true, everyoneIsAdmin: true },
+    ]);
   });
 
   test("sends at most one state per interval, ending with the latest", async () => {
-    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const hub = createLiveHub(store, config, INTERVAL_MS);
     const queueLengths: number[] = [];
     const stop = hub.subscribe((event) => {
       if (event.type === "state") queueLengths.push(event.state.queue.length);
@@ -350,7 +361,7 @@ describe("createLiveHub", () => {
   });
 
   test("a listener that joins between flushes ends up with the latest state", async () => {
-    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const hub = createLiveHub(store, config, INTERVAL_MS);
     const playbackStates = (events: LiveEvent[]) =>
       events.flatMap((event) =>
         event.type === "state" ? [event.state.playbackState] : [],
@@ -385,7 +396,7 @@ describe("createLiveHub", () => {
   });
 
   test("notices download progress, which changes outside the store", async () => {
-    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const hub = createLiveHub(store, config, INTERVAL_MS);
     const progress: number[][] = [];
     const stop = hub.subscribe((event) => {
       if (event.type === "state") {
@@ -409,7 +420,7 @@ describe("createLiveHub", () => {
   });
 
   test("a failing listener doesn't stop the others", () => {
-    const hub = createLiveHub(store, { supervisedMode: false }, INTERVAL_MS);
+    const hub = createLiveHub(store, config, INTERVAL_MS);
     const seen: string[] = [];
     const original = console.error;
     console.error = () => {};

@@ -61,7 +61,7 @@ export function shareQueueItem(
 // The live state as deviceId's phone sees it (null: as the display does).
 export function toLiveState(
   state: Readonly<State>,
-  config: { supervisedMode: boolean },
+  config: LiveState["config"],
   deviceId: string | null = null,
 ): LiveState {
   return {
@@ -82,7 +82,10 @@ export function toLiveState(
       reason: download.reason,
       isMine: deviceId !== null && download.userIdentity.deviceId === deviceId,
     })),
-    config: { supervisedMode: config.supervisedMode },
+    config: {
+      supervisedMode: config.supervisedMode,
+      everyoneIsAdmin: config.everyoneIsAdmin,
+    },
     toolsProblem: state.toolsProblem?.message ?? null,
   };
 }
@@ -103,7 +106,7 @@ function ownsAny(state: Readonly<State>, deviceId: string): boolean {
 // owns nothing, and one per device that owns something.
 function stateEvents(
   state: Readonly<State>,
-  config: { supervisedMode: boolean },
+  config: LiveState["config"],
   shared: LiveState = toLiveState(state, config),
 ) {
   const sharedEvent: LiveEvent = { type: "state", state: shared };
@@ -179,13 +182,13 @@ function messageEvents(
 
 export function createLiveHub(
   store: StateStore,
-  config: { supervisedMode: boolean },
+  config: LiveState["config"],
   // At most one state event per interval: about 4 a second while downloads
   // report progress.
   intervalMs = 250,
 ): LiveHub & {
   // Sends the state again if it changed some other way than through the
-  // store: config's supervisedMode, from the settings.
+  // store: config's supervisedMode or everyoneIsAdmin, from the settings.
   refresh(): void;
 } {
   const listeners = new Map<(event: LiveEvent) => void, Viewer>();

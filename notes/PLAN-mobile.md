@@ -4,17 +4,17 @@ The product round ([`PLAN-product.md`](PLAN-product.md)) is merged. The user the
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                                          | State       | Branch / commit | Notes |
-| ------------------------------------------------------------- | ----------- | --------------- | ----- |
-| M1: everyone-admin mode                                       | not started |                 |       |
-| M2: locked shell, home button, contrast                       | not started |                 |       |
-| M3: drag to reorder the queue                                 | not started |                 |       |
-| M4: relevance-ranked search across catalogs                   | not started |                 |       |
-| M6: lyrics mode when queueing (kana, romaji, both)            | not started |                 |       |
-| M7: readings in the phone's own text                          | not started |                 |       |
-| M8: guide vocal volume (spike, then implement where possible) | not started |                 |       |
-| M5: review and fixes                                          | not started |                 |       |
-| Final: iPhone check by the user                               | not started |                 |       |
+| Step                                                          | State       | Branch / commit                                       | Notes                                                                                                   |
+| ------------------------------------------------------------- | ----------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| M1: everyone-admin mode                                       | done        | `worktree-agent-a3b3f22d44d0eaef3`, merged 2026-10-27 | The per-phone song limit still applies in this mode (0 for none). Verified with a real launch and curl. |
+| M2: locked shell, home button, contrast                       | not started |                                                       |                                                                                                         |
+| M3: drag to reorder the queue                                 | not started |                                                       |                                                                                                         |
+| M4: relevance-ranked search across catalogs                   | not started |                                                       |                                                                                                         |
+| M6: lyrics mode when queueing (kana, romaji, both)            | not started |                                                       |                                                                                                         |
+| M7: readings in the phone's own text                          | not started |                                                       |                                                                                                         |
+| M8: guide vocal volume (spike, then implement where possible) | not started |                                                       |                                                                                                         |
+| M5: review and fixes                                          | not started |                                                       |                                                                                                         |
+| Final: iPhone check by the user                               | not started |                                                       |                                                                                                         |
 
 ## What the user saw (2026-10-27, iPhone, Safari)
 

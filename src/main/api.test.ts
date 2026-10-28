@@ -109,6 +109,7 @@ function makeApi(
     config: {
       adminPasswordHash: ADMIN_HASH,
       adminPasswordSalt: ADMIN_SALT,
+      everyoneIsAdmin: false,
       paxSongQueueLimit: 0,
       supervisedMode: false,
       useLowBitrateUrl: false,
@@ -295,6 +296,46 @@ describe("admin checks", () => {
       );
       assert.equal(await api.setPitchShiftSemis({ semis: -1 }, alice), true);
       assert.equal(store.getState().pitchShiftSemis, -1);
+    });
+  });
+
+  describe("while everyone is an admin", () => {
+    beforeEach(() => {
+      store.update((state) => {
+        state.currentSong = song(1, alice);
+        state.songQueue.push(song(2, alice), song(3, alice));
+        state.playbackState = "PLAYING";
+      });
+    });
+
+    test("a phone with no token may do what an admin does, even supervised", async () => {
+      const api = makeApi({ supervisedMode: true, everyoneIsAdmin: true });
+      assert.deepEqual(await api.whoami({}, bob), { isAdmin: true });
+      assert.deepEqual(
+        await api.moveSong({ songId: "sm3", timestamp: "3", toIndex: 0 }, bob),
+        { ok: true },
+      );
+      assert.deepEqual(
+        store.getState().songQueue.map((item) => item.songId),
+        ["sm3", "sm2"],
+      );
+      assert.equal(
+        await api.removeSong({ songId: "sm2", timestamp: "2" }, bob),
+        true,
+      );
+      assert.equal(
+        await api.setPlaybackState({ playbackState: "PAUSED" }, bob),
+        true,
+      );
+      assert.equal(store.getState().playbackState, "PAUSED");
+      assert.equal(await api.setPitchShiftSemis({ semis: 2 }, bob), true);
+      assert.equal(store.getState().pitchShiftSemis, 2);
+    });
+
+    test("the display's own methods stay the display's", async () => {
+      const api = makeApi({ everyoneIsAdmin: true });
+      await rejectsWith(api.popSong({}, bob), 403);
+      assert.equal(store.getState().currentSong?.songId, "sm1");
     });
   });
 
@@ -894,6 +935,24 @@ describe("queueSong", () => {
     const impostor = phone("impostor-device", ADMIN_NICK);
     assert.equal((await queue(impostor, 6)).ok, true);
     assert.equal((await queue(impostor, 7)).ok, false);
+  });
+
+  test("keeps the limit while everyone is an admin", async () => {
+    const api = makeApi({ paxSongQueueLimit: 1, everyoneIsAdmin: true });
+    const queue = (caller: Caller, n: number) =>
+      api.queueSong(
+        { kind: "nico", songId: `sm${n}`, name: "", artistName: "" },
+        caller,
+      );
+    assert.equal((await queue(bob, 1)).ok, true);
+    assert.deepEqual(await queue(bob, 2), {
+      ok: false,
+      reason: "bob already has 1 song(s) in the queue or downloading",
+    });
+    // A phone signed in with the password still has none.
+    const host = admin("host phone");
+    assert.equal((await queue(host, 3)).ok, true);
+    assert.equal((await queue(host, 4)).ok, true);
   });
 });
 

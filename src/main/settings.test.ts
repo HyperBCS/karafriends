@@ -150,6 +150,21 @@ describe("getSettings", () => {
     await rejectsWith(api.getToolsStatus({}, phone), 403);
     await rejectsWith(api.updateTools({}, phone), 403);
   });
+
+  test("still the display's only while everyone is an admin", async () => {
+    const { api, store } = setup();
+    assert.deepEqual(
+      await api.setSettings({ settings: { everyoneIsAdmin: true } }, display),
+      { ok: true, needsRestart: false },
+    );
+    assert.equal(store.get().everyoneIsAdmin, true);
+    await rejectsWith(api.getSettings({}, phone), 403);
+    await rejectsWith(
+      api.setSettings({ settings: { everyoneIsAdmin: false } }, phone),
+      403,
+    );
+    assert.equal(store.get().everyoneIsAdmin, true);
+  });
 });
 
 describe("setSettings", () => {

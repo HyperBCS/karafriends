@@ -226,7 +226,7 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       pitchShiftSemis: 0,
       adhocLyrics: [],
       downloads: [],
-      config: { supervisedMode: false },
+      config: { supervisedMode: false, everyoneIsAdmin: false },
       toolsProblem: null,
     },
   });
@@ -560,6 +560,65 @@ test.describe("supervised mode", () => {
       await expect(
         display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
       ).toHaveText([/E2E supervised song 3/, /E2E supervised song 2/]);
+    });
+
+    test("while everyone is an admin, a phone with no password moves one", async ({
+      karafriends,
+      display,
+      page,
+    }) => {
+      const { remoconUrl } = karafriends;
+      await waitForSong1(remoconUrl);
+      const song3 = {
+        songId: "sm90003",
+        timestamp: song(3, someoneElse).timestamp,
+      };
+      const move = () =>
+        call(remoconUrl, "moveSong", { ...song3, toIndex: 0 }, REMOTE_HEADERS);
+      const setEveryoneIsAdmin = (everyoneIsAdmin: boolean) =>
+        displayCall(display, "setSettings", { settings: { everyoneIsAdmin } });
+      // The remote's next whoami answer saying isAdmin.
+      const whoamiSays = (isAdmin: boolean) =>
+        page.waitForResponse(
+          async (res) =>
+            res.url().endsWith("/api/whoami") &&
+            (await res.json()).isAdmin === isAdmin,
+        );
+
+      // The remote, open on the e2e phone with no admin token.
+      await page.addInitScript(
+        ([deviceId, nickname]) => {
+          localStorage.setItem("deviceId", deviceId);
+          localStorage.setItem("nickname", nickname);
+        },
+        [DEVICE_ID, NICKNAME],
+      );
+      const notAdmin = whoamiSays(false);
+      await page.goto(remoconUrl);
+      await notAdmin;
+
+      // On: the remote asks again without a reload, and the phone moves it.
+      const admin = whoamiSays(true);
+      expect(await setEveryoneIsAdmin(true)).toEqual({
+        ok: true,
+        output: { ok: true, needsRestart: false },
+      });
+      await admin;
+      expect((await liveState(remoconUrl)).state.config).toEqual({
+        supervisedMode: true,
+        everyoneIsAdmin: true,
+      });
+      expect(await move()).toEqual({ status: 200, body: { ok: true } });
+      const { state } = await liveState(remoconUrl);
+      expect(
+        state.queue.map((item: { songId: string }) => item.songId),
+      ).toEqual(["sm90003", "sm90002"]);
+
+      // Off: refused again.
+      const notAdminAgain = whoamiSays(false);
+      await setEveryoneIsAdmin(false);
+      await notAdminAgain;
+      expect(await move()).toMatchObject({ status: 403 });
     });
   });
 

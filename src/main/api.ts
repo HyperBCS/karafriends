@@ -67,6 +67,7 @@ export interface ApiDeps {
     KarafriendsConfig,
     | "adminPasswordHash"
     | "adminPasswordSalt"
+    | "everyoneIsAdmin"
     | "paxSongQueueLimit"
     | "supervisedMode"
     | "useLowBitrateUrl"
@@ -165,8 +166,11 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   // grant nothing, since anyone can pick any nickname and every phone sees
   // everyone's. Device IDs never leave the server, so they decide whose a
   // song is, but not who is an admin.
-  const isAdmin = (caller: Caller) =>
+  const isRealAdmin = (caller: Caller) =>
     caller.isDisplay || deps.adminSessions.has(caller.adminToken);
+  // That, or every phone while everyoneIsAdmin is on.
+  const isAdmin = (caller: Caller) =>
+    config.everyoneIsAdmin || isRealAdmin(caller);
 
   // Whether the caller queued item, from the same device (isMine, to the
   // phones).
@@ -215,8 +219,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     console.log(
       `hasMaxSongsInQueue: user ${user.nickname} has ${queued}, ${downloading} downloading`,
     );
+    // The limit is fairness, so everyoneIsAdmin keeps it.
     return (
-      !isAdmin(caller) &&
+      !isRealAdmin(caller) &&
       config.paxSongQueueLimit > 0 &&
       queued + downloading >= config.paxSongQueueLimit
     );

@@ -25,6 +25,8 @@ export interface KarafriendsConfig {
   adminPasswordSalt: string;
   // Whether to enable supervised mode
   supervisedMode: boolean;
+  // Every phone is an admin, no password needed. Overrides supervisedMode.
+  everyoneIsAdmin: boolean;
   // Whether to use a HTTP proxy (for outgoing connections)
   proxyEnable: boolean;
   // hostname or address of the HTTP proxy to use
@@ -48,6 +50,7 @@ export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
   adminPasswordHash: "",
   adminPasswordSalt: "",
   supervisedMode: false,
+  everyoneIsAdmin: false,
   proxyEnable: false,
   proxyHost: "",
   proxyPort: 1234,
@@ -145,6 +148,7 @@ export const CONFIG_RULES: {
   adminPasswordHash: TEXT,
   adminPasswordSalt: TEXT,
   supervisedMode: { type: "boolean" },
+  everyoneIsAdmin: { type: "boolean" },
   proxyEnable: { type: "boolean" },
   proxyHost: TEXT,
   proxyPort: PORT,
