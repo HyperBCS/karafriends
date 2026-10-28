@@ -769,7 +769,7 @@ describe("the downloads folder", () => {
     });
   });
 
-  test("clearing keeps the current song's files and the running downloads'", async () => {
+  test("clearing keeps the files of the current song, the queue and the running downloads", async () => {
     const api = makeApi();
     store.update((state) => {
       state.currentSong = {
@@ -778,7 +778,7 @@ describe("the downloads folder", () => {
         songId: "1234-56",
         streamingUrlIdx: 2,
       } as QueueItem;
-      // Queued, not playing: its files go.
+      // Queued, not playing: its files stay too, or it would be skipped.
       state.songQueue.push(song(2, alice));
       startDownload(state.downloadQueue, {
         kind: "joysound",
@@ -797,12 +797,13 @@ describe("the downloads folder", () => {
     assert.deepEqual(await api.clearDownloads({}, display), {
       deleted: 2,
       bytes: 2000,
-      kept: 2,
+      kept: 3,
     });
     assert.deepEqual(clearedInUse, [
       [
         { kind: "joysound", songId: "777", suffix: "bg" },
         { kind: "dam", songId: "1234-56", suffix: "2" },
+        { kind: "nico", songId: "sm2", suffix: null },
       ],
     ]);
   });
