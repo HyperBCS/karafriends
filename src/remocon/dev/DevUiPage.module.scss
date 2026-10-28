@@ -67,6 +67,37 @@
   min-width: 0;
 }
 
+.nowLabel,
+.upNext {
+  color: $kf-muted;
+  font-size: $kf-text-label;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nowLabel {
+  margin-bottom: $kf-space-1;
+}
+
+.nowRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.nowSong {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.upNext {
+  padding: $kf-space-3 $kf-space-4 $kf-space-2;
+}
+
 .nowTitle {
   overflow: hidden;
   font-size: $kf-text-title;

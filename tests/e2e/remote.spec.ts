@@ -183,7 +183,7 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
 }) => {
   const html = remote.locator("html");
   const body = remote.locator("body");
-  const LIGHT = "rgb(245, 245, 245)";
+  const LIGHT = "rgb(235, 235, 235)";
   const DARK = "rgb(18, 18, 18)";
   const tab = (name: string) =>
     remote
@@ -208,8 +208,8 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   ).toHaveText(["Light", "Dark", "Auto"]);
   await expect(tab("Auto")).toHaveAttribute("aria-selected", "true");
 
-  // Light stays light in dark mode, and the sheet and the top bar go with
-  // it.
+  // Light stays light in dark mode, and the sheet (white, above the page)
+  // and the top bar go with it.
   await tab("Light").click();
   await expect(html).toHaveAttribute("data-theme", "light");
   await expect(body).toHaveCSS("background-color", LIGHT);
@@ -219,7 +219,7 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   );
   await expect(remote.getByRole("region", { name: "Now playing" })).toHaveCSS(
     "background-color",
-    "rgb(235, 235, 235)",
+    "rgb(255, 255, 255)",
   );
   expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
     "light",
@@ -587,25 +587,40 @@ test.describe("the now-playing bar", () => {
     },
   });
 
-  test("is one toggle: title, artist, and the singer's whole nickname", async ({
+  // A tap where a finger lands, on whatever is on top there: the bar's
+  // text lets taps through to the toggle under it, so Playwright's click on
+  // the text itself would wait for it forever.
+  const tap = async (el: Locator) => {
+    const box = (await el.boundingBox())!;
+    await el.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
+
+  test("is the only place the current song shows, and a toggle anywhere but its link", async ({
     remote,
   }) => {
     const sheet = remote.getByRole("region", { name: "Now playing" });
-    const bar = sheet.getByRole("button").first();
-    const title = bar.getByText(/^E2E playing song/);
+    const toggle = sheet.getByRole("button", { name: /^(Show|Hide) queue$/ });
+    const title = sheet.getByText(/^E2E playing song/);
     // The display starts it within 5 seconds.
     await expect(title).toBeVisible({ timeout: 15_000 });
-    await expect(bar).toHaveAttribute("aria-expanded", "false");
-    await expect(bar).toHaveAccessibleName(/E2E playing song.*Show queue/);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toHaveAccessibleName("Show queue");
+    // Folded, the toggle is all there is to press.
     await expect(sheet.getByRole("button")).toHaveCount(1);
+    await expect(sheet.getByRole("link")).toHaveCount(0);
 
-    // Title over artist; the singer on the right, the nickname whole as
-    // far as the bar allows, cut after the title is.
-    const artist = bar.getByText("E2E artist", { exact: true });
-    const nickname = bar.getByText(NICKNAME_LONG);
-    const [t, a, n] = await Promise.all(
-      [title, artist, nickname].map(async (el) => (await el.boundingBox())!),
+    // "Now playing" over the title, the title over the artist; the singer
+    // on the right, the nickname whole as far as the bar allows, cut after
+    // the title is.
+    const label = sheet.getByText("Now playing", { exact: true });
+    const artist = sheet.getByText("E2E artist", { exact: true });
+    const nickname = sheet.getByText(NICKNAME_LONG);
+    const [l, t, a, n] = await Promise.all(
+      [label, title, artist, nickname].map(
+        async (el) => (await el.boundingBox())!,
+      ),
     );
+    expect(t.y).toBeGreaterThan(l.y);
     expect(a.y).toBeGreaterThan(t.y);
     expect(n.x).toBeGreaterThan(t.x + t.width);
     const cut = (el: Locator) =>
@@ -618,29 +633,48 @@ test.describe("the now-playing bar", () => {
         .trim(),
     );
     await expect(nickname).toHaveCSS("color", rgb(muted));
+    await expect(label).toHaveCSS("color", rgb(muted));
 
     // A tap anywhere on it opens the sheet: on the title, then on the
     // singer to close it, then on the arrow.
-    await title.click();
-    await expect(bar).toHaveAttribute("aria-expanded", "true");
-    await expect(bar).toHaveAccessibleName(/Hide queue/);
+    await tap(title);
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveAccessibleName("Hide queue");
     const queue = sheet.getByRole("region", { name: "Queue" });
     await expect(queue).toBeVisible();
-    await nickname.click();
-    await expect(bar).toHaveAttribute("aria-expanded", "false");
+    await tap(nickname);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(queue).toBeHidden();
-    await bar.getByRole("img", { name: "Show queue" }).click();
-    await expect(bar).toHaveAttribute("aria-expanded", "true");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-    // The current row says the same: title, artist, the singer on the
-    // right.
-    const current = queue.getByRole("listitem").first();
-    await expect(current.getByRole("link")).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
-    await expect(current).toContainText(NICKNAME_LONG);
-    await expect(current).not.toContainText("Now playing");
+    // Open, the queue holds only the songs waiting, under "Up next": none.
+    await expect(queue.getByRole("heading", { name: "Up next" })).toBeVisible();
+    await expect(queue.getByText("The queue is empty")).toBeVisible();
+    await expect(queue).not.toContainText("E2E playing song");
+
+    // Open, the title and artist are a link to the song's page, with its
+    // source, beside the toggle rather than in it.
+    const link = sheet.getByRole("link", { name: /^E2E playing song/ });
+    await expect(link).toHaveAttribute("href", "#/search/niconico/sm60002");
+    await expect(link).toContainText("Niconico");
+    await expect(link).toContainText("E2E artist");
+    expect(await link.evaluate((el) => !!el.closest("button"))).toBe(false);
+    // Each reachable by keyboard: the link, then the toggle.
+    await link.focus();
+    await remote.keyboard.press("Tab");
+    await expect(toggle).toBeFocused();
+    // A tap on the singer still folds it.
+    await tap(nickname);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(link).toHaveCount(0);
+    await toggle.click();
+
+    // The link opens the song's page and folds the sheet, so the page
+    // shows.
+    await tap(title);
+    await expect(remote).toHaveURL(/#\/search\/niconico\/sm60002$/);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });
 
@@ -867,11 +901,15 @@ test.describe("an admin's queue", () => {
   test("moves songs, which a guest can't", async ({ remote }) => {
     await remote.getByRole("button", { name: "Show queue" }).click();
     const queue = remote.getByRole("region", { name: "Queue" });
-    // Song 1 starts within 5 seconds and is the accented first row.
-    await expect(queue.locator('[aria-current="true"]')).toContainText(
-      "E2E queue song 1",
-      { timeout: 15_000 },
-    );
+    // Song 1 starts within 5 seconds: it's on the bar, and the queue holds
+    // the other three.
+    await expect(
+      remote
+        .getByRole("region", { name: "Now playing" })
+        .getByRole("link", { name: /^E2E queue song 1/ }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(queue.getByRole("listitem")).toHaveCount(3);
+    await expect(queue.getByText("E2E queue song 1")).toHaveCount(0);
     const song4 = queue.getByRole("button", { name: /E2E queue song 4/ });
 
     // A guest sees who queued it, and nothing to press.
@@ -898,7 +936,6 @@ test.describe("an admin's queue", () => {
     await expect
       .poll(() => rows(remote))
       .toEqual([
-        expect.stringContaining("song 1"),
         expect.stringContaining("song 4"),
         expect.stringContaining("song 2"),
         expect.stringContaining("song 3"),
@@ -999,12 +1036,39 @@ test.describe("a long queue", () => {
     },
   });
 
+  // Opens the sheet once song 1 has started (within 5 seconds): it's on the
+  // bar, and the other eleven wait in the queue.
+  async function openQueue(remote: Page) {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    await expect(
+      remote
+        .getByRole("region", { name: "Now playing" })
+        .getByRole("link", { name: /^E2E long queue song 1\b/ }),
+    ).toBeVisible({ timeout: 15_000 });
+    const queue = remote.getByRole("region", { name: "Queue" });
+    await expect(queue.getByRole("listitem")).toHaveCount(11);
+    return queue;
+  }
+
   test("scrolls in the sheet without moving the screen or the top bar", async ({
     remote,
   }) => {
-    await remote.getByRole("button", { name: "Show queue" }).click();
-    const queue = remote.getByRole("region", { name: "Queue" });
-    await expect(queue.getByRole("listitem")).toHaveCount(12);
+    const queue = await openQueue(remote);
+
+    // The rows sit on the sheet with no fill of their own, and the sheet
+    // isn't the color of the lists on the screen.
+    const sheet = remote.getByRole("region", { name: "Now playing" });
+    const fill = (el: Locator) =>
+      el.evaluate((node) => getComputedStyle(node).backgroundColor);
+    const surface = await remote.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--kf-surface")
+        .trim(),
+    );
+    expect(await fill(queue.getByRole("listitem").first())).toBe(
+      await fill(sheet),
+    );
+    expect(await fill(sheet)).not.toBe(rgb(surface));
 
     const topBar = remote.getByRole("banner");
     const main = remote.getByRole("main");
@@ -1054,9 +1118,7 @@ test.describe("a long queue", () => {
       }
     });
     test.skip(!canTouch, "No Touch constructor");
-    await remote.getByRole("button", { name: "Show queue" }).click();
-    const queue = remote.getByRole("region", { name: "Queue" });
-    await expect(queue.getByRole("listitem")).toHaveCount(12);
+    const queue = await openQueue(remote);
     const row = queue.getByRole("listitem").nth(1);
 
     // The queue at its top: up scrolls it, down would bounce.
@@ -1167,10 +1229,11 @@ test.describe("dragging the queue", () => {
   ) {
     await remote.getByRole("button", { name: "Show queue" }).click();
     const queue = remote.getByRole("region", { name: "Queue" });
-    await expect(queue.locator('[aria-current="true"]')).toContainText(
-      "E2E drag song 1",
-      { timeout: 15_000 },
-    );
+    await expect(
+      remote
+        .getByRole("region", { name: "Now playing" })
+        .getByRole("link", { name: /^E2E drag song 1/ }),
+    ).toBeVisible({ timeout: 15_000 });
     const queued = queue
       .getByRole("listitem")
       .filter({ has: remote.getByRole("button", { name: "Drag to reorder" }) });
@@ -1445,13 +1508,14 @@ test.describe("the lyrics mode", () => {
         "e2e-kana": "kana",
         "e2e-both": "both",
       });
-    // The queue shows each one's mode by its source.
+    // The open sheet shows each one's mode by its source: the one playing
+    // on the bar (its link), the others on their rows in the queue.
     await remote.getByRole("button", { name: "Show queue" }).click();
-    const rows = remote
-      .getByRole("region", { name: "Queue" })
-      .getByRole("listitem");
+    const songs = remote
+      .getByRole("region", { name: "Now playing" })
+      .locator("a, li");
     for (const [mode, label] of Object.entries(LABELS)) {
-      await expect(rows.filter({ hasText: `e2e-${mode}` })).toContainText(
+      await expect(songs.filter({ hasText: `e2e-${mode}` })).toContainText(
         `Joysound · ${label}`,
       );
     }

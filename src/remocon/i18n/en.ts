@@ -93,6 +93,7 @@ export const en = {
   "sheet.showEmotes": "Show emotes",
   "sheet.showControls": "Show playback controls",
   "queue.label": "Queue",
+  "queue.upNext": "Up next",
   "queue.empty": "The queue is empty",
   "queue.queuedBy": "Queued by {nickname}",
   "queue.remove": "Remove from queue",

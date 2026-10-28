@@ -91,16 +91,9 @@ const Initial = ({ name }: { name: string }) => (
   </span>
 );
 
+// The songs waiting, as the sheet's queue shows them.
 const QueueRows = () => (
   <>
-    <ListRow
-      current
-      leading={<Initial name="Ken" />}
-      title={SONGS.marigold.title}
-      subtitle={SONGS.marigold.artist}
-      source={t("source.dam")}
-      onPress={noop}
-    />
     <ListRow
       leading={<Initial name="あやか" />}
       title={SONGS.gurenge.title}
@@ -155,15 +148,27 @@ const DevUiPage = () => {
     { id: "joysound", label: t("source.joysound") },
   ] as const;
 
-  // As the real bar has it (NowPlaying): the artist under the title, the
-  // singer on the right.
+  // As the real bar has it (NowPlaying), folded: the label, the artist
+  // under the title, the singer on the right.
   const nowPlaying = (
-    <>
-      <span className={styles.nowPlaying}>
-        <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
-        <span className={styles.nowArtist}>{SONGS.marigold.artist}</span>
+    <span className={styles.nowPlaying}>
+      <span className={styles.nowLabel}>{t("sheet.nowPlaying")}</span>
+      <span className={styles.nowRow}>
+        <span className={styles.nowSong}>
+          <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
+          <span className={styles.nowArtist}>{SONGS.marigold.artist}</span>
+        </span>
+        <SingerBadge nickname="Ken" />
       </span>
-      <SingerBadge nickname="Ken" />
+    </span>
+  );
+  // The queue as the open sheet shows it.
+  const upNext = (
+    <>
+      <h3 className={styles.upNext}>{t("queue.upNext")}</h3>
+      <List label={t("queue.upNext")}>
+        <QueueRows />
+      </List>
     </>
   );
 
@@ -343,6 +348,14 @@ const DevUiPage = () => {
         <div className={styles.bleed}>
           <Demo state="queue: current, leading and trailing slots">
             <List label={t("queue.label")}>
+              <ListRow
+                current
+                leading={<Initial name="Ken" />}
+                title={SONGS.marigold.title}
+                subtitle={SONGS.marigold.artist}
+                source={t("source.dam")}
+                onPress={noop}
+              />
               <QueueRows />
             </List>
           </Demo>
@@ -477,9 +490,19 @@ const DevUiPage = () => {
               expanded={false}
               onExpandedChange={noop}
             >
-              <List label={t("queue.label")}>
-                <QueueRows />
-              </List>
+              {upNext}
+            </Sheet>
+          </Demo>
+        </div>
+        <div className={styles.bleed}>
+          <Demo state="collapsed, pressed" force="pressed">
+            <Sheet
+              label={t("sheet.nowPlaying")}
+              header={nowPlaying}
+              expanded={false}
+              onExpandedChange={noop}
+            >
+              {upNext}
             </Sheet>
           </Demo>
         </div>
@@ -491,9 +514,7 @@ const DevUiPage = () => {
               expanded={sheetOpen}
               onExpandedChange={setSheetOpen}
             >
-              <List label={t("queue.label")}>
-                <QueueRows />
-              </List>
+              {upNext}
               <div className={styles.controls}>
                 <IconButton label={t("playback.restart")} icon={<MdReplay />} />
                 <IconButton

@@ -1,7 +1,12 @@
 @use "../../tokens" as *;
 
-// The bottom panel. The only element with a shadow.
+// The bottom panel, a layer above the screen: lighter than the lists, with
+// rounded top corners and the only shadow. Inside it, a surface is the
+// sheet itself: its rows have no fill of their own, and a pressed row or
+// button takes the sheet's pressed color.
 .sheet {
+  --kf-surface: #{$kf-panel};
+  --kf-surface-pressed: #{$kf-panel-pressed};
   display: flex;
   flex-direction: column;
   // Of the screen as it shows now: on iOS, vh is the screen with Safari's
@@ -9,56 +14,103 @@
   max-height: 80vh;
   max-height: 80dvh;
   border-top: 1px solid $kf-border;
-  border-radius: $kf-radius $kf-radius 0 0;
+  border-radius: $kf-radius-sheet $kf-radius-sheet 0 0;
   background-color: $kf-panel;
   box-shadow: $kf-shadow-sheet;
 }
 
-// The toggle: the whole header row.
-.header {
+// The bar: the caller's content and the toggle, over the toggle's tap area.
+.bar {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex: none;
   align-items: center;
   gap: $kf-space-2;
-  width: 100%;
   min-height: 56px;
-  margin: 0;
-  padding: $kf-space-1 $kf-space-2 $kf-space-1 $kf-space-4;
-  border: none;
-  border-radius: $kf-radius $kf-radius 0 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  padding: $kf-space-4 $kf-space-2 $kf-space-2 $kf-space-4;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
 
-  @include kf-pressed {
-    background-color: $kf-surface-pressed;
-  }
-
-  @include kf-focus-visible {
-    outline-offset: -2px;
+  // The grab handle, centred at the top. Only a cue: it doesn't drag.
+  &::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    z-index: 1;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background-color: $kf-muted;
+    opacity: 0.5;
+    pointer-events: none;
   }
 }
 
-.headerContent {
+// Above the tap area, and see-through to taps but for its links.
+.barContent {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 1;
   min-width: 0;
+  pointer-events: none;
+
+  a {
+    pointer-events: auto;
+  }
 }
 
-// The cue, where the toggle button was: a 44px square with a 28px icon.
-.arrow {
+// The toggle: a 44px square with a 28px arrow, the cue. Its ::after is its
+// tap area, the whole bar, under the content; it shows the pressed state
+// and the focus ring.
+.toggle {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   width: $kf-tap;
   height: $kf-tap;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
   font-size: $kf-text-icon;
+  cursor: pointer;
+  touch-action: manipulation;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: $kf-radius-sheet $kf-radius-sheet 0 0;
+  }
+
+  @include kf-pressed {
+    &::after {
+      background-color: $kf-surface-pressed;
+    }
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  &:focus-visible::after,
+  [data-demo="focus"] &::after {
+    @include kf-focus-ring;
+    outline-offset: -2px;
+  }
+}
+
+.arrow {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
 }
 
 // A column the sheet's height limits: what scrolls inside it (the queue)
