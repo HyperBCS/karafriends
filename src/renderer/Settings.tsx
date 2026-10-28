@@ -742,6 +742,11 @@ export default function Settings(props: {
           id={panelId}
           aria-labelledby={tabId(props.tab)}
         >
+          {loaded.loadProblem ? (
+            <p className="settingsBanner settingsMessage problem" role="alert">
+              {loaded.loadProblem}
+            </p>
+          ) : null}
           {props.tab === "accounts" ? (
             <>
               {loaded.isFirstRun ? (

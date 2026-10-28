@@ -87,6 +87,29 @@ describe("configFromFile", () => {
     assert.equal(config.adminPasswordSalt, "");
     assert.match(problems[0], /adminPasswordSalt .* must be text in quotes/);
   });
+
+  test("takes a text setting's digits from the file's text", () => {
+    const text = "adminPasswordSalt: 0012345678\nadminPasswordHash: abcdef\n";
+    const { config, problems } = configFromFile(
+      parse(text),
+      parse(text, { schema: "failsafe" }),
+    );
+    assert.deepEqual(problems, []);
+    assert.equal(config.adminPasswordSalt, "0012345678");
+    assert.equal(config.adminPasswordHash, "abcdef");
+  });
+
+  test("resets a value of the wrong type, and says so without the value", () => {
+    const { config, problems } = configFromFile({
+      everyoneIsAdmin: "maybe",
+      damPassword: ["secret"],
+    });
+    assert.equal(config.everyoneIsAdmin, false);
+    assert.equal(config.damPassword, "");
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /everyoneIsAdmin must be true or false/);
+    assert.doesNotMatch(problems.join(), /secret|maybe/);
+  });
 });
 
 describe("configProblems", () => {

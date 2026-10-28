@@ -57,7 +57,7 @@ const SERVICE_NAMES: Record<LoginService, string> = {
 };
 
 export interface SettingsDeps {
-  store: Pick<ConfigStore, "saved" | "atLaunch" | "update">;
+  store: Pick<ConfigStore, "saved" | "atLaunch" | "update" | "loadProblem">;
   // services.ts's: sets the hash and salt, and signs every phone out.
   setAdminPassword(password: string): void;
   // A fresh login, not the clients' shared one. Resolves on success.
@@ -177,6 +177,7 @@ export function createSettingsHandlers(
         },
         isFirstRun: !hasLogin(saved, "dam") && !hasLogin(saved, "joysound"),
         needsRestart: needsRestart(),
+        loadProblem: store.loadProblem,
       };
     },
 

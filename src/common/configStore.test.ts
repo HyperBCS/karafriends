@@ -59,6 +59,38 @@ describe("createConfigStore at launch", () => {
     // Not overwritten at launch, and copied for when a setting changes.
     assert.equal(fs.readFileSync(filePath, "utf8"), broken);
     assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), broken);
+    // The settings screen says so: which line, and where the copy is.
+    assert.match(
+      store.loadProblem ?? "",
+      /couldn't be read \(line 1 isn't valid YAML\)/,
+    );
+    assert.ok(store.loadProblem?.includes(`${filePath}.broken`));
+    // A save writes config.yaml; the copy stays.
+    store.update({ damUsername: "you" });
+    assert.equal(fs.readFileSync(`${filePath}.broken`, "utf8"), broken);
+  });
+
+  test("a readable file has no load problem", () => {
+    fs.writeFileSync(filePath, "damUsername: me\n");
+    assert.equal(open().loadProblem, null);
+  });
+
+  test("a duplicated key isn't fatal: the last one wins, with a warning", (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    fs.writeFileSync(
+      filePath,
+      "damUsername: me\nsupervisedMode: false\njoysoundEmail: j@example.jp\n" +
+        "supervisedMode: true\n",
+    );
+    const store = open();
+    assert.equal(store.loadProblem, null);
+    assert.equal(store.get().supervisedMode, true);
+    assert.equal(store.get().joysoundEmail, "j@example.jp");
+    assert.equal(fs.existsSync(`${filePath}.broken`), false);
+    assert.match(
+      warned.mock.calls.map((call) => String(call.arguments[0])).join("\n"),
+      /supervisedMode is in config.yaml twice/,
+    );
   });
 
   test("sets aside a file that isn't a list of settings too", () => {
@@ -71,11 +103,64 @@ describe("createConfigStore at launch", () => {
     }
   });
 
-  test("an empty file is the defaults, written back", () => {
-    fs.writeFileSync(filePath, "");
-    assert.deepEqual(open().get(), DEFAULT_CONFIG);
-    assert.deepEqual(onDisk(), DEFAULT_CONFIG);
-    assert.equal(fs.existsSync(`${filePath}.broken`), false);
+  test("an empty or zeroed file (cut short) is the defaults, and says so", () => {
+    for (const text of ["", "\0\0\0\0", "\n  \n"]) {
+      fs.writeFileSync(filePath, text);
+      const store = open();
+      assert.deepEqual(store.get(), DEFAULT_CONFIG);
+      assert.match(store.loadProblem ?? "", /config.yaml was empty/);
+      // Nothing in it to keep.
+      assert.deepEqual(onDisk(), DEFAULT_CONFIG);
+      assert.equal(fs.existsSync(`${filePath}.broken`), false);
+    }
+  });
+
+  test("a file of comments only is a valid empty file", () => {
+    fs.writeFileSync(filePath, "# my settings\n");
+    const store = open();
+    assert.equal(store.loadProblem, null);
+    assert.deepEqual(store.get(), DEFAULT_CONFIG);
+  });
+
+  test("checks the values: YAML 1.1 words, digit-only text, bad values", (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    fs.writeFileSync(
+      filePath,
+      "damUsername: 0042\ndamPassword: 01234567\njoysoundPassword: 123456789012345678901\n" +
+        "supervisedMode: no\neveryoneIsAdmin: off\nuseLowBitrateUrl: Yes\n" +
+        "paxSongQueueLimit: lots\nremoconPort: 99999\njoysoundEmail:\n" +
+        "damUserName: typo\n",
+    );
+    const store = open();
+    const config = store.get();
+    // Text keeps its digits.
+    assert.equal(config.damUsername, "0042");
+    assert.equal(config.damPassword, "01234567");
+    assert.equal(config.joysoundPassword, "123456789012345678901");
+    assert.equal(config.joysoundEmail, "");
+    // off and no are false, not a truthy string.
+    assert.equal(config.supervisedMode, false);
+    assert.equal(config.everyoneIsAdmin, false);
+    assert.equal(config.useLowBitrateUrl, true);
+    // A value that can't be read is the default, with a warning.
+    assert.equal(config.paxSongQueueLimit, 1);
+    assert.equal(config.remoconPort, 8080);
+    const warnings = warned.mock.calls
+      .map((call) => String(call.arguments[0]))
+      .join("\n");
+    assert.match(warnings, /paxSongQueueLimit .*using 1/);
+    assert.match(warnings, /remoconPort .*using 8080/);
+    assert.match(warnings, /damUserName in config.yaml isn't a setting/);
+    // The write-back keeps the text as text.
+    assert.equal(onDisk().damPassword, "01234567");
+    assert.equal(onDisk().everyoneIsAdmin, false);
+  });
+
+  test("doesn't write config.yaml back when it lists every setting already", (t) => {
+    open();
+    const renamed = t.mock.method(fs, "renameSync");
+    open();
+    assert.equal(renamed.mock.callCount(), 0);
   });
 
   test("logs a parse error's line number, never the line", (t) => {
@@ -108,6 +193,25 @@ describe("createConfigStore at launch", () => {
 });
 
 describe("ConfigStore.update", () => {
+  test("flushes the temp file to disk before renaming it into place", (t) => {
+    const store = open();
+    const calls: string[] = [];
+    const fsync = fs.fsyncSync;
+    const rename = fs.renameSync;
+    t.mock.method(fs, "fsyncSync", (fd: number) => {
+      calls.push("fsync");
+      return fsync(fd);
+    });
+    t.mock.method(fs, "renameSync", (from: string, to: string) => {
+      calls.push("rename");
+      return rename(from, to);
+    });
+    store.update({ damUsername: "me" });
+    assert.equal(calls.indexOf("fsync") >= 0, true);
+    assert.ok(calls.indexOf("fsync") < calls.indexOf("rename"), calls.join());
+    assert.equal(onDisk().damUsername, "me");
+  });
+
   test("writes the file, changes the running config in place and tells listeners", () => {
     const store = open();
     const running = store.get();

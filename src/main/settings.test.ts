@@ -121,6 +121,18 @@ describe("getSettings", () => {
     assert.equal((await api.getSettings({}, display)).isFirstRun, false);
   });
 
+  test("says when config.yaml couldn't be read at launch", async (t) => {
+    t.mock.method(console, "error", () => {});
+    assert.equal(
+      (await setup().api.getSettings({}, display)).loadProblem,
+      null,
+    );
+    fs.writeFileSync(path.join(dir, "broken.yaml"), "damUsername: [\n");
+    const { api } = setup({ name: "broken.yaml" });
+    const { loadProblem } = await api.getSettings({}, display);
+    assert.match(loadProblem ?? "", /broken\.yaml\.broken/);
+  });
+
   test("needsRestart once the port changed", async () => {
     const { api } = setup();
     assert.deepEqual(

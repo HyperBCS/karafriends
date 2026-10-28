@@ -4,8 +4,7 @@
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import fs from "fs";
-import path from "path";
-import { parse, stringify, YAMLParseError } from "yaml";
+import { isMap, isScalar, parse, parseDocument, stringify } from "yaml";
 
 import {
   configFromFile,
@@ -14,6 +13,7 @@ import {
   type ConfigKey,
   type KarafriendsConfig,
 } from "./configSchema";
+import { writeFileAtomic } from "./writeFileAtomic";
 
 export interface ConfigStore {
   // The running config: config.yaml's values with the environment's
@@ -24,6 +24,9 @@ export interface ConfigStore {
   saved(): KarafriendsConfig;
   // What config.yaml held when the app started.
   readonly atLaunch: Readonly<KarafriendsConfig>;
+  // Why config.yaml couldn't be read at launch, so the defaults are in use,
+  // in a sentence for the host; null if it was read (or there was none).
+  readonly loadProblem: string | null;
   // Changes some settings in config.yaml (written through a temp file) and
   // in the running config, then calls the listeners with the keys whose
   // value changed. Throws, changing nothing, if a value is the wrong type or
@@ -33,80 +36,147 @@ export interface ConfigStore {
   onChange(listener: (change: { keys: ConfigKey[] }) => void): () => void;
 }
 
-// Writes config to filePath through a temp file, so an interrupted write
-// can't leave half a file.
+// Writes config to filePath through a flushed temp file, so an interrupted
+// write or a power cut can't leave half a file.
 function writeConfigFile(filePath: string, config: KarafriendsConfig) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.tmp`;
-  fs.writeFileSync(tmpPath, stringify(config));
-  fs.renameSync(tmpPath, filePath);
+  writeFileAtomic(filePath, stringify(config));
+}
+
+// Why a file can't be read as settings. Not the parser's message: it quotes
+// the line, which may hold a password.
+class UnreadableConfig extends Error {}
+
+// config.yaml read as settings: the values YAML gives, and every value as
+// text (see configFromFile). A key given twice isn't fatal, though YAML
+// says it is: the last one wins, and a warning says so. That's the likeliest
+// hand-edit mistake (a line added, the old one left in).
+function readSettings(text: string): {
+  parsed: object | null;
+  asText: Record<string, unknown> | null;
+} {
+  // No warnings: the parser prints them with the line they're about, which
+  // may hold a password.
+  const options = { logLevel: "error", uniqueKeys: false } as const;
+  const doc = parseDocument(text, options);
+  if (doc.errors.length > 0) {
+    const line = doc.errors[0].linePos?.[0]?.line;
+    throw new UnreadableConfig(`line ${line ?? "?"} isn't valid YAML`);
+  }
+  const parsed: unknown = doc.toJS();
+  // A file of comments only parses as null.
+  if (parsed != null && (typeof parsed !== "object" || Array.isArray(parsed))) {
+    throw new UnreadableConfig("it isn't a list of settings");
+  }
+  if (isMap(doc.contents)) {
+    const seen = new Set<unknown>();
+    for (const { key } of doc.contents.items) {
+      const name = isScalar(key) ? key.value : key;
+      if (seen.has(name)) {
+        console.warn(
+          `${String(name)} is in config.yaml twice; using the last one`,
+        );
+      }
+      seen.add(name);
+    }
+  }
+  const asText: unknown = parse(text, { ...options, schema: "failsafe" });
+  return {
+    parsed: parsed as object | null,
+    asText:
+      asText && typeof asText === "object"
+        ? (asText as Record<string, unknown>)
+        : null,
+  };
 }
 
 // The saved config at launch: the file's values over the defaults, written
-// back so the file lists every setting.
-function loadAtLaunch(filePath: string): KarafriendsConfig {
+// back so the file lists every setting. And why the file couldn't be read,
+// if it couldn't.
+function loadAtLaunch(filePath: string): {
+  config: KarafriendsConfig;
+  loadProblem: string | null;
+} {
   console.log(`Checking ${filePath} for configs`);
   let config: KarafriendsConfig = { ...DEFAULT_CONFIG };
+  let loadProblem: string | null = null;
+  let text: string | null = null;
   if (fs.existsSync(filePath)) {
     try {
-      // No warnings: the parser prints them with the line they're about,
-      // which may hold a password.
-      const parsed: unknown = parse(
-        fs.readFileSync(filePath, { encoding: "utf8" }),
-        { logLevel: "error" },
-      );
-      // An empty file parses as null.
-      if (
-        parsed != null &&
-        (typeof parsed !== "object" || Array.isArray(parsed))
-      ) {
-        throw new Error("it isn't a list of settings");
-      }
-      const result = configFromFile(parsed as object | null);
+      text = fs.readFileSync(filePath, { encoding: "utf8" });
+    } catch (err) {
+      console.error(`Failed to read ${filePath}:`, err);
+      return {
+        config,
+        loadProblem:
+          `config.yaml couldn't be read (${(err as Error).message}), so ` +
+          "karafriends started with the default settings.",
+      };
+    }
+  }
+
+  if (text !== null && /^[\s\0]*$/.test(text)) {
+    // Empty, or zeros: karafriends never writes that, so the file was cut
+    // short (a power cut as it was saved, say). Nothing in it to keep.
+    loadProblem =
+      "config.yaml was empty, so karafriends started with the default " +
+      "settings. If you had settings, enter them again, or use Import " +
+      "config with a file from Export config.";
+    console.error(`${filePath} was empty; using the defaults.`);
+  } else if (text !== null) {
+    try {
+      const { parsed, asText } = readSettings(text);
+      const result = configFromFile(parsed, asText);
       for (const problem of result.problems) console.warn(problem);
       config = result.config;
     } catch (err) {
       // config.yaml is often hand-edited, so a YAML typo (or a file that
-      // isn't settings at all) must not crash the app. Use the defaults for this session, and keep a copy of the file:
-      // a change on the settings screen writes config.yaml, and the copy
-      // keeps the logins in it.
+      // isn't settings at all) must not crash the app. Use the defaults
+      // for this session, and keep a copy of the file: a change on the
+      // settings screen writes config.yaml, and the copy keeps the logins
+      // in it.
       const copy = `${filePath}.broken`;
       try {
         fs.copyFileSync(filePath, copy);
       } catch (copyErr) {
         console.error(`Failed to copy ${filePath} to ${copy}:`, copyErr);
       }
-      // Not the parser's message: it quotes the line, which may hold a
-      // password.
       const why =
-        err instanceof YAMLParseError
-          ? `line ${err.linePos?.[0]?.line ?? "?"} isn't valid YAML`
-          : (err as Error).message;
+        err instanceof UnreadableConfig ? err.message : "it couldn't be read";
       console.error(
         `Failed to parse ${filePath} (${why}); using defaults for this ` +
           `session. A copy is in ${copy}. Fix the YAML and relaunch to ` +
           "restore your settings.",
       );
-      return config;
+      return {
+        config,
+        loadProblem:
+          `config.yaml couldn't be read (${why}), so karafriends started ` +
+          `with the default settings. Your settings are still in ${copy}: ` +
+          "fix that line in config.yaml and restart karafriends. Saving a " +
+          "setting here writes a new config.yaml; the copy stays.",
+      };
     }
   }
 
   // Write back the defaults for any new settings, without the obsolete
-  // ones. Best-effort, so an unwritable userData folder doesn't stop the
-  // app.
-  try {
-    writeConfigFile(filePath, config);
-  } catch (err) {
-    console.error(`Failed to write config to ${filePath}:`, err);
+  // ones, unless the file has them all already. Best-effort, so an
+  // unwritable userData folder doesn't stop the app.
+  if (text !== stringify(config)) {
+    try {
+      writeConfigFile(filePath, config);
+    } catch (err) {
+      console.error(`Failed to write config to ${filePath}:`, err);
+    }
   }
-  return config;
+  return { config, loadProblem };
 }
 
 export function createConfigStore(
   filePath: string,
   env: Record<string, string | undefined> = {},
 ): ConfigStore {
-  let saved = loadAtLaunch(filePath);
+  const launch = loadAtLaunch(filePath);
+  let saved = launch.config;
   const atLaunch: Readonly<KarafriendsConfig> = Object.freeze({ ...saved });
   // The environment's overrides, which the file never gets.
   const overrides: Partial<KarafriendsConfig> = {};
@@ -120,6 +190,7 @@ export function createConfigStore(
     get: () => live,
     saved: () => ({ ...saved }),
     atLaunch,
+    loadProblem: launch.loadProblem,
 
     update(values) {
       const problems = configProblems(values);
