@@ -49,7 +49,7 @@ export class InputDevice {
 
   // Reopens the mic when its stream stopped. One that won't reopen (a mic
   // unplugged, a TV asleep) is tried again every time, until it is back.
-  private check() {
+  check() {
     const status = this.status();
     if (working(status)) return;
     this.close();

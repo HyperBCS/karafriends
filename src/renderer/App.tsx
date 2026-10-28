@@ -208,7 +208,8 @@ function App(props: {
   });
 
   // Kept only once it opened (or fell back to the default), so a choice
-  // that fails can't break the next launch.
+  // that fails can't break the next launch. Mics that went down with the
+  // old output reopen on the new one at once.
   const changeMicOutput = (name: string | null) => {
     try {
       setOutputDevice(name);
@@ -216,6 +217,7 @@ function App(props: {
       console.error(`Couldn't switch the mic output to ${name}:`, err);
       return;
     }
+    for (const mic of mics.filter((m) => m.error)) mic.check();
     if (name === null) localStorage.removeItem(MIC_OUTPUT_KEY);
     else localStorage.setItem(MIC_OUTPUT_KEY, name);
     setMicOutput(name);
