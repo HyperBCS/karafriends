@@ -10,7 +10,10 @@
 // each with up to 64 channels, so only the system default and each card's
 // own devices are kept.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -36,11 +39,54 @@ const HOST_VARIABLE: &str = "KARAFRIENDS_AUDIO_HOST";
 #[cfg(feature = "pipewire")]
 const PIPEWIRE_MIN: (u32, u32, u32) = (0, 3, 50);
 
+// How long a sound system, once picked, is used again, along with its
+// devices (cpal lists them as the host starts) and PipeWire's node classes.
+// Long enough that a Settings open (the outputs, the sound system, the
+// mics) or mics opening one after another ask the sound system once, not
+// five times, on the display's thread. Short enough that the next listing,
+// and every 2-second retry of a mic that is down, sees a device plugged in
+// since.
+const FRESH: Duration = Duration::from_secs(1);
+
+struct Picked {
+    host: Rc<cpal::Host>,
+    why: Option<String>,
+    // None until a listing asks for them; Some(None) if PipeWire didn't
+    // answer.
+    classes: Option<Option<Rc<HashMap<String, String>>>>,
+    at: Instant,
+}
+
+thread_local! {
+    // Native calls come from the display's JS thread.
+    static PICKED: RefCell<Option<Picked>> = const { RefCell::new(None) };
+}
+
 // The sound system the mics use, and why it isn't the usual one if it
-// isn't: KARAFRIENDS_AUDIO_HOST's when it is set and starts; else PipeWire,
-// when it runs and its library is new enough; else PulseAudio
-// (pipewire-pulse counts); else ALSA.
-pub(crate) fn system_host() -> Result<(cpal::Host, Option<String>)> {
+// isn't (see pick_host). The one picked within the last second, if any.
+pub(crate) fn system_host() -> Result<(Rc<cpal::Host>, Option<String>)> {
+    PICKED.with_borrow_mut(|picked| {
+        if let Some(picked) = picked.as_ref().filter(|p| p.at.elapsed() < FRESH) {
+            return Ok((picked.host.clone(), picked.why.clone()));
+        }
+        // The old one goes before a new one starts.
+        *picked = None;
+        let (host, why) = pick_host()?;
+        let host = Rc::new(host);
+        *picked = Some(Picked {
+            host: host.clone(),
+            why: why.clone(),
+            classes: None,
+            at: Instant::now(),
+        });
+        Ok((host, why))
+    })
+}
+
+// KARAFRIENDS_AUDIO_HOST's when it is set and starts; else PipeWire, when
+// it runs and its library is new enough; else PulseAudio (pipewire-pulse
+// counts); else ALSA.
+fn pick_host() -> Result<(cpal::Host, Option<String>)> {
     let mut why = None;
     if let Ok(name) = std::env::var(HOST_VARIABLE) {
         match chosen_host(&name) {
@@ -153,7 +199,7 @@ const PIPEWIRE_DEFAULT_OUTPUTS: [&str; 2] = ["output_default", "sink_default"];
 pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
     let devices: Vec<_> = host.input_devices()?.collect();
     Ok(match host.id().name() {
-        "PipeWire" => pipewire_devices(devices, Wanted::Mic),
+        "PipeWire" => pipewire_devices(host, devices, Wanted::Mic),
         "PulseAudio" => devices
             .into_iter()
             .filter(|device| keep_pulse_input(&node(device)))
@@ -169,7 +215,7 @@ pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
 pub(crate) fn output_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
     let devices: Vec<_> = host.output_devices()?.collect();
     Ok(match host.id().name() {
-        "PipeWire" => pipewire_devices(devices, Wanted::Output),
+        "PipeWire" => pipewire_devices(host, devices, Wanted::Output),
         "ALSA" => alsa_devices(devices, ALSA_OUTPUTS),
         _ => devices,
     })
@@ -182,9 +228,13 @@ enum Wanted {
     Output,
 }
 
-// The PipeWire devices keep_pipewire keeps.
-fn pipewire_devices(devices: Vec<cpal::Device>, wanted: Wanted) -> Vec<cpal::Device> {
-    let classes = pipewire_classes();
+// The PipeWire devices of `host` keep_pipewire keeps.
+fn pipewire_devices(
+    host: &cpal::Host,
+    devices: Vec<cpal::Device>,
+    wanted: Wanted,
+) -> Vec<cpal::Device> {
+    let classes = classes_for(host);
     devices
         .into_iter()
         .filter(|device| {
@@ -192,7 +242,7 @@ fn pipewire_devices(devices: Vec<cpal::Device>, wanted: Wanted) -> Vec<cpal::Dev
             keep_pipewire(
                 wanted,
                 &node(device),
-                classes.as_ref(),
+                classes.as_deref(),
                 description.as_ref().map(|d| d.direction()),
                 description.is_some_and(|d| d.driver().is_some()),
             )
@@ -237,6 +287,28 @@ fn keep_pipewire(
 // they play).
 fn keep_pulse_input(node: &str) -> bool {
     !node.ends_with(".monitor")
+}
+
+// PipeWire's node classes, asked once per host system_host picked (and
+// fresh for any other host).
+fn classes_for(host: &cpal::Host) -> Option<Rc<HashMap<String, String>>> {
+    let is_picked = |picked: &Picked| std::ptr::eq(&*picked.host, host);
+    let asked = PICKED.with_borrow(|picked| {
+        picked
+            .as_ref()
+            .filter(|p| is_picked(p))
+            .and_then(|p| p.classes.clone())
+    });
+    if let Some(classes) = asked {
+        return classes;
+    }
+    let classes = pipewire_classes().map(Rc::new);
+    PICKED.with_borrow_mut(|picked| {
+        if let Some(picked) = picked.as_mut().filter(|p| is_picked(p)) {
+            picked.classes = Some(classes.clone());
+        }
+    });
+    classes
 }
 
 // Each node's media class, by node name: mics are "Audio/Source", outputs
@@ -504,6 +576,26 @@ mod tests {
         .iter()
         .map(|(node, class)| (node.to_string(), class.to_string()))
         .collect()
+    }
+
+    // Lists only; no device opens.
+    #[test]
+    fn test_system_host_is_shared_for_a_second() {
+        let (first, _) = system_host().unwrap();
+        let (again, _) = system_host().unwrap();
+        assert!(Rc::ptr_eq(&first, &again));
+        let _ = input_devices(&again);
+        let _ = output_devices(&again);
+        if first.id().name() == "PipeWire" {
+            // Asked once for both listings.
+            assert!(PICKED.with_borrow(|p| p.as_ref().unwrap().classes.is_some()));
+        }
+        PICKED.with_borrow_mut(|p| {
+            let p = p.as_mut().unwrap();
+            p.at = p.at.checked_sub(FRESH).unwrap_or(p.at);
+        });
+        let (later, _) = system_host().unwrap();
+        assert!(!Rc::ptr_eq(&first, &later));
     }
 
     #[test]

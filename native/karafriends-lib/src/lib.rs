@@ -136,12 +136,12 @@ pub fn linux_audio() -> Option<LinuxAudio> {
 }
 
 // The platform's own host: WASAPI, CoreAudio, or on Linux the sound system
-// linux.rs picks (PipeWire, PulseAudio or ALSA).
-fn system_host() -> Result<cpal::Host> {
+// linux.rs picks (PipeWire, PulseAudio or ALSA), shared for a second.
+fn system_host() -> Result<std::rc::Rc<cpal::Host>> {
     #[cfg(target_os = "linux")]
     return Ok(linux::system_host()?.0);
     #[cfg(not(target_os = "linux"))]
-    Ok(cpal::default_host())
+    Ok(std::rc::Rc::new(cpal::default_host()))
 }
 
 pub fn exclusive_available() -> bool {
