@@ -17,6 +17,7 @@ import {
   MicOutputSetting,
   MicrophoneSetting,
   type MicLevels,
+  useTick,
 } from "./MicrophoneSetting";
 import {
   asioStatus,
@@ -28,6 +29,7 @@ import {
   refreshInputDevices,
 } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
+import type { OutputPlace } from "./songOutput";
 import type { SongOutput } from "./webAudio";
 import "./Settings.css";
 
@@ -353,32 +355,38 @@ function DownloadsSection() {
 }
 
 // Where the songs play: the system default, or an output as Chromium lists
-// it. A saved one that isn't connected shows as such.
+// it, listed again as devices come and go. A saved one that isn't
+// connected shows as such.
 function SongOutputSetting(props: {
   output: SongOutput | null;
   onChange: (output: SongOutput | null) => void;
 }) {
   const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then(
-      (devices) =>
-        setOutputs(
-          devices
-            // "default" and "communications" are the system's choices:
-            // System default stands for them.
-            .filter(
-              ({ kind, deviceId }) =>
-                kind === "audiooutput" &&
-                deviceId !== "default" &&
-                deviceId !== "communications",
-            )
-            .map(({ deviceId, label }) => ({
-              id: deviceId,
-              label: label || "Unnamed output",
-            })),
-        ),
-      () => setOutputs([]),
-    );
+    const list = () =>
+      navigator.mediaDevices.enumerateDevices().then(
+        (devices) =>
+          setOutputs(
+            devices
+              // "default" and "communications" are the system's choices:
+              // System default stands for them.
+              .filter(
+                ({ kind, deviceId }) =>
+                  kind === "audiooutput" &&
+                  deviceId !== "default" &&
+                  deviceId !== "communications",
+              )
+              .map(({ deviceId, label }) => ({
+                id: deviceId,
+                label: label || "Unnamed output",
+              })),
+          ),
+        () => setOutputs([]),
+      );
+    list();
+    navigator.mediaDevices.addEventListener("devicechange", list);
+    return () =>
+      navigator.mediaDevices.removeEventListener("devicechange", list);
   }, []);
   const { output } = props;
   const missing =
@@ -410,6 +418,27 @@ function SongOutputSetting(props: {
         ))}
       </select>
     </label>
+  );
+}
+
+// Where the songs play while it isn't the chosen output: looked at again
+// every tick, as the output can go and come back while Settings is open.
+function SongOutputPlace(props: {
+  output: SongOutput | null;
+  place: () => OutputPlace;
+}) {
+  useTick();
+  const place = props.place();
+  const name = props.output?.label ?? "System default";
+  if (place === "chosen" || (place === "default" && !props.output)) {
+    return null;
+  }
+  return (
+    <p className="settingsHint" role="status">
+      {place === "silent"
+        ? `${name} went away: the songs play silently until it's back.`
+        : `The songs play on System default until ${name} is connected.`}
+    </p>
   );
 }
 
@@ -453,6 +482,8 @@ export default function Settings(props: {
   onMicModeChange: (mode: MicMode) => void;
   songOutput: SongOutput | null;
   onSongOutputChange: (output: SongOutput | null) => void;
+  // Where the songs play now (see songOutput.ts).
+  songOutputPlace: () => OutputPlace;
   avOffsetMs: number;
   onAvOffsetChange: (offsetMs: number) => void;
   uiScale: number;
@@ -912,6 +943,10 @@ export default function Settings(props: {
                     </select>
                   </label>
                 </div>
+                <SongOutputPlace
+                  output={props.songOutput}
+                  place={props.songOutputPlace}
+                />
                 <Hint>
                   Plus delays the sound, minus delays the lyrics. Output
                   latency: {props.audioLatencyMs} ms.

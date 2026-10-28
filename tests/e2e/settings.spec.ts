@@ -249,8 +249,17 @@ test("the songs' output can be picked; a saved one that isn't connected says so"
   await expect(output.locator("option:checked")).toHaveText(
     "E2E Gone (not connected)",
   );
+  // Kept, to be used once it's listed, and said where the songs play
+  // meanwhile.
+  const sound = display.getByRole("region", { name: "Sound", exact: true });
+  await expect(
+    sound.getByText(
+      "The songs play on System default until E2E Gone is connected.",
+    ),
+  ).toBeVisible();
   await output.selectOption("System default");
   await expect(output).toHaveValue("");
+  await expect(sound.getByText(/until E2E Gone/)).toHaveCount(0);
   await expect
     .poll(() => display.evaluate(() => localStorage.getItem("songOutput")))
     .toBeNull();

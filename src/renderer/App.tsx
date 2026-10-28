@@ -486,6 +486,7 @@ function App(props: {
             onMicModeChange={changeMicMode}
             songOutput={songOutput}
             onSongOutputChange={changeSongOutput}
+            songOutputPlace={() => props.audio.outputPlace()}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}
