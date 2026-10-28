@@ -2,6 +2,8 @@
 
 The product round ([`PLAN-product.md`](PLAN-product.md)) is merged. The user then tried the remote on an iPhone in Safari and found it wanting. This round fixes what they saw and adds the two features they asked for alongside it.
 
+> **Next round:** the polish list is in [`PLAN-polish.md`](PLAN-polish.md); it starts once the M5 fixes merge.
+
 ## Status (keep this table current; it is how any session picks up where things stand)
 
 | Step                                                          | State                          | Branch / commit                                                                              | Notes                                                                                                                                                                                                                                                                                                                                   |
