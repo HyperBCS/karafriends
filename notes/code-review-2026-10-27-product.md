@@ -91,4 +91,4 @@ Simplicity: `useSongPlayer` builds a `setGuideMelodyLevel` mutation it never cal
 
 Fix plan: two sessions. **Remote** (`src/remocon/**`, `src/common/hooks/useQueue.ts`, `tests/e2e/remote.spec.ts`, `screenshots.spec.ts`): #2 to #10, the remote simplicity cuts, the lyrics-mode label. **Server and display** (`src/main/**`, `src/renderer/**`, their tests, `tests/e2e/api.spec.ts`, `display.spec.ts`): #1, #11, #12, #13, the display simplicity cuts.
 
-Status: fixes in progress.
+Status: all 13 fixed and merged on 2026-10-28 (server and display `0a34e23`, remote `c178ce4`). The key-0 loudness was measured before and after: within 0.5 dB of the shifted keys now, 8.5 dB louder and clipping before. Left for the iPhone check: the touchmove bounce guard on a real iOS 15 device, the 44px slider thumb with a finger, and whether Safari fires `change` on touchend.
