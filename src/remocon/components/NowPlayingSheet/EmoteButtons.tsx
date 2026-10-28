@@ -5,6 +5,7 @@ import { getItem, setItem } from "../../../common/storage";
 import { t } from "../../i18n";
 import { MdEdit } from "../../icons";
 import { IconButton } from "../ui";
+import { emojisIn } from "./emotes";
 import * as styles from "./NowPlayingSheet.module.scss";
 
 const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
@@ -56,11 +57,10 @@ const EmoteButtons = () => {
   const editEmotes = () => {
     const input =
       prompt(t("emotes.prompt"), emotes.join("")) || emotes.join("");
-    const emojis =
-      input.match(/\p{Emoji_Presentation}|\p{Emoji}️/gu) || DEFAULT_EMOTES;
-    const uniqueEmojis = [...new Set(emojis)];
-    setItem(EMOTES_KEY, JSON.stringify(uniqueEmojis));
-    setEmotes(uniqueEmojis);
+    const found = emojisIn(input);
+    const next = found.length > 0 ? found : DEFAULT_EMOTES;
+    setItem(EMOTES_KEY, JSON.stringify(next));
+    setEmotes(next);
   };
 
   return (
