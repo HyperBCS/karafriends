@@ -28,14 +28,12 @@
   @include kf-focus-visible;
 }
 
+// One line (a Marquee inside).
 .title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   font-size: $kf-text-control;
   font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 // Without a back button, the title lines up with the content below.

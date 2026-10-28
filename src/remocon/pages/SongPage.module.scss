@@ -15,11 +15,11 @@
   gap: $kf-space-1;
 }
 
+// The song's or the artist's name: one line (a Marquee inside).
 .title {
   font-size: 24px;
   font-weight: 700;
   line-height: 1.25;
-  overflow-wrap: anywhere;
 }
 
 .reading,

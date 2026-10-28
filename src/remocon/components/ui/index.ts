@@ -7,6 +7,7 @@ export { EmptyState } from "./EmptyState";
 export { InlineError } from "./InlineError";
 export { List, ListRow } from "./ListRow";
 export type { ListRowProps } from "./ListRow";
+export { Marquee } from "./Marquee";
 export { SegmentedControl } from "./SegmentedControl";
 export { Sheet } from "./Sheet";
 export { TextField } from "./TextField";

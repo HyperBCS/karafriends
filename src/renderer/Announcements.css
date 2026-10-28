@@ -23,6 +23,8 @@
   border-radius: var(--kf-radius);
   background-color: var(--kf-surface);
   font-size: var(--kf-text-body);
+  /* A long artist starts sliding sooner: the card is up for 4 seconds. */
+  --kf-marquee-delay: 0s;
 }
 
 .announcement > * {
@@ -49,12 +51,14 @@
   color: var(--kf-danger);
 }
 
-/* A long title wraps here instead of ending in an ellipsis. */
+/* A long title wraps here, so it all shows at once and never needs to
+   slide: the card is up for too short a time to read a sliding one. */
 .announcement .songTitle {
   font-size: var(--kf-text-heading);
   font-weight: 700;
   line-height: 1.2;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .announcement .songSinger {

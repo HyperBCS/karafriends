@@ -4,7 +4,7 @@ import { useParams } from "react-router";
 import { usePagedApiQuery } from "../../common/apiQueries";
 import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
-import { List, ListRow } from "../components/ui";
+import { List, ListRow, Marquee } from "../components/ui";
 import WithReading from "../components/WithReading";
 import { t } from "../i18n";
 import * as styles from "./SongPage.module.scss";
@@ -54,7 +54,9 @@ const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
       <div className={styles.page}>
         <div className={styles.about}>
           <h2 className={styles.title}>
-            <WithReading text={name} yomi={nameYomi} />
+            <Marquee>
+              <WithReading text={name} yomi={nameYomi} />
+            </Marquee>
           </h2>
           <p className={styles.source}>
             {source}
