@@ -301,9 +301,7 @@ impl Capture {
             Ok(mmcss) => Some(mmcss),
             Err(e) => {
                 eprintln!("The exclusive mic thread isn't real-time: {e}");
-                *realtime
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e);
+                *crate::lock(realtime) = Some(e);
                 None
             }
         };

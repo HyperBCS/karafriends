@@ -662,9 +662,7 @@ impl Levels {
 }
 
 pub struct InputDevice {
-    // The open stream, a cpal one or an exclusive one, held to be dropped:
-    // None once stopped, which lets the device go at once, not when JS gets
-    // round to collecting this.
+    // The open stream, a cpal one or an exclusive one (see StreamSlot).
     input_stream: StreamSlot,
     // How the mic is open ("Shared", "Exclusive", "ASIO"), and why not as
     // asked if it isn't; its rate (see format), and its meters.
@@ -778,8 +776,9 @@ impl InputDevice {
         output_rate: cpal::SampleRate,
         mixer: &mut mixer::Mixer,
     ) -> Result<Self> {
-        // Exclusive when it's set and Windows gives the mic; else shared,
-        // saying why.
+        // Exclusive when it's set (InputDevice::open hasn't asked what the
+        // mic takes shared) and Windows gives the mic; else shared, saying
+        // why.
         let mut note = None;
         if configs.is_none() {
             match Self::open_exclusive(
