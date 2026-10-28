@@ -124,8 +124,12 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/karafriends-win32-x64.zip
+  # Ubuntu 24.04, not ubuntu-latest: the oldest Ubuntu with the PipeWire
+  # headers the native module needs (0.3.53). A newer runner's glibc could
+  # raise the oldest Linux the release runs on (built here it needs glibc
+  # 2.34, so Ubuntu 22.04 runs it; built on 26.04, glibc 2.43).
   release-linux-x86_64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -138,7 +142,7 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libdbus-1-dev libclang-dev
       - run: yarn install --immutable
       - run: yarn build-prod
       - run: yarn package-prod

@@ -17,8 +17,10 @@ neon = { version = "1.0.0", default-features = false, features = ["napi-8"] }
 win32console = "0.1.5"
 
 [features]
-# `CARGO_ARGS=--no-default-features yarn build-prod` builds without ASIO.
-default = ["asio"]
+# `CARGO_ARGS=--no-default-features yarn build-prod` builds without ASIO, and
+# on Linux without PipeWire (the mics then use PulseAudio or ALSA).
+default = ["asio", "pipewire"]
 asio = ["karafriends-lib/asio"]
+pipewire = ["karafriends-lib/pipewire"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

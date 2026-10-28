@@ -124,6 +124,28 @@ fn exclusive_available(mut cx: FunctionContext) -> JsResult<JsBoolean> {
     Ok(cx.boolean(karafriends_lib::exclusive_available()))
 }
 
+// On Linux { status, bufferSizes, defaultBufferSize }: the sound system
+// ("Sound system: PipeWire 1.6.2"), the buffer sizes in frames it takes for
+// the mics and their output, and the one used until one is picked. Null
+// elsewhere.
+fn linux_audio(mut cx: FunctionContext) -> JsResult<JsValue> {
+    let Some(linux) = karafriends_lib::linux_audio() else {
+        return Ok(cx.null().upcast());
+    };
+    let js_object = JsObject::new(&mut cx);
+    let status = cx.string(linux.status);
+    let js_buffers = JsArray::new(&mut cx, linux.buffer_sizes.len());
+    for (i, frames) in linux.buffer_sizes.iter().enumerate() {
+        let value = cx.number(*frames);
+        js_buffers.set(&mut cx, i as u32, value)?;
+    }
+    let default_buffer = cx.number(linux.default_buffer);
+    js_object.set(&mut cx, "status", status)?;
+    js_object.set(&mut cx, "bufferSizes", js_buffers)?;
+    js_object.set(&mut cx, "defaultBufferSize", default_buffer)?;
+    Ok(js_object.upcast())
+}
+
 // "48 kHz, 512 samples (10.7 ms)", or null while no mic is open.
 fn output_format(mut cx: FunctionContext) -> JsResult<JsValue> {
     Ok(match karafriends_lib::output_format() {
@@ -202,6 +224,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("outputFormat", output_format)?;
     cx.export_function("setMicMode", set_mic_mode)?;
     cx.export_function("exclusiveAvailable", exclusive_available)?;
+    cx.export_function("linuxAudio", linux_audio)?;
     cx.export_function("inputDevice_new", input_device__new)?;
     cx.export_function("inputDevice_setGain", input_device__set_gain)?;
     cx.export_function("inputDevice_setEcho", input_device__set_echo)?;

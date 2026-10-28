@@ -17,8 +17,13 @@ declare global {
       nativeAudio: {
         // Each input's id (the key mics are saved and sent by), its label
         // (what the system calls it) and its channel count; both end with
-        // the host, " (USB)" or " (ASIO)".
+        // the host, " (USB)", " (ASIO)" or " (Linux)". Listed once, as
+        // first asked for (see refreshInputDevices).
         inputDevices: () => [string, string, number][];
+        // On Linux, has inputDevices list the inputs again (Settings does
+        // as it opens, for a mic plugged in since). Elsewhere they're
+        // listed once.
+        refreshInputDevices: () => void;
         // Every output device, with the host in parentheses.
         outputDevices: () => string[];
         // "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO
@@ -41,9 +46,19 @@ declare global {
         outputFormat: () => string | null;
         // Windows mics opened from now on: exclusive or shared, and in
         // exclusive mode the buffer size in frames (null: the smallest).
+        // On Linux the buffer size of the mics and their output (null:
+        // linuxAudio's default); the output, if open, reopens at it.
         setMicMode: (exclusive: boolean, bufferSize: number | null) => void;
         // Whether there is an exclusive mode (Windows only).
         exclusiveAvailable: () => boolean;
+        // On Linux: the sound system ("Sound system: PipeWire 1.6.2"), the
+        // buffer sizes in frames it takes for the mics and their output,
+        // and the one used until one is picked. Null elsewhere.
+        linuxAudio: () => {
+          status: string;
+          bufferSizes: number[];
+          defaultBufferSize: number;
+        } | null;
         inputDevice_new: (name: string, channelSelection: number) => number;
         inputDevice_delete: (deviceId: number) => void;
         // Linear, 0 to 2.

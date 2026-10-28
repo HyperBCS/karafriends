@@ -20,9 +20,11 @@ import {
 import {
   asioStatus,
   InputDevice,
+  linuxAudio,
   type MicMode,
   type MicOutput,
   outputDevices,
+  refreshInputDevices,
 } from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
 import "./Settings.css";
@@ -237,9 +239,15 @@ export default function Settings(props: {
   const [adminDraft, setAdminDraft] = useState("");
   const [tools, setTools] = useState<ToolsStatus | null>(null);
   const [updatingTools, setUpdatingTools] = useState(false);
-  // Listed each time Settings opens.
-  const [outputs] = useState(outputDevices);
+  // Listed each time Settings opens: the outputs, and on Linux the inputs
+  // too, so a mic or an interface switched on since can be picked.
+  const [outputs] = useState(() => {
+    refreshInputDevices();
+    return outputDevices();
+  });
   const [asio] = useState(asioStatus);
+  // On Linux, the sound system and the mics' buffer sizes; null elsewhere.
+  const [linux] = useState(linuxAudio);
   // What the native side says about the output while the mics work ("ok:
   // <note>"): that the chosen one is missing or won't open, say.
   const micStatus = props.mics[0]?.status();
@@ -629,20 +637,29 @@ export default function Settings(props: {
             output={props.micOutput}
             onChange={props.onMicOutputChange}
           />
-          <p className="settingsNote">{asio}</p>
+          <p className="settingsNote">{linux ? linux.status : asio}</p>
           {outputNote ? (
             <p className="settingsNote" role="status">
               {outputNote}
             </p>
           ) : null}
-          <p className="settingsNote">
-            Every mic plays through this output; songs keep playing through the
-            system default. An ASIO interface whose driver allows one program at
-            a time can't play the songs and the mics at once (FlexASIO,
-            ASIO4ALL, RME and MOTU drivers share; many others don't).
-          </p>
+          {linux ? (
+            <p className="settingsNote">
+              Every mic plays through this output; songs keep playing through
+              the system default.
+            </p>
+          ) : (
+            <p className="settingsNote">
+              Every mic plays through this output; songs keep playing through
+              the system default. An ASIO interface whose driver allows one
+              program at a time can't play the songs and the mics at once
+              (FlexASIO, ASIO4ALL, RME and MOTU drivers share; many others
+              don't).
+            </p>
+          )}
           <MicModeSetting
             mode={props.micMode}
+            linux={linux}
             onChange={props.onMicModeChange}
           />
           {props.mics.map((mic, i) => (
