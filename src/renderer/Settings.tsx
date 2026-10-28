@@ -80,10 +80,11 @@ function TextSetting(props: {
 }
 
 // A checkbox that saves at once, and shows the new state while it does.
+// onChange says whether it saved; if not, the box goes back.
 function Checkbox(props: {
   label: string;
   checked: boolean;
-  onChange: (checked: boolean) => void;
+  onChange: (checked: boolean) => Promise<boolean>;
 }) {
   const [checked, setChecked] = useState(props.checked);
   const [saved, setSaved] = useState(props.checked);
@@ -98,7 +99,9 @@ function Checkbox(props: {
         checked={checked}
         onChange={(event) => {
           setChecked(event.target.checked);
-          props.onChange(event.target.checked);
+          void props.onChange(event.target.checked).then((ok) => {
+            if (!ok) setChecked(props.checked);
+          });
         }}
       />
       {props.label}
@@ -181,9 +184,9 @@ export default function Settings(props: {
   }, []);
 
   // Runs task after the ones before it, and shows what it says (or its
-  // error) under the section.
-  const act = (section: Section, task: () => Promise<Message | null>) => {
-    chain.current = chain.current.then(async () => {
+  // error) under the section. Settles when it has.
+  const act = (section: Section, task: () => Promise<Message | null>) =>
+    (chain.current = chain.current.then(async () => {
       try {
         say(section, await task());
       } catch (err) {
@@ -192,18 +195,21 @@ export default function Settings(props: {
           tone: "problem",
         });
       }
-    });
-  };
+    }));
 
-  const save = (section: Section, changes: SettingsChanges) =>
-    act(section, async () => {
+  // Whether it saved.
+  const save = (section: Section, changes: SettingsChanges) => {
+    let saved = false;
+    return act(section, async () => {
       const result = await call("setSettings", { settings: changes });
       if (!result.ok) {
         return { text: result.problems.join(" "), tone: "problem" };
       }
+      saved = true;
       await reload();
       return { text: "Saved." };
-    });
+    }).then(() => saved);
+  };
 
   // A whole number, or a message saying it isn't one.
   const saveNumber = (
