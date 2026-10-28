@@ -630,6 +630,165 @@ test.describe("the pitch bars", () => {
     await expect(pitchBars).not.toBeChecked();
     await expect(roll).toHaveCount(0);
   });
+
+  // Queues the guide melody's song and waits for it to start.
+  async function playGuideSong(
+    karafriends: { app: ElectronApplication; remoconUrl: string },
+    display: Page,
+  ) {
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    expect(
+      await phoneCall(karafriends.remoconUrl, "e2e-phone", "queueSong", {
+        kind: "joysound",
+        songId: "e2e-guide",
+        name: "E2E guide",
+        artistName: "E2E artist",
+        lyricsMode: "kana",
+        youtubeVideoId: null,
+      }),
+    ).toMatchObject({ ok: true });
+    await expect
+      .poll(
+        () =>
+          display
+            .locator("video")
+            .evaluate((v: HTMLVideoElement) =>
+              v.currentSrc.endsWith("joysound-e2e-guide-default.mp4"),
+            ),
+        { timeout: 20_000 },
+      )
+      .toBe(true);
+  }
+
+  // Whether the roll drew anything: read in the next frame, just after the
+  // roll's own draw (its drawing buffer is cleared once shown).
+  function rollDrew(display: Page) {
+    return display.evaluate(
+      () =>
+        new Promise<boolean>((resolve) =>
+          requestAnimationFrame(() => {
+            const canvas = document.querySelector<HTMLCanvasElement>(
+              "canvas.pianoRollRoll",
+            );
+            const gl = canvas?.getContext("webgl2");
+            if (!canvas || !gl || gl.isContextLost()) return resolve(false);
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            );
+            resolve(pixels.some((value) => value !== 0));
+          }),
+        ),
+    );
+  }
+
+  const crashed = (display: Page) =>
+    display.getByRole("heading", { name: "Something went wrong" });
+
+  test("a lost WebGL context leaves the song playing, and the bars come back when it's restored", async ({
+    karafriends,
+    display,
+  }) => {
+    await playGuideSong(karafriends, display);
+    const roll = display.locator("canvas.pianoRollRoll");
+    await expect(roll).toHaveCount(1, { timeout: 20_000 });
+    expect(
+      await phoneCall(karafriends.remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "PAUSED",
+      }),
+    ).toBe(true);
+    await expect.poll(() => rollDrew(display)).toBe(true);
+
+    // As when the GPU process goes: the context is lost. A key change after
+    // it (which used to rebuild the roll's GL) leaves the display up.
+    await display.evaluate(() => {
+      const gl = document
+        .querySelector<HTMLCanvasElement>("canvas.pianoRollRoll")!
+        .getContext("webgl2")!;
+      const lose = gl.getExtension("WEBGL_lose_context")!;
+      (window as unknown as { e2eLose: WEBGL_lose_context }).e2eLose = lose;
+      lose.loseContext();
+    });
+    await expect(roll).toBeHidden();
+    expect(
+      await phoneCall(
+        karafriends.remoconUrl,
+        "e2e-phone",
+        "setPitchShiftSemis",
+        { semis: 2 },
+      ),
+    ).toBe(true);
+    // The live state reaches the display.
+    await display.waitForTimeout(1_000);
+    await expect(display.locator("video")).toHaveCount(1);
+    await expect(crashed(display)).toHaveCount(0);
+    await expect(roll).toHaveCount(1);
+
+    // Restored: drawn again, on the same canvas.
+    await display.evaluate(() =>
+      (
+        window as unknown as { e2eLose: WEBGL_lose_context }
+      ).e2eLose.restoreContext(),
+    );
+    await expect(roll).toBeVisible();
+    await expect.poll(() => rollDrew(display)).toBe(true);
+    await expect(crashed(display)).toHaveCount(0);
+  });
+
+  test("without WebGL2 the bars don't show, and the song plays on", async ({
+    karafriends,
+    display,
+  }) => {
+    // As on a machine whose GPU Chromium blocklists: the roll's canvas gets
+    // no context. Counted, so the test knows the roll tried.
+    await display.evaluate(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      const counter = window as unknown as { e2eRollContexts: number };
+      counter.e2eRollContexts = 0;
+      HTMLCanvasElement.prototype.getContext = function (
+        this: HTMLCanvasElement,
+        ...args: Parameters<HTMLCanvasElement["getContext"]>
+      ) {
+        if (this.classList.contains("pianoRollRoll") && args[0] === "webgl2") {
+          counter.e2eRollContexts++;
+          return null;
+        }
+        return getContext.apply(this, args);
+      } as HTMLCanvasElement["getContext"];
+    });
+    await playGuideSong(karafriends, display);
+    await expect
+      .poll(
+        () =>
+          display.evaluate(
+            () =>
+              (window as unknown as { e2eRollContexts: number })
+                .e2eRollContexts,
+          ),
+        { timeout: 20_000 },
+      )
+      .toBeGreaterThan(0);
+    await expect(crashed(display)).toHaveCount(0);
+    await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((v: HTMLVideoElement) => v.currentTime > 2),
+      )
+      .toBe(true);
+  });
 });
 
 // The fixture's fake mics and outputs (KARAFRIENDS_FAKE_AUDIO in

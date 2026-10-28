@@ -1,11 +1,17 @@
-import convert from "color-convert";
-import Spline from "cubic-spline";
-import vec from "gl-vec2";
-import getNormals from "polyline-normals";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Melody } from "./melody";
-import { InputDevice } from "./nativeAudio";
+import type { InputDevice } from "./nativeAudio";
+import {
+  currentNote,
+  micColor,
+  PitchTrace,
+  quadToTriangles,
+  rollLayout,
+  type RollLayout,
+  SEGMENT_FLOATS,
+  TIME_WIDTH_SECS,
+} from "./pianoRoll";
 import "./PianoRoll.css";
 import { drawTime, pitchTime } from "./playback";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
@@ -13,425 +19,102 @@ import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl?raw";
 import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl?raw";
 import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl?raw";
 
-const TIME_WIDTH_SECS = 5.0;
-const PITCH_RESOLUTION = 8;
-const STROKE_WIDTH = 0.03;
+// How often each mic's pitch is read.
+const PITCH_POLL_MS = 25;
+const FREE_TIME_COLOR = [0, 0, 0, 0.5];
+const SEEK_COLOR = [0.9, 0.9, 0.9, 1.0];
+// The seek line, in clip space; its shader moves it along with the time.
+const SEEK_LINE = Float32Array.from(quadToTriangles(-1.005, 1.0, -0.995, -1.0));
 
-function loadShader(
-  gl: WebGLRenderingContext,
-  type:
-    | WebGLRenderingContextBase["VERTEX_SHADER"]
-    | WebGLRenderingContextBase["FRAGMENT_SHADER"],
+// A linked program and where its inputs are. Every program here draws
+// triangles from one attribute, "position"; a uniform it doesn't have is
+// null, which GL ignores.
+interface Program {
+  program: WebGLProgram;
+  position: number;
+  time: WebGLUniformLocation | null;
+  timeWidth: WebGLUniformLocation | null;
+  canvasWidth: WebGLUniformLocation | null;
+  color: WebGLUniformLocation | null;
+}
+
+function compileShader(
+  gl: WebGL2RenderingContext,
+  type: GLenum,
   source: string,
-) {
-  const shader = gl.createShader(type)!;
+): WebGLShader | null {
+  const shader = gl.createShader(type);
+  if (!shader) return null;
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error(`Error compiling shader: ${gl.getShaderInfoLog(shader)}`);
+    // A lost context fails everything, and is set up again once restored.
+    if (!gl.isContextLost()) {
+      console.error(
+        `Can't compile a pitch bars shader: ${gl.getShaderInfoLog(shader)}`,
+      );
+    }
     gl.deleteShader(shader);
     return null;
   }
-
   return shader;
 }
 
-function edgesToTriangles(top: number[][], bottom: number[][]) {
-  const triangles = [];
-
-  for (let i = 0; i < top.length - 1; i++) {
-    const x0 = top[i][0];
-    const y0 = top[i][1];
-
-    const x1 = bottom[i][0];
-    const y1 = bottom[i][1];
-
-    const x2 = top[i + 1][0];
-    const y2 = top[i + 1][1];
-
-    const x3 = bottom[i + 1][0];
-    const y3 = bottom[i + 1][1];
-
-    triangles.push(x0, y0, x1, y1, x2, y2, x1, y1, x2, y2, x3, y3);
+// Null if GL can't make it (the context was lost meanwhile).
+function makeProgram(
+  gl: WebGL2RenderingContext,
+  vertSource: string,
+  fragSource: string,
+): Program | null {
+  const vert = compileShader(gl, gl.VERTEX_SHADER, vertSource);
+  const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSource);
+  const program = gl.createProgram();
+  if (vert && frag) {
+    gl.attachShader(program, vert);
+    gl.attachShader(program, frag);
+    gl.linkProgram(program);
   }
-
-  return triangles;
+  // Freed with the program, once linked.
+  if (vert) gl.deleteShader(vert);
+  if (frag) gl.deleteShader(frag);
+  if (!vert || !frag || !gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    gl.deleteProgram(program);
+    return null;
+  }
+  const uniform = (name: string) => gl.getUniformLocation(program, name);
+  return {
+    program,
+    position: gl.getAttribLocation(program, "position"),
+    time: uniform("time"),
+    timeWidth: uniform("timeWidth"),
+    canvasWidth: uniform("canvasWidth"),
+    color: uniform("color"),
+  };
 }
 
-function quadToTriangles(x0: number, y0: number, x1: number, y1: number) {
-  /*
-    (x0, y0) - (x1, y0)
-       |     \    |
-    (x0, y1) - (x1, y1)
-
-    GL makes us list triangles in counter-clockwise order
-  */
-  return [x0, y0, x0, y1, x1, y1, x0, y0, x1, y1, x1, y0];
-}
-
-function median(nums: number[]) {
-  const numsSorted = [...nums];
-  numsSorted.sort();
-  const middleIndex = Math.floor(nums.length / 2);
-  if (nums.length % 2 === 0) {
-    return (numsSorted[middleIndex - 1] + numsSorted[middleIndex]) / 2;
-  } else {
-    return numsSorted[middleIndex];
-  }
-}
-
-abstract class ShaderProgram<T extends unknown[]> {
-  readonly gl: WebGLRenderingContext;
-  readonly program: WebGLProgram;
-  readonly attributeLocations: { [name: string]: number };
-  readonly uniformLocations: { [name: string]: WebGLUniformLocation };
-  readonly buffers: { [name: string]: WebGLBuffer };
-
-  constructor(
-    gl: WebGLRenderingContext,
-    shaders: WebGLShader[],
-    attributeNames: string[],
-    uniformNames: string[],
-    bufferNames: string[],
-  ) {
-    this.gl = gl;
-    this.program = gl.createProgram()!;
-    shaders.forEach((shader) => gl.attachShader(this.program, shader));
-    gl.linkProgram(this.program);
-    this.attributeLocations = Object.fromEntries(
-      attributeNames.map((name) => [
-        name,
-        gl.getAttribLocation(this.program, name),
-      ]),
-    );
-    this.uniformLocations = Object.fromEntries(
-      uniformNames.map((name) => [
-        name,
-        gl.getUniformLocation(this.program, name)!,
-      ]),
-    );
-    this.buffers = Object.fromEntries(
-      bufferNames.map((name) => [name, gl.createBuffer()!]),
-    );
-  }
-
-  abstract draw(...args: T): void;
-}
-
-class NoteProgram extends ShaderProgram<[number, number]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGLRenderingContext, positions: number[]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, noteFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "canvasWidth"],
-      ["positions"],
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-  }
-
-  draw(time: number, canvasWidth: number) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-    }
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class SeekProgram extends ShaderProgram<[number]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGLRenderingContext) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, seekVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "color"],
-      ["positions"],
-    );
-    const positions = quadToTriangles(-1.005, 1.0, -0.995, -1.0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-  }
-
-  draw(time: number) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform4fv(this.uniformLocations.color, [0.9, 0.9, 0.9, 1.0]);
-    }
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class PitchProgram extends ShaderProgram<[number, number, number[]]> {
-  readonly color: [number, number, number];
-
-  constructor(gl: WebGLRenderingContext, color: [number, number, number]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "color"],
-      ["positions"],
-    );
-    this.color = color;
-  }
-
-  draw(time: number, canvasWidth: number, positions: number[]) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform4f(this.uniformLocations.color, ...this.color, 1.0);
-    }
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
-
-    this.gl.bufferData(
-      this.gl.ARRAY_BUFFER,
-      new Float32Array(positions),
-      this.gl.DYNAMIC_DRAW,
-    );
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, positions.length / 2);
-  }
-}
-
-class FreeTimeProgram extends ShaderProgram<[number, number]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGLRenderingContext, positions: number[]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "canvasWidth", "color"],
-      ["positions"],
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-  }
-
-  draw(time: number, canvasWidth: number) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform4fv(this.uniformLocations.color, [0, 0, 0, 0.5]);
-    }
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class PitchDetectionBuffer {
-  buffer: { time: number; value: number }[] = [];
-  positions: number[] = [];
-  pitchOffset: number = 0;
-
-  push(
-    pitchMidiNumber: number,
-    medianMidiNumber: number,
-    currentMidiNumber: number,
-    time: number,
-  ) {
-    this.pitchOffset +=
-      Math.round(
-        (currentMidiNumber - (pitchMidiNumber + this.pitchOffset)) / 12,
-      ) * 12;
-
-    const pitchMidiNumberOffset = pitchMidiNumber + this.pitchOffset;
-
-    if (
-      this.buffer.length === 0 ||
-      time > this.buffer[this.buffer.length - 1].time
-    ) {
-      this.buffer.push({
-        time,
-        value: pitchMidiNumberOffset,
-      });
-    } else {
-      this.buffer[this.buffer.length - 1] = {
-        time,
-        value: pitchMidiNumberOffset,
-      };
-    }
-
-    if (this.buffer.length > 200) {
-      this.buffer.shift();
-      this.positions.splice(0, 12 * (PITCH_RESOLUTION - 1));
-    }
-
-    if (this.buffer.length >= 1) {
-      const lastIndex = this.buffer.length - 1;
-
-      let timeGap = null;
-      let pitchGap = null;
-
-      if (this.buffer.length >= 3) {
-        timeGap = this.buffer[lastIndex].time - this.buffer[lastIndex - 2].time;
-
-        pitchGap = Math.max(
-          Math.abs(
-            this.buffer[lastIndex].value - this.buffer[lastIndex - 1].value,
-          ),
-          Math.abs(
-            this.buffer[lastIndex - 1].value - this.buffer[lastIndex - 2].value,
-          ),
-          Math.abs(
-            this.buffer[lastIndex].value - this.buffer[lastIndex - 2].value,
-          ),
-        );
-      }
-
-      // If we don't have 3 points to create a spline with, or the time/pitch gap
-      // between points is too large, just draw the current point as is.
-      if (!timeGap || !pitchGap || timeGap > 0.06 || pitchGap > 7) {
-        const pitchPoint = quadToTriangles(
-          this.buffer[lastIndex].time - 0.025,
-          this.buffer[lastIndex].value - STROKE_WIDTH / 2,
-          this.buffer[lastIndex].time,
-          this.buffer[lastIndex].value + STROKE_WIDTH / 2,
-        );
-
-        for (let i = 0; i < PITCH_RESOLUTION - 1; i++) {
-          this.positions.push(...pitchPoint);
-        }
-
-        return;
-      }
-
-      const path = [];
-
-      const bufferSlice = this.buffer.slice(lastIndex - 2, lastIndex + 1);
-      const spline = new Spline(
-        bufferSlice.map((obj) => obj.time),
-        bufferSlice.map((obj) =>
-          midiNumberToYCoord(obj.value, medianMidiNumber),
-        ),
-      );
-
-      for (let i = 0; i < PITCH_RESOLUTION; i++) {
-        const currX =
-          this.buffer[lastIndex - 2].time + i * (timeGap / PITCH_RESOLUTION);
-
-        path.push([currX, spline.at(currX)]);
-      }
-
-      const edges: number[][][] = this.createEdges(path);
-      const newLineSegment = edgesToTriangles(edges[0], edges[1]);
-
-      // Only add the newest line segment to positions
-      this.positions.push(...newLineSegment);
-    }
-  }
-
-  clear() {
-    this.buffer = [];
-    this.positions = [];
-  }
-
-  createEdges(path: number[][]) {
-    const top: number[][] = [];
-    const bottom: number[][] = [];
-
-    const normals: any = getNormals(path, false);
-    const tmp = [0, 0];
-
-    path.forEach((point, i) => {
-      const normal: number[] = normals[i][0];
-      const join: number = normals[i][1];
-
-      vec.scaleAndAdd(tmp, point, normal, (join * STROKE_WIDTH) / 2);
-      top.push(tmp.slice());
-
-      vec.scaleAndAdd(tmp, point, normal, (-join * STROKE_WIDTH) / 2);
-      bottom.push(tmp.slice());
-    });
-
-    return [top, bottom];
-  }
-}
-
-function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
-  // We draw 18 rows behind the canvas, and we also want to be able to align
-  // notes in-between rows, so we have 36 positions. We want to return
-  // positions that correspond to the center of a bar or in-between two bars.
-  // If we're at the median MIDI number, we should be dead-center.
-  return 0.5 + (midiNumber - medianMidiNumber) / 36;
+function drawTriangles(
+  gl: WebGL2RenderingContext,
+  program: Program,
+  buffer: WebGLBuffer,
+  vertices: number,
+  uniforms: { time: number; canvasWidth: number; color?: readonly number[] },
+) {
+  if (vertices === 0) return;
+  gl.useProgram(program.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.vertexAttribPointer(program.position, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(program.position);
+  gl.uniform1f(program.timeWidth, TIME_WIDTH_SECS);
+  gl.uniform1f(program.time, uniforms.time);
+  gl.uniform1f(program.canvasWidth, uniforms.canvasWidth);
+  if (uniforms.color) gl.uniform4fv(program.color, uniforms.color);
+  gl.drawArrays(gl.TRIANGLES, 0, vertices);
 }
 
 // The pitch bars: the song's melody as bars along the top, the mics' pitch
-// over them.
+// over them. GL is set up once per canvas (and again when a lost context is
+// restored); a new melody, a key change or a mic change only changes what
+// it draws. Without WebGL2 there are no bars, and the song plays on.
 export default function PianoRoll(props: {
   melody: Melody;
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -441,195 +124,275 @@ export default function PianoRoll(props: {
   avOffsetMs: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRequestRef = useRef<number>(0);
-  // Read by draw() and pollPitch(), so an offset change keeps the trace.
+  // Bumped when a lost context is restored: GL is set up again.
+  const [contextGeneration, setContextGeneration] = useState(0);
+  const [contextLost, setContextLost] = useState(false);
+  const [noWebGl, setNoWebGl] = useState(false);
+
+  const layout = useMemo(() => rollLayout(props.melody), [props.melody]);
+  // Read by the draw loop and the pitch pollers, so a change to these
+  // doesn't set anything up again (nor an offset change lose the trace).
+  const layoutRef = useRef<RollLayout>(layout);
+  layoutRef.current = layout;
+  const pitchShiftRef = useRef(props.pitchShiftSemis);
+  pitchShiftRef.current = props.pitchShiftSemis;
   const avOffsetMsRef = useRef(props.avOffsetMs);
   avOffsetMsRef.current = props.avOffsetMs;
+  // Each mic's trace and its colour, drawn by the draw loop.
+  const tracesRef = useRef<{ trace: PitchTrace; color: number[] }[]>([]);
+  // The note being sung, as an index into layout.notes.
+  const noteIndexRef = useRef(0);
 
+  // The drawing buffer follows the canvas's size on screen, whatever
+  // changes it (the window, the Up next strip, the UI scale).
   useEffect(() => {
-    if (!canvasRef.current || !props.videoRef.current) return;
-
-    // The notes in the song's key.
-    const notes = props.melody.notes.map((note) => ({
-      ...note,
-      midiNumber: note.midiNumber + props.pitchShiftSemis,
-    }));
-    const { lyricsIntervals, pogIntervals } = props.melody;
-
-    const medianMidiNumber = median(notes.map((note) => note.midiNumber));
-
-    const positions = notes
-      .map((note) =>
-        quadToTriangles(
-          note.startTime,
-          midiNumberToYCoord(note.midiNumber + 1, medianMidiNumber),
-          note.endTime,
-          midiNumberToYCoord(note.midiNumber - 1, medianMidiNumber),
-        ),
-      )
-      .flat();
-
-    let currentNoteIndex = 0;
-
-    const combinedLyricsIntervals = lyricsIntervals.reduce<[number, number][]>(
-      (acc, cur) => {
-        if (acc.length === 0) {
-          return [cur];
-        }
-        const [prevStart, prevEnd] = acc[acc.length - 1];
-        const [curStart, curEnd] = cur;
-        if (curStart - prevEnd <= 10) {
-          acc[acc.length - 1] = [prevStart, curEnd];
-          return acc;
-        } else {
-          return acc.concat([cur]);
-        }
-      },
-      [],
-    );
-    const [freeTimeIntervals, lastLyricsIntervalEnd] =
-      combinedLyricsIntervals.reduce<[[number, number][], number]>(
-        (acc, cur) => {
-          const [intervals, prevEnd] = acc;
-          const [curStart, curEnd] = cur;
-          return [intervals.concat([[prevEnd, curStart]]), curEnd];
-        },
-        [[], 0],
-      );
-    freeTimeIntervals.push([lastLyricsIntervalEnd, 9999]);
-    const freeTimePositions = freeTimeIntervals
-      .map(([start, end]) => quadToTriangles(start, 1.0, end, 0.0))
-      .flat();
-
-    function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
-      if (!mic || !props.videoRef.current || notes.length === 0) return;
-      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
-        return;
-      }
-      const { midiNumber, confidence } = mic.getPitch();
-      if (
-        confidence >= 0.8 &&
-        midiNumber !== 0 &&
-        !props.videoRef.current.paused
-      ) {
-        const time = pitchTime(
-          props.videoRef.current.currentTime,
-          avOffsetMsRef.current,
-        );
-        while (
-          notes[currentNoteIndex].endTime < time &&
-          currentNoteIndex < notes.length - 2
-        ) {
-          currentNoteIndex++;
-        }
-        const currentMidiNumber = notes[currentNoteIndex].midiNumber;
-        buffer.push(midiNumber, medianMidiNumber, currentMidiNumber, time);
-      }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const device = entry.devicePixelContentBoxSize?.[0];
+      const box = entry.contentBoxSize[0];
+      canvas.width = device
+        ? device.inlineSize
+        : Math.round(box.inlineSize * window.devicePixelRatio);
+      canvas.height = device
+        ? device.blockSize
+        : Math.round(box.blockSize * window.devicePixelRatio);
+    });
+    try {
+      observer.observe(canvas, { box: "device-pixel-content-box" });
+    } catch {
+      observer.observe(canvas);
     }
+    return () => observer.disconnect();
+  }, [noWebGl]);
 
-    const gl = canvasRef.current.getContext("webgl2", {
+  // A lost context (the GPU process crashed or reset) is hidden until
+  // Chromium restores it, which it does only if the loss is
+  // preventDefault-ed.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      setContextLost(true);
+    };
+    const onRestored = () => {
+      setContextLost(false);
+      setContextGeneration((generation) => generation + 1);
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+    };
+  }, [noWebGl]);
+
+  // GL, and the draw loop.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const video = props.videoRef.current;
+    if (!canvas || !video) return;
+    const gl = canvas.getContext("webgl2", {
       antialias: true,
       premultipliedAlpha: false,
-    })!;
+    });
+    if (!gl) {
+      console.warn("No WebGL2, so no pitch bars");
+      setNoWebGl(true);
+      return;
+    }
+    // Set up again once restored.
+    if (gl.isContextLost()) return;
 
-    const pitchPollers: [PitchDetectionBuffer, PitchProgram, NodeJS.Timeout][] =
-      props.mics.map((mic, i) => {
-        const buffer = new PitchDetectionBuffer();
-        return [
-          buffer,
-          new PitchProgram(
-            gl,
-            convert.hsv
-              .rgb([(360 / props.mics.length) * i, 30, 100])
-              .map((channel) => channel / 255) as [number, number, number],
-          ),
-          setInterval(() => pollPitch(mic, buffer), 25),
-        ];
-      });
+    const programs = [
+      makeProgram(gl, midiVertShaderRaw, noteFragShaderRaw),
+      makeProgram(gl, midiVertShaderRaw, singleColorFragShaderRaw),
+      makeProgram(gl, seekVertShaderRaw, singleColorFragShaderRaw),
+    ];
+    const notesBuffer = gl.createBuffer();
+    const freeTimeBuffer = gl.createBuffer();
+    const seekBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, seekBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, SEEK_LINE, gl.STATIC_DRAW);
+    // Each trace's buffer, made the first time it's drawn.
+    const traceBuffers = new Map<PitchTrace, WebGLBuffer>();
+    let drawnLayout: RollLayout | null = null;
+    let frame = 0;
 
-    const noteProgram = new NoteProgram(gl, positions);
-    const seekProgram = new SeekProgram(gl);
-    const freeTimeProgram = new FreeTimeProgram(gl, freeTimePositions);
+    const cleanup = () => {
+      cancelAnimationFrame(frame);
+      for (const program of programs) {
+        if (program) gl.deleteProgram(program.program);
+      }
+      for (const buffer of [notesBuffer, freeTimeBuffer, seekBuffer]) {
+        gl.deleteBuffer(buffer);
+      }
+      traceBuffers.forEach((buffer) => gl.deleteBuffer(buffer));
+    };
+    const [noteProgram, colorProgram, seekProgram] = programs;
+    if (!noteProgram || !colorProgram || !seekProgram) return cleanup;
+
+    // The trace's buffer, with what changed since the last frame.
+    const traceBuffer = (trace: PitchTrace) => {
+      let buffer = traceBuffers.get(trace);
+      if (!buffer) {
+        buffer = gl.createBuffer();
+        traceBuffers.set(trace, buffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, trace.segments, gl.DYNAMIC_DRAW);
+        trace.takeChanged();
+        return buffer;
+      }
+      const changed = trace.takeChanged();
+      if (changed.length === 0) return buffer;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      if (changed === "all") {
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, trace.segments);
+      } else {
+        for (const slot of changed) {
+          gl.bufferSubData(
+            gl.ARRAY_BUFFER,
+            slot * SEGMENT_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+            trace.segments,
+            slot * SEGMENT_FLOATS,
+            SEGMENT_FLOATS,
+          );
+        }
+      }
+      return buffer;
+    };
 
     gl.clearColor(0.0, 0.0, 0.0, 0.0);
-
     const draw = () => {
-      if (!canvasRef.current || !props.videoRef.current) return;
+      frame = requestAnimationFrame(draw);
+      if (gl.isContextLost()) return;
       // No stream yet (the low-bitrate switch, before its seek): the time
       // reads 0, so keep the last frame rather than flash the song's start.
-      if (props.videoRef.current.readyState < HTMLMediaElement.HAVE_METADATA) {
-        animationFrameRequestRef.current = window.requestAnimationFrame(draw);
-        return;
+      if (video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+
+      const layout = layoutRef.current;
+      if (layout !== drawnLayout) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, notesBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, layout.notePositions, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, freeTimeBuffer);
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          layout.freeTimePositions,
+          gl.STATIC_DRAW,
+        );
+        drawnLayout = layout;
       }
-
-      const time = drawTime(
-        props.videoRef.current.currentTime,
-        avOffsetMsRef.current,
-      );
-      const canvasWidth = canvasRef.current.width;
-
-      gl.clear(gl.COLOR_BUFFER_BIT);
-
-      if (freeTimePositions.length > 0) {
-        freeTimeProgram.draw(time, canvasWidth);
-      }
-
-      if (positions.length > 0) {
-        noteProgram.draw(time, canvasWidth);
-      }
-
-      pitchPollers.forEach(([buffer, shader]) => {
-        if (buffer.positions.length > 0) {
-          shader.draw(time, canvasWidth, buffer.positions);
+      const traces = tracesRef.current;
+      traceBuffers.forEach((buffer, trace) => {
+        if (!traces.some((drawn) => drawn.trace === trace)) {
+          gl.deleteBuffer(buffer);
+          traceBuffers.delete(trace);
         }
       });
 
-      seekProgram.draw(time);
-
-      canvasRef.current.classList.toggle(
-        "pianoRollPog",
-        pogIntervals.some(([start, end]) => time >= start - 1 && time <= end),
+      const time = drawTime(video.currentTime, avOffsetMsRef.current);
+      const canvasWidth = canvas.width;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // Free time, the notes, the traces, then the seek line over them.
+      drawTriangles(
+        gl,
+        colorProgram,
+        freeTimeBuffer,
+        layout.freeTimePositions.length / 2,
+        { time, canvasWidth, color: FREE_TIME_COLOR },
       );
-
-      animationFrameRequestRef.current = window.requestAnimationFrame(draw);
-    };
-
-    animationFrameRequestRef.current = window.requestAnimationFrame(draw);
-
-    function updateSize() {
-      if (!canvasRef.current) return;
-      canvasRef.current.width =
-        canvasRef.current.clientWidth * window.devicePixelRatio;
-      canvasRef.current.height =
-        canvasRef.current.clientHeight * window.devicePixelRatio;
-      gl.viewport(0, 0, canvasRef.current.width, canvasRef.current.height);
-    }
-
-    updateSize();
-    window.addEventListener("resize", updateSize);
-
-    function clearPitchDetectionBuffers() {
-      currentNoteIndex = 0;
-      pitchPollers.forEach(([buffer, _1, _2]) => buffer.clear());
-    }
-
-    props.videoRef.current.addEventListener(
-      "seeked",
-      clearPitchDetectionBuffers,
-    );
-
-    return () => {
-      pitchPollers.forEach(([_1, _2, interval]) => clearInterval(interval));
-      cancelAnimationFrame(animationFrameRequestRef.current);
-      window.removeEventListener("resize", updateSize);
-      if (props.videoRef.current) {
-        props.videoRef.current.removeEventListener(
-          "seeked",
-          clearPitchDetectionBuffers,
+      drawTriangles(
+        gl,
+        noteProgram,
+        notesBuffer,
+        layout.notePositions.length / 2,
+        { time, canvasWidth },
+      );
+      for (const { trace, color } of traces) {
+        drawTriangles(
+          gl,
+          colorProgram,
+          traceBuffer(trace),
+          (trace.filled * SEGMENT_FLOATS) / 2,
+          { time, canvasWidth, color },
         );
       }
-    };
-  }, [props.melody, props.mics, props.pitchShiftSemis, props.videoRef]);
+      drawTriangles(gl, seekProgram, seekBuffer, SEEK_LINE.length / 2, {
+        time,
+        canvasWidth,
+        color: SEEK_COLOR,
+      });
 
-  return <canvas className="pianoRollRoll" ref={canvasRef}></canvas>;
+      canvas.classList.toggle(
+        "pianoRollPog",
+        layout.pogIntervals.some(
+          ([start, end]) => time >= start - 1 && time <= end,
+        ),
+      );
+    };
+    frame = requestAnimationFrame(draw);
+    return cleanup;
+  }, [contextGeneration, noWebGl, props.videoRef]);
+
+  // Each mic's pitch, read into its trace while the song plays.
+  useEffect(() => {
+    const video = props.videoRef.current;
+    if (!video) return;
+    const traces = props.mics.map((_, i) => ({
+      trace: new PitchTrace(),
+      color: [...micColor(i, props.mics.length), 1.0],
+    }));
+    tracesRef.current = traces;
+
+    const poll = (mic: InputDevice, trace: PitchTrace) => {
+      const { notes, median } = layoutRef.current;
+      if (notes.length === 0 || video.paused) return;
+      if (video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+      const { midiNumber, confidence } = mic.getPitch();
+      if (confidence < 0.8 || midiNumber === 0) return;
+      const time = pitchTime(video.currentTime, avOffsetMsRef.current);
+      noteIndexRef.current = currentNote(
+        notes,
+        Math.min(noteIndexRef.current, notes.length - 1),
+        time,
+      );
+      // In the melody's own key, as the roll draws it.
+      trace.push(
+        midiNumber - pitchShiftRef.current,
+        notes[noteIndexRef.current].midiNumber,
+        median,
+        time,
+      );
+    };
+    const pollers = traces.map(({ trace }, i) =>
+      setInterval(() => poll(props.mics[i], trace), PITCH_POLL_MS),
+    );
+    const clear = () => {
+      noteIndexRef.current = 0;
+      traces.forEach(({ trace }) => trace.clear());
+    };
+    video.addEventListener("seeked", clear);
+    return () => {
+      pollers.forEach(clearInterval);
+      video.removeEventListener("seeked", clear);
+      tracesRef.current = [];
+    };
+  }, [props.mics, props.videoRef]);
+
+  // A new song (DAM to DAM keeps the roll): no trace from the last one.
+  useEffect(() => {
+    noteIndexRef.current = 0;
+    tracesRef.current.forEach(({ trace }) => trace.clear());
+  }, [layout]);
+
+  if (noWebGl) return null;
+  return (
+    <canvas
+      className="pianoRollRoll"
+      ref={canvasRef}
+      hidden={contextLost}
+    ></canvas>
+  );
 }
