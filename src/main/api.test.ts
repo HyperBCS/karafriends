@@ -384,6 +384,101 @@ describe("admin checks", () => {
     assert.equal(await api.popSong({}, display), null);
   });
 
+  describe("a reloaded display (popSong with resume)", () => {
+    let clock: number;
+    const api = () => makeApi({}, { now: () => clock });
+    beforeEach(() => {
+      clock = 1000;
+      store.update((state) =>
+        state.songQueue.push(song(1, alice), song(2, bob)),
+      );
+    });
+
+    test("gets the current song back, from the start, once", async () => {
+      const handlers = api();
+      await handlers.popSong({}, display);
+      await handlers.setPlaybackState({ playbackState: "PLAYING" }, display);
+      clock = 30_000;
+      await handlers.setPlaybackState({ playbackState: "PAUSED" }, alice);
+      assert.equal(store.getState().currentSongStartedAt, 1000);
+
+      const resumed = await handlers.popSong({ resume: true }, display);
+      assert.equal(resumed?.songId, "sm1");
+      const state = store.getState();
+      assert.equal(state.currentSong?.songId, "sm1");
+      assert.deepEqual(
+        state.songQueue.map((item) => item.songId),
+        ["sm2"],
+      );
+      // Not twice in the history.
+      assert.deepEqual(
+        state.songHistory.map((entry) => entry.song.songId),
+        ["sm1"],
+      );
+      // Its clock starts again with the display's PLAYING.
+      assert.deepEqual(
+        [
+          state.currentSongStartedAt,
+          state.currentSongPausedMs,
+          state.currentSongPausedSince,
+        ],
+        [null, 0, null],
+      );
+
+      // Reloaded again (the song crashes the display, say): it moves on.
+      assert.equal(
+        (await handlers.popSong({ resume: true }, display))?.songId,
+        "sm2",
+      );
+      assert.equal(store.getState().currentSong?.songId, "sm2");
+      // sm2 may still come back once.
+      assert.equal(
+        (await handlers.popSong({ resume: true }, display))?.songId,
+        "sm2",
+      );
+    });
+
+    test("takes the next song when none is current", async () => {
+      assert.equal(
+        (await api().popSong({ resume: true }, display))?.songId,
+        "sm1",
+      );
+      assert.deepEqual(
+        store.getState().songQueue.map((item) => item.songId),
+        ["sm2"],
+      );
+    });
+
+    test("takes the next song when the current one was being skipped", async () => {
+      const handlers = api();
+      await handlers.popSong({}, display);
+      await handlers.setPlaybackState({ playbackState: "SKIPPING" }, alice);
+      assert.equal(
+        (await handlers.popSong({ resume: true }, display))?.songId,
+        "sm2",
+      );
+    });
+
+    test("keeps the song's lines pushed so far", async () => {
+      const handlers = api();
+      await handlers.popSong({}, display);
+      store.update((state) => {
+        state.currentSongAdhocLyrics = [{ lyric: "la", lyricIndex: 0 }];
+      });
+      await handlers.popSong({ resume: true }, display);
+      assert.deepEqual(store.getState().currentSongAdhocLyrics, [
+        { lyric: "la", lyricIndex: 0 },
+      ]);
+    });
+
+    test("is still the display's alone", async () => {
+      const handlers = makeApi({ everyoneIsAdmin: true });
+      await handlers.popSong({}, display);
+      await rejectsWith(handlers.popSong({ resume: true }, bob), 403);
+      assert.equal(store.getState().currentSong?.songId, "sm1");
+    });
+  });
+
   describe("the current song's timing", () => {
     let clock: number;
     const timing = () => {
@@ -628,6 +723,13 @@ describe("admin checks", () => {
         startWithLowBitrate: false,
         scoringData: [1, 2, 3],
       });
+    });
+
+    test("comes with them again for a reloaded display", async () => {
+      const api = makeApi();
+      store.update((state) => state.songQueue.push(damSong));
+      const popped = await api.popSong({}, display);
+      assert.deepEqual(await api.popSong({ resume: true }, display), popped);
     });
 
     test("says to start low when config.yaml asks for the low bitrate", async () => {
@@ -1898,6 +2000,11 @@ describe("validators", () => {
   test("other methods", () => {
     assert.deepEqual(validators.whoami({}), {});
     invalid("whoami", { isAdmin: true });
+    assert.deepEqual(validators.popSong({}), {});
+    assert.deepEqual(validators.popSong({ resume: true }), { resume: true });
+    assert.deepEqual(validators.popSong({ resume: false }), { resume: false });
+    invalid("popSong", { resume: "yes" });
+    invalid("popSong", { next: true });
     assert.deepEqual(validators.adminLogin({ password: "パスワード" }), {
       password: "パスワード",
     });

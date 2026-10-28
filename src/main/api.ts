@@ -377,6 +377,9 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     };
   };
 
+  // The last song (songId@timestamp) popSong gave a reloaded display again.
+  let resumedSong: string | null = null;
+
   return {
     async damSearchSongs({ query, offset = 0, limit = DEFAULT_LIMIT.dam }) {
       const result = await deps.dkwebsys.getMusicByKeyword(
@@ -958,12 +961,28 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       return deps.downloads.clearDam(songId, suffix);
     },
 
-    async popSong(_input, caller) {
+    async popSong({ resume }, caller) {
       // Not an admin's phone either: the song it took would never play.
       if (!caller.isDisplay) {
         throw new ApiError(403, "Only the display starts the next song");
       }
       const song = store.update((state) => {
+        const current = state.currentSong;
+        if (
+          resume &&
+          current &&
+          state.playbackState !== "SKIPPING" &&
+          adhocLyricsKey(current) !== resumedSong
+        ) {
+          // A reloaded display: the same song from the start, keeping its
+          // place in the history and its lines pushed so far.
+          resumedSong = adhocLyricsKey(current);
+          state.currentSongStartedAt = null;
+          state.currentSongPausedMs = 0;
+          state.currentSongPausedSince = null;
+          state.currentSongLength = null;
+          return current;
+        }
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];
         const previous = state.currentSong;

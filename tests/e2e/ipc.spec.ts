@@ -57,7 +57,38 @@ test("the display uses IPC, not the HTTP API", async ({
   expect(karafriends.displayRequests.filter(isApiRequest)).toEqual([]);
 });
 
-test("a reloaded display gets the live state again, and its updates", async ({
+// The song the display's video plays, and how far in it is.
+const playing = (display: Page) =>
+  display
+    .locator("video")
+    .evaluate((v: HTMLVideoElement) => [
+      v.currentSrc.split("/").pop(),
+      v.currentTime,
+    ]);
+
+// The current song's id, as the phones see it: the first event of a fresh
+// /api/events stream is the live state.
+async function currentSongId(remoconUrl: string) {
+  const controller = new AbortController();
+  const res = await fetch(new URL("api/events", remoconUrl), {
+    signal: controller.signal,
+  });
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error(`The stream ended early: ${text}`);
+      text += value;
+      const data = text.match(/^data: (.*)$/m);
+      if (data) return JSON.parse(data[1]).state.currentSong?.songId ?? null;
+    }
+  } finally {
+    controller.abort();
+  }
+}
+
+test("a reloaded display plays the song again, and gets the live state and its updates", async ({
   karafriends,
   display,
 }) => {
@@ -65,14 +96,21 @@ test("a reloaded display gets the live state again, and its updates", async ({
   // Wait for song 1's video to play: reloading while it was still starting
   // crashed the display's renderer now and then (1 in 10 with several tests
   // at once), and page.reload() failed with it.
-  await expect
-    .poll(() =>
-      display.locator("video").evaluate((v: HTMLVideoElement) => v.currentTime),
-    )
-    .toBeGreaterThan(0);
+  await expect.poll(async () => (await playing(display))[1]).toBeGreaterThan(0);
   await display.reload();
   const queue = display.getByRole("list", { name: "Queue" });
   await expect(queue.getByText(title(2)).first()).toBeVisible();
+
+  // Song 1 plays again, and is still the current song past the display's
+  // 5-second check: the reload didn't move on to song 2.
+  await expect
+    .poll(() => playing(display))
+    .toEqual([`nico-${song(1).songId}.mp4`, expect.any(Number)]);
+  await expect.poll(async () => (await playing(display))[1]).toBeGreaterThan(0);
+  await display.waitForTimeout(6_000);
+  expect(await currentSongId(karafriends.remoconUrl)).toBe(song(1).songId);
+  await expect(queue.getByText(title(2)).first()).toBeVisible();
+  expect((await playing(display))[0]).toBe(`nico-${song(1).songId}.mp4`);
 
   // A phone takes song 2 off the queue.
   const res = await fetch(new URL("api/removeSong", karafriends.remoconUrl), {

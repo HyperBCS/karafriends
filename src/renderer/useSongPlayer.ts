@@ -52,7 +52,8 @@ export interface Announcement {
 
 // Plays the queue in the display's <video>: while nothing plays it asks for
 // the next song (popSong, which only the display may call) every 5 seconds,
-// and at once when the live queue stops being empty; it loads each song by
+// and at once when the live queue stops being empty (a reloaded page first
+// asks for the song that was playing, to play it again); it loads each song by
 // kind, follows the live playback state (pause, restart, skip), the key and
 // the guide melody level, tells the server where the song really is, and
 // asks again when a song ends.
@@ -73,6 +74,7 @@ export default function useSongPlayer({
   const guideMelodyLevel = useLiveState((s) => s?.guideMelodyLevel ?? 0);
   const songVolume = useLiveState((s) => s?.songVolume ?? 100);
   const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
+  const hasCurrentSong = useLiveState((state) => !!state?.currentSong);
   // Set while waiting for the next poll; null while one is in flight or a
   // song plays.
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,6 +85,10 @@ export default function useSongPlayer({
   const songRef = useRef<PoppedSong | null>(null);
   // The DAM stream, while one plays.
   const hlsRef = useRef<Hls | null>(null);
+  // True until this page's first popSong answers. That one asks to resume:
+  // after a reload (a renderer crash, or F5) the server's current song is
+  // the one that was playing, and it plays again from the start.
+  const resumeRef = useRef(true);
 
   const schedulePoll = () => {
     pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
@@ -97,9 +103,10 @@ export default function useSongPlayer({
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     pollTimeoutRef.current = null;
     pollingRef.current = true;
-    call("popSong", {}).then(
+    call("popSong", resumeRef.current ? { resume: true } : {}).then(
       (song) => {
         pollingRef.current = false;
+        resumeRef.current = false;
         startSong(song);
       },
       (err) => {
@@ -390,12 +397,14 @@ export default function useSongPlayer({
   }, [videoRef]);
 
   // A song queued while nothing plays starts at once, not at the next poll
-  // (which stays as the fallback). Only while a poll is armed: with none,
-  // one is in flight or a song plays.
+  // (which stays as the fallback), and so does the song a reloaded page
+  // finds current. Only while a poll is armed: with none, one is in flight
+  // or a song plays.
   useEffect(() => {
-    if (playbackState !== "WAITING" || !hasQueue) return;
+    const resume = resumeRef.current && hasCurrentSong;
+    if (!resume && (playbackState !== "WAITING" || !hasQueue)) return;
     if (pollTimeoutRef.current !== null) pollQueue();
-  }, [playbackState, hasQueue]);
+  }, [playbackState, hasQueue, hasCurrentSong]);
 
   useEffect(() => {
     const video = videoRef.current;

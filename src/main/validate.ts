@@ -352,7 +352,12 @@ export const validators: {
       suffix: string(input, "suffix", 64),
     };
   },
-  popSong: nothing,
+  popSong: (raw) => {
+    const input = fields(raw, ["resume"]);
+    return input.resume === undefined
+      ? {}
+      : { resume: boolean(input, "resume") };
+  },
   whoami: nothing,
   adminLogin: (raw) => {
     const password = string(fields(raw, ["password"]), "password", 200);
