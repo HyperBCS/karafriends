@@ -110,14 +110,13 @@ jobs:
           key: ${{ runner.os }}-resources-${{ hashFiles('scripts/getExternalResources.mjs') }}
       - run: yarn install --immutable
       - run: yarn test:unit
+      # ASIO is a default feature of the native crates.
       - run: yarn build-dev
         env:
-          CARGO_ARGS: --features asio
           CARGO_INCREMENTAL: false
       # Smoke tests run against the production build.
       - run: yarn build-prod
         env:
-          CARGO_ARGS: --features asio
           CARGO_INCREMENTAL: false
       - run: yarn test:e2e:install
       - run: yarn test:e2e:ci
