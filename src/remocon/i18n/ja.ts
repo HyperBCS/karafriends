@@ -93,6 +93,7 @@ export const ja: Messages = {
   "reason.toolFailedToStart": "ダウンローダーを起動できませんでした",
   "reason.videoProcessing": "動画を作成できませんでした",
   "reason.damSample": "DAMから曲ではなく試聴版が届きました",
+  "reason.diskFull": "カラオケPCのディスクがいっぱいです",
   "reason.other": "ダウンロードに失敗しました",
   "reason.alreadyAdding": "ほかの人がこの曲を予約しているところです",
   "reason.nicoInfo": "動画IDが正しくないかもしれません。",

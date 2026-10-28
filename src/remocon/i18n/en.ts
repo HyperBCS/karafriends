@@ -104,6 +104,7 @@ export const en = {
   "reason.toolFailedToStart": "Couldn't start the downloader",
   "reason.videoProcessing": "Couldn't put the video together",
   "reason.damSample": "DAM sent a sample, not the song",
+  "reason.diskFull": "The karaoke PC's disk is full",
   "reason.other": "Download failed",
   "reason.alreadyAdding": "Someone is already adding this song",
   "reason.nicoInfo": "Maybe the video ID is wrong.",

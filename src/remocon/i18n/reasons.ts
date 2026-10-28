@@ -16,23 +16,18 @@ type ReasonKey = Exclude<
   `reason.queueLimit${string}`
 >;
 
-// downloadFailure.ts's REASONS, which a failed download's entry carries.
-const DOWNLOAD_REASONS: Record<string, ReasonKey> = {
-  [REASONS.unavailable]: "reason.unavailable",
-  [REASONS.private]: "reason.private",
-  [REASONS.ageRestricted]: "reason.ageRestricted",
-  [REASONS.membersOnly]: "reason.membersOnly",
-  [REASONS.liveOrPaid]: "reason.liveOrPaid",
-  [REASONS.geoBlocked]: "reason.geoBlocked",
-  [REASONS.botCheck]: "reason.botCheck",
-  [REASONS.timedOut]: "reason.timedOut",
-  [REASONS.joysound]: "reason.joysound",
-  [REASONS.noTools]: "reason.noTools",
-  [REASONS.toolFailedToStart]: "reason.toolFailedToStart",
-  [REASONS.videoProcessing]: "reason.videoProcessing",
-  [REASONS.damSample]: "reason.damSample",
-  [REASONS.other]: "reason.other",
-};
+// downloadFailure.ts's REASONS, which a failed download's entry carries:
+// each one's key is "reason.<its name>".
+type DownloadReasonKey = `reason.${keyof typeof REASONS}`;
+// A type error here: en.ts lacks a key for a reason added to REASONS.
+const everyReasonHasAKey: ReasonKey = "" as DownloadReasonKey;
+void everyReasonHasAKey;
+const DOWNLOAD_REASONS = new Map<string, DownloadReasonKey>(
+  Object.entries(REASONS).map(
+    ([name, reason]) =>
+      [reason, `reason.${name}` as DownloadReasonKey] as const,
+  ),
+);
 
 // Word for word as src/main writes them (queueSong, nicoInfo, and the
 // Joysound download's guard); i18n.test.ts checks they're still there.
@@ -51,7 +46,7 @@ export function reasonText(
   reason: string,
   language: Language = currentLanguage(),
 ): string {
-  const key = DOWNLOAD_REASONS[reason] ?? SERVER_REASONS[reason];
+  const key = DOWNLOAD_REASONS.get(reason) ?? SERVER_REASONS[reason];
   if (key) return translate(language, key);
   const limit = reason.match(QUEUE_LIMIT);
   if (limit) {
