@@ -1,431 +1,292 @@
 import FFT from "fft.js";
 
-/** Adapted from https://github.com/olvb/phaze */
+// The key change: a stereo phase vocoder that shifts pitch by pitchFactor
+// (2^(semitones/12)) without changing the tempo.
+//
+// It is peak-locked pitch shifting after Laroche and Dolson ("New
+// phase-vocoder techniques for real-time pitch shifting, chorusing,
+// harmonizing and other exotic audio modifications", JAES 1999), on the
+// frame layout of olvb/phaze, which this file started as. Each quantum it
+// takes the last 2048 samples, Hann-windowed, to the frequency domain and
+// finds the spectral peaks. Each peak's true frequency comes from how far its
+// phase turned since the frame one quantum earlier. The bins around a peak
+// (its region) move together, by the whole number of bins nearest to
+// (factor - 1) x that frequency, and are turned by one phase per region
+// which advances, quantum to quantum, by (factor - 1) x the peak's phase
+// advance. So the shifted peak's phase runs at factor x its true frequency,
+// and its frequency comes out right however coarse the bins are (23 Hz at
+// 48 kHz); only the place of its window in the spectrum is rounded, which
+// costs it up to about 1 dB of level (2 dB for a moment while a note glides
+// between bins). A region turns as one, so a peak's bins stay in phase with
+// each other (less of the vocoder's "phasiness" than turning each bin alone,
+// as Bernsee's smbPitchShift does), and a peak takes its phase from the
+// region it was in a quantum earlier, so a note that drifts between bins
+// keeps its phase. Regions end at the quietest bin between two peaks.
+//
+// Frames overlap 16 times (hop 128, one quantum) and are Hann-windowed again
+// on the way out. At factor 1 a frame is the windowed input itself, added
+// without an FFT: the output is then the input exactly, 1920 samples late,
+// and a key change fades in (and out) over one window as frames of the other
+// kind take over, with no gap. The output is at the input's level; webAudio.ts
+// sets the songs' level.
 
-const WEBAUDIO_BLOCK_SIZE = 128;
-const BUFFERED_BLOCK_SIZE = 2048;
+const QUANTUM = 128;
+const FFT_SIZE = 2048;
+// Bins 0 (DC) to FFT_SIZE / 2 (Nyquist): all a real signal has.
+const BINS = FFT_SIZE / 2 + 1;
+// A Hann window in and out, overlapping FFT_SIZE / QUANTUM times: the
+// squared windows sum to 16 x 3/8 = 6 at every sample.
+const OUTPUT_SCALE = 1 / ((FFT_SIZE / QUANTUM) * (3 / 8));
+const TWO_PI = 2 * Math.PI;
+// How far a bin's phase turns in one hop at the bin's own frequency, per bin.
+const BIN_ADVANCE = (TWO_PI * QUANTUM) / FFT_SIZE;
 
-/** Overlap-Add Node */
-class OLAProcessor extends AudioWorkletProcessor {
-  nbInputs: number;
-  nbOutputs: number;
-  blockSize: number;
-  hopSize: number;
-  nbOverlaps: number;
+// To (-π, π].
+function wrap(phase: number): number {
+  return phase - TWO_PI * Math.round(phase / TWO_PI);
+}
 
-  inputBuffers: Float32Array[][];
-  inputBuffersHead: Float32Array[][];
-  inputBuffersToSend: Float32Array[][];
+class Channel {
+  // The last FFT_SIZE + QUANTUM samples, oldest first: the current frame
+  // and, one quantum earlier, the frame before it.
+  readonly history = new Float32Array(FFT_SIZE + QUANTUM);
+  // The overlap-add of the frames so far; [0, QUANTUM) is due out next.
+  readonly output = new Float32Array(FFT_SIZE);
+  // This frame's spectrum and the last one (bins 0 to BINS - 1, re/im
+  // interleaved; fft.js leaves scratch above them), swapped each frame.
+  spectrum = new Float64Array(2 * FFT_SIZE);
+  previous = new Float64Array(2 * FFT_SIZE);
+  // The shifted spectrum, bins 0 to BINS - 1.
+  readonly shifted = new Float64Array(2 * BINS);
+  // Per analysis bin, the phase turn of the region the bin was in last
+  // frame.
+  readonly regionTurn = new Float64Array(BINS);
 
-  outputBuffers: Float32Array[][];
-  outputBuffersToRetrieve: Float32Array[][];
+  constructor(readonly index: number) {}
+}
 
-  constructor(options: any) {
-    // @ts-expect-error the constructor in audioworklet.d.ts (copied from @types/audioworklet) takes no arguments
-    super(options);
+class PhaseVocoderProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: "pitchFactor", defaultValue: 1, automationRate: "k-rate" }];
+  }
 
-    this.nbInputs = options.numberOfInputs;
-    this.nbOutputs = options.numberOfOutputs;
+  private readonly fft = new FFT(FFT_SIZE);
+  private readonly window = new Float32Array(FFT_SIZE);
+  // The window squared, times OUTPUT_SCALE: an unshifted frame's weights.
+  private readonly windowSquared = new Float32Array(FFT_SIZE);
+  private readonly channels = [new Channel(0), new Channel(1)];
+  // Whether the last frame was shifted: when a shift starts, the frame one
+  // quantum earlier is analysed first, for the phase advance.
+  private shifting = false;
 
-    this.blockSize = options.processorOptions.blockSize;
-    // TODO for now, the only support hop size is the size of a web audio block
-    this.hopSize = WEBAUDIO_BLOCK_SIZE;
+  // Scratch, shared by the channels.
+  private readonly frame = new Float64Array(FFT_SIZE);
+  private readonly magnitudes = new Float64Array(BINS);
+  private readonly peaks = new Int32Array(BINS);
+  private readonly peakShift = new Int32Array(BINS);
+  private readonly peakTurn = new Float64Array(BINS);
+  // Both channels' shifted spectra as one: left + i x right, so a single
+  // complex inverse FFT gives left in its real part and right in its
+  // imaginary part.
+  private readonly packed = new Float64Array(2 * FFT_SIZE);
+  private readonly time = new Float64Array(2 * FFT_SIZE);
 
-    this.nbOverlaps = this.blockSize / this.hopSize;
-
-    // pre-allocate input buffers (will be reallocated if needed)
-    this.inputBuffers = new Array(this.nbInputs);
-    this.inputBuffersHead = new Array(this.nbInputs);
-    this.inputBuffersToSend = new Array(this.nbInputs);
-    // default to 1 channel per input until we know more
-    for (let i = 0; i < this.nbInputs; i++) {
-      this.allocateInputChannels(i, 1);
-    }
-    // pre-allocate input buffers (will be reallocated if needed)
-    this.outputBuffers = new Array(this.nbOutputs);
-    this.outputBuffersToRetrieve = new Array(this.nbOutputs);
-    // default to 1 channel per output until we know more
-    for (let i = 0; i < this.nbOutputs; i++) {
-      this.allocateOutputChannels(i, 1);
+  constructor() {
+    super();
+    for (let n = 0; n < FFT_SIZE; n++) {
+      this.window[n] = 0.5 * (1 - Math.cos((TWO_PI * n) / FFT_SIZE));
+      this.windowSquared[n] = this.window[n] * this.window[n] * OUTPUT_SCALE;
     }
   }
 
-  /**
-   * Handles dynamic reallocation of input/output channels buffer. (channel numbers may vary during lifecycle)
-   */
-  reallocateChannelsIfNeeded(
+  process(
     inputs: Float32Array[][],
     outputs: Float32Array[][],
+    parameters: Record<string, Float32Array>,
   ) {
-    for (let i = 0; i < this.nbInputs; i++) {
-      const nbChannels = inputs[i].length;
-      if (nbChannels !== this.inputBuffers[i].length) {
-        this.allocateInputChannels(i, nbChannels);
+    const factor = parameters.pitchFactor[parameters.pitchFactor.length - 1];
+    // Two channels in while anything upstream plays (the node's channel
+    // count is fixed at 2), none while nothing does: silence then.
+    const input = inputs[0];
+    for (const channel of this.channels) {
+      const history = channel.history;
+      history.copyWithin(0, QUANTUM);
+      const block = input[channel.index] ?? input[0];
+      if (block) history.set(block, FFT_SIZE);
+      else history.fill(0, FFT_SIZE);
+    }
+
+    if (factor === 1) {
+      this.shifting = false;
+      for (const channel of this.channels) this.addUnshiftedFrame(channel);
+    } else {
+      if (!this.shifting) {
+        this.shifting = true;
+        for (const channel of this.channels) this.startShift(channel);
       }
+      this.addShiftedFrames(factor);
     }
 
-    for (let i = 0; i < this.nbOutputs; i++) {
-      const nbChannels = outputs[i].length;
-      if (nbChannels !== this.outputBuffers[i].length) {
-        this.allocateOutputChannels(i, nbChannels);
+    const output = outputs[0];
+    for (const channel of this.channels) {
+      const out = channel.output;
+      if (channel.index < output.length) {
+        output[channel.index].set(out.subarray(0, QUANTUM));
       }
+      out.copyWithin(0, QUANTUM);
+      out.fill(0, FFT_SIZE - QUANTUM);
     }
-  }
-
-  allocateInputChannels(inputIndex: number, nbChannels: number) {
-    // allocate input buffers
-
-    this.inputBuffers[inputIndex] = new Array(nbChannels);
-    for (let i = 0; i < nbChannels; i++) {
-      this.inputBuffers[inputIndex][i] = new Float32Array(
-        this.blockSize + WEBAUDIO_BLOCK_SIZE,
-      );
-      this.inputBuffers[inputIndex][i].fill(0);
-    }
-
-    // allocate input buffers to send and head pointers to copy from
-    // (cannot directly send a pointer/subarray because input may be modified)
-    this.inputBuffersHead[inputIndex] = new Array(nbChannels);
-    this.inputBuffersToSend[inputIndex] = new Array(nbChannels);
-    for (let i = 0; i < nbChannels; i++) {
-      this.inputBuffersHead[inputIndex][i] = this.inputBuffers[inputIndex][
-        i
-      ].subarray(0, this.blockSize);
-      this.inputBuffersToSend[inputIndex][i] = new Float32Array(this.blockSize);
-    }
-  }
-
-  allocateOutputChannels(outputIndex: number, nbChannels: number) {
-    // allocate output buffers
-    this.outputBuffers[outputIndex] = new Array(nbChannels);
-    for (let i = 0; i < nbChannels; i++) {
-      this.outputBuffers[outputIndex][i] = new Float32Array(this.blockSize);
-      this.outputBuffers[outputIndex][i].fill(0);
-    }
-
-    // allocate output buffers to retrieve
-    // (cannot send a pointer/subarray because new output has to be add to exising output)
-    this.outputBuffersToRetrieve[outputIndex] = new Array(nbChannels);
-    for (let i = 0; i < nbChannels; i++) {
-      this.outputBuffersToRetrieve[outputIndex][i] = new Float32Array(
-        this.blockSize,
-      );
-      this.outputBuffersToRetrieve[outputIndex][i].fill(0);
-    }
-  }
-
-  /**
-   * Read next web audio block to input buffers
-   */
-  readInputs(inputs: Float32Array[][]) {
-    // when playback is paused, we may stop receiving new samples
-    if (inputs[0].length && inputs[0][0].length === 0) {
-      for (let i = 0; i < this.nbInputs; i++) {
-        for (const buffer of this.inputBuffers[i]) {
-          buffer.fill(0, this.blockSize);
-        }
-      }
-      return;
-    }
-
-    for (let i = 0; i < this.nbInputs; i++) {
-      for (let j = 0; j < this.inputBuffers[i].length; j++) {
-        const webAudioBlock = inputs[i][j];
-        this.inputBuffers[i][j].set(webAudioBlock, this.blockSize);
-      }
-    }
-  }
-
-  /**
-   * Write next web audio block from output buffers
-   */
-  writeOutputs(outputs: Float32Array[][]) {
-    for (let i = 0; i < this.nbInputs; i++) {
-      for (let j = 0; j < this.inputBuffers[i].length; j++) {
-        const webAudioBlock = this.outputBuffers[i][j].subarray(
-          0,
-          WEBAUDIO_BLOCK_SIZE,
-        );
-        outputs[i][j].set(webAudioBlock);
-      }
-    }
-  }
-
-  /**
-   * Shift left content of input buffers to receive new web audio block
-   */
-  shiftInputBuffers() {
-    for (let i = 0; i < this.nbInputs; i++) {
-      for (const buffer of this.inputBuffers[i]) {
-        buffer.copyWithin(0, WEBAUDIO_BLOCK_SIZE);
-      }
-    }
-  }
-
-  /**
-   * Shift left content of output buffers to receive new web audio block
-   */
-  shiftOutputBuffers() {
-    for (let i = 0; i < this.nbOutputs; i++) {
-      for (const buffer of this.outputBuffers[i]) {
-        buffer.copyWithin(0, WEBAUDIO_BLOCK_SIZE);
-        buffer.subarray(this.blockSize - WEBAUDIO_BLOCK_SIZE).fill(0);
-      }
-    }
-  }
-
-  /**
-   * Copy contents of input buffers to buffer actually sent to process
-   */
-  prepareInputBuffersToSend() {
-    for (let i = 0; i < this.nbInputs; i++) {
-      for (let j = 0; j < this.inputBuffers[i].length; j++) {
-        this.inputBuffersToSend[i][j].set(this.inputBuffersHead[i][j]);
-      }
-    }
-  }
-
-  /**
-   * Add contents of output buffers just processed to output buffers
-   */
-  handleOutputBuffersToRetrieve() {
-    for (let i = 0; i < this.nbOutputs; i++) {
-      for (let j = 0; j < this.outputBuffers[i].length; j++) {
-        for (let k = 0; k < this.blockSize; k++) {
-          this.outputBuffers[i][j][k] +=
-            this.outputBuffersToRetrieve[i][j][k] / this.nbOverlaps;
-        }
-      }
-    }
-  }
-
-  process(inputs: Float32Array[][], outputs: Float32Array[][], params: any) {
-    this.reallocateChannelsIfNeeded(inputs, outputs);
-
-    this.readInputs(inputs);
-    this.shiftInputBuffers();
-    this.prepareInputBuffersToSend();
-    this.processOLA(
-      this.inputBuffersToSend,
-      this.outputBuffersToRetrieve,
-      params,
-    );
-    this.handleOutputBuffersToRetrieve();
-    this.writeOutputs(outputs);
-    this.shiftOutputBuffers();
-
     return true;
   }
 
-  processOLA(
-    _inputs: Float32Array[][],
-    _outputs: Float32Array[][],
-    _params: any,
-  ) {
-    console.assert(false, "Not overriden");
-  }
-}
-
-function genHannWindow(length: number) {
-  const win = new Float32Array(length);
-  for (let i = 0; i < length; i++) {
-    win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / length));
-  }
-  return win;
-}
-
-class PhaseVocoderProcessor extends OLAProcessor {
-  static get parameterDescriptors() {
-    return [
-      {
-        name: "pitchFactor",
-        defaultValue: 1.0,
-      },
-    ];
-  }
-
-  fftSize: number;
-  timeCursor: number;
-  hannWindow: Float32Array;
-
-  fft: FFT;
-  freqComplexBuffer: any;
-  freqComplexBufferShifted: any;
-  timeComplexBuffer: any;
-  magnitudes: Float32Array;
-  peakIndexes: Int32Array;
-  nbPeaks: number;
-
-  constructor(options: any) {
-    options.processorOptions = {
-      blockSize: BUFFERED_BLOCK_SIZE,
-    };
-    super(options);
-
-    this.fftSize = this.blockSize;
-    this.timeCursor = 0;
-
-    this.hannWindow = genHannWindow(this.blockSize);
-
-    // prepare FFT and pre-allocate buffers
-    this.fft = new FFT(this.fftSize);
-    this.freqComplexBuffer = this.fft.createComplexArray();
-    this.freqComplexBufferShifted = this.fft.createComplexArray();
-    this.timeComplexBuffer = this.fft.createComplexArray();
-    this.magnitudes = new Float32Array(this.fftSize / 2 + 1);
-    this.peakIndexes = new Int32Array(this.magnitudes.length);
-    this.nbPeaks = 0;
-
-    console.log("audio worklet module loaded haha");
-  }
-
-  processOLA(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: any,
-  ) {
-    // no automation, take last value
-    const pitchFactor =
-      parameters.pitchFactor[parameters.pitchFactor.length - 1];
-
-    for (let i = 0; i < this.nbInputs; i++) {
-      for (let j = 0; j < inputs[i].length; j++) {
-        // big assumption here: output is symetric to input
-        const input = inputs[i][j];
-        const output = outputs[i][j];
-
-        this.applyHannWindow(input);
-
-        this.fft.realTransform(this.freqComplexBuffer, input);
-
-        this.computeMagnitudes();
-        this.findPeaks();
-        this.shiftPeaks(pitchFactor);
-
-        this.fft.completeSpectrum(this.freqComplexBufferShifted);
-        this.fft.inverseTransform(
-          this.timeComplexBuffer,
-          this.freqComplexBufferShifted,
-        );
-        this.fft.fromComplexArray(this.timeComplexBuffer, output);
-
-        this.applyHannWindow(output);
-      }
-    }
-
-    this.timeCursor += this.hopSize;
-  }
-
-  /**
-   * Apply Hann window in-place
-   */
-  applyHannWindow(input: Float32Array) {
-    for (let i = 0; i < this.blockSize; i++) {
-      input[i] = input[i] * this.hannWindow[i];
+  // The current frame windowed twice: what the vocoder makes of it at
+  // factor 1, without the round trip through the FFT.
+  private addUnshiftedFrame(channel: Channel) {
+    const { history, output } = channel;
+    const squared = this.windowSquared;
+    for (let n = 0; n < FFT_SIZE; n++) {
+      output[n] += history[QUANTUM + n] * squared[n];
     }
   }
 
-  /**
-   * Compute squared magnitudes for peak finding
-   */
-  computeMagnitudes() {
-    let i = 0;
-    let j = 0;
-    while (i < this.magnitudes.length) {
-      const real = this.freqComplexBuffer[j];
-      const imag = this.freqComplexBuffer[j + 1];
-      // no need to sqrt for peak finding
-      this.magnitudes[i] = real ** 2 + imag ** 2;
-      i += 1;
-      j += 2;
+  // The frame one quantum back, for the first shifted frame's phase advance.
+  private startShift(channel: Channel) {
+    this.analyse(channel.history, 0, channel.previous);
+    channel.regionTurn.fill(0);
+  }
+
+  private analyse(history: Float32Array, start: number, into: Float64Array) {
+    const frame = this.frame;
+    const window = this.window;
+    for (let n = 0; n < FFT_SIZE; n++)
+      frame[n] = history[start + n] * window[n];
+    this.fft.realTransform(into, frame);
+  }
+
+  private addShiftedFrames(factor: number) {
+    const [left, right] = this.channels;
+    for (const channel of this.channels) {
+      this.analyse(channel.history, QUANTUM, channel.spectrum);
+      this.shift(channel, factor);
+    }
+
+    // Each channel's spectrum is that of a real signal: bin FFT_SIZE - k is
+    // the conjugate of bin k. Packed as left + i x right:
+    //   bin k:            (lRe - rIm) + i (lIm + rRe)
+    //   bin FFT_SIZE - k: (lRe + rIm) + i (rRe - lIm)
+    // DC and Nyquist keep only their real parts, as a real signal's do.
+    const packed = this.packed;
+    const l = left.shifted;
+    const r = right.shifted;
+    packed[0] = l[0];
+    packed[1] = r[0];
+    packed[FFT_SIZE] = l[FFT_SIZE];
+    packed[FFT_SIZE + 1] = r[FFT_SIZE];
+    for (let k = 1; k < BINS - 1; k++) {
+      const lRe = l[2 * k];
+      const lIm = l[2 * k + 1];
+      const rRe = r[2 * k];
+      const rIm = r[2 * k + 1];
+      packed[2 * k] = lRe - rIm;
+      packed[2 * k + 1] = lIm + rRe;
+      const mirror = 2 * (FFT_SIZE - k);
+      packed[mirror] = lRe + rIm;
+      packed[mirror + 1] = rRe - lIm;
+    }
+    this.fft.inverseTransform(this.time, packed);
+
+    const time = this.time;
+    const window = this.window;
+    const leftOut = left.output;
+    const rightOut = right.output;
+    for (let n = 0; n < FFT_SIZE; n++) {
+      const w = window[n] * OUTPUT_SCALE;
+      leftOut[n] += time[2 * n] * w;
+      rightOut[n] += time[2 * n + 1] * w;
+    }
+
+    for (const channel of this.channels) {
+      const last = channel.previous;
+      channel.previous = channel.spectrum;
+      channel.spectrum = last;
     }
   }
 
-  /**
-   * Find peaks in spectrum magnitudes
-   */
-  findPeaks() {
-    this.nbPeaks = 0;
-    let i = 2;
-    const end = this.magnitudes.length - 2;
+  // Moves the channel's spectrum to channel.shifted, peak by peak.
+  private shift(channel: Channel, factor: number) {
+    const { spectrum, previous, shifted, regionTurn } = channel;
+    const { magnitudes, peaks, peakShift, peakTurn } = this;
 
-    while (i < end) {
-      const mag = this.magnitudes[i];
-
-      if (this.magnitudes[i - 1] >= mag || this.magnitudes[i - 2] >= mag) {
-        i++;
-        continue;
-      }
-      if (this.magnitudes[i + 1] >= mag || this.magnitudes[i + 2] >= mag) {
-        i++;
-        continue;
-      }
-
-      this.peakIndexes[this.nbPeaks] = i;
-      this.nbPeaks++;
-      i += 2;
+    for (let k = 0; k < BINS; k++) {
+      magnitudes[k] = spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2;
     }
-  }
-
-  /**
-   * Shift peaks and regions of influence by pitchFactor into new spectrum
-   */
-  shiftPeaks(pitchFactor: number) {
-    // zero-fill new spectrum
-    this.freqComplexBufferShifted.fill(0);
-
-    for (let i = 0; i < this.nbPeaks; i++) {
-      const peakIndex = this.peakIndexes[i];
-      const peakIndexShifted = Math.round(peakIndex * pitchFactor);
-
-      if (peakIndexShifted > this.magnitudes.length) {
-        break;
+    // Peaks: louder than the bins either side.
+    let count = 0;
+    for (let k = 1; k < BINS - 1; k++) {
+      const m = magnitudes[k];
+      if (m > magnitudes[k - 1] && m >= magnitudes[k + 1]) {
+        peaks[count++] = k;
+        k += 1;
       }
+    }
 
-      // find region of influence
-      let startIndex = 0;
-      let endIndex = this.fftSize;
-      if (i > 0) {
-        const peakIndexBefore = this.peakIndexes[i - 1];
-        startIndex = peakIndex - Math.floor((peakIndex - peakIndexBefore) / 2);
-      }
-      if (i < this.nbPeaks - 1) {
-        const peakIndexAfter = this.peakIndexes[i + 1];
-        endIndex = peakIndex + Math.ceil((peakIndexAfter - peakIndex) / 2);
-      }
+    // Every peak's shift and phase turn, before any region's turn is
+    // overwritten below.
+    for (let i = 0; i < count; i++) {
+      const p = peaks[i];
+      const re = spectrum[2 * p];
+      const im = spectrum[2 * p + 1];
+      const lastRe = previous[2 * p];
+      const lastIm = previous[2 * p + 1];
+      // The phase advance at bin p since the last frame: the bin's own
+      // advance plus the deviation the phases show, so the true frequency.
+      const turned = Math.atan2(
+        im * lastRe - re * lastIm,
+        re * lastRe + im * lastIm,
+      );
+      const expected = BIN_ADVANCE * p;
+      const advance = expected + wrap(turned - expected);
+      peakShift[i] = Math.round(((factor - 1) * advance) / BIN_ADVANCE);
+      peakTurn[i] = wrap(regionTurn[p] + (factor - 1) * advance);
+    }
 
-      // shift whole region of influence around peak to shifted peak
-      const startOffset = startIndex - peakIndex;
-      const endOffset = endIndex - peakIndex;
-      for (let j = startOffset; j < endOffset; j++) {
-        const binIndex = peakIndex + j;
-        const binIndexShifted = peakIndexShifted + j;
-
-        if (binIndexShifted >= this.magnitudes.length) {
-          break;
+    shifted.fill(0);
+    let start = 0;
+    for (let i = 0; i < count; i++) {
+      const p = peaks[i];
+      // The region: from the quietest bin between this peak and the last
+      // to the quietest one before the next, or to the ends.
+      let end = BINS;
+      if (i < count - 1) {
+        end = p + 1;
+        for (let k = p + 2; k <= peaks[i + 1]; k++) {
+          if (magnitudes[k] < magnitudes[end]) end = k;
         }
-
-        // apply phase correction
-        const omegaDelta =
-          (2 * Math.PI * (binIndexShifted - binIndex)) / this.fftSize;
-        const phaseShiftReal = Math.cos(omegaDelta * this.timeCursor);
-        const phaseShiftImag = Math.sin(omegaDelta * this.timeCursor);
-
-        const indexReal = binIndex * 2;
-        const indexImag = indexReal + 1;
-        const valueReal = this.freqComplexBuffer[indexReal];
-        const valueImag = this.freqComplexBuffer[indexImag];
-
-        const valueShiftedReal =
-          valueReal * phaseShiftReal - valueImag * phaseShiftImag;
-        const valueShiftedImag =
-          valueReal * phaseShiftImag + valueImag * phaseShiftReal;
-
-        const indexShiftedReal = binIndexShifted * 2;
-        const indexShiftedImag = indexShiftedReal + 1;
-        this.freqComplexBufferShifted[indexShiftedReal] += valueShiftedReal;
-        this.freqComplexBufferShifted[indexShiftedImag] += valueShiftedImag;
       }
+      const delta = peakShift[i];
+      const turn = peakTurn[i];
+      for (let k = start; k < end; k++) regionTurn[k] = turn;
+
+      // Moving a frame's spectrum by delta bins flips the phase at its middle
+      // when delta is odd; the turn is kept for the middle, where the window
+      // is, so a peak that changes bins doesn't jump.
+      let cos = Math.cos(turn);
+      let sin = Math.sin(turn);
+      if (delta & 1) {
+        cos = -cos;
+        sin = -sin;
+      }
+      // Only bins in [0, BINS) are read or written.
+      const from = Math.max(start, -delta);
+      const to = Math.min(end, BINS - delta);
+      for (let k = from; k < to; k++) {
+        const re = spectrum[2 * k];
+        const im = spectrum[2 * k + 1];
+        const into = 2 * (k + delta);
+        shifted[into] += re * cos - im * sin;
+        shifted[into + 1] += re * sin + im * cos;
+      }
+      start = end;
     }
   }
 }

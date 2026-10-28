@@ -11,14 +11,16 @@ import {
 // loudness (-3 dB per side).
 const CENTRE_TO_SIDE = 0.7;
 
-// The vocoder's level, even at no shift: it overlap-adds 16 frames (2048
-// samples, hop 128), each windowed by Hann on the way in and out, and
-// divides by 16. Hann squared averages 3/8, so the frames sum to 16 * 3/8 = 6
-// and come out at 6 / 16 = 0.375 (-8.5 dB). The bypass plays at that level
-// too, so a song is as loud at key 0 as at any other key, and as loud as
-// before the bypass. Making the vocoder up to 1 instead would raise every
-// song by 8.5 dB, and a loud YouTube gain could clip.
-const VOCODER_LEVEL = 0.375;
+// The songs' level, at key 0 and with the key changed alike: 0.375
+// (-8.5 dB), what the first vocoder's overlap-add came out at, so songs are
+// as loud as they have always been. The vocoder itself is now at the input's
+// level; playing at 1 would raise every song by 8.5 dB, and a loud YouTube
+// gain could clip.
+const SONG_LEVEL = 0.375;
+
+// The crossfade between the bypass and the vocoder when the key leaves or
+// returns to 0: a setTargetAtTime time constant, so 99% done in 25 ms.
+const CROSSFADE_TIME_CONSTANT = 0.005;
 
 // An output the songs can play through: its device id (from
 // enumerateDevices) and its name.
@@ -29,14 +31,16 @@ export interface SongOutput {
 
 // The display's sound: input → [Joysound routing] → delay (the audio/video
 // offset) → gain (the song's own loudness) → songVolume (the party's
-// volume) → vocoder (once its worklet loads, and only while the key is
-// changed; otherwise bypassGain) → speakers.
+// volume) → bypassGain at key 0, or the vocoder (once its worklet loads)
+// and vocoderOutput while the key is changed → speakers.
 export default class KarafriendsAudio {
   private delayNode: DelayNode;
   private gainNode: GainNode;
   private songVolumeNode: GainNode;
   private bypassGain: GainNode;
-  private vocoderNode: AudioWorkletNode | null;
+  private vocoderOutput: GainNode;
+  // The vocoder's pitchFactor, once its worklet loads.
+  private pitchFactor: AudioParam | null = null;
   private semitones = 0;
   // Joysound's ogg is 3-channel: 0 left, 1 right, 2 a synthesised guide
   // melody (centre), which a stereo destination drops. While a Joysound song
@@ -70,7 +74,7 @@ export default class KarafriendsAudio {
     this.delayNode.connect(this.gainNode);
     this.gainNode.connect(this.songVolumeNode);
     this.bypassGain = this.audioContext.createGain();
-    this.bypassGain.gain.value = VOCODER_LEVEL;
+    this.bypassGain.gain.value = SONG_LEVEL;
     this.bypassGain.connect(this.audioContext.destination);
     this.songVolumeNode.connect(this.bypassGain);
 
@@ -85,51 +89,58 @@ export default class KarafriendsAudio {
     this.guideGain.connect(merger, 0, 1);
     merger.connect(this.delayNode);
 
-    this.vocoderNode = null;
-    try {
-      this.audioContext.audioWorklet
-        .addModule(phazeAudioWorkletUrl)
-        .then(() => {
-          try {
-            // Operations that might throw synchronous errors
-            this.vocoderNode = new AudioWorkletNode(
-              this.audioContext,
-              "phase-vocoder",
-            );
-            this.vocoderNode.connect(this.audioContext.destination);
-            this.pitchShift(this.semitones);
-          } catch (error) {
-            // Handle errors that occur during the audio node operations
-            console.error("Error setting up audio nodes:", error);
-          }
-        })
-        .catch((e) => {
-          // Handle errors specifically related to the module loading
-          console.error(
-            "Could not load pitch shift audio worklet, pitch shift will not work:",
-            e,
-          );
-        });
-    } catch (e) {
-      // Handle other synchronous errors
-      console.error("An unexpected error occurred:", e);
-    }
+    this.vocoderOutput = this.audioContext.createGain();
+    this.vocoderOutput.gain.value = 0;
+    this.vocoderOutput.connect(this.audioContext.destination);
+    this.audioContext.audioWorklet
+      .addModule(phazeAudioWorkletUrl)
+      .then(() => {
+        // Stereo in and out, always, so its buffers never change.
+        const vocoder = new AudioWorkletNode(
+          this.audioContext,
+          "phase-vocoder",
+          {
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: "explicit",
+          },
+        );
+        const pitchFactor = vocoder.parameters.get("pitchFactor");
+        if (!pitchFactor) throw new Error("the worklet has no pitchFactor");
+        // Fed all along, so its window is full when the key changes. At key
+        // 0 it skips the FFTs and costs a few µs a quantum.
+        this.songVolumeNode.connect(vocoder);
+        vocoder.connect(this.vocoderOutput);
+        this.pitchFactor = pitchFactor;
+        this.pitchShift(this.semitones);
+      })
+      .catch((e) =>
+        console.error(
+          "Couldn't load the pitch shift worklet; key changes won't work:",
+          e,
+        ),
+      );
   }
 
-  // The vocoder is in the chain only while the key is changed: even at no
-  // shift it adds 44 ms (measured in M8, see notes/PLAN-mobile.md), so at 0
-  // the song goes through bypassGain instead, at the vocoder's level.
+  // The song is heard through the vocoder only while the key is changed:
+  // even at no shift it adds 40 ms (its 2048-sample window, less a quantum),
+  // so at 0 it's heard through bypassGain instead. The two are crossfaded:
+  // the vocoder's window is always full, so the song doesn't drop out, though
+  // it repeats (key off 0) or skips (back to 0) those 40 ms.
   pitchShift(semitones: number) {
     this.semitones = semitones;
-    const vocoder = this.vocoderNode;
-    if (vocoder) {
-      // @ts-expect-error i swear there's a .get method on this object.
-      vocoder.parameters.get("pitchFactor").value = Math.pow(2, semitones / 12);
+    const pitchFactor = this.pitchFactor;
+    if (!pitchFactor) return;
+    pitchFactor.value = Math.pow(2, semitones / 12);
+    const now = this.audioContext.currentTime;
+    const shifted = semitones !== 0;
+    for (const [gain, on] of [
+      [this.vocoderOutput.gain, shifted],
+      [this.bypassGain.gain, !shifted],
+    ] as const) {
+      gain.cancelScheduledValues(now);
+      gain.setTargetAtTime(on ? SONG_LEVEL : 0, now, CROSSFADE_TIME_CONSTANT);
     }
-    this.songVolumeNode.disconnect();
-    this.songVolumeNode.connect(
-      vocoder && semitones !== 0 ? vocoder : this.bypassGain,
-    );
   }
 
   // The song's own loudness, from its source.
