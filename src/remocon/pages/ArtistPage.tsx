@@ -40,8 +40,8 @@ function useJoysoundArtist(id: string) {
   };
 }
 
-// A DAM or Joysound artist's songs. (Render it with key={kind}: the kind
-// picks the lookup.)
+// A DAM or Joysound artist's songs. (App.tsx keys it by kind and id: the
+// kind picks the lookup.)
 const ArtistPage = ({ kind }: { kind: "dam" | "joysound" }) => {
   const { id } = useParams<{ id: string }>();
   const useArtist = kind === "dam" ? useDamArtist : useJoysoundArtist;

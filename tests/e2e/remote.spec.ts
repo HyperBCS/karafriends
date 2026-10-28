@@ -616,6 +616,57 @@ test("Home on a song page goes to the search screen", async ({
   expect(new URL(remote.url()).hash).toBe("#/");
 });
 
+// The details a DAM song's page asks for, for song n.
+const damSongDetail = (n: number) => ({
+  ...damSong(n),
+  lyricsPreview: null,
+  vocalTypes: ["NORMAL"],
+  tieUp: null,
+  playtime: 200,
+});
+
+test("another song's page starts afresh: its own spinner, not the last song or its error", async ({
+  karafriends,
+  remote,
+}) => {
+  // Song 1 fails, song 3 waits until let go.
+  let letGo = () => {};
+  const held = new Promise<void>((resolve) => (letGo = resolve));
+  await remote.route("**/api/damSong", async (route) => {
+    const n = Number(route.request().postDataJSON().id.replace("e2e-", ""));
+    if (n === 1) {
+      return route.fulfill({ status: 502, json: { error: "DAM is down" } });
+    }
+    if (n === 3) await held;
+    return route.fulfill({ json: damSongDetail(n) });
+  });
+  const main = remote.getByRole("main");
+  await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
+  await expect(main.getByRole("alert")).toContainText("DAM is down");
+
+  // As the now-playing link does: another page of the same kind. Song 2
+  // is asked for at once, without a tap on Try again.
+  await remote.evaluate(() => (window.location.hash = "#/song/e2e-2"));
+  await expect(
+    remote.getByRole("heading", { name: songName(2) }),
+  ).toBeVisible();
+  await expect(main.getByRole("alert")).toHaveCount(0);
+
+  // While song 3 loads, the spinner shows, not song 2 and its buttons.
+  await remote.evaluate(() => (window.location.hash = "#/song/e2e-3"));
+  await expect(main.getByRole("status", { name: "Loading" })).toBeVisible();
+  await expect(remote.getByRole("heading", { name: songName(2) })).toHaveCount(
+    0,
+  );
+  await expect(
+    remote.getByRole("button", { name: "Queue song", exact: true }),
+  ).toHaveCount(0);
+  letGo();
+  await expect(
+    remote.getByRole("heading", { name: songName(3) }),
+  ).toBeVisible();
+});
+
 test("an artist search from both catalogs takes turns on equal matches, and More loads both", async ({
   remote,
 }) => {

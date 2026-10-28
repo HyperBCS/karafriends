@@ -7,6 +7,7 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useParams,
 } from "react-router";
 
 import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
@@ -143,6 +144,25 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   );
 };
 
+// Each song, video or artist gets a page of its own. One opened from another
+// of the same kind (song to song, through Now playing) mounts afresh, with
+// its own spinner and no earlier error or button state, rather than the
+// last one staying on screen, live, while the new one loads. Keyed by the
+// id alone, so picking a Joysound song's background (a second param, in
+// the address in place) keeps the page.
+const PerId = ({
+  page,
+  param,
+  children,
+}: {
+  page: string;
+  param: string;
+  children: React.ReactNode;
+}) => {
+  const id = useParams()[param];
+  return <React.Fragment key={`${page}/${id}`}>{children}</React.Fragment>;
+};
+
 // The remote's screens above the now-playing sheet. A phone without a
 // nickname gets the settings screen, and nothing else, until it picks one.
 const Shell = () => {
@@ -183,7 +203,9 @@ const Shell = () => {
           path={`${SONG_PAGES.dam}/:id`}
           element={
             <Screen title={sourceName("dam")}>
-              <SongPage kind="dam" />
+              <PerId page="dam" param="id">
+                <SongPage kind="dam" />
+              </PerId>
             </Screen>
           }
         />
@@ -193,7 +215,9 @@ const Shell = () => {
             path={`${SONG_PAGES.joysound}/${path}`}
             element={
               <Screen title={sourceName("joysound")}>
-                <SongPage kind="joysound" />
+                <PerId page="joysound" param="id">
+                  <SongPage kind="joysound" />
+                </PerId>
               </Screen>
             }
           />
@@ -202,7 +226,9 @@ const Shell = () => {
           path={`${ARTIST_PAGES.dam}/:id`}
           element={
             <Screen title={t("search.artist")}>
-              <ArtistPage key="dam" kind="dam" />
+              <PerId page="damArtist" param="id">
+                <ArtistPage kind="dam" />
+              </PerId>
             </Screen>
           }
         />
@@ -210,7 +236,9 @@ const Shell = () => {
           path={`${ARTIST_PAGES.joysound}/:id`}
           element={
             <Screen title={t("search.artist")}>
-              <ArtistPage key="joysound" kind="joysound" />
+              <PerId page="joysoundArtist" param="id">
+                <ArtistPage kind="joysound" />
+              </PerId>
             </Screen>
           }
         />
@@ -218,7 +246,9 @@ const Shell = () => {
           path={`${SONG_PAGES.youtube}/:videoId`}
           element={
             <Screen title={sourceName("youtube")}>
-              <YouTubePage />
+              <PerId page="youtube" param="videoId">
+                <YouTubePage />
+              </PerId>
             </Screen>
           }
         />
@@ -226,7 +256,9 @@ const Shell = () => {
           path={`${SONG_PAGES.nico}/:videoId`}
           element={
             <Screen title={sourceName("nico")}>
-              <NiconicoPage />
+              <PerId page="nico" param="videoId">
+                <NiconicoPage />
+              </PerId>
             </Screen>
           }
         />
@@ -234,7 +266,9 @@ const Shell = () => {
           path="/adhocLyrics/:id"
           element={
             <Screen title={t("lyrics.heading")}>
-              <AdhocLyricsPage />
+              <PerId page="adhocLyrics" param="id">
+                <AdhocLyricsPage />
+              </PerId>
             </Screen>
           }
         />
