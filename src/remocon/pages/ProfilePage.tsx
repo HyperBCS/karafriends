@@ -167,6 +167,8 @@ const Notifications = () => {
 
 interface LevelSliderProps {
   label: string;
+  // The slider's accessible name, when the label alone doesn't say whose.
+  name?: string;
   min: number;
   max: number;
   step: number;
@@ -181,6 +183,7 @@ interface LevelSliderProps {
 // change, so letting go there lets the thumb follow the live level again.
 const LevelSlider = ({
   label,
+  name,
   min,
   max,
   step,
@@ -210,6 +213,7 @@ const LevelSlider = ({
       {label}
       <input
         ref={input}
+        aria-label={name}
         type="range"
         min={min}
         max={max}
@@ -288,6 +292,7 @@ const MicLevelSlider = ({
   return (
     <LevelSlider
       label={t(`mics.${level}`)}
+      name={`${mic.label}: ${t(`mics.${level}`)}`}
       min={0}
       max={level === "gain" ? 200 : 100}
       step={1}

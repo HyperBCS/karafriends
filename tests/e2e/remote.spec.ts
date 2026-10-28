@@ -1648,27 +1648,23 @@ test.describe("the song volume and mic sliders", () => {
     await signIn(remote);
 
     await expect(remote.getByText("No microphones")).toHaveCount(0);
-    const row = (label: string) =>
-      remote.getByRole("listitem").filter({ hasText: label });
-    const yeti = row(mics[0].label);
-    const focusrite = row(mics[1].label);
-    await expect(yeti.getByRole("slider", { name: "Gain" })).toHaveValue("100");
-    await expect(yeti.getByRole("slider", { name: "Echo" })).toHaveValue("40");
-    await expect(focusrite.getByRole("slider", { name: "Gain" })).toHaveValue(
-      "123",
-    );
-    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
-      "0",
-    );
+    // Each slider is named for its mic, so two mics' sliders aren't alike.
+    const slider = (mic: (typeof mics)[number], level: "Gain" | "Echo") =>
+      remote.getByRole("slider", {
+        name: `${mic.label}: ${level}`,
+        exact: true,
+      });
+    await expect(slider(mics[0], "Gain")).toHaveValue("100");
+    await expect(slider(mics[0], "Echo")).toHaveValue("40");
+    await expect(slider(mics[1], "Gain")).toHaveValue("123");
+    await expect(slider(mics[1], "Echo")).toHaveValue("0");
 
-    await focusrite.getByRole("slider", { name: "Echo" }).fill("63");
+    await slider(mics[1], "Echo").fill("63");
     await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
     await expect
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
       .toEqual([mics[0], { ...mics[1], echo: 63 }]);
-    await expect(focusrite.getByRole("slider", { name: "Echo" })).toHaveValue(
-      "63",
-    );
+    await expect(slider(mics[1], "Echo")).toHaveValue("63");
   });
 });
 
