@@ -22,6 +22,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Search results from DAM and Joysound come in one list, best match first, instead of all of DAM's and then all of Joysound's: an exact title before one that starts with the words, before one that contains them, and shorter titles first. Kana, kanji, romaji and full-width queries match DAM's readings too ("koi" finds 恋). Artist searches are ranked the same way.
 - Admins reorder the queue on the phone by dragging a song's grip (or with the arrow keys on it) instead of the up and down buttons; Move to top stays.
 - Admins can turn up Joysound's guide melody, which was never heard before (`setGuideMelodyLevel`, 0 to 1, muted by default and kept across songs and restarts).
+- Up-next waits on the display and the phones count down while a song plays and stop while it's paused; the display's screens scale with its window, from 720p to 4K, instead of staying at 1080p sizes; and a song in its own key no longer goes through the pitch shifter, which made it quieter and a little late.
 
 ## 0.1.0
 
