@@ -8,32 +8,33 @@ on:
 permissions:
   contents: read
 # Rust in every job:
+# - Stable, with Clippy. Only the Linux job also installs a nightly, for
+#   cargo-careful, and rustfmt, for the format check.
 # - Swatinem/rust-cache caches the Cargo registry and native/target (the
 #   Cargo workspace is in native/, hence `workspaces: native`). The toolchain
 #   action's own cache is off: it looks for Cargo.toml at the repo root, finds
 #   none, and saved only ~/.cargo/bin.
-# - Clippy runs on every platform. The native tests under cargo-careful
-#   (`yarn test:native:careful`, which also runs Clippy) run in the Linux job
-#   only.
-#   They feed generated tones through the pitch detector and resampler, with
-#   no audio device, so one platform is enough, and they took 1.5 to 2.5
-#   minutes per macOS and Windows job.
+# - setup-rust-toolchain sets RUSTFLAGS to "-D warnings" unless RUSTFLAGS is
+#   already set.
+# - Each job stops after an hour, and each run of the unit tests after 10
+#   minutes: a test that hangs fails the run instead of holding a runner for
+#   GitHub's 6 hours.
+# - Clippy runs on every platform, over the tests too (--all-targets). The
+#   native tests under cargo-careful (`yarn test:native:careful`) run in the
+#   Linux job only: they feed generated tones through the pitch detector and
+#   resampler, with no audio device, so one platform is enough, and careful's
+#   std rebuild took 1.5 to 2.5 minutes per macOS and Windows job. Windows
+#   also runs them plainly, for its own modules (exclusive mode, ASIO).
 jobs:
   build-macos-aarch64:
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          target: aarch64-apple-darwin
-          components: clippy, rustfmt
-          cache: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
           toolchain: stable
-          target: aarch64-apple-darwin
-          components: clippy, rustfmt
+          components: clippy
           cache: false
       - uses: Swatinem/rust-cache@v2
         with:
@@ -42,29 +43,25 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
-      - run: npm install -g yarn
       - run: yarn install --immutable
       - run: yarn test:unit
+        timeout-minutes: 10
       - run: yarn build-dev
         env:
-          CARGO_ARGS: --target aarch64-apple-darwin
           CARGO_INCREMENTAL: false
-      - run: cargo clippy --manifest-path native/Cargo.toml
+      - run: cargo clippy --manifest-path native/Cargo.toml --all-targets
+  # Intel Macs, cross-compiled on the same Apple Silicon runner. The unit
+  # tests already ran on it in the job above.
   build-macos-x86_64:
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          target: x86_64-apple-darwin
-          components: clippy, rustfmt
-          cache: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
           toolchain: stable
           target: x86_64-apple-darwin
-          components: clippy, rustfmt
+          components: clippy
           cache: false
       - uses: Swatinem/rust-cache@v2
         with:
@@ -73,29 +70,21 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
-      - run: npm install -g yarn
       - run: yarn install --immutable
-      - run: yarn test:unit
       - run: yarn build-dev
         env:
           CARGO_ARGS: --target x86_64-apple-darwin
           CARGO_INCREMENTAL: false
-      - run: cargo clippy --manifest-path native/Cargo.toml
+      - run: cargo clippy --manifest-path native/Cargo.toml --target x86_64-apple-darwin --all-targets
   build-windows-x86_64:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          target: x86_64-pc-windows-msvc
-          components: clippy, rustfmt
-          cache: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
           toolchain: stable
-          target: x86_64-pc-windows-msvc
-          components: clippy, rustfmt
+          components: clippy
           cache: false
       - uses: Swatinem/rust-cache@v2
         with:
@@ -104,18 +93,22 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
+      # The ASIO SDK (buildResources) is downloaded again each week, so a
+      # dead Steinberg link shows up here before it breaks a release, which
+      # always downloads it.
+      - id: week
+        shell: bash
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
         with:
           path: |
             buildResources
-          key: ${{ runner.os }}-resources-${{ hashFiles('scripts/getExternalResources.mjs') }}
+          key: ${{ runner.os }}-resources-${{ hashFiles('scripts/getExternalResources.mjs') }}-${{ steps.week.outputs.week }}
       - run: yarn install --immutable
       - run: yarn test:unit
-      # ASIO is a default feature of the native crates.
-      - run: yarn build-dev
-        env:
-          CARGO_INCREMENTAL: false
-      # Smoke tests run against the production build.
+        timeout-minutes: 10
+      # ASIO is a default feature of the native crates. Smoke tests run
+      # against the production build.
       - run: yarn build-prod
         env:
           CARGO_INCREMENTAL: false
@@ -129,22 +122,37 @@ jobs:
         with:
           name: playwright-report-windows
           path: playwright-report/
-      - run: cargo clippy --manifest-path native/Cargo.toml
+      - run: cargo clippy --manifest-path native/Cargo.toml --all-targets
+      # Windows-only code has tests too (exclusive mode's formats, ASIO's
+      # status), and no other job compiles them.
+      - run: cargo test --manifest-path native/Cargo.toml -p karafriends-lib
+        env:
+          CARGO_INCREMENTAL: false
   # The release's Ubuntu (see release.yaml).
   build-linux-x86_64:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Any RUSTFLAGS replaces .cargo/config.toml's rustflags, so its
+      # -C relro-level=partial is repeated here; without it the native module
+      # won't load with Ubuntu 22.04's libpipewire (checkLazyPipewire.sh
+      # checks). setup-rust-toolchain leaves a RUSTFLAGS that is set alone.
+      RUSTFLAGS: -D warnings -C relro-level=partial
+      # cargo-careful's nightly and version, pinned so a new release of
+      # either can't turn master red; bump both on purpose.
+      CAREFUL_NIGHTLY: nightly-2026-10-28
+      CAREFUL_VERSION: 0.4.10
     steps:
       - uses: actions/checkout@v7
+      # Before stable, so stable stays the default.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          target: x86_64-unknown-linux-gnu
-          components: clippy, rustfmt
+          toolchain: ${{ env.CAREFUL_NIGHTLY }}
+          components: rust-src
           cache: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: x86_64-unknown-linux-gnu
           components: clippy, rustfmt
           cache: false
       - uses: Swatinem/rust-cache@v2
@@ -160,16 +168,24 @@ jobs:
       # Formatting, lint and types are platform-independent, so only this job
       # checks them.
       - run: yarn prettier --check .
+      - run: cargo fmt --manifest-path native/Cargo.toml --all --check
       - run: yarn lint
       - run: yarn typecheck
       - run: yarn test:unit
-      - run: yarn build-dev
-        env:
-          CARGO_INCREMENTAL: false
+        timeout-minutes: 10
       # Smoke tests run against the production build, on a virtual display.
       - run: yarn build-prod
         env:
           CARGO_INCREMENTAL: false
+      - run: scripts/checkLazyPipewire.sh native/index.node
+      # The zip, for smoke-linux-ubuntu-22_04.
+      - run: yarn package-prod
+      - uses: actions/upload-artifact@v7
+        with:
+          name: karafriends-linux-x64
+          path: dist/karafriends-linux-x64.zip
+          if-no-files-found: error
+          retention-days: 3
       # Chromium only, with its system libraries (not WebKit's many).
       - run: yarn playwright install --with-deps chromium
         env:
@@ -181,6 +197,25 @@ jobs:
           name: playwright-report-linux
           path: playwright-report/
       # Clippy, then the native tests under cargo-careful (see the top).
-      - run: cargo install cargo-careful
-        continue-on-error: true
+      - run: cargo install cargo-careful --locked --version "$CAREFUL_VERSION"
       - run: yarn test:native:careful
+  # The Linux zip on Ubuntu 22.04, the oldest Ubuntu it's for. The build runs
+  # on 24.04, where a module that needs something newer (a libpipewire
+  # function, a glibc symbol) still loads. scripts/smokeLinuxPackage.sh says
+  # what it checks: the native module's load, a hidden launch, and the
+  # yt-dlp and ffmpeg the app downloads. Not sound, the display's WebGL or a
+  # desktop session.
+  smoke-linux-ubuntu-22_04:
+    needs: build-linux-x86_64
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: karafriends-linux-x64
+          path: dist
+      - run: bash scripts/smokeLinuxPackage.sh --install-deps dist/karafriends-linux-x64.zip
+        env:
+          SMOKE_TOOLS: download
