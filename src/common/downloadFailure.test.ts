@@ -40,9 +40,21 @@ describe("isToolProblem", () => {
       REASONS.membersOnly,
       REASONS.liveOrPaid,
       REASONS.geoBlocked,
+      REASONS.diskFull,
     ]) {
       assert.equal(isToolProblem(reason), false, reason);
     }
+  });
+
+  test("an outdated yt-dlp's format error is a tools problem", () => {
+    assert.equal(
+      isToolProblem(
+        ytdlpFailureReason(
+          "ERROR: [youtube] a: Requested format is not available. Use --list-formats for a list of available formats",
+        ),
+      ),
+      true,
+    );
   });
 
   test("the bot check, an unnamed error, or a tool that won't run is", () => {
@@ -102,7 +114,25 @@ describe("ytdlpFailureReason", () => {
       REASONS.liveOrPaid,
     ],
     ["ERROR: [niconico] sm9: HTTP Error 404: Not Found", REASONS.unavailable],
-    ["ERROR: unable to write data: [Errno 28] No space left", REASONS.other],
+    // An outdated yt-dlp (YouTube changed its player): a tools problem, not
+    // the video.
+    [
+      "WARNING: [youtube] aaaaaaaaaaa: nsig extraction failed: Some formats may be missing\n" +
+        "ERROR: [youtube] aaaaaaaaaaa: Requested format is not available. Use --list-formats for a list of available formats",
+      REASONS.other,
+    ],
+    [
+      "ERROR: [youtube] aaaaaaaaaaa: Only images are available for download. Use --list-formats to see them",
+      REASONS.other,
+    ],
+    [
+      "ERROR: [niconico] sm9: This video is not available from your location due to geo restriction",
+      REASONS.geoBlocked,
+    ],
+    [
+      "ERROR: unable to write data: [Errno 28] No space left on device",
+      REASONS.diskFull,
+    ],
     ["", REASONS.other],
   ];
   for (const [output, reason] of cases) {

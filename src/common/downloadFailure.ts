@@ -18,10 +18,12 @@ export const REASONS = {
   toolFailedToStart: "Couldn't start the downloader",
   videoProcessing: "Couldn't put the video together",
   damSample: "DAM sent a sample, not the song",
+  diskFull: "The karaoke PC's disk is full",
   other: "Download failed",
 } as const;
 
-// The reasons that are about the one video, not the tools.
+// The reasons that are about the one video (or the PC's disk), not the
+// tools: updating them wouldn't help.
 const VIDEO_REASONS: readonly string[] = [
   REASONS.unavailable,
   REASONS.private,
@@ -29,6 +31,7 @@ const VIDEO_REASONS: readonly string[] = [
   REASONS.membersOnly,
   REASONS.liveOrPaid,
   REASONS.geoBlocked,
+  REASONS.diskFull,
 ];
 
 // Whether a DAM video durationSeconds long is a sample DAM sent instead of
@@ -78,6 +81,11 @@ export function failureReason(err: unknown): string {
 // yt-dlp's errors, most specific first: a private video's error also says
 // "Sign in", and many say "unavailable".
 const YTDLP_ERRORS: [RegExp, string][] = [
+  // No format it can use, the usual sign of an outdated yt-dlp (YouTube
+  // changed its player): a tools problem, so the display suggests Update
+  // tools. Before "not available", which would call it the video's.
+  [/requested format is not available/i, REASONS.other],
+  [/no space left on device|errno 28\b|ENOSPC/i, REASONS.diskFull],
   [/confirm you.?re not a bot/i, REASONS.botCheck],
   [/private video/i, REASONS.private],
   [
