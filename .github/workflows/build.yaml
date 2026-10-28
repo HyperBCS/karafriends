@@ -130,8 +130,9 @@ jobs:
           name: playwright-report-windows
           path: playwright-report/
       - run: cargo clippy --manifest-path native/Cargo.toml
+  # The release's Ubuntu (see release.yaml).
   build-linux-x86_64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -153,7 +154,8 @@ jobs:
         with:
           node-version: lts/*
           cache: yarn
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
+      # The native module's libraries (see the README's Building).
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libdbus-1-dev libclang-dev xvfb
       - run: yarn install --immutable
       # Formatting, lint and types are platform-independent, so only this job
       # checks them.
