@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
-import type { QueueItem } from "../common/api";
+import type { QueueItem, YoutubeQueueItem } from "../common/api";
 import { songKey } from "../common/currentSong";
 import {
   createStateStore,
@@ -118,6 +118,7 @@ describe("createStateStore", () => {
     assert.deepEqual(Object.keys(file_).sort(), [
       "guideMelodyLevel",
       "idToAdhocLyrics",
+      "pendingSongs",
       "songHistory",
       "songQueue",
     ]);
@@ -130,6 +131,33 @@ describe("createStateStore", () => {
     assert.deepEqual(loaded.currentSongAdhocLyrics, []);
     assert.deepEqual(loaded.downloadQueue, []);
     assert.equal(loaded.toolsProblem, null);
+  });
+
+  test("keeps the songs still downloading, with what came with them", () => {
+    const store = createStateStore(file);
+    const pending = {
+      item: song(1, { hasAdhocLyrics: true }) as YoutubeQueueItem,
+      pushToHead: true,
+      captionCode: "en",
+      adhocLyrics: ["la"],
+    };
+    store.update((state) => state.pendingSongs.push(pending));
+    assert.deepEqual(createStateStore(file).getState().pendingSongs, [pending]);
+    // A caption code yt-dlp wouldn't have been given, a DAM song (queued at
+    // once, never pending) and junk are dropped.
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        pendingSongs: [
+          { ...pending, captionCode: "--exec=rm" },
+          { ...pending, item: { ...song(2), kind: "dam", streamingUrlIdx: 0 } },
+          "junk",
+        ],
+      }),
+    );
+    assert.deepEqual(createStateStore(file).getState().pendingSongs, [
+      { ...pending, captionCode: null },
+    ]);
   });
 
   test("an older file's playback state and pitch are left out, and its current song is queued first", () => {

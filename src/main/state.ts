@@ -22,6 +22,7 @@ import type {
   UserIdentity,
 } from "../common/api";
 import { LYRICS_MODES, READINGS_MODES } from "../common/api";
+import { isCaptionCode } from "../common/captionCode";
 import { secondsLeft, songKey } from "../common/currentSong";
 
 // A download in progress, or one that failed in the last
@@ -143,6 +144,17 @@ export interface HistoryItem {
   song: QueueItem;
 }
 
+// A YouTube, Niconico or Joysound song whose download is running: it joins
+// the queue once that's done (queueSong), with what came with it. Saved, so
+// a restart starts the download again instead of losing the song.
+export interface PendingSong {
+  item: Exclude<QueueItem, { kind: "dam" }>;
+  pushToHead: boolean;
+  // A YouTube song's: the captions to download, and its adhoc lyrics.
+  captionCode: string | null;
+  adhocLyrics: string[];
+}
+
 export interface State {
   currentSong: QueueItem | null;
   // The current song's clock (see LiveState), so a phone can tell how far
@@ -170,6 +182,7 @@ export interface State {
   playbackState: PlaybackState;
   // The songs after currentSong.
   songQueue: QueueItem[];
+  pendingSongs: PendingSong[];
   downloadQueue: DownloadQueueItem[];
   // Newest first.
   songHistory: HistoryItem[];
@@ -222,6 +235,7 @@ export function emptyState(): State {
     mics: [],
     playbackState: "WAITING",
     songQueue: [],
+    pendingSongs: [],
     downloadQueue: [],
     songHistory: [],
     toolsProblem: null,
@@ -279,16 +293,18 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json: the queue, with the current song at its head so
 // that after a restart it plays again from the start, the queued songs' adhoc
-// lyrics, the history and the guide melody level. Everything else starts
-// over: nothing plays (WAITING, until the display takes the first song), and
-// the downloads, pitch, pushed lines, the song's timing, the song volume, the
-// mics and the tools problem are a launch's own.
+// lyrics, the songs still downloading (to download again), the history and
+// the guide melody level. Everything else starts over: nothing plays
+// (WAITING, until the display takes the first song), and the download
+// queue, pitch, pushed lines, the song's timing, the song volume, the mics
+// and the tools problem are a launch's own.
 export function serializeState(state: Readonly<State>): string {
   return JSON.stringify({
     songQueue: state.currentSong
       ? [state.currentSong, ...state.songQueue]
       : state.songQueue,
     idToAdhocLyrics: state.idToAdhocLyrics,
+    pendingSongs: state.pendingSongs,
     songHistory: state.songHistory,
     guideMelodyLevel: state.guideMelodyLevel,
   });
@@ -348,6 +364,7 @@ export function parseState(raw: Record<string, unknown>): State {
       );
     }
   }
+  state.pendingSongs = parseList(raw.pendingSongs, parsePendingSong);
   const level = raw.guideMelodyLevel;
   if (typeof level === "number" && level >= 0 && level <= 1) {
     state.guideMelodyLevel = level;
@@ -361,6 +378,27 @@ const KIND_BY_TYPENAME: Record<string, QueueItemKind> = {
   YoutubeQueueItem: "youtube",
   NicoQueueItem: "nico",
 };
+
+function parsePendingSong(raw: unknown): PendingSong | null {
+  if (!isObject(raw)) return null;
+  const item = parseQueueItem(raw.item);
+  if (item === null || item.kind === "dam") return null;
+  // It goes to yt-dlp: only a code queueSong would have taken.
+  const captionCode =
+    typeof raw.captionCode === "string" && isCaptionCode(raw.captionCode)
+      ? raw.captionCode
+      : null;
+  return {
+    item,
+    pushToHead: raw.pushToHead === true,
+    captionCode,
+    adhocLyrics: Array.isArray(raw.adhocLyrics)
+      ? raw.adhocLyrics.filter(
+          (line): line is string => typeof line === "string",
+        )
+      : [],
+  };
+}
 
 function parseQueueItem(raw: unknown): QueueItem | null {
   if (!isObject(raw)) return null;

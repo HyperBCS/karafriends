@@ -37,6 +37,7 @@ import type { SettingsMethod } from "./settings";
 import {
   currentSongSecondsLeft,
   isDownloading,
+  type PendingSong,
   type StateStore,
 } from "./state";
 
@@ -187,7 +188,9 @@ const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
 // Every method but the settings ones (settings.ts).
-export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
+export function createApi(
+  deps: ApiDeps,
+): Omit<ApiHandlers, SettingsMethod> & { resumeDownloads(): void } {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
@@ -350,6 +353,89 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     queueFailed(item)(reason);
   };
 
+  // Downloads a YouTube, Niconico or Joysound song (queueSong's, or one a
+  // restart cut short: resumeDownloads), which is a pending song until the
+  // download is done and the song is queued, or it fails.
+  const downloadSong = (pending: PendingSong) => {
+    const { item, pushToHead } = pending;
+    const done = () =>
+      store.update((state) => {
+        const index = state.pendingSongs.findIndex(
+          (other) => songKey(other.item) === songKey(item),
+        );
+        if (index !== -1) state.pendingSongs.splice(index, 1);
+      });
+    switch (item.kind) {
+      case "joysound":
+        deps.downloads.joysound(
+          item,
+          pushToHead,
+          (ready, toHead) => {
+            done();
+            pushSongToQueue(ready, toHead);
+          },
+          (reason) => {
+            done();
+            queueFailed(item)(reason);
+          },
+        );
+        break;
+      case "youtube": {
+        const lyrics = pending.adhocLyrics;
+        deps.downloads.youtube(
+          item,
+          pending.captionCode,
+          () => {
+            done();
+            ytdlpWorked();
+            if (!item.hasAdhocLyrics) {
+              pushSongToQueue(item, pushToHead);
+            } else if (
+              queuedLyricsLength() + totalLength(lyrics) <=
+              MAX_ADHOC_CHARS_QUEUED
+            ) {
+              pushSongToQueue(item, pushToHead, lyrics);
+            } else {
+              // Others came in while it downloaded.
+              console.warn(
+                `Queueing ${item.songId} without its lyrics: the queue holds too many`,
+              );
+              pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
+            }
+          },
+          (reason) => {
+            done();
+            ytdlpFailed(item)(reason);
+          },
+        );
+        break;
+      }
+      case "nico":
+        deps.downloads.nico(
+          item,
+          () => {
+            done();
+            ytdlpWorked();
+            pushSongToQueue(item, pushToHead);
+          },
+          (reason) => {
+            done();
+            ytdlpFailed(item)(reason);
+          },
+        );
+        break;
+    }
+  };
+
+  // queueSong's start of a download: kept in the state (and queue.json)
+  // until it's done.
+  const queueAfterDownload = (pending: PendingSong) => {
+    store.update((state) => {
+      state.pendingSongs.push(pending);
+    });
+    downloadSong(pending);
+  };
+
   // One per vocal type, at both bitrates.
   const streamingUrls = async (songId: string) =>
     (await deps.minsei.getMusicStreamingUrls(songId)).list.map((info) => ({
@@ -400,6 +486,19 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   let resumedSong: string | null = null;
 
   return {
+    // Not a method: index.ts calls it once, at launch. Starts again the
+    // downloads queue.json says were running when the app last stopped.
+    resumeDownloads() {
+      // A copy: a Joysound song already downloaded is done at once, and
+      // leaves the list as it goes.
+      for (const pending of store.getState().pendingSongs.slice()) {
+        console.log(
+          `resumeDownloads: ${pending.item.kind} ${pending.item.songId}`,
+        );
+        downloadSong(pending);
+      }
+    },
+
     async damSearchSongs({ query, offset = 0, limit = DEFAULT_LIMIT.dam }) {
       const result = await deps.dkwebsys.getMusicByKeyword(
         query,
@@ -673,22 +772,22 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             lyricsMode: input.lyricsMode,
             youtubeVideoId: input.youtubeVideoId,
           };
-          deps.downloads.joysound(
+          queueAfterDownload({
             item,
             pushToHead,
-            pushSongToQueue,
-            queueFailed(item),
-          );
+            captionCode: null,
+            adhocLyrics: [],
+          });
           break;
         }
         case "youtube": {
           const lyrics = (input.adhocLyrics ?? "")
             .split("\n")
             .filter((line) => line.trim() !== "");
-          const fits = () =>
-            queuedLyricsLength() + totalLength(lyrics) <=
-            MAX_ADHOC_CHARS_QUEUED;
-          if (lyrics.length > 0 && !fits()) {
+          if (
+            lyrics.length > 0 &&
+            queuedLyricsLength() + totalLength(lyrics) > MAX_ADHOC_CHARS_QUEUED
+          ) {
             return {
               ok: false,
               reason:
@@ -702,39 +801,24 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             hasCaptions: Boolean(input.captionCode),
             gainValue: input.gainValue,
           };
-          // The lyrics are kept only once the song is queued: a download
-          // that fails never is.
-          deps.downloads.youtube(
+          // The lyrics join idToAdhocLyrics only once the song is queued: a
+          // download that fails never is.
+          queueAfterDownload({
             item,
-            input.captionCode,
-            () => {
-              ytdlpWorked();
-              if (!item.hasAdhocLyrics) {
-                pushSongToQueue(item, pushToHead);
-              } else if (fits()) {
-                pushSongToQueue(item, pushToHead, lyrics);
-              } else {
-                // Others came in while it downloaded.
-                console.warn(
-                  `Queueing ${item.songId} without its lyrics: the queue holds too many`,
-                );
-                pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
-              }
-            },
-            ytdlpFailed(item),
-          );
+            pushToHead,
+            captionCode: input.captionCode,
+            adhocLyrics: lyrics,
+          });
           break;
         }
         case "nico": {
           const item: NicoQueueItem = { kind: "nico", ...base };
-          deps.downloads.nico(
+          queueAfterDownload({
             item,
-            () => {
-              ytdlpWorked();
-              pushSongToQueue(item, pushToHead);
-            },
-            ytdlpFailed(item),
-          );
+            pushToHead,
+            captionCode: null,
+            adhocLyrics: [],
+          });
           break;
         }
       }

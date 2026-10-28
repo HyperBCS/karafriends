@@ -1621,6 +1621,114 @@ describe("queueSong", () => {
     assert.equal(store.getState().songQueue[0].kind, "youtube");
   });
 
+  describe("a song still downloading when the app restarts", () => {
+    // Downloads that finish when the test says, and what each was asked.
+    let started: { kind: string; args: unknown[]; ready: () => void }[];
+    const api = () =>
+      makeApi(
+        {},
+        {
+          downloads: {
+            youtube: (item, captionCode, onReady) =>
+              started.push({
+                kind: "youtube",
+                args: [item, captionCode],
+                ready: onReady,
+              }),
+            nico: (item, onReady) =>
+              started.push({ kind: "nico", args: [item], ready: onReady }),
+            joysound: (item, pushToHead, onReady) =>
+              started.push({
+                kind: "joysound",
+                args: [item, pushToHead],
+                ready: () => onReady(item, pushToHead),
+              }),
+          } as ApiDeps["downloads"],
+        },
+      );
+    // A relaunch: the state as queue.json has it.
+    const relaunch = () => {
+      store = createStateStore(path.join(dir, "queue.json"));
+      started = [];
+    };
+
+    beforeEach(() => {
+      started = [];
+    });
+
+    test("downloads again at launch, and joins the queue as it would have", async () => {
+      const before = api();
+      await before.queueSong(
+        {
+          kind: "youtube",
+          songId: "jNQXAC9IVRw",
+          name: "Me at the zoo",
+          artistName: "",
+          adhocLyrics: "line one\nline two",
+          captionCode: "en",
+          gainValue: 1,
+        },
+        alice,
+      );
+      await before.queueSong(
+        {
+          kind: "joysound",
+          songId: "123",
+          name: "Joysound song",
+          artistName: "",
+          lyricsMode: "kana",
+          youtubeVideoId: null,
+          tryHeadOfQueue: true,
+        },
+        admin("x"),
+      );
+      const [youtube, joysound] = started;
+
+      relaunch();
+      assert.deepEqual(store.getState().songQueue, []);
+      const after = api();
+      after.resumeDownloads();
+      assert.deepEqual(
+        started.map(({ kind, args }) => [kind, args]),
+        [
+          ["youtube", youtube.args],
+          ["joysound", joysound.args],
+        ],
+      );
+      for (const download of started) download.ready();
+      const [item] = store.getState().songQueue;
+      assert.deepEqual(
+        store.getState().songQueue.map((song) => song.songId),
+        ["jNQXAC9IVRw", "123"],
+      );
+      assert.deepEqual(store.getState().idToAdhocLyrics, {
+        [songKey(item)]: ["line one", "line two"],
+      });
+      // Done: nothing to download at the next launch.
+      relaunch();
+      api().resumeDownloads();
+      assert.deepEqual(started, []);
+    });
+
+    test("one that failed is forgotten", async () => {
+      const failing = makeApi(
+        {},
+        {
+          downloads: {
+            nico: (_item, _onReady, onFailed) => onFailed("Video unavailable"),
+          } as ApiDeps["downloads"],
+        },
+      );
+      await failing.queueSong(
+        { kind: "nico", songId: "sm9", name: "", artistName: "" },
+        alice,
+      );
+      relaunch();
+      api().resumeDownloads();
+      assert.deepEqual(started, []);
+    });
+  });
+
   describe("a YouTube song's adhoc lyrics", () => {
     const VIDEO = "jNQXAC9IVRw";
     // Downloads that finish when the test says.
