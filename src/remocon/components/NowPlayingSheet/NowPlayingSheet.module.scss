@@ -124,67 +124,6 @@ button.handle {
   text-align: center;
 }
 
-// The guide melody's level: a row of its own under the buttons, the
-// slider a full tap target tall.
-.guideMelody {
-  display: flex;
-  flex: 1 1 100%;
-  align-items: center;
-  gap: $kf-space-3;
-  color: $kf-muted;
-  font-size: $kf-text-body;
-
-  input {
-    flex: 1;
-    min-width: 0;
-    height: $kf-tap;
-    margin: 0;
-    background: none;
-    appearance: none;
-    cursor: pointer;
-
-    &::-webkit-slider-runnable-track {
-      height: 4px;
-      border-radius: 2px;
-      background-color: $kf-border;
-    }
-
-    &::-moz-range-track {
-      height: 4px;
-      border-radius: 2px;
-      background-color: $kf-border;
-    }
-
-    // iOS moves a range input only from its thumb: a full tap target, of
-    // which the transparent border leaves a 24px dot to see.
-    &::-webkit-slider-thumb {
-      width: $kf-tap;
-      height: $kf-tap;
-      margin-top: calc((4px - #{$kf-tap}) / 2);
-      border: 10px solid transparent;
-      border-radius: 50%;
-      background-color: $kf-accent;
-      background-clip: padding-box;
-      appearance: none;
-    }
-
-    &::-moz-range-thumb {
-      width: 24px;
-      height: 24px;
-      border: none;
-      border-radius: 50%;
-      background-color: $kf-accent;
-    }
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.4;
-    }
-
-    @include kf-focus-visible;
-  }
-}
-
 // Seven 44px controls and the padding: 316px.
 @media (max-width: 360px) {
   .controls {

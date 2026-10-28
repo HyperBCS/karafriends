@@ -1386,46 +1386,32 @@ test.describe("the guide melody slider", () => {
   const PASSWORD = "e2e guide melody";
   test.use({ appConfig: adminPasswordConfig(PASSWORD) });
 
-  test("shows during a Joysound song, disabled for a guest; an admin sets the level", async ({
+  test("is in the profile's Admin section for an admin only, always enabled", async ({
     karafriends,
     remote,
   }) => {
-    const { app, remoconUrl } = karafriends;
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    const { remoconUrl } = karafriends;
     const slider = remote.getByRole("slider", { name: "Guide melody" });
+    // Not in the playback controls any more.
+    await remote.getByRole("button", { name: "Show queue" }).click();
     await expect(remote.getByText("Nothing playing")).toBeVisible();
+    await expect(
+      remote.getByRole("button", { name: "Raise the key" }),
+    ).toBeVisible();
     await expect(slider).toHaveCount(0);
 
-    await fakeJoysoundDownload(app, "e2e-melody");
-    const res = await fetch(new URL("api/queueSong", remoconUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Karafriends-Device-Id": "e2e-someone",
-        "X-Karafriends-Nickname": "someone",
-      },
-      body: JSON.stringify({
-        kind: "joysound",
-        songId: "e2e-melody",
-        name: "E2E melody song",
-        artistName: "E2E artist",
-        lyricsMode: "kana",
-        youtubeVideoId: null,
-      }),
-    });
-    expect(res.status).toBe(200);
-
-    // The display starts it at once.
-    await expect(slider).toBeVisible({ timeout: 15_000 });
-    await expect(slider).toBeDisabled();
-    await expect(slider).toHaveValue("0");
-
+    // A guest's profile: the sign-in, no slider.
     await remote.getByRole("link", { name: "Profile" }).click();
+    await expect(remote.getByLabel("Admin password")).toBeVisible();
+    await expect(slider).toHaveCount(0);
+
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
     await expect(remote.getByText("You're an admin")).toBeVisible();
 
+    // With nothing playing, as with anything else.
     await expect(slider).toBeEnabled();
+    await expect(slider).toHaveValue("0");
     expect((await slider.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await slider.fill("0.7");
     await expect
@@ -1456,6 +1442,11 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(level);
     await expect(slider).toHaveValue(String(level));
+
+    // Signed out, it goes.
+    await remote.getByRole("button", { name: "Sign out" }).click();
+    await expect(remote.getByLabel("Admin password")).toBeVisible();
+    await expect(slider).toHaveCount(0);
   });
 });
 

@@ -137,6 +137,7 @@ export const ja: Messages = {
   "lyricsMode.help":
     "JOYSOUNDの曲で使います。曲ごとに曲のページでも変えられます。",
   "guideMelody.label": "ガイドメロディ",
+  "guideMelody.help": "JOYSOUNDの曲のみ。",
   "readings.label": "読み方",
   "readings.written": "そのまま",
   "readings.kana": "かな",

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
@@ -7,6 +7,7 @@ import {
   ApiCallError,
   useIsAdmin,
 } from "../../common/apiClient";
+import useGuideMelodyLevel from "../../common/hooks/useGuideMelodyLevel";
 import {
   LyricsModeTabs,
   saveLyricsMode,
@@ -136,7 +137,48 @@ const Notifications = () => {
   );
 };
 
-// Signing in and out as an admin with the password the host set.
+// How loud Joysound's guide melody plays, for an admin, whatever is
+// playing. While the thumb is dragged it moves here only; letting go (the
+// input's change event, which a key press also fires) sends the level
+// once, so the echo of an earlier step can't pull the thumb back or settle
+// on a stale level.
+const GuideMelodySlider = () => {
+  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
+  const [held, setHeld] = useState<number | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // React's onChange is the input event, which comes with every step.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    const send = () => {
+      setGuideMelodyLevel(Number(el.value));
+      setHeld(null);
+    };
+    el.addEventListener("change", send);
+    return () => el.removeEventListener("change", send);
+  });
+
+  return (
+    <>
+      <label className={styles.guideMelody}>
+        {t("guideMelody.label")}
+        <input
+          ref={input}
+          type="range"
+          min={0}
+          max={1}
+          step={0.1}
+          value={held ?? guideMelodyLevel}
+          onChange={(e) => setHeld(Number(e.target.value))}
+        />
+      </label>
+      <p className={styles.text}>{t("guideMelody.help")}</p>
+    </>
+  );
+};
+
+// Signing in and out as an admin with the password the host set. Signed
+// in, the admin's controls: the guide melody's level.
 const Admin = () => {
   const { adminToken } = useUserIdentity();
   const isAdmin = useIsAdmin();
@@ -174,6 +216,7 @@ const Admin = () => {
         <p className={styles.text} role="status">
           {t("profile.signedIn")}
         </p>
+        <GuideMelodySlider />
         <Button variant="secondary" disabled={pending} onClick={leave}>
           {t("profile.signOut")}
         </Button>
