@@ -603,6 +603,9 @@ test.describe("an admin's queue", () => {
     await expect(
       queue.getByRole("button", { name: "Remove from queue" }),
     ).toHaveCount(0);
+    await expect(
+      queue.getByRole("button", { name: "Drag to reorder" }),
+    ).toHaveCount(0);
 
     await remote.getByRole("link", { name: "Profile" }).click();
     await remote.getByLabel("Admin password").fill(PASSWORD);
@@ -619,17 +622,10 @@ test.describe("an admin's queue", () => {
         expect.stringContaining("song 2"),
         expect.stringContaining("song 3"),
       ]);
-    // At the top, it can only go down.
-    await expect(queue.getByRole("button", { name: "Move up" })).toBeDisabled();
-    await queue.getByRole("button", { name: "Move down" }).click();
-    await expect
-      .poll(() => rows(remote))
-      .toEqual([
-        expect.stringContaining("song 1"),
-        expect.stringContaining("song 2"),
-        expect.stringContaining("song 4"),
-        expect.stringContaining("song 3"),
-      ]);
+    // At the top, it can't go higher.
+    await expect(
+      queue.getByRole("button", { name: "Move to top" }),
+    ).toBeDisabled();
     await queue.getByRole("button", { name: "Remove from queue" }).click();
     await expect(queue.getByText("E2E queue song 4")).toHaveCount(0);
   });
@@ -741,5 +737,120 @@ test.describe("a long queue", () => {
     await expect(
       remote.getByRole("button", { name: "Show emotes" }),
     ).toBeInViewport();
+  });
+});
+
+test.describe("dragging the queue", () => {
+  const song = (n: number) => ({
+    kind: "nico",
+    songId: `sm6100${n}`,
+    name: `E2E drag song ${n}`,
+    artistName: "E2E artist",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-someone", nickname: "someone" },
+  });
+  // Every phone is an admin, so this one drags without signing in.
+  test.use({
+    appConfig: { everyoneIsAdmin: true },
+    seedQueue: {
+      currentSong: null,
+      songQueue: [1, 2, 3, 4].map(song),
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  // The queue's song names in the server's live state: the first event of
+  // a fresh /api/events stream.
+  async function liveQueue(remoconUrl: string): Promise<string[]> {
+    const controller = new AbortController();
+    const res = await fetch(new URL("api/events", remoconUrl), {
+      signal: controller.signal,
+    });
+    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let text = "";
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error(`The stream ended early: ${text}`);
+        text += value;
+        const data = text.match(/^data: (.*)$/m);
+        if (data) {
+          const { state } = JSON.parse(data[1]);
+          return state.queue.map((item: { name: string }) => item.name);
+        }
+      }
+    } finally {
+      controller.abort();
+    }
+  }
+
+  test("drags a song above the first, and moves one with the arrow keys", async ({
+    remote,
+    karafriends,
+  }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const queue = remote.getByRole("region", { name: "Queue" });
+    // Song 1 starts within 5 seconds; 2, 3 and 4 wait, each with a handle.
+    await expect(queue.locator('[aria-current="true"]')).toContainText(
+      "E2E drag song 1",
+      { timeout: 15_000 },
+    );
+    const queued = queue
+      .getByRole("listitem")
+      .filter({ has: remote.getByRole("button", { name: "Drag to reorder" }) });
+    const handle = (n: number) =>
+      queued
+        .filter({ hasText: `E2E drag song ${n}` })
+        .getByRole("button", { name: "Drag to reorder" });
+    const names = (songs: number[]) => songs.map((n) => `E2E drag song ${n}`);
+    // On the phone, in the live state and on the display.
+    const expectOrder = async (...songs: number[]) => {
+      const rows = names(songs).map((name) => new RegExp(name));
+      await expect(queued).toHaveText(rows);
+      await expect
+        .poll(() => liveQueue(karafriends.remoconUrl))
+        .toEqual(names(songs));
+      await expect(
+        karafriends.display
+          .getByRole("region", { name: "Up next" })
+          .getByRole("listitem"),
+      ).toHaveText(rows);
+    };
+    await expectOrder(2, 3, 4);
+
+    // Song 4 held by its handle and dragged above song 2, a few steps at a
+    // time.
+    const grip = (await handle(4).boundingBox())!;
+    const top = (await queued.first().boundingBox())!;
+    const x = grip.x + grip.width / 2;
+    await remote.mouse.move(x, grip.y + grip.height / 2);
+    await remote.mouse.down();
+    await remote.mouse.move(x, top.y + 10, { steps: 8 });
+    await remote.mouse.up();
+    await expectOrder(4, 2, 3);
+
+    // Arrow Up on song 3's handle, twice: it keeps the focus as it moves.
+    await handle(3).focus();
+    await remote.keyboard.press("ArrowUp");
+    await expectOrder(4, 3, 2);
+    await expect(handle(3)).toBeFocused();
+    await remote.keyboard.press("ArrowUp");
+    await expectOrder(3, 4, 2);
+
+    // A move the server refuses goes back, and says why.
+    await remote.route("**/api/moveSong", (route) =>
+      route.fulfill({
+        status: 403,
+        json: { error: "Only an admin can reorder the queue" },
+      }),
+    );
+    await handle(2).focus();
+    await remote.keyboard.press("ArrowUp");
+    await expect(remote.getByRole("alert")).toHaveText(
+      "Couldn't move the song: Only an admin can reorder the queue",
+    );
+    await expectOrder(3, 4, 2);
   });
 });
