@@ -45,6 +45,33 @@ describe("reading", () => {
     assert.equal(reading("ＬＥＭＯＮ", "レモン", "romaji"), null);
   });
 
+  test("Latin letters with accents, symbols, curly quotes or Unicode hyphens are still as written", () => {
+    assert.equal(reading("Café", "カフェ", "romaji"), null);
+    assert.equal(reading("Pokémon", "ポケモン", "kana"), null);
+    assert.equal(reading("LOVE☆", "ラブ", "romaji"), null);
+    assert.equal(reading("LOVE♡", "ラブ", "kana"), null);
+    assert.equal(reading("Don\u2019t", "ドント", "kana"), null);
+    assert.equal(reading("\u201cHello\u201d", "ハロー", "kana"), null);
+    assert.equal(
+      reading(
+        "Bling\u2010Bang\u2010Bang\u2010Born",
+        "ブリンバンバンボン",
+        "romaji",
+      ),
+      null,
+    );
+    assert.equal(reading("→Pia-no-jaC←", "ピアノジャック", "kana"), null);
+    assert.equal(reading("L'Arc～en～Ciel", "ラルクアンシエル", "kana"), null);
+  });
+
+  test("a name with any kana or kanji gets its reading", () => {
+    assert.equal(reading("Café恋", "カフェコイ", "kana"), "かふぇこい");
+    assert.equal(
+      reading("LOVEマシーン", "ラブマシーン", "romaji"),
+      "rabumashiin",
+    );
+  });
+
   test("a name in kana gets its romaji, not its kana again", () => {
     assert.equal(reading("レモン", "レモン", "kana"), null);
     assert.equal(reading("よあそび", "ヨアソビ", "kana"), null);
