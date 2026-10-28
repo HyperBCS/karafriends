@@ -65,6 +65,7 @@ function Player(props: {
           lyricsMode={overlay.lyricsMode}
           videoRef={videoRef}
           avOffsetMs={props.avOffsetMs}
+          pitchBars={props.pitchBars}
         />
       ) : null}
       {melody ? (

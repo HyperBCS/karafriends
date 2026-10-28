@@ -12,6 +12,13 @@ import parseJoysoundData, {
 } from "../common/joysoundParser";
 
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
+import {
+  blockOnScreen,
+  blockTexturesWanted,
+  titleCardTop,
+  titleOnScreen,
+  wipeEdgePx,
+} from "./joysoundSchedule";
 import loadKuroshiro from "./kuroshiro";
 import { drawTime } from "./playback";
 
@@ -160,17 +167,18 @@ function createShader(
   return shader;
 }
 
-function createProgram(
-  gl: WebGL2RenderingContext,
-  vertexShader: WebGLShader,
-  fragmentShader: WebGLShader,
-) {
+// The program; its shaders go with it when it is deleted.
+function createProgram(gl: WebGL2RenderingContext) {
   const program = gl.createProgram();
   invariant(program);
 
+  const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
   gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
 
   return program;
 }
@@ -315,14 +323,15 @@ function drawTitleRowsToCanvas(
   }
 }
 
+// clearPitchBand: lay the card out below the pitch bars.
 function createTitleTexture(
   gl: WebGL2RenderingContext,
+  textCtx: CanvasRenderingContext2D,
   metadata: JoysoundMetadata,
   lyricsMode: LyricsMode,
+  clearPitchBand: boolean,
 ): WebGLTexture {
   const isRomaji = lyricsMode === "romaji";
-  const textCtx = document.createElement("canvas").getContext("2d");
-  invariant(textCtx);
 
   setupTitleCanvas(textCtx);
 
@@ -380,9 +389,12 @@ function createTitleTexture(
     composerHeight +
     144 * EXPAND_RATE_Y;
 
-  const titleYPos =
-    (SCREEN_HEIGHT * EXPAND_RATE_Y - totalHeight) / 2 / EXPAND_RATE_Y -
-    TEXT_PADDING;
+  const titleYPos = titleCardTop(
+    SCREEN_HEIGHT,
+    totalHeight / EXPAND_RATE_Y,
+    TEXT_PADDING,
+    clearPitchBand,
+  );
   const artistYPos = titleYPos + titleHeight / EXPAND_RATE_Y + 64;
   const lyricistYPos = artistYPos + artistHeight / EXPAND_RATE_Y + 64;
   const composerYPos = lyricistYPos + lyricistHeight / EXPAND_RATE_Y + 16;
@@ -420,11 +432,7 @@ function createTitleTexture(
     composerText,
   );
 
-  const result = createTextureFromImage(gl, textCtx.canvas);
-
-  textCtx.canvas.remove();
-
-  return result;
+  return createTextureFromImage(gl, textCtx.canvas);
 }
 
 function createLyricsBlockTexture(
@@ -644,82 +652,32 @@ function drawRomajiTextToCanvas(
   }
 }
 
+// A block's textures, before and after the wipe, drawn on the scratch
+// canvas textCtx.
 function createLyricsBlockTextures(
   gl: WebGL2RenderingContext,
-  lyricsData: JoysoundLyricsBlock[],
+  textCtx: CanvasRenderingContext2D,
+  lyricsBlock: JoysoundLyricsBlock,
   lyricsMode: LyricsMode,
-): LyricsBlockTextures[] {
-  const textCtx = document.createElement("canvas").getContext("2d");
-  invariant(textCtx);
-
-  const lyricsBlockTextures = [];
-
-  for (const lyricsBlock of lyricsData) {
-    const preTexture = createLyricsBlockTexture(
+): LyricsBlockTextures {
+  return {
+    preTexture: createLyricsBlockTexture(
       gl,
       textCtx,
       lyricsBlock,
       lyricsBlock.preFill.rgb,
       lyricsBlock.preBorder.rgb,
       lyricsMode,
-    );
-
-    const postTexture = createLyricsBlockTexture(
+    ),
+    postTexture: createLyricsBlockTexture(
       gl,
       textCtx,
       lyricsBlock,
       lyricsBlock.postFill.rgb,
       lyricsBlock.postBorder.rgb,
       lyricsMode,
-    );
-
-    lyricsBlockTextures.push({ preTexture, postTexture });
-  }
-
-  textCtx.canvas.remove();
-
-  return lyricsBlockTextures;
-}
-
-function getScrollXPos(
-  lyricsBlock: JoysoundLyricsBlock,
-  refreshTime: number,
-): number {
-  let xOff = 0;
-
-  // XXX: This is a hack to handle edge cases where romaji text is off frame.
-  if (
-    lyricsBlock.scrollEvents[0] &&
-    refreshTime < lyricsBlock.scrollEvents[0].time
-  ) {
-    return 0;
-  }
-
-  for (let i = 0; i < lyricsBlock.scrollEvents.length; i++) {
-    const currScrollEvent = lyricsBlock.scrollEvents[i];
-
-    if (refreshTime < currScrollEvent.time) {
-      break;
-    }
-
-    let nextScrollEvent = null;
-
-    if (i < lyricsBlock.scrollEvents.length - 1) {
-      nextScrollEvent = lyricsBlock.scrollEvents[i + 1];
-    }
-
-    if (!nextScrollEvent || refreshTime < nextScrollEvent.time) {
-      xOff +=
-        (currScrollEvent.speed * (refreshTime - currScrollEvent.time)) / 1000;
-    } else {
-      xOff +=
-        (currScrollEvent.speed *
-          (nextScrollEvent.time - currScrollEvent.time)) /
-        1000;
-    }
-  }
-
-  return lyricsBlock.xPos + xOff;
+    ),
+  };
 }
 
 function drawTitle(
@@ -774,15 +732,13 @@ function drawLyricsBlock(
   gl: WebGL2RenderingContext,
   glBuffers: JoysoundDisplayBuffers,
   lyricsBlock: JoysoundLyricsBlock,
-  lyricsBlockTextures: LyricsBlockTextures[],
-  index: number,
+  textures: LyricsBlockTextures,
   refreshTime: number,
 ) {
-  const scrollXPos = Math.floor(getScrollXPos(lyricsBlock, refreshTime));
+  // In device pixels, as the fragment shader compares it.
+  const wipeX = wipeEdgePx(lyricsBlock, refreshTime, EXPAND_RATE_X);
 
-  const scrollArray = new Float32Array(
-    Array(6).fill(scrollXPos * EXPAND_RATE_X),
-  );
+  const scrollArray = new Float32Array(Array(6).fill(wipeX));
 
   const currX = lyricsBlock.xPos;
   const currY = lyricsBlock.yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8;
@@ -797,26 +753,113 @@ function drawLyricsBlock(
     (currY + rectHeight - TEXT_PADDING) * EXPAND_RATE_Y,
   );
 
-  if (scrollXPos <= currX + rectWidth) {
+  if (wipeX <= (currX + rectWidth) * EXPAND_RATE_X) {
     drawLyricsTexture(
       gl,
       glBuffers,
-      lyricsBlockTextures[index].preTexture,
+      textures.preTexture,
       positions,
       scrollArray,
       false,
     );
   }
 
-  if (scrollXPos >= currX) {
+  if (wipeX >= currX * EXPAND_RATE_X) {
     drawLyricsTexture(
       gl,
       glBuffers,
-      lyricsBlockTextures[index].postTexture,
+      textures.postTexture,
       positions,
       scrollArray,
       true,
     );
+  }
+}
+
+// The GL objects one song draws with, and its textures: only those of the
+// title card and the blocks around now (joysoundSchedule.ts), made as they
+// come up and deleted as they go.
+class SongTextures {
+  private blocks = new Map<number, LyricsBlockTextures>();
+  private title: WebGLTexture | null = null;
+  // The layout the title texture was drawn for.
+  private titleClearsPitchBand = false;
+
+  constructor(
+    private gl: WebGL2RenderingContext,
+    private textCtx: CanvasRenderingContext2D,
+    private metadata: JoysoundMetadata,
+    private lyricsData: JoysoundLyricsBlock[],
+    private lyricsMode: LyricsMode,
+  ) {}
+
+  get count(): number {
+    return this.blocks.size * 2 + (this.title ? 1 : 0);
+  }
+
+  // Makes and deletes textures for the frame at refreshTime. One block's
+  // early textures a frame, so blocks that come up together don't stall a
+  // single frame; a block already on screen (after a seek) is made at once.
+  update(refreshTime: number, clearPitchBand: boolean) {
+    const { gl } = this;
+    if (titleOnScreen(this.metadata, refreshTime)) {
+      if (this.title && this.titleClearsPitchBand !== clearPitchBand) {
+        gl.deleteTexture(this.title);
+        this.title = null;
+      }
+      if (!this.title) {
+        this.title = createTitleTexture(
+          gl,
+          this.textCtx,
+          this.metadata,
+          this.lyricsMode,
+          clearPitchBand,
+        );
+        this.titleClearsPitchBand = clearPitchBand;
+      }
+    } else if (this.title) {
+      gl.deleteTexture(this.title);
+      this.title = null;
+    }
+
+    let madeEarly = false;
+    this.lyricsData.forEach((block, i) => {
+      const textures = this.blocks.get(i);
+      if (!blockTexturesWanted(block, refreshTime)) {
+        if (textures) this.deleteBlock(i, textures);
+      } else if (
+        !textures &&
+        (blockOnScreen(block, refreshTime) || !madeEarly)
+      ) {
+        madeEarly ||= !blockOnScreen(block, refreshTime);
+        this.blocks.set(
+          i,
+          createLyricsBlockTextures(gl, this.textCtx, block, this.lyricsMode),
+        );
+      }
+    });
+  }
+
+  titleTexture(): WebGLTexture | null {
+    return this.title;
+  }
+
+  blockTextures(index: number): LyricsBlockTextures | undefined {
+    return this.blocks.get(index);
+  }
+
+  private deleteBlock(index: number, textures: LyricsBlockTextures) {
+    this.gl.deleteTexture(textures.preTexture);
+    this.gl.deleteTexture(textures.postTexture);
+    this.blocks.delete(index);
+  }
+
+  // All of them, for a resize (the next frame makes them at the new size)
+  // or the end of the song.
+  clear() {
+    for (const [i, textures] of this.blocks) this.deleteBlock(i, textures);
+    if (this.title) this.gl.deleteTexture(this.title);
+    this.title = null;
   }
 }
 
@@ -826,40 +869,54 @@ export default function JoysoundRenderer(props: {
   lyricsMode: LyricsMode;
   // The display's audio/video offset (see drawTime).
   avOffsetMs: number;
+  // Whether the pitch bars may show over the video: the title card then
+  // stays clear of their band.
+  pitchBars: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRequestRef = useRef<number>(0);
-  // Read by draw(), so an offset change doesn't re-parse the telop.
+  // Read by draw(), so a change doesn't re-parse the telop.
   const avOffsetMsRef = useRef(props.avOffsetMs);
   avOffsetMsRef.current = props.avOffsetMs;
+  const pitchBarsRef = useRef(props.pitchBars);
+  pitchBarsRef.current = props.pitchBars;
 
-  const updateSize = () => {
-    const canvasElement = canvasRef.current;
-    invariant(canvasElement);
-
-    canvasElement.width = canvasElement.clientWidth * window.devicePixelRatio;
-    canvasElement.height = canvasElement.clientHeight * window.devicePixelRatio;
-
-    // XXX: Global variables but it works
-    EXPAND_RATE = Math.min(
-      canvasElement.width / SCREEN_WIDTH,
-      canvasElement.height / SCREEN_HEIGHT,
-    );
-
-    EXPAND_RATE_X = canvasElement.width / SCREEN_WIDTH;
-    EXPAND_RATE_Y = canvasElement.height / SCREEN_HEIGHT;
-
-    const gl = canvasElement.getContext("webgl2", {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    invariant(canvas);
+    const context = canvas.getContext("webgl2", {
       antialias: false,
       premultipliedAlpha: false,
     });
+    invariant(context);
+    // Typed non-null, for draw() and frame() below.
+    const canvasElement: HTMLCanvasElement = canvas;
+    const gl: WebGL2RenderingContext = context;
 
-    invariant(gl);
-    gl.viewport(0, 0, canvasElement.width, canvasElement.height);
-  };
-
-  useEffect(() => {
     let cancelled = false;
+    let animationFrame = 0;
+    // Set once the song's lyrics are read.
+    let textures: SongTextures | null = null;
+    let releaseGl = () => {};
+
+    const updateSize = () => {
+      canvasElement.width = canvasElement.clientWidth * window.devicePixelRatio;
+      canvasElement.height =
+        canvasElement.clientHeight * window.devicePixelRatio;
+
+      // XXX: Global variables but it works
+      EXPAND_RATE = Math.min(
+        canvasElement.width / SCREEN_WIDTH,
+        canvasElement.height / SCREEN_HEIGHT,
+      );
+
+      EXPAND_RATE_X = canvasElement.width / SCREEN_WIDTH;
+      EXPAND_RATE_Y = canvasElement.height / SCREEN_HEIGHT;
+
+      gl.viewport(0, 0, canvasElement.width, canvasElement.height);
+      // Remade at the new size as they're drawn.
+      textures?.clear();
+    };
+
     const refresh = async () => {
       updateSize();
       window.addEventListener("resize", updateSize);
@@ -880,24 +937,19 @@ export default function JoysoundRenderer(props: {
       const metadata = joysoundData.metadata;
       const lyricsData = joysoundData.lyrics;
 
-      invariant(canvasRef.current);
-      const gl = canvasRef.current.getContext("webgl2", {
-        antialias: false,
-        premultipliedAlpha: false,
-      });
-      invariant(gl);
-
-      const titleTexture = createTitleTexture(gl, metadata, props.lyricsMode);
-      const lyricsBlockTextures = createLyricsBlockTextures(
+      // The scratch canvas each texture is drawn on, in turn.
+      const textCtx = document.createElement("canvas").getContext("2d");
+      invariant(textCtx);
+      const songTextures = new SongTextures(
         gl,
+        textCtx,
+        metadata,
         lyricsData,
         props.lyricsMode,
       );
+      textures = songTextures;
 
-      const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
-      const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
-
-      const program = createProgram(gl, vertexShader, fragmentShader);
+      const program = createProgram(gl);
 
       const positionAttributeLocation = gl.getAttribLocation(
         program,
@@ -928,15 +980,29 @@ export default function JoysoundRenderer(props: {
         scrollType: scrollTypeBuffer,
       };
 
+      releaseGl = () => {
+        songTextures.clear();
+        for (const buffer of Object.values(glBuffers)) gl.deleteBuffer(buffer);
+        gl.deleteProgram(program);
+        // Never attached: this frees its pixels now, not at GC.
+        textCtx.canvas.width = 0;
+        textCtx.canvas.height = 0;
+      };
+
       function draw() {
-        invariant(gl);
-        invariant(props.videoRef.current);
+        const video = props.videoRef.current;
+        if (!video) return;
 
         const refreshTime =
-          drawTime(props.videoRef.current.currentTime, avOffsetMsRef.current) *
-            1000 +
+          drawTime(video.currentTime, avOffsetMsRef.current) * 1000 +
           TIMING_OFFSET;
-        invariant(refreshTime);
+
+        songTextures.update(refreshTime, pitchBarsRef.current);
+        // For the e2e: how many textures the song holds.
+        const count = String(songTextures.count);
+        if (canvasElement.dataset.textures !== count) {
+          canvasElement.dataset.textures = count;
+        }
 
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -980,32 +1046,40 @@ export default function JoysoundRenderer(props: {
           gl.canvas.height,
         );
 
-        if (refreshTime < metadata.fadeoutTime) {
+        const titleTexture = songTextures.titleTexture();
+        if (titleTexture) {
           drawTitle(gl, glBuffers, titleTexture);
         }
 
-        for (let i = 0; i < lyricsData.length; i++) {
-          const lyricsBlock = lyricsData[i];
-
-          if (
-            refreshTime >= lyricsBlock.fadeinTime &&
-            refreshTime < lyricsBlock.fadeoutTime
-          ) {
+        lyricsData.forEach((lyricsBlock, i) => {
+          const blockTextures = songTextures.blockTextures(i);
+          if (blockTextures && blockOnScreen(lyricsBlock, refreshTime)) {
             drawLyricsBlock(
               gl,
               glBuffers,
               lyricsBlock,
-              lyricsBlockTextures,
-              i,
+              blockTextures,
               refreshTime,
             );
           }
-        }
-
-        animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+        });
       }
 
-      animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+      // A frame that throws is skipped, and the lyrics go on with the next:
+      // one bad frame mustn't end them for the rest of the song. Logged
+      // once a song.
+      let frameFailed = false;
+      function frame() {
+        animationFrame = window.requestAnimationFrame(frame);
+        try {
+          draw();
+        } catch (error) {
+          if (!frameFailed) console.error("A lyrics frame failed:", error);
+          frameFailed = true;
+        }
+      }
+
+      animationFrame = window.requestAnimationFrame(frame);
     };
 
     refresh().catch(console.error);
@@ -1013,7 +1087,12 @@ export default function JoysoundRenderer(props: {
     return () => {
       cancelled = true;
       window.removeEventListener("resize", updateSize);
-      window.cancelAnimationFrame(animationFrameRequestRef.current);
+      window.cancelAnimationFrame(animationFrame);
+      releaseGl();
+      // The drawing buffer too: React may keep this canvas (a new lyrics
+      // mode), and if it doesn't, the context waits for GC.
+      canvasElement.width = 0;
+      canvasElement.height = 0;
     };
   }, [props.telop, props.lyricsMode]);
 

@@ -3,10 +3,13 @@
 // play, once, and goes on with the next. No network: yt-dlp is a fake that
 // "downloads" at once, a minute of black video
 // (tests/fixtures/bin/yt-dlp-downloads-video) or an empty file the display
-// can't play (yt-dlp-downloads).
+// can't play (yt-dlp-downloads). A Joysound song's lyrics keep only the
+// textures of the lines around now.
+import fs from "fs";
 import path from "path";
 import type { Page } from "@playwright/test";
 
+import { buildJoy02, type Joy02Event, joy02Events } from "../fixtures/joy02";
 import { expect, test } from "./fixtures";
 
 const fakeYtdlp = (name: string) =>
@@ -418,5 +421,139 @@ test.describe("where the song really is", () => {
     const eta = Number(minutes) * 60 + Number(seconds);
     expect(eta).toBeLessThanOrEqual(length / 2 + 60);
     expect(eta).toBeGreaterThanOrEqual(length / 2 + 60 - 5);
+  });
+});
+
+test.describe("a Joysound song's lyrics", () => {
+  // Lyrics a minute long over black.mp4, as if downloaded before: a 1.5 s
+  // title card, then `lines` lines, a new one every half second, two on
+  // screen at once. Line 5 is only spaces.
+  function fakeJoysoundSong(folder: string, songId: string, lines: number) {
+    const at = joy02Events;
+    const events: Joy02Event[] = [at.titleOut(1500), at.fadeIn(2000, 2)];
+    for (let line = 0; line < lines; line++) {
+      const start = 2500 + line * 500;
+      events.push(at.scroll(start, 30));
+      if (line >= 1 && line < lines - 1) {
+        events.push(at.fadeOut(start, 1), at.fadeIn(start, 1));
+      }
+    }
+    events.push(at.fadeOut(2500 + lines * 500, 2));
+    events.sort((a, b) => a.time - b.time);
+    const telop = buildJoy02({
+      title: "E2E 歌詞の曲",
+      artist: "E2E 歌手",
+      lyricist: "作詞者",
+      composer: "作曲者",
+      seconds: 60,
+      blocks: Array.from({ length: lines }, (_, i) => ({
+        x: 120,
+        y: i % 2 ? 400 : 330,
+        text: i === 5 ? "　　　" : "空港へ行く君の名は",
+        ruby: i === 5 ? [] : [{ x: 0, text: "くうこう" }],
+      })),
+      events,
+    });
+    fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
+    fs.copyFileSync(
+      path.resolve(__dirname, "..", "fixtures", "black.mp4"),
+      path.join(folder, `joysound-${songId}-default.mp4`),
+    );
+  }
+
+  const queueJoysound = (
+    remoconUrl: string,
+    songId: string,
+    lyricsMode: string,
+  ) =>
+    fetch(new URL("api/queueSong", remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // A phone each: one song in the queue each.
+        "X-Karafriends-Device-Id": `e2e-phone-${songId}`,
+        "X-Karafriends-Nickname": "e2e",
+      },
+      body: JSON.stringify({
+        kind: "joysound",
+        songId,
+        name: `E2E ${songId}`,
+        artistName: "E2E artist",
+        lyricsMode,
+        youtubeVideoId: null,
+      }),
+    }).then((res) => res.json());
+
+  // The lyrics canvas's texture count (JoysoundRenderer's data-textures) at
+  // every frame for `ms`. (The hidden test window draws about one a second.)
+  const textureCounts = (display: Page, ms: number) =>
+    display.evaluate(async (ms) => {
+      const counts: number[] = [];
+      const end = performance.now() + ms;
+      while (performance.now() < end) {
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          "canvas.joysoundDisplay",
+        );
+        counts.push(Number(canvas?.dataset.textures ?? -1));
+        await new Promise(requestAnimationFrame);
+      }
+      return counts;
+    }, ms);
+
+  test("hold the textures of the lines around now, and only romaji loads kuromoji's dictionary", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const folder = path.join(
+      await karafriends.app.evaluate(({ app }) => app.getPath("temp")),
+      "karafriends_tmp",
+    );
+    fs.mkdirSync(folder, { recursive: true });
+    fakeJoysoundSong(folder, "e2e-kana", 40);
+    fakeJoysoundSong(folder, "e2e-romaji", 12);
+    const dictionaryFetches = () =>
+      karafriends.displayRequests.filter((url) => url.includes("/dict/"));
+
+    expect(await queueJoysound(remoconUrl, "e2e-kana", "kana")).toMatchObject({
+      ok: true,
+    });
+    const canvas = display.locator("canvas.joysoundDisplay");
+    await expect(canvas).toHaveAttribute("data-textures", /^[1-9]/, {
+      timeout: 20_000,
+    });
+    // Over 12 s (about 24 lines of 40): never more than the title and four
+    // lines' two textures, where all 40 lines' would be 81.
+    const counts = await textureCounts(display, 12_000);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(9);
+    expect(Math.max(...counts)).toBeGreaterThanOrEqual(4);
+    // Kana needs no romaji, so no dictionary.
+    expect(dictionaryFetches()).toEqual([]);
+
+    // A song with romaji queued: the dictionary loads now, before it plays.
+    expect(
+      await queueJoysound(remoconUrl, "e2e-romaji", "romaji"),
+    ).toMatchObject({ ok: true });
+    await expect.poll(() => dictionaryFetches().length).toBeGreaterThan(0);
+    expect(await display.locator("video").getAttribute("src")).toContain(
+      "e2e-kana",
+    );
+
+    // Skipped to it: the old song's canvas goes, the new one draws its
+    // lines (the one of spaces too: it doesn't stop the others).
+    expect(
+      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
+    ).toBe(true);
+    await expect(display.locator("video")).toHaveAttribute("src", /e2e-romaji/);
+    await expect(canvas).toHaveCount(1);
+    await expect
+      .poll(
+        async () =>
+          Math.max(...(await textureCounts(display, 500)).filter((n) => n > 1)),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThanOrEqual(4);
+
+    expect(karafriends.displayErrors).toEqual([]);
   });
 });
