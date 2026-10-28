@@ -273,6 +273,18 @@
   min-height: 4.5rem;
 }
 
+/* A panel too narrow for that (a big UI scale): the device on a line of
+   its own, the levels and Remove under it. */
+@container (max-width: 50rem) {
+  .settingsMicRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .settingsMicRow > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 /* A mic's level: a bar filling from the left, red near the top, sunk
    into the card as a slider's track is. */
 .settingsMeter {

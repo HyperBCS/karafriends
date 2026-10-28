@@ -11,6 +11,7 @@ import IdleScreen from "./IdleScreen";
 import type { MicLevels } from "./MicrophoneSetting";
 import {
   InputDevice,
+  inputDevices,
   type MicMode,
   type MicOutput,
   setMicMode,
@@ -109,6 +110,21 @@ const PITCH_BARS_KEY = "pitchBars";
 // Settings' open tab, to open on it the next time.
 const SETTINGS_TAB_KEY = "settingsTab";
 
+// The name or address the QR code sends phones to, without the port; not
+// set for karafriends.local.
+const HOSTNAME_KEY = "hostname";
+
+// The saved one, if this computer still has it (a new network gives a new
+// address); karafriends.local if not. With the port phones use.
+function savedHostname(): string {
+  const saved = localStorage.getItem(HOSTNAME_KEY);
+  const name =
+    saved !== null && window.karafriends.ipAddresses().includes(saved)
+      ? saved
+      : HOSTNAME;
+  return `${name}:${window.karafriends.remoconPort()}`;
+}
+
 function savedSettingsTab(): SettingsTab {
   const saved = localStorage.getItem(SETTINGS_TAB_KEY);
   return SETTINGS_TABS.find((tab) => tab === saved) ?? "accounts";
@@ -159,10 +175,10 @@ function openSavedMics(): InputDevice[] {
     console.warn("The saved mic output won't open:", err);
   }
   setMicMode(savedMicMode());
+  // None while the listing fails: the saved mics then wait, kept, for a
+  // launch that lists them.
   const channelCounts = new Map(
-    window.karafriends.nativeAudio
-      .inputDevices()
-      .map(([id, , channels]) => [id, channels]),
+    inputDevices().map(([id, , channels]) => [id, channels]),
   );
   const listed = ({ name, channel }: SavedMic) =>
     channel < (channelCounts.get(name) ?? 0);
@@ -204,9 +220,7 @@ function App(props: { audio: KarafriendsAudio }) {
   const [uiScale, setUiScale] = useState(() =>
     savedChoice(localStorage.getItem(UI_SCALE_KEY), UI_SCALES, 100),
   );
-  const [hostname, setHostname] = useState(
-    `${HOSTNAME}:${window.karafriends.remoconPort()}`,
-  );
+  const [hostname, setHostname] = useState(savedHostname);
   const [pitchBars, setPitchBars] = useState(
     () => localStorage.getItem(PITCH_BARS_KEY) !== "off",
   );
@@ -380,6 +394,13 @@ function App(props: { audio: KarafriendsAudio }) {
     setPitchBars(on);
   };
 
+  // "name:port": the name is kept, for the next launch to use with its port.
+  const changeHostname = (picked: string) => {
+    const name = picked.slice(0, picked.lastIndexOf(":"));
+    save(HOSTNAME_KEY, name === HOSTNAME ? null : name);
+    setHostname(picked);
+  };
+
   const changeSettingsTab = (tab: SettingsTab) => {
     localStorage.setItem(SETTINGS_TAB_KEY, tab);
     setSettingsTab(tab);
@@ -426,14 +447,10 @@ function App(props: { audio: KarafriendsAudio }) {
     setMics(mics.filter((_, i) => i !== index));
   };
 
-  // Q shows or hides the up-next strip, S opens Settings, Escape closes it.
-  // Not while typing in a field.
+  // Q shows or hides the up-next strip, S opens Settings (Escape closes it:
+  // see Settings). Not while typing in a field.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSettingsOpen(false);
-        return;
-      }
       if (event.ctrlKey || event.altKey || event.metaKey) return;
       if ((event.target as Element).closest?.("input, select, textarea")) {
         return;
@@ -503,7 +520,7 @@ function App(props: { audio: KarafriendsAudio }) {
             onTabChange={changeSettingsTab}
             onClose={() => setSettingsOpen(false)}
             hostname={hostname}
-            onHostnameChange={setHostname}
+            onHostnameChange={changeHostname}
             mics={mics}
             micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}
