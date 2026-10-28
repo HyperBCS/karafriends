@@ -5,7 +5,9 @@
 // No device IDs go out: a listener says which device it is, and sees which
 // songs and downloads are its own (isMine). Whatever a listener doesn't own
 // is the same object for every listener, so a transport can serialize it once
-// per change instead of once per phone (server.ts does).
+// per change instead of once per phone (server.ts does). That keeps a flush
+// flat in the number of streams open (up to STREAM_LIMITS' 200, which a
+// script can open), not just at party size.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import type {

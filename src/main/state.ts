@@ -4,7 +4,8 @@
 // Everything that changes the state goes through update(), which saves it and
 // tells the listeners. The one exception is downloadQueue, which
 // src/main/downloads changes in place (with the helpers below) as downloads
-// start, progress, finish and fail.
+// start, progress, finish and fail, several times a second, without a save
+// each time: the live hub polls it instead (watchDownloads in live.ts).
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import { EventEmitter } from "events";
