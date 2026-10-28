@@ -16,7 +16,7 @@
     "lint": "oxlint --deny-warnings",
     "test:unit": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:native": "cargo clippy --manifest-path native/Cargo.toml && cargo +nightly careful test --manifest-path native/Cargo.toml",
-    "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
+    "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium webkit",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test",
     "test:e2e:ci": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --grep-invert \"@net|@jp\"",
     "postinstall": "husky && install-electron"

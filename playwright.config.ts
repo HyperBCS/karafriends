@@ -5,6 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
 //   @jp   needs a Japanese IP and DAM/Joysound logins; runs only with
 //         KARAFRIENDS_E2E_JP=1.
 const runJapanOnlyTests = process.env.KARAFRIENDS_E2E_JP === "1";
+// KARAFRIENDS_E2E_WEBKIT=1 also runs the remote's specs in WebKit as an
+// iPhone, the phone the remote is checked on (Safari). Not in CI.
+const runWebKit = process.env.KARAFRIENDS_E2E_WEBKIT === "1";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -19,13 +22,29 @@ export default defineConfig({
   grepInvert: runJapanOnlyTests ? undefined : /@jp/,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    // The remote runs in Chromium as a phone.
-    ...devices["Pixel 7"],
     // The remote picks its language from the browser's (src/remocon/i18n),
     // and the tests read its English.
     locale: "en-US",
-    launchOptions: { args: ["--mute-audio"] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  projects: [
+    {
+      name: "chromium",
+      // The remote runs in Chromium as a phone.
+      use: {
+        ...devices["Pixel 7"],
+        launchOptions: { args: ["--mute-audio"] },
+      },
+    },
+    ...(runWebKit
+      ? [
+          {
+            name: "webkit",
+            testMatch: /(remote|screenshots)\.spec\.ts$/,
+            use: { ...devices["iPhone 15"] },
+          },
+        ]
+      : []),
+  ],
 });
