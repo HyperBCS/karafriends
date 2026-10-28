@@ -110,6 +110,7 @@ describe("POST /api/<method>", () => {
       "importConfig",
       "restartApp",
       "setAdminPassword",
+      "setMics",
       "setSettings",
       "testLogin",
       "updateTools",

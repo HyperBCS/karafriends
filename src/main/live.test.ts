@@ -77,6 +77,10 @@ describe("toLiveState", () => {
       failDownload(state.downloadQueue, failed, "Video unavailable");
       state.toolsProblem = { message: "Update the tools", since: 5 };
       state.guideMelodyLevel = 0.5;
+      state.songVolume = 70;
+      state.mics = [
+        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+      ];
       state.currentSongStartedAt = 1000;
       state.currentSongPausedMs = 200;
       state.currentSongPausedSince = 1500;
@@ -93,6 +97,10 @@ describe("toLiveState", () => {
     });
     assert.equal(live.toolsProblem, "Update the tools");
     assert.equal(live.guideMelodyLevel, 0.5);
+    assert.equal(live.songVolume, 70);
+    assert.deepEqual(live.mics, [
+      { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+    ]);
     assert.deepEqual(
       [
         live.currentSongStartedAt,

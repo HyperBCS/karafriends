@@ -7,6 +7,7 @@
 import type {
   ApiInput,
   ApiMethod,
+  MicInfo,
   PageInput,
   PlaybackState,
   QueueItemKind,
@@ -102,6 +103,19 @@ function oneOf<T extends string>(
     fail(`"${key}" must be one of ${values.join(", ")}`);
   }
   return input[key] as T;
+}
+
+// The display's mic list: more than any party plugs in.
+const MAX_MICS = 32;
+
+function mic(raw: unknown): MicInfo {
+  const input = fields(raw, ["id", "label", "gain", "echo"]);
+  return {
+    id: string(input, "id", 300),
+    label: string(input, "label", 300),
+    gain: integer(input, "gain", 0, 200),
+    echo: integer(input, "echo", 0, 100),
+  };
 }
 
 const PAGE_KEYS = ["offset", "limit"] as const;
@@ -286,6 +300,17 @@ export const validators: {
   setGuideMelodyLevel: (raw) => ({
     level: number(fields(raw, ["level"]), "level", 0, 1),
   }),
+  setSongVolume: (raw) => ({
+    volume: integer(fields(raw, ["volume"]), "volume", 0, 100),
+  }),
+  setMicLevels: (raw) => {
+    const input = fields(raw, ["id", "gain", "echo"]);
+    return {
+      id: string(input, "id", 300),
+      gain: optionalInteger(input, "gain", 0, 200),
+      echo: optionalInteger(input, "echo", 0, 100),
+    };
+  },
   pushAdhocLyrics: (raw) => ({
     lyricIndex: integer(fields(raw, ["lyricIndex"]), "lyricIndex", 0, 100_000),
   }),
@@ -293,6 +318,13 @@ export const validators: {
     const emote = string(fields(raw, ["emote"]), "emote", 32);
     if (emote === "") fail(`"emote" must not be empty`);
     return { emote };
+  },
+  setMics: (raw) => {
+    const mics = fields(raw, ["mics"]).mics;
+    if (!Array.isArray(mics) || mics.length > MAX_MICS) {
+      fail(`"mics" must be a list of at most ${MAX_MICS} mics`);
+    }
+    return { mics: mics.map(mic) };
   },
   popSong: nothing,
   whoami: nothing,

@@ -656,6 +656,70 @@ describe("setGuideMelodyLevel", () => {
   });
 });
 
+describe("the song volume and the mics", () => {
+  const mic = (n: number) => ({
+    id: `Mic ${n} (Windows)#0`,
+    label: `Mic ${n} (Windows), channel 1`,
+    gain: 100,
+    echo: 40,
+  });
+
+  test("only an admin may set the song volume", async () => {
+    const api = makeApi({ supervisedMode: false });
+    assert.equal(store.getState().songVolume, 100);
+    await rejectsWith(api.setSongVolume({ volume: 50 }, bob), 403);
+    await rejectsWith(
+      api.setSongVolume({ volume: 50 }, phone(ADMIN_DEVICE, ADMIN_NICK)),
+      403,
+    );
+    assert.equal(store.getState().songVolume, 100);
+    assert.equal(await api.setSongVolume({ volume: 50 }, admin("x")), true);
+    assert.equal(store.getState().songVolume, 50);
+    assert.equal(await api.setSongVolume({ volume: 0 }, display), true);
+    assert.equal(store.getState().songVolume, 0);
+    const everyone = makeApi({ supervisedMode: false, everyoneIsAdmin: true });
+    assert.equal(await everyone.setSongVolume({ volume: 80 }, bob), true);
+    assert.equal(store.getState().songVolume, 80);
+  });
+
+  test("only the display lists its mics", async () => {
+    const api = makeApi({ supervisedMode: false });
+    await rejectsWith(api.setMics({ mics: [mic(1)] }, admin("x")), 403);
+    await rejectsWith(api.setMics({ mics: [mic(1)] }, bob), 403);
+    assert.deepEqual(store.getState().mics, []);
+    assert.equal(await api.setMics({ mics: [mic(1), mic(2)] }, display), true);
+    assert.deepEqual(store.getState().mics, [mic(1), mic(2)]);
+    assert.equal(await api.setMics({ mics: [mic(2)] }, display), true);
+    assert.deepEqual(store.getState().mics, [mic(2)]);
+  });
+
+  test("an admin sets one mic's levels; an unknown mic is false", async () => {
+    const api = makeApi({ supervisedMode: false });
+    await api.setMics({ mics: [mic(1), mic(2)] }, display);
+    await rejectsWith(api.setMicLevels({ id: mic(1).id, gain: 0 }, bob), 403);
+    assert.equal(
+      await api.setMicLevels({ id: mic(1).id, gain: 150 }, admin("x")),
+      true,
+    );
+    assert.equal(
+      await api.setMicLevels({ id: mic(2).id, echo: 0 }, display),
+      true,
+    );
+    assert.deepEqual(store.getState().mics, [
+      { ...mic(1), gain: 150 },
+      { ...mic(2), echo: 0 },
+    ]);
+    assert.equal(
+      await api.setMicLevels({ id: "Gone (Windows)#0", gain: 10 }, admin("x")),
+      false,
+    );
+    assert.deepEqual(store.getState().mics, [
+      { ...mic(1), gain: 150 },
+      { ...mic(2), echo: 0 },
+    ]);
+  });
+});
+
 describe("admin sign-in", () => {
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
@@ -1622,6 +1686,41 @@ describe("validators", () => {
     invalid("setGuideMelodyLevel", { level: "0.5" });
     invalid("setGuideMelodyLevel", { level: NaN });
     invalid("setGuideMelodyLevel", { level: 0.5, semis: 1 });
+    assert.deepEqual(validators.setSongVolume({ volume: 0 }), { volume: 0 });
+    assert.deepEqual(validators.setSongVolume({ volume: 100 }), {
+      volume: 100,
+    });
+    invalid("setSongVolume", {});
+    invalid("setSongVolume", { volume: 101 });
+    invalid("setSongVolume", { volume: -1 });
+    invalid("setSongVolume", { volume: 50.5 });
+    invalid("setSongVolume", { volume: "50" });
+    assert.deepEqual(validators.setMicLevels({ id: "m#0", gain: 200 }), {
+      id: "m#0",
+      gain: 200,
+      echo: undefined,
+    });
+    assert.deepEqual(validators.setMicLevels({ id: "m#0", echo: 0 }), {
+      id: "m#0",
+      gain: undefined,
+      echo: 0,
+    });
+    invalid("setMicLevels", { gain: 100 });
+    invalid("setMicLevels", { id: "m#0", gain: 201 });
+    invalid("setMicLevels", { id: "m#0", gain: 99.5 });
+    invalid("setMicLevels", { id: "m#0", echo: 101 });
+    invalid("setMicLevels", { id: "m#0", echo: -1 });
+    invalid("setMicLevels", { id: "m#0", level: 1 });
+    const mic = { id: "m#0", label: "M, channel 1", gain: 100, echo: 40 };
+    assert.deepEqual(validators.setMics({ mics: [] }), { mics: [] });
+    assert.deepEqual(validators.setMics({ mics: [mic] }), { mics: [mic] });
+    invalid("setMics", {});
+    invalid("setMics", { mics: mic });
+    invalid("setMics", { mics: Array(33).fill(mic) });
+    invalid("setMics", { mics: [{ ...mic, gain: 201 }] });
+    invalid("setMics", { mics: [{ ...mic, echo: 40.5 }] });
+    invalid("setMics", { mics: [{ ...mic, label: undefined }] });
+    invalid("setMics", { mics: [{ ...mic, extra: 1 }] });
     assert.deepEqual(validators.damSearchSongs({ query: "a", limit: 30 }), {
       query: "a",
       offset: undefined,

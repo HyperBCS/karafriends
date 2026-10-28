@@ -14,6 +14,7 @@ import path from "path";
 import type {
   AdhocLyricsEntry,
   LyricsMode,
+  MicInfo,
   PlaybackState,
   QueueItem,
   QueueItemKind,
@@ -158,6 +159,10 @@ export interface State {
   pitchShiftSemis: number;
   // 0 to 1. Saved, unlike the pitch.
   guideMelodyLevel: number;
+  // 0 to 100, and the display's open mics. Not saved: a launch starts at 100
+  // and none.
+  songVolume: number;
+  mics: MicInfo[];
   playbackState: PlaybackState;
   // The songs after currentSong.
   songQueue: QueueItem[];
@@ -221,6 +226,8 @@ export function emptyState(): State {
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,
     guideMelodyLevel: 0,
+    songVolume: 100,
+    mics: [],
     playbackState: "WAITING",
     songQueue: [],
     downloadQueue: [],
@@ -280,11 +287,13 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json. The current song is saved at the head of the queue,
 // so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics, the song's timing and the tools problem start over.
-// The guide melody level is kept.
+// pushed adhoc lyrics, the song's timing, the song volume, the mics and the
+// tools problem start over. The guide melody level is kept.
 export function serializeState(state: Readonly<State>): string {
   const {
     toolsProblem: _,
+    songVolume: _songVolume,
+    mics: _mics,
     currentSongStartedAt: _startedAt,
     currentSongPausedMs: _pausedMs,
     currentSongPausedSince: _pausedSince,

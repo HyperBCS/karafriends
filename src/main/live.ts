@@ -75,6 +75,8 @@ export function toLiveState(
     playbackState: state.playbackState,
     pitchShiftSemis: state.pitchShiftSemis,
     guideMelodyLevel: state.guideMelodyLevel,
+    songVolume: state.songVolume,
+    mics: state.mics,
     adhocLyrics: state.currentSongAdhocLyrics,
     downloads: state.downloadQueue.map((download): DownloadProgress => ({
       id: download.id,
