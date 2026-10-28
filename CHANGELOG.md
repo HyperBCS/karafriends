@@ -28,6 +28,7 @@ The product round: the phone remote, the display, settings and party-time failur
 - Fixes from the mobile review: a song in its own key plays as loud as before and as with the key changed (skipping the pitch shifter had made it 8.5 dB louder, and a loud YouTube video could distort); "Queued" on the phone counts only what's left of the current song, like the queue; and the countdowns start when the display starts the song, not while a DAM song is still loading.
 - Up-next waits on the display and the phones count down while a song plays and stop while it's paused; the display's screens scale with its window, from 720p to 4K, instead of staying at 1080p sizes; and a song in its own key no longer goes through the pitch shifter, which made it quieter and a little late.
 - Phone fixes from the mobile round's review: a drag in the queue holds the right song when the queue changes under it (a song ends or another phone removes one), stays put when dropped while a song plays, and scrolls the queue when held near its top or bottom; pausing or restarting no longer repeats the "up soon" notification; "らーめん" finds ラーメン; the guide melody slider no longer jumps back while dragged, and its thumb is easier to catch on iPhones; the page no longer bounces on iOS 15; and queued Joysound songs show their lyrics mode ("Joysound · Romaji").
+- The proxy settings are gone: outside Japan, run a VPN to Japan on the computer. An old `config.yaml` or an imported file loses `proxyEnable`, `proxyHost`, `proxyPort`, `proxyUser` and `proxyPass` with a note.
 
 ## 0.1.0
 
