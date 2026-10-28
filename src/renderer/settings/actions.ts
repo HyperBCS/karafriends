@@ -57,6 +57,9 @@ export interface Message {
   text: string;
   list?: string[];
   tone?: "busy" | "problem";
+  // The setting a refusal is about: its field saves again even unchanged,
+  // so the saved value put back clears it.
+  refused?: keyof SettingsChanges;
 }
 
 export const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
@@ -144,13 +147,21 @@ export function createSettingsActions(deps: SettingsDeps) {
   // Whether it saved.
   const save = (section: Section, changes: SettingsChanges) => {
     const number = saves++;
+    const keys = Object.keys(changes) as (keyof SettingsChanges)[];
+    const refused = keys.length === 1 ? keys[0] : undefined;
     let saved = false;
     return act(section, async () => {
-      const result = await call("setSettings", { settings: changes });
+      let result;
+      try {
+        result = await call("setSettings", { settings: changes });
+      } catch (err) {
+        return { ...problemMessage(err), refused };
+      }
       if (!result.ok) {
         return {
           text: result.problems.map(labelled).join(" "),
           tone: "problem",
+          refused,
         };
       }
       saved = true;
@@ -173,6 +184,7 @@ export function createSettingsActions(deps: SettingsDeps) {
       say(section, {
         text: `${LABELS[key]}: enter a whole number.`,
         tone: "problem",
+        refused: key,
       });
       return;
     }

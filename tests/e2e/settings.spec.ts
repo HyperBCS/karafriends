@@ -470,6 +470,23 @@ test("a tab with something to look at gets a dot, until it's put right", async (
   await expect(queue.getByRole("status")).toHaveText(
     "Songs per phone must be a whole number from 0 to 1000",
   );
+  // Put back to the saved value: that clears it too.
+  const saved = String(
+    (await output(display, "getSettings")).settings.paxSongQueueLimit,
+  );
+  await queue.getByLabel("Songs per phone").fill(saved);
+  await queue.getByLabel("Songs per phone").press("Enter");
+  await expect(queue.getByRole("status")).toHaveText("Saved.");
+  await openTab(display, "Sound");
+  await expect(party).not.toHaveAccessibleDescription("Needs a look");
+
+  // And a refused value put right with another.
+  await openTab(display, "Party");
+  await queue.getByLabel("Songs per phone").fill("1001");
+  await queue.getByLabel("Songs per phone").press("Enter");
+  await expect(queue.getByRole("status")).toHaveText(
+    "Songs per phone must be a whole number from 0 to 1000",
+  );
   await queue.getByLabel("Songs per phone").fill("2");
   await queue.getByLabel("Songs per phone").press("Enter");
   await expect(queue.getByRole("status")).toHaveText("Saved.");

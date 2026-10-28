@@ -104,6 +104,7 @@ export default function PartyTab(props: {
             hint="Queued at once. 0 means no limit."
             type="number"
             value={String(settings.paxSongQueueLimit)}
+            refused={messages.queue?.refused === "paxSongQueueLimit"}
             onCommit={(value) =>
               actions.saveNumber("queue", "paxSongQueueLimit", value)
             }
@@ -121,6 +122,7 @@ export default function PartyTab(props: {
             label={LABELS.remoconPort}
             type="number"
             value={String(settings.remoconPort)}
+            refused={messages.network?.refused === "remoconPort"}
             hint={
               devPort === null
                 ? undefined

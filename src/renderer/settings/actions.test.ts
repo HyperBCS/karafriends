@@ -53,7 +53,9 @@ function setUp(answers: Record<string, (input: any) => unknown>) {
   const shown = (section: Section) =>
     said.filter(([at]) => at === section).map(([, message]) => message?.text);
   const methods = () => calls.map(([method]) => method);
-  return { actions, shown, methods };
+  const last = (section: Section) =>
+    said.filter(([at]) => at === section).at(-1)?.[1];
+  return { actions, shown, methods, last };
 }
 
 const refused = () => ({
@@ -147,5 +149,28 @@ describe("Settings' actions", () => {
     assert.equal(await actions.failedSince(from), true);
     assert.deepEqual(methods(), []);
     assert.deepEqual(shown("network"), ["Port: enter a whole number."]);
+  });
+
+  test("a refusal names the setting it is about, so its field can save the saved value again", async () => {
+    const { actions, last } = setUp({
+      setSettings: () => ({
+        ok: false,
+        problems: ["paxSongQueueLimit must be a whole number from 0 to 1000"],
+      }),
+    });
+    await actions.save("queue", { paxSongQueueLimit: 1001 });
+    assert.deepEqual(last("queue"), {
+      text: "Songs per phone must be a whole number from 0 to 1000",
+      tone: "problem",
+      refused: "paxSongQueueLimit",
+    });
+    actions.saveNumber("network", "remoconPort", "abc");
+    assert.equal(last("network")?.refused, "remoconPort");
+    // A save of two settings names neither.
+    await actions.save("queue", {
+      supervisedMode: true,
+      everyoneIsAdmin: true,
+    });
+    assert.equal(last("queue")?.refused, undefined);
   });
 });

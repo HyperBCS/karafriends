@@ -14,11 +14,14 @@ export function Hint(props: { id?: string; children: React.ReactNode }) {
 }
 
 // A text or number field that saves when the host leaves it or presses
-// Enter, if it changed; with a hint under it, if it needs one.
+// Enter, if it changed; with a hint under it, if it needs one. While its
+// last value was refused (`refused`), it saves even unchanged: the saved
+// value put back clears the refusal.
 export function TextSetting(props: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
+  refused?: boolean;
   type?: "text" | "password" | "number";
   hint?: string;
 }) {
@@ -31,7 +34,7 @@ export function TextSetting(props: {
     if (draft === value) setDraft(props.value);
   }
   const commit = () => {
-    if (draft !== props.value) props.onCommit(draft);
+    if (draft !== props.value || props.refused) props.onCommit(draft);
   };
   const field = (
     <label className="kfLabel">

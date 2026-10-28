@@ -25,21 +25,24 @@ export default function AccountsTab(props: {
       service === "dam"
         ? (["damUsername", "damPassword", "Username"] as const)
         : (["joysoundEmail", "joysoundPassword", "Email"] as const);
+    const message = props.messages[service];
     return (
       <SettingsSection
         title={`${SERVICE_NAMES[service]} login`}
-        message={props.messages[service]}
+        message={message}
       >
         <div className="settingsFields">
           <TextSetting
             label={userLabel}
             value={settings[userKey]}
+            refused={message?.refused === userKey}
             onCommit={(value) => save(service, { [userKey]: value })}
           />
           <TextSetting
             label="Password"
             type="password"
             value={settings[passKey]}
+            refused={message?.refused === passKey}
             onCommit={(value) => save(service, { [passKey]: value })}
           />
         </div>
