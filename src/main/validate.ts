@@ -292,19 +292,12 @@ export const validators: {
   setAdminPassword: (raw) => ({
     password: string(fields(raw, ["password"]), "password", 200),
   }),
-  testLogin: (raw) => {
-    const input = fields(raw, ["service", "credentials"]);
-    const service = oneOf(input, "service", ["dam", "joysound"] as const);
-    if (input.credentials === undefined) return { service };
-    const credentials = fields(input.credentials, ["username", "password"]);
-    return {
-      service,
-      credentials: {
-        username: string(credentials, "username"),
-        password: string(credentials, "password"),
-      },
-    };
-  },
+  testLogin: (raw) => ({
+    service: oneOf(fields(raw, ["service"]), "service", [
+      "dam",
+      "joysound",
+    ] as const),
+  }),
   exportConfig: nothing,
   importConfig: (raw) => ({
     yaml: string(fields(raw, ["yaml"]), "yaml", 1_000_000),

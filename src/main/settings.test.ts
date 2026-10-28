@@ -246,25 +246,17 @@ describe("setAdminPassword", () => {
 });
 
 describe("testLogin", () => {
-  test("uses the saved login, or the given one", async () => {
+  test("uses the saved login", async () => {
     const { api, store, tried } = setup();
     store.update(LOGINS);
     assert.deepEqual(await api.testLogin({ service: "dam" }, display), {
       ok: true,
     });
-    await api.testLogin(
-      {
-        service: "joysound",
-        credentials: { username: "new@example.com", password: "new-pw" },
-      },
-      display,
-    );
+    await api.testLogin({ service: "joysound" }, display);
     assert.deepEqual(tried, [
       "dam dam-user:dam-pw",
-      "joysound new@example.com:new-pw",
+      "joysound joy@example.com:joy-pw",
     ]);
-    // A test doesn't change the saved login.
-    assert.equal(store.get().joysoundEmail, "joy@example.com");
   });
 
   test("says when no login is set, without asking", async () => {

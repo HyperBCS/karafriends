@@ -447,14 +447,10 @@ export interface Api {
     input: { password: string };
     output: Record<string, never>;
   };
-  // Signs in to DAM or Joysound with the given login, or the saved one,
-  // without keeping the session. Gives up after 15 seconds.
+  // Signs in to DAM or Joysound with the saved login, without keeping the
+  // session. Gives up after 15 seconds.
   testLogin: {
-    input: {
-      service: LoginService;
-      // Joysound: username is the email.
-      credentials?: { username: string; password: string };
-    };
+    input: { service: LoginService };
     output: TestLoginResult;
   };
   // config.yaml, logins and admin password hash included, with a

@@ -17,7 +17,6 @@ import {
   clearPlaceholders,
   CONFIG_KEYS,
   configProblems,
-  DEFAULT_CONFIG,
   hasLogin,
   isConfigKey,
   OBSOLETE_KEYS,
@@ -128,21 +127,13 @@ export function createSettingsHandlers(
     }
   };
 
-  const testLogin = async (
-    service: LoginService,
-    credentials?: { username: string; password: string },
-  ): Promise<TestLoginResult> => {
+  const testLogin = async (service: LoginService): Promise<TestLoginResult> => {
     const saved = store.saved();
     const { username, password } =
-      credentials ??
-      (service === "dam"
-        ? { username: saved.damUsername, password: saved.damPassword }
-        : { username: saved.joysoundEmail, password: saved.joysoundPassword });
-    const login =
       service === "dam"
-        ? { damUsername: username, damPassword: password }
-        : { joysoundEmail: username, joysoundPassword: password };
-    if (!hasLogin({ ...DEFAULT_CONFIG, ...login }, service)) {
+        ? { username: saved.damUsername, password: saved.damPassword }
+        : { username: saved.joysoundEmail, password: saved.joysoundPassword };
+    if (!hasLogin(saved, service)) {
       const what = service === "dam" ? "username" : "email";
       return {
         ok: false,
@@ -206,9 +197,9 @@ export function createSettingsHandlers(
       return {};
     },
 
-    async testLogin({ service, credentials }, caller) {
+    async testLogin({ service }, caller) {
       requireDisplay(caller);
-      return testLogin(service, credentials);
+      return testLogin(service);
     },
 
     async exportConfig(_input, caller) {

@@ -329,11 +329,5 @@ test.describe("@jp with the installed app's logins", () => {
     expect(await output(display, "testLogin", { service: "joysound" })).toEqual(
       { ok: true },
     );
-    // A wrong password is a plain no.
-    const wrong = await output(display, "testLogin", {
-      service: "joysound",
-      credentials: { username: "nobody@example.com", password: "wrong" },
-    });
-    expect(wrong.ok).toBe(false);
   });
 });
