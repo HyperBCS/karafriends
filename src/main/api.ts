@@ -15,7 +15,6 @@ import type {
   JoysoundQueueItem,
   NicoQueueItem,
   NicoVideoInfo,
-  PoppedDamSong,
   PoppedSong,
   QueueItem,
   UserIdentity,
@@ -35,6 +34,7 @@ import type { KarafriendsConfig } from "../common/config";
 import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
+import { NoLoginError } from "./credentials";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
@@ -799,12 +799,14 @@ export function createApi(
                 queueFailed(item),
               );
             })
-            .catch((err) =>
-              console.error(
-                `Failed to start the download of DAM song ${item.songId}:`,
-                err,
-              ),
-            );
+            .catch((err) => {
+              const what = `Not downloading DAM song ${item.songId}`;
+              if (err instanceof NoLoginError) {
+                console.warn(`${what}: ${err.message}`);
+              } else {
+                console.error(`${what}:`, err);
+              }
+            });
           pushSongToQueue(item, pushToHead);
           break;
         }
@@ -1141,20 +1143,29 @@ export function createApi(
       // and the song has already started, so neither may hold it up for long
       // or fail it.
       const timeoutMs = deps.damPopTimeoutMs ?? DAM_POP_TIMEOUT_MS;
+      // No DAM login is the host's choice, not a failure: one line for it.
+      let noLogin: NoLoginError | null = null;
+      const failed = (what: string) => (err: unknown) => {
+        if (err instanceof NoLoginError) {
+          noLogin = err;
+        } else {
+          console.error(`No ${what} for ${song.songId}:`, err);
+        }
+        return [];
+      };
       const [urls, scoringData] = await Promise.all([
         withTimeout(streamingUrls(song.songId), timeoutMs).catch(
-          (err): PoppedDamSong["streamingUrls"] => {
-            console.error(`No streaming URLs for ${song.songId}:`, err);
-            return [];
-          },
+          failed("streaming URLs"),
         ),
         withTimeout(deps.minsei.getScoringData(song.songId), timeoutMs)
           .then((data) => Array.from(new Uint8Array(data)))
-          .catch((err): number[] => {
-            console.error(`No scoring data for ${song.songId}:`, err);
-            return [];
-          }),
+          .catch(failed("scoring data")),
       ]);
+      if (noLogin) {
+        console.warn(
+          `${song.songId} plays without streaming URLs or scoring data: ${(noLogin as NoLoginError).message}`,
+        );
+      }
       const popped: PoppedSong = {
         ...song,
         streamingUrls: urls,

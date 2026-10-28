@@ -11,6 +11,7 @@ import type { PlaybackCommand, QueueItem } from "../common/api";
 import { songKey } from "../common/currentSong";
 import { REASONS } from "../common/downloadFailure";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
+import { NoLoginError } from "./credentials";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import { shareQueueItem, type HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
@@ -775,6 +776,42 @@ describe("admin checks", () => {
         startWithLowBitrate: false,
         scoringData: [1, 2, 3],
       });
+    });
+
+    test("without a DAM login, says so in one line", async () => {
+      const noLogin = async () => {
+        throw new NoLoginError("DAM");
+      };
+      const api = makeApi(
+        {},
+        {
+          minsei: {
+            getMusicStreamingUrls: noLogin,
+            getScoringData: noLogin,
+          },
+        },
+      );
+      store.update((state) => state.songQueue.push(damSong));
+      const logged: unknown[][] = [];
+      const { error, warn } = console;
+      console.error = (...args) => logged.push(["error", ...args]);
+      console.warn = (...args) => logged.push(["warn", ...args]);
+      try {
+        assert.deepEqual(await api.popSong({}, display), {
+          ...damSong,
+          streamingUrls: [],
+          startWithLowBitrate: false,
+          scoringData: [],
+        });
+      } finally {
+        Object.assign(console, { error, warn });
+      }
+      assert.deepEqual(logged, [
+        [
+          "warn",
+          "1234-56 plays without streaming URLs or scoring data: The host hasn't set up a DAM login",
+        ],
+      ]);
     });
 
     test("comes with them again for a reloaded display", async () => {
