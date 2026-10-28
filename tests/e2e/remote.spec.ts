@@ -667,6 +667,68 @@ test("another song's page starts afresh: its own spinner, not the last song or i
   ).toBeVisible();
 });
 
+test("each screen keeps its own scroll: Back lands where it was, a new screen opens at the top", async ({
+  remote,
+}) => {
+  await remote.route("**/api/damSearchSongs", (route) =>
+    fakePages(route, PAGE_SIZE, damSong),
+  );
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: damSongDetail(
+        Number(route.request().postDataJSON().id.replace("e2e-", "")),
+      ),
+    }),
+  );
+  await remote.route("**/api/history", (route) =>
+    route.fulfill({ json: { items: [], nextOffset: null } }),
+  );
+  await pickSource(remote, "DAM");
+  const search = remote.getByRole("searchbox", { name: "Search" });
+  await search.fill("E2E");
+  const main = remote.getByRole("main");
+  const songs = main.getByRole("link", { name: /E2E DAM song/ });
+  await expect(songs).toHaveCount(PAGE_SIZE);
+  await search.blur();
+
+  await scrollDown(remote, main);
+  await expect.poll(() => scrollTop(main)).toBeGreaterThan(500);
+  // Settled (WebKit's scroll into view can still be moving).
+  let left = -1;
+  await expect
+    .poll(async () => {
+      const now = await scrollTop(main);
+      const settled = now === left;
+      left = now;
+      return settled;
+    })
+    .toBe(true);
+
+  // A row in the middle of the screen, as a finger would tap it.
+  const box = (await main.boundingBox())!;
+  await remote.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(remote).toHaveURL(/#\/song\//);
+  await expect(
+    remote.getByRole("button", { name: "Queue song", exact: true }),
+  ).toBeVisible();
+  expect(await scrollTop(main)).toBe(0);
+
+  await remote.getByRole("button", { name: "Back" }).click();
+  await expect(songs).toHaveCount(PAGE_SIZE);
+  await expect.poll(() => scrollTop(main)).toBe(left);
+
+  // A screen opened from there starts at its top too.
+  await remote.getByRole("link", { name: "Settings" }).click();
+  await expect(remote.getByRole("textbox", { name: "Nickname" })).toBeVisible();
+  // (Tall enough that it could have opened part way down.)
+  expect(
+    await main.evaluate((el) => el.scrollHeight - el.clientHeight),
+  ).toBeGreaterThan(0);
+  expect(await scrollTop(main)).toBe(0);
+  await remote.getByRole("button", { name: "Back" }).click();
+  await expect.poll(() => scrollTop(main)).toBe(left);
+});
+
 test("an artist search from both catalogs takes turns on equal matches, and More loads both", async ({
   remote,
 }) => {

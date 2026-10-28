@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from "react";
+import React, { Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import {
   HashRouter,
   Link,
@@ -7,6 +7,7 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useNavigationType,
   useParams,
 } from "react-router";
 
@@ -92,10 +93,53 @@ interface ScreenProps {
   children: React.ReactNode;
 }
 
+// Where each entry in the history left its screen scrolled, by
+// react-router's key for the entry. Every route's Screen is the same one
+// <main>, so without this a screen opened at the last one's place, and
+// Back landed at the top of a long list of results.
+const scrolledTo = new Map<string, number>();
+
+// Keeps the <main> scroller's place per history entry: a new screen opens
+// at its top, Back and Forward find a screen where it was left, and a
+// change in place (typing a search, a Joysound song's background) leaves
+// it be.
+function useScrollMemory(): {
+  ref: React.RefObject<HTMLElement | null>;
+  onScroll: (event: React.UIEvent<HTMLElement>) => void;
+} {
+  const ref = useRef<HTMLElement>(null);
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const last = useRef(location);
+
+  useLayoutEffect(() => {
+    const main = ref.current;
+    const before = last.current;
+    last.current = location;
+    if (!main || before.key === location.key) return;
+    if (navigationType === "REPLACE" && before.pathname === location.pathname) {
+      // The same entry under a new key.
+      scrolledTo.set(location.key, main.scrollTop);
+      return;
+    }
+    main.scrollTop =
+      navigationType === "POP" ? (scrolledTo.get(location.key) ?? 0) : 0;
+    scrolledTo.set(location.key, main.scrollTop);
+  }, [location.key]);
+
+  return {
+    ref,
+    // The rendered entry's: while another loads, this one is still shown.
+    onScroll: (event) =>
+      scrolledTo.set(location.key, event.currentTarget.scrollTop),
+  };
+}
+
 // One screen: the top bar (back, the title, and History, Settings and Home)
 // and the screen's content below it.
 const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   const navigate = useNavigate();
+  const scroll = useScrollMemory();
   // react-router counts the entries it pushed: back stays in the remote.
   const canGoBack = (window.history.state?.idx ?? 0) > 0;
   let back: string | (() => void) | undefined;
@@ -139,7 +183,9 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
           })}
         />
       </header>
-      <main className={styles.main}>{children}</main>
+      <main ref={scroll.ref} className={styles.main} onScroll={scroll.onScroll}>
+        {children}
+      </main>
     </>
   );
 };
