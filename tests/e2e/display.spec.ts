@@ -96,4 +96,55 @@ test.describe("while a song plays", () => {
     await display.keyboard.press("q");
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
   });
+
+  test("the wait counts down, and stops while a phone pauses", async ({
+    display,
+    karafriends,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    const next = display
+      .getByRole("region", { name: "Up next" })
+      .getByRole("listitem");
+    // Song 2's wait, in seconds: "someone · in 0:58".
+    const wait = async () => {
+      const [, minutes, seconds] = (await next.innerText()).match(
+        /in (\d+):(\d\d)/,
+      )!;
+      return Number(minutes) * 60 + Number(seconds);
+    };
+    // Song 1 (60 s) has started.
+    await expect.poll(wait, { timeout: 15_000 }).toBeLessThan(60);
+
+    const before = await wait();
+    await display.waitForTimeout(2_000);
+    const after = await wait();
+    expect(before - after).toBeGreaterThanOrEqual(1);
+    expect(before - after).toBeLessThanOrEqual(3);
+
+    // A phone pauses (anyone may, without supervised mode).
+    const res = await fetch(
+      new URL("api/setPlaybackState", karafriends.remoconUrl),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Karafriends-Device-Id": "e2e-display-device",
+          "X-Karafriends-Nickname": "e2e",
+        },
+        body: JSON.stringify({ playbackState: "PAUSED" }),
+      },
+    );
+    expect(await res.json()).toBe(true);
+    await expect
+      .poll(() =>
+        display.locator("video").evaluate((v: HTMLVideoElement) => v.paused),
+      )
+      .toBe(true);
+    const paused = await wait();
+    await display.waitForTimeout(2_000);
+    expect(await wait()).toBe(paused);
+  });
 });

@@ -1,7 +1,7 @@
 // Screenshots of the display for reviewing it against the design brief in
 // notes/PLAN-product.md, at 1920×1080, saved to
-// notes/ui-refresh-screenshots/d-*.png. Not a test: skipped unless
-// KARAFRIENDS_SCREENSHOTS=1.
+// notes/ui-refresh-screenshots/d-*.png, and the idle screen at 720p and 4K
+// (m-display-*.png). Not a test: skipped unless KARAFRIENDS_SCREENSHOTS=1.
 //
 //   yarn build-prod
 //   KARAFRIENDS_SCREENSHOTS=1 yarn test:e2e screenshotsDisplay
@@ -136,6 +136,36 @@ test.describe("phase D, with a login", () => {
       await shoot(display, name);
     }
   });
+});
+
+// The mobile round's M9: every size follows the window's height, so the idle
+// screen with four queued looks the same at 720p as at 4K.
+test.describe("M9, four queued", () => {
+  test.use({
+    appConfig: LOGIN,
+    seedQueue: {
+      currentSong: null,
+      songQueue: SONGS,
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  for (const [width, height] of [
+    [1280, 720],
+    [3840, 2160],
+  ]) {
+    test(`idle at ${width}×${height}`, async ({ display }) => {
+      await display.setViewportSize({ width, height });
+      await expect(
+        display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
+      ).toHaveCount(4);
+      await display.screenshot({
+        path: path.join(OUT_DIR, `m-display-${height}.png`),
+        animations: "disabled",
+      });
+    });
+  }
 });
 
 test("the first-launch banner", async ({ display }) => {
