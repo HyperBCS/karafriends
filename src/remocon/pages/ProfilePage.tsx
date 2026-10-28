@@ -197,7 +197,7 @@ const Admin = () => {
   );
 };
 
-// The phone's nickname, language, readings, notifications and admin sign-in. On a
+// The phone's nickname, language, notifications and admin sign-in. On a
 // first visit, just the nickname (and the language, to read the rest in).
 const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
   <div className={styles.profile}>
