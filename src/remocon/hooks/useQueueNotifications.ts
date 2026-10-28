@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 
 import formatDuration from "format-duration";
+import type { SharedQueueItem } from "../../common/api";
 import { useLiveEvent } from "../../common/apiClient";
 import useQueue from "../../common/hooks/useQueue";
+import { reading } from "../../common/readings";
 import { t } from "../i18n";
 
 async function registerServiceWorker() {
@@ -27,6 +29,12 @@ async function showNotification(
   new Notification(...args);
 }
 
+// The song as this phone reads it: only the phone that queued it gets these
+// notifications, and the song carries that phone's Readings.
+const shownName = (item: SharedQueueItem) =>
+  reading(item.name, item.nameYomi, item.readingsMode ?? "written") ??
+  item.name;
+
 // Whenever the queue changes, tells this phone about its songs due within
 // ten minutes, and about its songs that couldn't be downloaded. It updates
 // with the queue, so use it in a component of its own (QueueNotifications),
@@ -48,7 +56,7 @@ export default function useQueueNotifications() {
       if (item.isMine && eta <= 10 * 60) {
         showNotification("karafriends", {
           body: t("notification.upSoon", {
-            name: item.name,
+            name: shownName(item),
             eta: formatDuration(eta * 1000),
           }),
         }).catch((err) => console.warn("Couldn't show a notification:", err));
@@ -59,7 +67,7 @@ export default function useQueueNotifications() {
   // The server sends these only to the phone that queued the song.
   useLiveEvent("queueFailed", ({ item, reason }) => {
     showNotification("karafriends", {
-      body: t("notification.failed", { name: item.name, reason }),
+      body: t("notification.failed", { name: shownName(item), reason }),
     }).catch((err) => console.warn("Couldn't show a notification:", err));
   });
 }

@@ -188,6 +188,9 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   await remote.emulateMedia({ colorScheme: "light" });
   await expect(html).toHaveAttribute("data-theme", "light");
   await expect(body).toHaveCSS("background-color", LIGHT);
+  // So does the CSS alone, as on the first frame, before theme.ts runs.
+  await html.evaluate((el) => el.removeAttribute("data-theme"));
+  await expect(body).toHaveCSS("background-color", LIGHT);
   await remote.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveAttribute("data-theme", "dark");
   await expect(body).toHaveCSS("background-color", DARK);
@@ -1602,6 +1605,55 @@ test("the Readings setting puts DAM's readings in place of the search rows' text
   await pickReadings(remote, "Romaji");
   await remote.getByRole("tab", { name: "Artist" }).click();
   await expect(results).toHaveText(["hoshinogenDAM9 songs"]);
+  // And the artist's page: the artist and the songs.
+  await remote.route("**/api/damArtist", (route) =>
+    route.fulfill({
+      json: {
+        id: "e2e-gen",
+        name: "星野 源",
+        nameYomi: "ほしのげん",
+        songCount: 1,
+        songs: {
+          items: [
+            {
+              id: "5860-12",
+              name: "恋",
+              nameYomi: "こい",
+              artistName: "星野 源",
+              artistNameYomi: "ほしのげん",
+            },
+          ],
+          nextOffset: null,
+        },
+      },
+    }),
+  );
+  await results.first().click();
+  await expect(remote.getByRole("heading", { level: 2 })).toHaveText(
+    "hoshinogen",
+  );
+  await expect(results).toHaveText(["koiDAM"]);
+  // And a song's page, with the artist's reading from the row: DAM's song
+  // details give none.
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        id: "5860-12",
+        name: "恋",
+        nameYomi: "コイ",
+        artistName: "星野 源",
+        artistNameYomi: "",
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 252,
+      },
+    }),
+  );
+  await results.first().click();
+  await expect(
+    remote.getByRole("main").getByRole("link", { name: "hoshinogen" }),
+  ).toBeVisible();
 });
 
 test("an older phone's saved Both reads as written", async ({ remote }) => {
@@ -1721,6 +1773,8 @@ test.describe("a queued DAM song", () => {
     // DAM's song details give no artist reading: the artist as written.
     await expect(row).toContainText("koiDAM星野 源");
     await expect(row).not.toContainText("恋");
+    // Its accessible name starts with the title as shown.
+    await expect(row.getByRole("button", { name: /^koi, / })).toBeVisible();
     // This phone's choice, not the one the song was queued with.
     await pickReadings(remote, "Kana");
     await expect(row).toContainText("こいDAM星野 源");

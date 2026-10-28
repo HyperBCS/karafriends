@@ -144,8 +144,9 @@ const QueueButtons = (props: Props) => {
           input: {
             ...base,
             kind: "dam",
-            // For the queue's and history's rows (WithReading). DAM's song
-            // details give no artist reading today ("").
+            // For the queue's and history's rows (WithReading). The
+            // artist's comes from the row that opened the page (SongPage),
+            // "" when there was none.
             nameYomi: props.song.nameYomi || undefined,
             artistNameYomi: props.song.artistNameYomi || undefined,
             playtime: props.song.playtime,

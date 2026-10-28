@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import type { JoysoundSongDetail } from "../../common/api";
 import { useApiQuery } from "../../common/apiQueries";
@@ -15,14 +15,28 @@ import { searchLink } from "./SearchPage";
 import * as styles from "./SongPage.module.scss";
 import { youtubeVideoId as parseYoutubeVideoId } from "../videoLink";
 
+// What the row that opened a DAM song's page tells it (router state): the
+// artist's reading, which DAM's song details don't give. Opened any other
+// way, the artist shows as written.
+interface SongPageState {
+  artistNameYomi?: string;
+}
+
 // A DAM or Joysound song: what the catalog says about it, and its queue
 // buttons.
 const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
   const params = useParams<{ id: string; youtubeVideoId?: string }>();
+  const state = useLocation().state as SongPageState | null;
   const song = useApiQuery(kind === "dam" ? "damSong" : "joysoundSong", {
     id: params.id!,
   });
-  const dam = "vocalTypes" in song ? song : null;
+  const dam =
+    "vocalTypes" in song
+      ? {
+          ...song,
+          artistNameYomi: song.artistNameYomi || state?.artistNameYomi || "",
+        }
+      : null;
   const readings = useReadings();
   // Two lines: in kana or romaji, the reading over the title as written;
   // as written, the title over its kana.

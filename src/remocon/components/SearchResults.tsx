@@ -105,6 +105,7 @@ const SearchResults = ({ query, by, source }: Props) => {
       }
       source={sourceName(item.catalog)}
       to={`${PAGES[item.catalog][by]}${item.id}`}
+      state={{ artistNameYomi: item.artistNameYomi }}
     />
   ));
 

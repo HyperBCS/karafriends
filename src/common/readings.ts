@@ -20,12 +20,10 @@ export function normalize(text: string): string {
 // in romaji. Kept in localStorage ("readings"); "written" until the guest
 // picks, and for a choice this version no longer has (an older "both").
 // The same choices as a queued song's readingsMode.
-export type Readings = ReadingsMode;
-export const READINGS: readonly Readings[] = READINGS_MODES;
 export const READINGS_KEY = "readings";
 
-export function pickReadings(saved: string | null): Readings {
-  return READINGS.includes(saved as Readings) ? (saved as Readings) : "written";
+export function pickReadings(saved: string | null): ReadingsMode {
+  return READINGS_MODES.find((mode) => mode === saved) ?? "written";
 }
 
 // What to show instead of a title or an artist's name, given its kana
@@ -37,7 +35,7 @@ export function pickReadings(saved: string | null): Readings {
 export function reading(
   written: string,
   yomi: string | undefined,
-  mode: Readings,
+  mode: ReadingsMode,
 ): string | null {
   if (mode === "written" || !yomi?.trim()) return null;
   if (isRomaji(written.normalize("NFKC"))) return null;

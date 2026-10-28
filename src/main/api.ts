@@ -404,6 +404,8 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         name: data.title,
         nameYomi: data.titleYomi_Kana,
         artistName: data.artist,
+        // DAM's song details give no artist reading (checked 2026-10-28);
+        // the remote's song page takes it from the row that opened it.
         artistNameYomi: "",
         lyricsPreview: data.firstLine || null,
         vocalTypes: info.guideVocal.split(",").map((vocalType): VocalType => {

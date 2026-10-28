@@ -240,7 +240,8 @@ async function fakeCatalogs(page: Page) {
         name: "恋",
         nameYomi: "こい",
         artistName: "星野源",
-        artistNameYomi: "ほしのげん",
+        // As DAM's song details give it: the reading comes from the row.
+        artistNameYomi: "",
         lyricsPreview: null,
         vocalTypes: ["NORMAL", "GUIDE_MALE"],
         tieUp: "TBS系 火曜ドラマ「逃げるは恥だが役に立つ」主題歌",
