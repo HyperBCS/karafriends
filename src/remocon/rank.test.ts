@@ -24,6 +24,12 @@ describe("normalize", () => {
     assert.equal(normalize("夜に駆ける！"), "夜に駆ける");
     assert.equal(normalize("恋 ～ Love"), "恋love");
   });
+
+  test("a long vowel mark is its vowel, after hiragana as after katakana", () => {
+    assert.equal(normalize("らーめん"), "らあめん");
+    assert.equal(normalize("ラーメン"), "らあめん");
+    assert.equal(normalize("ﾗｰﾒﾝ"), "らあめん");
+  });
 });
 
 describe("rank", () => {
@@ -52,6 +58,14 @@ describe("rank", () => {
     assert.deepEqual(rank("コイ", [[other, koi]]), [koi, other]);
     // An artist's reading, for a song.
     assert.deepEqual(rank("よあそび", [[koi, other]]), [other, koi]);
+  });
+
+  test("a hiragana long vowel mark matches a katakana title", () => {
+    assert.deepEqual(titles("らーめん", ["恋", "愛ラーメン", "ラーメン"]), [
+      "ラーメン",
+      "愛ラーメン",
+      "恋",
+    ]);
   });
 
   test("a kana query matches Latin titles and artists, as romaji", () => {

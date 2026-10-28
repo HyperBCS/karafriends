@@ -750,6 +750,61 @@ test.describe("a long queue", () => {
       remote.getByRole("button", { name: "Show emotes" }),
     ).toBeInViewport();
   });
+
+  // iOS before 16 ignores overscroll-behavior, so the remote stops the
+  // touch drags that would bounce the page. Synthetic touches, from the
+  // middle of target: whether the remote stopped the move.
+  const touchDragStopped = (target: Locator, dx: number, dy: number) =>
+    target.evaluate(
+      (el, [dx, dy]) => {
+        const { left, top, width, height } = el.getBoundingClientRect();
+        const [x, y] = [left + width / 2, top + height / 2];
+        const touch = (x: number, y: number) =>
+          new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+        const event = (type: string, x: number, y: number) =>
+          new TouchEvent(type, {
+            touches: [touch(x, y)],
+            bubbles: true,
+            cancelable: true,
+          });
+        el.dispatchEvent(event("touchstart", x, y));
+        const move = event("touchmove", x + dx, y + dy);
+        el.dispatchEvent(move);
+        return move.defaultPrevented;
+      },
+      [dx, dy],
+    );
+
+  test("stops touch drags that would bounce the page", async ({ remote }) => {
+    // (Playwright's WebKit has no Touch constructor.)
+    const canTouch = await remote.evaluate(() => {
+      try {
+        return !!new Touch({ identifier: 1, target: document.body });
+      } catch {
+        return false;
+      }
+    });
+    test.skip(!canTouch, "No Touch constructor");
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const queue = remote.getByRole("region", { name: "Queue" });
+    await expect(queue.getByRole("listitem")).toHaveCount(12);
+    const row = queue.getByRole("listitem").nth(1);
+
+    // The queue at its top: up scrolls it, down would bounce.
+    expect(await touchDragStopped(row, 0, -20)).toBe(false);
+    expect(await touchDragStopped(row, 0, 20)).toBe(true);
+    // Sideways, it's not a scroll.
+    expect(await touchDragStopped(row, 20, 5)).toBe(false);
+    // Scrolled to the bottom: the other way round.
+    await queue.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const last = queue.getByRole("listitem").last();
+    expect(await touchDragStopped(last, 0, -20)).toBe(true);
+    expect(await touchDragStopped(last, 0, 20)).toBe(false);
+    // The top bar, outside every scroller.
+    expect(await touchDragStopped(remote.getByRole("banner"), 0, 20)).toBe(
+      true,
+    );
+  });
 });
 
 test("a title search ranks both catalogs' results together, best match first", async ({
@@ -828,38 +883,21 @@ test.describe("dragging the queue", () => {
     },
   });
 
-  // The queue's song names in the server's live state: the first event of
-  // a fresh /api/events stream.
-  async function liveQueue(remoconUrl: string): Promise<string[]> {
-    const controller = new AbortController();
-    const res = await fetch(new URL("api/events", remoconUrl), {
-      signal: controller.signal,
-    });
-    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-    let text = "";
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) throw new Error(`The stream ended early: ${text}`);
-        text += value;
-        const data = text.match(/^data: (.*)$/m);
-        if (data) {
-          const { state } = JSON.parse(data[1]);
-          return state.queue.map((item: { name: string }) => item.name);
-        }
-      }
-    } finally {
-      controller.abort();
-    }
-  }
+  // The queue's song names in the server's live state.
+  const liveQueue = async (remoconUrl: string): Promise<string[]> =>
+    (await liveState(remoconUrl)).queue.map(
+      (item: { name: string }) => item.name,
+    );
 
-  test("drags a song above the first, and moves one with the arrow keys", async ({
-    remote,
-    karafriends,
-  }) => {
+  // Opens the queue once song 1 has started (within 5 seconds): its queued
+  // rows, each with a handle, a song's handle, and a check of the order on
+  // the phone, in the live state and on the display.
+  async function openQueue(
+    remote: Page,
+    karafriends: { remoconUrl: string; display: Page },
+  ) {
     await remote.getByRole("button", { name: "Show queue" }).click();
     const queue = remote.getByRole("region", { name: "Queue" });
-    // Song 1 starts within 5 seconds; 2, 3 and 4 wait, each with a handle.
     await expect(queue.locator('[aria-current="true"]')).toContainText(
       "E2E drag song 1",
       { timeout: 15_000 },
@@ -872,7 +910,6 @@ test.describe("dragging the queue", () => {
         .filter({ hasText: `E2E drag song ${n}` })
         .getByRole("button", { name: "Drag to reorder" });
     const names = (songs: number[]) => songs.map((n) => `E2E drag song ${n}`);
-    // On the phone, in the live state and on the display.
     const expectOrder = async (...songs: number[]) => {
       const rows = names(songs).map((name) => new RegExp(name));
       await expect(queued).toHaveText(rows);
@@ -885,7 +922,20 @@ test.describe("dragging the queue", () => {
           .getByRole("listitem"),
       ).toHaveText(rows);
     };
+    return { queue, queued, handle, expectOrder };
+  }
+
+  test("drags a song above the first, and moves one with the arrow keys", async ({
+    remote,
+    karafriends,
+  }) => {
+    const { queued, handle, expectOrder } = await openQueue(
+      remote,
+      karafriends,
+    );
     await expectOrder(2, 3, 4);
+    // The first waits for what is left of song 1's minute, counting down.
+    await expect(queued.first()).toContainText(/\+0:\d\d/);
 
     // Song 4 held by its handle and dragged above song 2, a few steps at a
     // time.
@@ -897,6 +947,7 @@ test.describe("dragging the queue", () => {
     await remote.mouse.move(x, top.y + 10, { steps: 8 });
     await remote.mouse.up();
     await expectOrder(4, 2, 3);
+    await expect(queued.first()).toContainText(/\+0:\d\d/);
 
     // Arrow Up on song 3's handle, twice: it keeps the focus as it moves.
     await handle(3).focus();
@@ -919,6 +970,102 @@ test.describe("dragging the queue", () => {
       "Couldn't move the song: Only an admin can reorder the queue",
     );
     await expectOrder(3, 4, 2);
+  });
+
+  test("a song removed mid-drag leaves the held one held, and the held one removed lets go", async ({
+    remote,
+    karafriends,
+  }) => {
+    const { queue, queued, handle, expectOrder } = await openQueue(
+      remote,
+      karafriends,
+    );
+    await expectOrder(2, 3, 4);
+    // Another phone removes a song.
+    const remove = async (n: number) => {
+      const { songId, timestamp } = song(n);
+      const res = await fetch(
+        new URL("api/removeSong", karafriends.remoconUrl),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Karafriends-Device-Id": "e2e-other-phone",
+            "X-Karafriends-Nickname": "other",
+          },
+          body: JSON.stringify({ songId, timestamp }),
+        },
+      );
+      expect(res.status).toBe(200);
+    };
+    const hold = async (n: number) => {
+      const grip = (await handle(n).boundingBox())!;
+      const x = grip.x + grip.width / 2;
+      await remote.mouse.move(x, grip.y + grip.height / 2);
+      await remote.mouse.down();
+      await remote.mouse.move(x, grip.y, { steps: 2 });
+      return x;
+    };
+
+    // Song 4 held, song 3 above it removed, song 4 dropped above song 2:
+    // song 4 moves, not whichever song is where it was.
+    const x = await hold(4);
+    await remove(3);
+    await expect(queued).toHaveCount(2);
+    const top = (await queued.first().boundingBox())!;
+    await remote.mouse.move(x, top.y + 10, { steps: 8 });
+    await remote.mouse.up();
+    await expectOrder(4, 2);
+
+    // Song 2 held, then removed: the drag ends with nothing left lifted,
+    // and song 4 drags again.
+    await hold(2);
+    await remove(2);
+    await expectOrder(4);
+    await expect(
+      queue.locator("[data-dragging], [data-reordering]"),
+    ).toHaveCount(0);
+    expect(await queued.evaluate((row) => row.style.transform)).toBe("");
+    await remote.mouse.up();
+    await hold(4);
+    await expect(queue.locator("li[data-dragging]")).toHaveCount(1);
+    await remote.mouse.up();
+    await expect(queue.locator("[data-dragging]")).toHaveCount(0);
+  });
+
+  test.describe("with twelve songs", () => {
+    test.use({
+      seedQueue: {
+        currentSong: null,
+        songQueue: Array.from({ length: 12 }, (_, i) => song(i + 1)),
+        songHistory: [],
+        playbackState: "WAITING",
+      },
+    });
+
+    test("a row held at the top of the queue scrolls it up", async ({
+      remote,
+      karafriends,
+    }) => {
+      const { queue, queued, handle, expectOrder } = await openQueue(
+        remote,
+        karafriends,
+      );
+      await expect(queued).toHaveCount(11);
+      // Song 12, scrolled into view at the bottom, held and taken to the
+      // top edge, where the queue scrolls until song 2 is back in view.
+      await handle(12).scrollIntoViewIfNeeded();
+      expect(await scrollTop(queue)).toBeGreaterThan(100);
+      const grip = (await handle(12).boundingBox())!;
+      const region = (await queue.boundingBox())!;
+      const x = grip.x + grip.width / 2;
+      await remote.mouse.move(x, grip.y + grip.height / 2);
+      await remote.mouse.down();
+      await remote.mouse.move(x, region.y + 5, { steps: 8 });
+      await expect.poll(() => scrollTop(queue)).toBe(0);
+      await remote.mouse.up();
+      await expectOrder(12, ...Array.from({ length: 10 }, (_, i) => i + 2));
+    });
   });
 });
 
@@ -1029,6 +1176,16 @@ test.describe("the lyrics mode", () => {
         "e2e-kana": "kana",
         "e2e-both": "both",
       });
+    // The queue shows each one's mode by its source.
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const rows = remote
+      .getByRole("region", { name: "Queue" })
+      .getByRole("listitem");
+    for (const [mode, label] of Object.entries(LABELS)) {
+      await expect(rows.filter({ hasText: `e2e-${mode}` })).toContainText(
+        `Joysound · ${label}`,
+      );
+    }
   });
 });
 
@@ -1082,6 +1239,30 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(0.7);
     await expect(slider).toHaveValue("0.7");
+
+    // Dragged down across several steps, it sends the level once, when
+    // let go.
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setGuideMelodyLevel")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    const box = (await slider.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await remote.mouse.move(box.x + box.width * 0.7, y);
+    await remote.mouse.down();
+    await remote.mouse.move(box.x + box.width * 0.3, y, { steps: 10 });
+    await expect(slider).not.toHaveValue("0.7");
+    expect(sent).toEqual([]);
+    await remote.mouse.up();
+    const level = Number(await slider.inputValue());
+    expect(level).toBeLessThan(0.6);
+    await expect.poll(() => sent).toEqual([{ level }]);
+    await expect
+      .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
+      .toBe(level);
+    await expect(slider).toHaveValue(String(level));
   });
 });
 

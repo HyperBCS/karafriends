@@ -45,7 +45,6 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 // The grip an admin drags a queued row by (useDragReorder). Only the grip
@@ -131,13 +130,16 @@ button.handle {
       background-color: $kf-border;
     }
 
+    // iOS moves a range input only from its thumb: a full tap target, of
+    // which the transparent border leaves a 24px dot to see.
     &::-webkit-slider-thumb {
-      width: 24px;
-      height: 24px;
-      margin-top: -10px;
-      border: none;
+      width: $kf-tap;
+      height: $kf-tap;
+      margin-top: calc((4px - #{$kf-tap}) / 2);
+      border: 10px solid transparent;
       border-radius: 50%;
       background-color: $kf-accent;
+      background-clip: padding-box;
       appearance: none;
     }
 
