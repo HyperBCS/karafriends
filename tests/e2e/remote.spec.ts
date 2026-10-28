@@ -188,6 +188,9 @@ test("the Theme setting picks light, dark, or the phone's mode", async ({
   await remote.emulateMedia({ colorScheme: "light" });
   await expect(html).toHaveAttribute("data-theme", "light");
   await expect(body).toHaveCSS("background-color", LIGHT);
+  // So does the CSS alone, as on the first frame, before theme.ts runs.
+  await html.evaluate((el) => el.removeAttribute("data-theme"));
+  await expect(body).toHaveCSS("background-color", LIGHT);
   await remote.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveAttribute("data-theme", "dark");
   await expect(body).toHaveCSS("background-color", DARK);

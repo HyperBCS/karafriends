@@ -1,6 +1,8 @@
 @use "./tokens" as *;
 
-// The dark theme unless theme.ts says light.
+// The dark theme unless theme.ts says light, or, before it runs, the phone
+// is in light mode: so a light-mode phone's first frame is light, and an
+// explicit Dark stays dark.
 :root {
   @include custom-properties;
   @include dark-colors;
@@ -10,6 +12,13 @@
 :root[data-theme="light"] {
   @include light-colors;
   color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    @include light-colors;
+    color-scheme: light;
+  }
 }
 
 * {

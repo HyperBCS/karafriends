@@ -6,8 +6,8 @@
 // properties (--kf-*) with the mixins below.
 //
 // Colors come in two sets, a dark theme and a light one, chosen by
-// data-theme="dark" | "light" on <html> (theme.ts; the dark set without
-// it). So a color here is the custom property, var(--kf-*), never a value:
+// data-theme="dark" | "light" on <html> (theme.ts; without it, before
+// theme.ts runs, the phone's mode picks). So a color here is the custom property, var(--kf-*), never a value:
 // every component that uses $kf-text follows the theme by itself.
 //
 // Contrast ratios are WCAG 2 ratios against the page unless noted.
