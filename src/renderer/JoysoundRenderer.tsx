@@ -829,6 +829,9 @@ export default function JoysoundRenderer(props: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
+  // Read by draw(), so an offset change doesn't re-parse the telop.
+  const avOffsetMsRef = useRef(props.avOffsetMs);
+  avOffsetMsRef.current = props.avOffsetMs;
 
   const updateSize = () => {
     const canvasElement = canvasRef.current;
@@ -856,6 +859,7 @@ export default function JoysoundRenderer(props: {
   };
 
   useEffect(() => {
+    let cancelled = false;
     const refresh = async () => {
       updateSize();
       window.addEventListener("resize", updateSize);
@@ -865,6 +869,8 @@ export default function JoysoundRenderer(props: {
         props.telop,
         props.kuroshiro,
       );
+      // Cleaned up while parsing: a newer effect draws instead.
+      if (cancelled) return;
 
       const metadata = joysoundData.metadata;
       const lyricsData = joysoundData.lyrics;
@@ -922,7 +928,7 @@ export default function JoysoundRenderer(props: {
         invariant(props.videoRef.current);
 
         const refreshTime =
-          drawTime(props.videoRef.current.currentTime, props.avOffsetMs) *
+          drawTime(props.videoRef.current.currentTime, avOffsetMsRef.current) *
             1000 +
           TIMING_OFFSET;
         invariant(refreshTime);
@@ -1000,10 +1006,11 @@ export default function JoysoundRenderer(props: {
     refresh().catch(console.error);
 
     return () => {
+      cancelled = true;
       window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(animationFrameRequestRef.current);
     };
-  }, [props.telop, props.lyricsMode, props.avOffsetMs]);
+  }, [props.telop, props.lyricsMode]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;
 }
