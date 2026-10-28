@@ -959,6 +959,54 @@ describe("a failed download", () => {
     assert.equal((await queueVideo(api, alice)).ok, true);
   });
 
+  test("one already downloading for someone else is refused, not dropped", async () => {
+    const asked: string[] = [];
+    const api = makeApi(
+      {},
+      {
+        downloads: {
+          youtube: () => asked.push("youtube"),
+          joysound: () => asked.push("joysound"),
+        } as unknown as ApiDeps["downloads"],
+      },
+    );
+    const { downloadQueue } = store.getState();
+    startDownload(downloadQueue, {
+      kind: "youtube",
+      userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      songId: "jNQXAC9IVRw",
+      suffix: null,
+    });
+    startDownload(downloadQueue, {
+      kind: "joysound",
+      userIdentity: { deviceId: "alice-device", nickname: "alice" },
+      songId: "123456",
+      suffix: "bgVideo0001",
+    });
+    const queueJoysound = (youtubeVideoId: string | null) =>
+      api.queueSong(
+        {
+          kind: "joysound",
+          songId: "123456",
+          name: "j",
+          artistName: "",
+          playtime: 1,
+          isRomaji: false,
+          youtubeVideoId,
+        },
+        bob,
+      );
+    const refused = {
+      ok: false,
+      reason: "Someone is already adding this song",
+    };
+    assert.deepEqual(await queueVideo(api, bob), refused);
+    assert.deepEqual(await queueJoysound("bgVideo0001"), refused);
+    // Another background is another download.
+    assert.equal((await queueJoysound(null)).ok, true);
+    assert.deepEqual(asked, ["joysound"]);
+  });
+
   test("of YouTube or Niconico, because of yt-dlp, sets the tools problem until one works", async () => {
     // Each download fails with the next reason, or works once they run out.
     let reasons: string[] = [];

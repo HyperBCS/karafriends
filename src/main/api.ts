@@ -31,7 +31,7 @@ import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
-import { adhocLyricsKey, type StateStore } from "./state";
+import { adhocLyricsKey, isDownloading, type StateStore } from "./state";
 
 // Who is calling: a phone, from its request headers (see caller.ts), with
 // null for a missing header; or the display, over IPC (see ipc.ts).
@@ -535,6 +535,19 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
           ok: false,
           reason: `${user.nickname} already has ${config.paxSongQueueLimit} song(s) in the queue or downloading`,
         };
+      }
+
+      // The download that's running would ignore this one, and its song
+      // queues as whoever started it. (A DAM song queues at once.)
+      if (
+        input.kind !== "dam" &&
+        isDownloading(store.getState().downloadQueue, {
+          kind: input.kind,
+          songId: input.songId,
+          suffix: input.kind === "joysound" ? input.youtubeVideoId : null,
+        })
+      ) {
+        return { ok: false, reason: "Someone is already adding this song" };
       }
 
       const pushToHead = input.tryHeadOfQueue === true && isAdmin(caller);
