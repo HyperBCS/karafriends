@@ -1428,8 +1428,8 @@ test.describe("a long queue", () => {
       [dx, dy],
     );
 
-  test("stops touch drags that would bounce the page", async ({ remote }) => {
-    // (Playwright's WebKit has no Touch constructor.)
+  // (Playwright's WebKit has no Touch constructor.)
+  const skipWithoutTouch = async (remote: Page) => {
     const canTouch = await remote.evaluate(() => {
       try {
         return !!new Touch({ identifier: 1, target: document.body });
@@ -1438,6 +1438,33 @@ test.describe("a long queue", () => {
       }
     });
     test.skip(!canTouch, "No Touch constructor");
+  };
+
+  test("leaves touch scrolling to the browser where overscroll-behavior works", async ({
+    remote,
+  }) => {
+    await skipWithoutTouch(remote);
+    const queue = await openQueue(remote);
+    const row = queue.getByRole("listitem").nth(1);
+    expect(await touchDragStopped(row, 0, 20)).toBe(false);
+    expect(await touchDragStopped(remote.getByRole("banner"), 0, 20)).toBe(
+      false,
+    );
+  });
+
+  test("on iOS 15, stops touch drags that would bounce the page", async ({
+    remote,
+  }) => {
+    await skipWithoutTouch(remote);
+    // As iOS before 16, which ignores overscroll-behavior.
+    await remote.addInitScript(() => {
+      const supports = CSS.supports.bind(CSS);
+      CSS.supports = (...args: [string, string?]) =>
+        args[0] === "overscroll-behavior"
+          ? false
+          : supports(...(args as [string, string]));
+    });
+    await remote.reload();
     const queue = await openQueue(remote);
     const row = queue.getByRole("listitem").nth(1);
 
