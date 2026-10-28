@@ -18,6 +18,7 @@ describe("isToolProblem", () => {
       REASONS.private,
       REASONS.ageRestricted,
       REASONS.membersOnly,
+      REASONS.liveOrPaid,
       REASONS.geoBlocked,
     ]) {
       assert.equal(isToolProblem(reason), false, reason);
@@ -70,6 +71,15 @@ describe("ytdlpFailureReason", () => {
     [
       "ERROR: [youtube] aaaaaaaaaaa: Video unavailable. The uploader has not made this video available in your country",
       REASONS.geoBlocked,
+    ],
+    [
+      "ERROR: [youtube] aaaaaaaaaaa: This live event will begin in 3 hours.",
+      REASONS.liveOrPaid,
+    ],
+    ["ERROR: [youtube] aaaaaaaaaaa: Premieres in 2 hours", REASONS.liveOrPaid],
+    [
+      "ERROR: [youtube] aaaaaaaaaaa: This video requires payment to watch.",
+      REASONS.liveOrPaid,
     ],
     ["ERROR: [niconico] sm9: HTTP Error 404: Not Found", REASONS.unavailable],
     ["ERROR: unable to write data: [Errno 28] No space left", REASONS.other],
