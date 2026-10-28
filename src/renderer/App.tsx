@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { MicInfo } from "../common/api";
 import { call, useLiveEvent, useLiveState } from "../common/apiClient";
 import { HOSTNAME } from "../common/constants";
-import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./ui.css";
 import "./App.css";
 import Announcements from "./Announcements";
@@ -179,10 +178,7 @@ function levelsKey(mics: MicInfo[]): string {
   return mics.map(({ id, gain, echo }) => `${id}:${gain}:${echo}`).join("|");
 }
 
-function App(props: {
-  kuroshiro: KuroshiroSingleton;
-  audio: KarafriendsAudio;
-}) {
+function App(props: { audio: KarafriendsAudio }) {
   const [mics, _setMics] = useState(savedMics);
   // Apart from the devices, so the piano roll keeps its mics (and what they
   // sang) while a level changes. By micId.
@@ -447,7 +443,6 @@ function App(props: {
         <div className="appStage">
           <Player
             mics={mics}
-            kuroshiro={props.kuroshiro}
             audio={props.audio}
             announce={announce}
             avOffsetMs={avOffsetMs}

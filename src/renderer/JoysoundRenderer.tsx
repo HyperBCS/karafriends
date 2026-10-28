@@ -12,6 +12,7 @@ import parseJoysoundData, {
 } from "../common/joysoundParser";
 
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
+import loadKuroshiro from "./kuroshiro";
 import { drawTime } from "./playback";
 
 // XXX: These should be in their own file
@@ -822,7 +823,6 @@ function drawLyricsBlock(
 export default function JoysoundRenderer(props: {
   telop: ArrayBuffer;
   videoRef: React.RefObject<HTMLVideoElement | null>;
-  kuroshiro: KuroshiroSingleton;
   lyricsMode: LyricsMode;
   // The display's audio/video offset (see drawTime).
   avOffsetMs: number;
@@ -864,11 +864,16 @@ export default function JoysoundRenderer(props: {
       updateSize();
       window.addEventListener("resize", updateSize);
 
-      // Yeah we parse the data on each re-render, ffuck it
-      const joysoundData = await parseJoysoundData(
-        props.telop,
-        props.kuroshiro,
-      );
+      // Romaji needs kuromoji's dictionary; kana doesn't. If it won't load,
+      // the song still shows its lyrics, without romaji.
+      let kuroshiro: KuroshiroSingleton | null = null;
+      if (props.lyricsMode !== "kana") {
+        kuroshiro = await loadKuroshiro().catch((error) => {
+          console.error("Couldn't load kuromoji for the romaji:", error);
+          return null;
+        });
+      }
+      const joysoundData = await parseJoysoundData(props.telop, kuroshiro);
       // Cleaned up while parsing: a newer effect draws instead.
       if (cancelled) return;
 
