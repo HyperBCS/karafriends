@@ -13,22 +13,34 @@ use crate::{
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
 
-// A mic's buffer holds up to 200 ms at the output rate; its Pacer keeps it
-// to what plays without gaps.
+// The largest output buffer Settings offers, in frames.
+const MAX_BUFFER: u32 = 8192;
+
+// A mic's buffer holds up to 200 ms at the output rate, and at least two
+// of the largest output buffers with the Pacer's start and largest margin
+// on top and a mic callback to spare, so it never fills in normal running
+// (that would cut the sound). Its Pacer keeps it to what plays without
+// gaps, so the room costs no delay.
 pub(crate) fn ring_capacity(rate: cpal::SampleRate) -> usize {
-    rate as usize / 5
+    let largest = 2 * MAX_BUFFER as usize + frames(rate, START_MS + MARGIN_MAX_MS + 10);
+    (rate as usize / 5).max(largest)
 }
 
 // The Pacer's times, in milliseconds. A mic first plays once its buffer
 // holds START_MS more than it needs, and keeps MARGIN_MS spare above a read
-// (MARGIN_STEP_MS more each time it runs dry, up to MARGIN_MAX_MS). Every
-// WINDOW_MS the level is steered: an excess over JUMP_MS is dropped at
-// once, anything within DEADBAND_MS is left alone.
+// (MARGIN_STEP_MS more each time it runs dry, up to MARGIN_MAX_MS, and a
+// step less after each CALM_MS without running dry). Every WINDOW_MS, or
+// WINDOW_READS reads if those take longer, the level is steered: an excess
+// over JUMP_MS is dropped at once, anything within DEADBAND_MS is left
+// alone. (A window of only a few large reads would miss the level's low
+// points and cut too much.)
 const START_MS: usize = 20;
 const MARGIN_MS: usize = 4;
 const MARGIN_STEP_MS: usize = 2;
 const MARGIN_MAX_MS: usize = 30;
+const CALM_MS: usize = 60_000;
 const WINDOW_MS: usize = 500;
+const WINDOW_READS: usize = 16;
 const JUMP_MS: usize = 5;
 const DEADBAND_MS: usize = 1;
 
@@ -104,9 +116,11 @@ pub fn output_options(name: &str) -> Result<Option<(Vec<cpal::SampleRate>, Vec<u
 }
 
 // The buffer sizes from min to max frames that Settings offers: the powers
-// of two (what ASIO drivers take), and the driver's own limits.
+// of two (what ASIO drivers take), and the driver's own limits, up to
+// MAX_BUFFER (the mics' buffers hold no more).
 fn buffer_choices(min: u32, max: u32) -> Vec<u32> {
-    let mut choices: Vec<u32> = (4..=13)
+    let max = max.min(MAX_BUFFER).max(min);
+    let mut choices: Vec<u32> = (4..=MAX_BUFFER.ilog2())
         .map(|power| 1 << power)
         .filter(|frames| (min..=max).contains(frames))
         .chain([min, max])
@@ -369,13 +383,16 @@ impl Mixer {
 // apart, a frame per read (one dropped, or the last one played twice),
 // which can't be heard. A buffer that runs dry plays what it has, keeps a
 // larger margin from then on, and refills before it plays again, so it
-// gaps once instead of stuttering.
+// gaps once instead of stuttering. After a long calm the margin shrinks
+// back a step, so a few gaps in a long night don't keep the delay up.
 struct Pacer {
     rate: cpal::SampleRate,
     // False until the buffer first fills, and again after it runs dry.
     playing: bool,
-    // Frames kept above what a read takes.
+    // Frames kept above what a read takes, and the frames read since it
+    // last ran dry or shrank the margin.
     margin: usize,
+    calm: usize,
     // The lowest level before a read, and the frames read, this window.
     low: usize,
     window: usize,
@@ -398,6 +415,7 @@ impl Pacer {
             rate,
             playing: false,
             margin: frames(rate, MARGIN_MS),
+            calm: 0,
             low: usize::MAX,
             window: 0,
             drift: 0,
@@ -424,8 +442,16 @@ impl Pacer {
         } else {
             self.low = self.low.min(occupied);
             self.window += wanted;
-            if self.window >= frames(self.rate, WINDOW_MS) {
-                let excess = self.low as isize - setpoint as isize;
+            if self.window >= frames(self.rate, WINDOW_MS).max(WINDOW_READS * wanted) {
+                self.calm += self.window;
+                if self.calm >= frames(self.rate, CALM_MS) {
+                    self.calm = 0;
+                    self.margin = (self
+                        .margin
+                        .saturating_sub(frames(self.rate, MARGIN_STEP_MS)))
+                    .max(frames(self.rate, MARGIN_MS));
+                }
+                let excess = self.low as isize - (wanted + self.margin) as isize;
                 self.drift = 0;
                 if excess > frames(self.rate, JUMP_MS) as isize {
                     skip = excess as usize;
@@ -448,6 +474,7 @@ impl Pacer {
         if read < real {
             self.playing = false;
             self.drift = 0;
+            self.calm = 0;
             self.margin = (self.margin + frames(self.rate, MARGIN_STEP_MS))
                 .min(frames(self.rate, MARGIN_MAX_MS));
             return Read {
@@ -670,6 +697,24 @@ mod tests {
         assert_eq!(pacer.margin, 30);
     }
 
+    // A minute without running dry takes a step of margin back, down to
+    // the first margin.
+    #[test]
+    fn test_pacer_margin_shrinks_back_after_a_calm_minute() {
+        let mut pacer = Pacer::new(RATE);
+        pacer.plan(34, WANTED, CAPACITY);
+        pacer.plan(5, WANTED, CAPACITY);
+        assert_eq!(pacer.plan(36, WANTED, CAPACITY), plays(10));
+        assert_eq!(pacer.margin, 6);
+        // 50 reads to a window, 120 windows to a minute.
+        plan_at(&mut pacer, 16, 5990);
+        assert_eq!(pacer.margin, 6);
+        plan_at(&mut pacer, 16, 20);
+        assert_eq!(pacer.margin, 4);
+        plan_at(&mut pacer, 14, 12_000);
+        assert_eq!(pacer.margin, 4);
+    }
+
     #[test]
     fn test_pacer_drops_to_the_setpoint_when_nearly_full() {
         let mut pacer = Pacer::new(RATE);
@@ -685,15 +730,24 @@ mod tests {
         );
     }
 
-    // A Yeti (480 frames every 10 ms, through WASAPI) into a Topping (512
-    // frames per ASIO callback), both at 48 kHz, for two minutes: the mic's
+    // What a simulated mic did: the gaps after the start, the fullest its
+    // buffer was before a read once settled (in ms), how many frames were
+    // dropped or repeated one at a time, the larger cuts after the start,
+    // and the frames lost to a full buffer.
+    #[derive(Debug)]
+    struct Simulated {
+        gaps: usize,
+        fullest_ms: f64,
+        nudges: usize,
+        cuts: usize,
+        overflowed: usize,
+    }
+
+    // A mic sending 10 ms callbacks (a Yeti through WASAPI) into an output
+    // reading `chunk_out` frames per callback, for two minutes: the mic's
     // clock `ppm` off the output's, and each mic callback up to 3 ms late.
-    // Returns the gaps after the start, the fullest the buffer was before a
-    // read once settled, in ms, and how many frames were dropped or
-    // repeated one at a time.
-    fn simulate(ppm: f64) -> (usize, f64, usize) {
-        let rate = 48000;
-        let (chunk_in, chunk_out) = (480, 512);
+    fn simulate(rate: cpal::SampleRate, chunk_out: usize, ppm: f64) -> Simulated {
+        let chunk_in = rate as usize / 100;
         let in_period = 0.010 / (1.0 + ppm / 1e6);
         let out_period = chunk_out as f64 / rate as f64;
         let capacity = ring_capacity(rate);
@@ -705,13 +759,22 @@ mod tests {
         };
         let (mut level, mut i, mut k) = (0, 0, 0);
         let mut next_in = late();
-        let (mut gaps, mut fullest, mut nudges) = (0, 0, 0);
+        let mut sim = Simulated {
+            gaps: 0,
+            fullest_ms: 0.0,
+            nudges: 0,
+            cuts: 0,
+            overflowed: 0,
+        };
+        let mut fullest = 0;
+        let mut started = false;
         loop {
             let next_out = k as f64 * out_period;
             if next_out > 120.0 {
                 break;
             }
             if next_in <= next_out {
+                sim.overflowed += (level + chunk_in).saturating_sub(capacity);
                 level = (level + chunk_in).min(capacity);
                 i += 1;
                 next_in = i as f64 * in_period + late();
@@ -723,21 +786,50 @@ mod tests {
                 fullest = fullest.max(level);
             }
             if was_playing && !pacer.playing {
-                gaps += 1;
+                sim.gaps += 1;
             }
             if read.skip == 1 || read.repeat == 1 {
-                nudges += 1;
+                sim.nudges += 1;
             }
+            // The first cut, to the setpoint once playing, is the start.
+            if read.skip > 1 && started {
+                sim.cuts += 1;
+            }
+            started |= read.skip > 1;
             level -= read.skip + read.read;
             k += 1;
         }
-        (gaps, fullest as f64 * 1000.0 / rate as f64, nudges)
+        sim.fullest_ms = fullest as f64 * 1000.0 / rate as f64;
+        sim
     }
 
+    // The largest buffers Settings offers an ASIO output still play whole.
+    #[test]
+    fn test_pacer_keeps_up_with_large_output_buffers() {
+        for rate in [44100, 48000] {
+            for (chunk_out, ppm) in [2048, 4096, MAX_BUFFER as usize]
+                .iter()
+                .flat_map(|&chunk_out| [(chunk_out, -100.0), (chunk_out, 0.0), (chunk_out, 100.0)])
+            {
+                let sim = simulate(rate, chunk_out, ppm);
+                println!("{} Hz, {} frames, {} ppm: {:?}", rate, chunk_out, ppm, sim);
+                assert_eq!(sim.overflowed, 0, "{} Hz, {}: {:?}", rate, chunk_out, sim);
+                assert_eq!(sim.gaps, 0, "{} Hz, {}: {:?}", rate, chunk_out, sim);
+                assert_eq!(sim.cuts, 0, "{} Hz, {}: {:?}", rate, chunk_out, sim);
+            }
+        }
+    }
+
+    // A Yeti into a Topping (512 frames per ASIO callback), both at 48 kHz.
     #[test]
     fn test_pacer_keeps_a_yeti_into_a_topping_short_and_whole() {
         for ppm in [-100.0, 0.0, 100.0] {
-            let (gaps, fullest_ms, nudges) = simulate(ppm);
+            let Simulated {
+                gaps,
+                fullest_ms,
+                nudges,
+                ..
+            } = simulate(48000, 512, ppm);
             println!(
                 "{} ppm: fullest {:.1} ms, {} nudges",
                 ppm, fullest_ms, nudges
@@ -881,6 +973,9 @@ mod tests {
         // Realtek's takes one size.
         assert_eq!(buffer_choices(528, 528), [528]);
         assert_eq!(buffer_choices(100, 1000), [100, 128, 256, 512, 1000]);
+        // Nothing larger than the mics' buffers hold.
+        assert_eq!(buffer_choices(4096, 32768), [4096, 8192]);
+        assert_eq!(buffer_choices(10000, 20000), [10000]);
     }
 
     // A choice that won't open leaves the old one, reopened.
