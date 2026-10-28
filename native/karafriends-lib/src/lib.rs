@@ -238,6 +238,7 @@ pub fn asio_status() -> String {
 static INPUT_DEVICES: LazyLock<Mutex<HashMap<String, (cpal::Device, DeviceType)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+#[derive(Clone)]
 enum DeviceType {
     #[cfg(all(windows, feature = "asio"))]
     Asio,
@@ -439,47 +440,63 @@ impl InputDevice {
     }
 
     pub fn new(name: &str, channel_selection: usize) -> Result<Self> {
+        let (input_device, device_type) = find_input(name)?;
+        let opened = Self::open(&input_device, &device_type, channel_selection);
+        // Looked up afresh next time: on macOS a mic plugged in again is a
+        // new CoreAudio device, and on Windows a cached device can keep a
+        // dead client. (An ASIO device is only a description, and listing
+        // them again would load every ASIO driver.)
+        if opened.is_err() && !device_type.is_asio() {
+            lock(&INPUT_DEVICES).remove(name);
+        }
+        opened
+    }
+
+    fn open(
+        input_device: &cpal::Device,
+        device_type: &DeviceType,
+        channel_selection: usize,
+    ) -> Result<Self> {
+        let mode = *lock(&MIC_MODE);
+        let exclusive = mode.exclusive && !device_type.is_asio();
+        // What the mic takes, asked before the output opens: a mic that is
+        // gone then fails without opening and closing the output (and on
+        // Windows loading every ASIO driver) each time the display tries
+        // it again. Exclusive mode asks the mic itself.
+        let configs = match exclusive {
+            true => None,
+            false => Some(InputConfigs::probe(input_device, channel_selection)?),
+        };
         let mut mixer = lock(&mixer::MIXER);
         let output_rate = mixer.open_if_needed()?;
-        let device = Self::open(name, channel_selection, output_rate, &mut mixer);
+        let device = Self::open_on(
+            input_device,
+            device_type,
+            channel_selection,
+            configs,
+            mode,
+            output_rate,
+            &mut mixer,
+        );
         if device.is_err() {
             mixer.close_if_unused();
         }
         device
     }
 
-    fn open(
-        name: &str,
+    fn open_on(
+        input_device: &cpal::Device,
+        device_type: &DeviceType,
         channel_selection: usize,
+        configs: Option<InputConfigs>,
+        mode: MicMode,
         output_rate: cpal::SampleRate,
         mixer: &mut mixer::Mixer,
     ) -> Result<Self> {
-        let mut input_devices = lock(&INPUT_DEVICES);
-        // On Linux the device is found afresh each time: a PipeWire mic
-        // plugged in again is a new node, and a stale one would quietly
-        // record the default mic instead.
-        if cfg!(target_os = "linux") {
-            input_devices.remove(name);
-        }
-        let (input_device, device_type) = match input_devices.get(name) {
-            Some(device) => device,
-            None => {
-                input_devices.insert(
-                    name.to_string(),
-                    _input_devices()?
-                        .find(|(input_device, device_type)| {
-                            _device_name(input_device, device_type) == name
-                        })
-                        .ok_or(format!("Could not find device: {}", name))?,
-                );
-                &input_devices[name]
-            }
-        };
         // Exclusive when it's set and Windows gives the mic; else shared,
         // saying why.
-        let mode = *lock(&MIC_MODE);
         let mut note = None;
-        if mode.exclusive && !device_type.is_asio() {
+        if configs.is_none() {
             match Self::open_exclusive(
                 input_device,
                 channel_selection,
@@ -494,9 +511,41 @@ impl InputDevice {
                 }
             }
         }
+        // When shared mode fails too, the error says why exclusive did.
+        match Self::open_shared(
+            input_device,
+            device_type,
+            channel_selection,
+            configs,
+            output_rate,
+            mixer,
+        ) {
+            Ok(mut device) => {
+                device.note = note;
+                Ok(device)
+            }
+            Err(e) => Err(match note {
+                Some(note) => format!("{e}. {note}").into(),
+                None => e,
+            }),
+        }
+    }
 
-        let (input_config, sample_format) =
-            input_stream_config(input_device, channel_selection, output_rate)?;
+    // A mic through cpal: shared on Windows, or ASIO, CoreAudio, or Linux's
+    // sound system. `configs` is what it takes, if it has been asked.
+    fn open_shared(
+        input_device: &cpal::Device,
+        device_type: &DeviceType,
+        channel_selection: usize,
+        configs: Option<InputConfigs>,
+        output_rate: cpal::SampleRate,
+        mixer: &mut mixer::Mixer,
+    ) -> Result<Self> {
+        let configs = match configs {
+            Some(configs) => configs,
+            None => InputConfigs::probe(input_device, channel_selection)?,
+        };
+        let (input_config, sample_format) = input_stream_config(configs, output_rate);
 
         println!(
             "Created input device {} with config {:#?}, sample format {:#?}",
@@ -507,7 +556,7 @@ impl InputDevice {
 
         let status = Arc::new(Mutex::new(None));
         let realtime = Arc::new(Mutex::new(None));
-        let mut device = with_sample_type!(sample_format, T => {
+        with_sample_type!(sample_format, T => {
             Self::assemble::<T, _>(
                 &input_config,
                 output_rate,
@@ -527,9 +576,7 @@ impl InputDevice {
                     Ok(Stream::new(stream, device_type))
                 },
             )
-        })?;
-        device.note = note;
-        Ok(device)
+        })
     }
 
     // The mic around a stream that `start` opens, given the mic's callback:
@@ -874,48 +921,76 @@ fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
     ))
 }
 
-// How a mic opens, with the chosen channel, at the output's rate when it
-// takes it: its config and sample format. On Linux in its own channels and
-// format, in buffers of the size Settings picked.
+// What a mic takes with the chosen channel, asked before the mic output
+// opens (see InputDevice::open). On Linux its own config and its ranges.
+#[cfg(target_os = "linux")]
+struct InputConfigs {
+    default: cpal::SupportedStreamConfig,
+    ranges: Vec<cpal::SupportedStreamConfigRange>,
+}
+
+#[cfg(target_os = "linux")]
+impl InputConfigs {
+    fn probe(input_device: &cpal::Device, channel_selection: usize) -> Result<Self> {
+        let default = input_device.default_input_config()?;
+        if channel_selection >= default.channels() as usize {
+            return Err(format!("The mic has {} channels", default.channels()).into());
+        }
+        let ranges = input_device.supported_input_configs()?.collect();
+        Ok(InputConfigs { default, ranges })
+    }
+}
+
+// Elsewhere the configs that have the chosen channel.
+#[cfg(not(target_os = "linux"))]
+struct InputConfigs(Vec<cpal::SupportedStreamConfigRange>);
+
+#[cfg(not(target_os = "linux"))]
+impl InputConfigs {
+    fn probe(input_device: &cpal::Device, channel_selection: usize) -> Result<Self> {
+        let configs: Vec<_> = input_device
+            .supported_input_configs()?
+            .filter(|config| channel_selection < config.channels() as usize)
+            .collect();
+        if configs.is_empty() {
+            return Err("No supported input configs".into());
+        }
+        Ok(InputConfigs(configs))
+    }
+}
+
+// How a mic opens, at the output's rate when it takes it: its config and
+// sample format. On Linux in its own channels and format, in buffers of the
+// size Settings picked.
 #[cfg(target_os = "linux")]
 fn input_stream_config(
-    input_device: &cpal::Device,
-    channel_selection: usize,
+    configs: InputConfigs,
     output_rate: cpal::SampleRate,
-) -> Result<(cpal::StreamConfig, cpal::SampleFormat)> {
-    let default = input_device.default_input_config()?;
+) -> (cpal::StreamConfig, cpal::SampleFormat) {
     let config = linux::stream_config(
-        &default,
-        input_device.supported_input_configs()?,
+        &configs.default,
+        configs.ranges.into_iter(),
         Some(output_rate),
         linux_buffer(),
     );
-    if channel_selection >= config.channels as usize {
-        return Err(format!("The mic has {} channels", config.channels).into());
-    }
-    Ok((config, default.sample_format()))
+    (config, configs.default.sample_format())
 }
 
-// Elsewhere only configs that have the chosen channel, the output's rate
-// first.
+// Elsewhere the best config, the output's rate first.
 #[cfg(not(target_os = "linux"))]
 fn input_stream_config(
-    input_device: &cpal::Device,
-    channel_selection: usize,
+    configs: InputConfigs,
     output_rate: cpal::SampleRate,
-) -> Result<(cpal::StreamConfig, cpal::SampleFormat)> {
-    let mut supported_input_configs: Vec<_> = input_device
-        .supported_input_configs()?
-        .filter(|config| channel_selection < config.channels() as usize)
-        .collect();
+) -> (cpal::StreamConfig, cpal::SampleFormat) {
+    let mut supported_input_configs = configs.0;
     supported_input_configs.sort_by(|a, b| compare_configs(a, b, Some(output_rate)));
     let best_supported_input_config = supported_input_configs
         .last()
-        .ok_or("No supported input configs")?;
-    Ok((
+        .expect("InputConfigs::probe keeps one at least");
+    (
         supported_config_to_config(best_supported_input_config, Some(output_rate)),
         best_supported_input_config.sample_format(),
-    ))
+    )
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -996,27 +1071,82 @@ fn supported_config_to_config(
 // The mics: the system host's (on Linux only its mics, see linux.rs), and
 // ASIO's.
 fn _input_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
-    let host = system_host()?;
-    #[cfg(target_os = "linux")]
-    let devices = linux::input_devices(&host)?.into_iter();
-    #[cfg(not(target_os = "linux"))]
-    let devices = host.input_devices()?;
-    let devices = devices.map(|device| (device, DeviceType::DefaultHost));
+    let devices = system_inputs()?;
     #[cfg(all(windows, feature = "asio"))]
     let devices = devices.chain(asio_devices(DeviceTrait::supports_input));
     Ok(devices)
 }
 
+fn system_inputs() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
+    let host = system_host()?;
+    #[cfg(target_os = "linux")]
+    let devices = linux::input_devices(&host)?.into_iter();
+    #[cfg(not(target_os = "linux"))]
+    let devices = host.input_devices()?;
+    Ok(devices.map(|device| (device, DeviceType::DefaultHost)))
+}
+
 fn _output_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
+    let devices = system_outputs()?;
+    #[cfg(all(windows, feature = "asio"))]
+    let devices = devices.chain(asio_devices(DeviceTrait::supports_output));
+    Ok(devices)
+}
+
+fn system_outputs() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
     let host = system_host()?;
     #[cfg(target_os = "linux")]
     let devices = linux::output_devices(&host)?.into_iter();
     #[cfg(not(target_os = "linux"))]
     let devices = host.output_devices()?;
-    let devices = devices.map(|device| (device, DeviceType::DefaultHost));
-    #[cfg(all(windows, feature = "asio"))]
-    let devices = devices.chain(asio_devices(DeviceTrait::supports_output));
-    Ok(devices)
+    Ok(devices.map(|device| (device, DeviceType::DefaultHost)))
+}
+
+// Whether a mic's key or an output's name is ASIO's: it ends "(ASIO)".
+fn names_asio(name: &str) -> bool {
+    cfg!(all(windows, feature = "asio")) && name.ends_with(" (ASIO)")
+}
+
+// The input saved as `name`, looked up among its own host's inputs only:
+// listing ASIO's loads every ASIO driver, which a WASAPI mic needn't wait
+// for. On Windows and macOS the one found before, if it is (InputDevice::new
+// forgets it when it won't open). On Linux always afresh: a PipeWire mic
+// plugged in again is a new node, and a stale one would quietly record the
+// default mic instead.
+fn find_input(name: &str) -> Result<(cpal::Device, DeviceType)> {
+    let mut input_devices = lock(&INPUT_DEVICES);
+    if let Some(found) = input_devices
+        .get(name)
+        .filter(|_| !cfg!(target_os = "linux"))
+    {
+        return Ok(found.clone());
+    }
+    let is_named = |(device, device_type): &(cpal::Device, DeviceType)| {
+        _device_name(device, device_type) == name
+    };
+    let found = match names_asio(name) {
+        #[cfg(all(windows, feature = "asio"))]
+        true => asio_devices(DeviceTrait::supports_input).find(is_named),
+        _ => system_inputs()?.find(is_named),
+    }
+    .ok_or_else(|| format!("Could not find device: {name}"))?;
+    if !cfg!(target_os = "linux") {
+        input_devices.insert(name.to_string(), found.clone());
+    }
+    Ok(found)
+}
+
+// The output named `name` (see _output_name), looked up among its own
+// host's outputs only, as find_input does.
+fn find_output(name: &str) -> Result<Option<(cpal::Device, DeviceType)>> {
+    let is_named = |(device, device_type): &(cpal::Device, DeviceType)| {
+        _output_name(device, device_type).is_ok_and(|n| n == name)
+    };
+    Ok(match names_asio(name) {
+        #[cfg(all(windows, feature = "asio"))]
+        true => asio_devices(DeviceTrait::supports_output).find(is_named),
+        _ => system_outputs()?.find(is_named),
+    })
 }
 
 // The ASIO host's devices that `wanted` keeps; none when it didn't start
@@ -1419,6 +1549,22 @@ mod tests {
                 assert!(label.ends_with(host), "{}: {}", id, label);
             }
         }
+    }
+
+    // A mic that isn't there fails before the mic output opens, so the
+    // display's retries don't open and close it.
+    #[test]
+    fn test_a_missing_mic_leaves_the_output_closed() {
+        let _devices = lock(&DEVICES);
+        let missing = if cfg!(target_os = "linux") {
+            "nothing (Linux)"
+        } else {
+            "nothing (USB)"
+        };
+        let opens = lock(&mixer::MIXER).opens;
+        assert!(InputDevice::new(missing, 0).is_err());
+        assert_eq!(lock(&mixer::MIXER).opens, opens);
+        assert_eq!(output_format(), None);
     }
 
     #[test]

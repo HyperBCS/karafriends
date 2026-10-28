@@ -7,8 +7,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
-    _output_devices, _output_name, describe, error_callback, lock, system_host, DeviceType,
-    RateLimit, Result, Stream,
+    _output_devices, _output_name, describe, error_callback, find_output, lock, system_host,
+    DeviceType, RateLimit, Result, Stream,
 };
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
@@ -88,9 +88,7 @@ const PCM_RATES: [cpal::SampleRate; 6] = [44100, 48000, 88200, 96000, 176400, 19
 // frames (the powers of two it takes, and its own limits). None for other
 // outputs: in shared mode Windows sets both.
 pub fn output_options(name: &str) -> Result<Option<(Vec<cpal::SampleRate>, Vec<u32>)>> {
-    let Some((device, device_type)) = _output_devices()?
-        .find(|(device, device_type)| _output_name(device, device_type).is_ok_and(|n| n == name))
-    else {
+    let Some((device, device_type)) = find_output(name)? else {
         return Ok(None);
     };
     if !device_type.is_asio() {
@@ -173,6 +171,9 @@ pub(crate) struct Mixer {
     next_id: u64,
     // Frames per output callback, as the output asks for them.
     frames: Arc<AtomicU32>,
+    // How many times the stream was opened, for the tests.
+    #[cfg(test)]
+    pub(crate) opens: usize,
 }
 
 impl Mixer {
@@ -212,6 +213,10 @@ impl Mixer {
     }
 
     fn open(&mut self) -> Result<cpal::SampleRate> {
+        #[cfg(test)]
+        {
+            self.opens += 1;
+        }
         // ASIO allows one stream per driver: close the old one first.
         self.close();
         let opened = self.build();
@@ -240,10 +245,7 @@ impl Mixer {
     fn build(&mut self) -> Result<(Stream, cpal::SampleRate, Option<String>)> {
         let mut note = None;
         if let Some(OutputChoice { name, rate, buffer }) = self.choice.clone() {
-            let device = _output_devices()?.find(|(device, device_type)| {
-                _output_name(device, device_type).is_ok_and(|n| n == name)
-            });
-            let built = device
+            let built = find_output(&name)?
                 .map(|(device, device_type)| self.build_on(&device, &device_type, rate, buffer));
             note = Some(match built {
                 Some(Ok((stream, rate))) => return Ok((stream, rate, None)),
