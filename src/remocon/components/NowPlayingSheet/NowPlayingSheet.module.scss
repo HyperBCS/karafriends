@@ -6,8 +6,11 @@
   text-overflow: ellipsis;
 }
 
+// The now-playing bar: the title over the artist, taking what the singer
+// leaves.
 .now {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   min-width: 0;
 }
@@ -25,6 +28,22 @@
   font-size: $kf-text-body;
 }
 
+.singer {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: $kf-space-2;
+  min-width: 0;
+  max-width: 40vw;
+  margin-left: $kf-space-2;
+  color: $kf-muted;
+  font-size: $kf-text-body;
+}
+
+.singerName {
+  @extend %one-line;
+}
+
 .initial {
   display: inline-flex;
   flex: none;
@@ -34,6 +53,7 @@
   height: 32px;
   border-radius: 50%;
   background-color: $kf-surface-pressed;
+  color: $kf-text;
   font-size: $kf-text-body;
   font-weight: 600;
 }

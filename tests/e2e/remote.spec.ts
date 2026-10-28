@@ -490,6 +490,84 @@ test("the playback controls fit on a narrow phone", async ({ remote }) => {
   }
 });
 
+test.describe("the now-playing bar", () => {
+  const NICKNAME_LONG = "someone with a really very long nickname";
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "nico",
+          songId: "sm60002",
+          name: "E2E playing song with a title long enough to need cutting short",
+          artistName: "E2E artist",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-someone", nickname: NICKNAME_LONG },
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("is one toggle: title, artist, and the singer's whole nickname", async ({
+    remote,
+  }) => {
+    const sheet = remote.getByRole("region", { name: "Now playing" });
+    const bar = sheet.getByRole("button").first();
+    const title = bar.getByText(/^E2E playing song/);
+    // The display starts it within 5 seconds.
+    await expect(title).toBeVisible({ timeout: 15_000 });
+    await expect(bar).toHaveAttribute("aria-expanded", "false");
+    await expect(bar).toHaveAccessibleName(/E2E playing song.*Show queue/);
+    await expect(sheet.getByRole("button")).toHaveCount(1);
+
+    // Title over artist; the singer on the right, the nickname whole as
+    // far as the bar allows, cut after the title is.
+    const artist = bar.getByText("E2E artist", { exact: true });
+    const nickname = bar.getByText(NICKNAME_LONG);
+    const [t, a, n] = await Promise.all(
+      [title, artist, nickname].map(async (el) => (await el.boundingBox())!),
+    );
+    expect(a.y).toBeGreaterThan(t.y);
+    expect(n.x).toBeGreaterThan(t.x + t.width);
+    const cut = (el: Locator) =>
+      el.evaluate((node) => node.scrollWidth > node.clientWidth);
+    expect(await cut(title)).toBe(true);
+    await expect(nickname).toHaveCSS("text-overflow", "ellipsis");
+    const muted = await remote.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--kf-muted")
+        .trim(),
+    );
+    await expect(nickname).toHaveCSS("color", rgb(muted));
+
+    // A tap anywhere on it opens the sheet: on the title, then on the
+    // singer to close it, then on the arrow.
+    await title.click();
+    await expect(bar).toHaveAttribute("aria-expanded", "true");
+    await expect(bar).toHaveAccessibleName(/Hide queue/);
+    const queue = sheet.getByRole("region", { name: "Queue" });
+    await expect(queue).toBeVisible();
+    await nickname.click();
+    await expect(bar).toHaveAttribute("aria-expanded", "false");
+    await expect(queue).toBeHidden();
+    await bar.getByRole("img", { name: "Show queue" }).click();
+    await expect(bar).toHaveAttribute("aria-expanded", "true");
+
+    // The current row says the same: title, artist, the singer on the
+    // right.
+    const current = queue.getByRole("listitem").first();
+    await expect(current.getByRole("link")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(current).toContainText(NICKNAME_LONG);
+    await expect(current).not.toContainText("Now playing");
+  });
+});
+
 // Picking a background video changes the song page's address in place. Back
 // must still walk the remote's history: the artist, the song, the search.
 test("a Joysound song with a background keeps the way back", async ({

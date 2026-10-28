@@ -14,18 +14,51 @@
   box-shadow: $kf-shadow-sheet;
 }
 
+// The toggle: the whole header row.
 .header {
   display: flex;
   flex: none;
   align-items: center;
   gap: $kf-space-2;
+  width: 100%;
   min-height: 56px;
+  margin: 0;
   padding: $kf-space-1 $kf-space-2 $kf-space-1 $kf-space-4;
+  border: none;
+  border-radius: $kf-radius $kf-radius 0 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+
+  @include kf-pressed {
+    background-color: $kf-surface-pressed;
+  }
+
+  @include kf-focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 .headerContent {
+  display: flex;
   flex: 1;
   min-width: 0;
+}
+
+// The cue, where the toggle button was: a 44px square with a 28px icon.
+.arrow {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: $kf-tap;
+  height: $kf-tap;
+  font-size: $kf-text-icon;
 }
 
 // A column the sheet's height limits: what scrolls inside it (the queue)

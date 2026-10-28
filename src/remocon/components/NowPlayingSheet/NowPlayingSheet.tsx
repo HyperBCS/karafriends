@@ -7,7 +7,7 @@ import { IconButton, Sheet } from "../ui";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
-import QueueList from "./QueueList";
+import QueueList, { nicknameOf, SingerBadge } from "./QueueList";
 
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
 // so it stays as it was across a reload.
@@ -24,20 +24,21 @@ function useStoredFlag(key: string): [boolean, (value: boolean) => void] {
   ];
 }
 
-// The current song and its singer, always showing.
+// The current song, its artist under it and its singer on the right,
+// always showing. Inside the sheet's toggle: <span>s only.
 const NowPlaying = () => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
   if (!currentSong) {
-    return <p className={styles.nothing}>{t("sheet.nothingPlaying")}</p>;
+    return <span className={styles.nothing}>{t("sheet.nothingPlaying")}</span>;
   }
-  const singer = currentSong.user.nickname || t("common.unknownUser");
   return (
-    <div className={styles.now}>
-      <p className={styles.nowTitle}>{currentSong.name}</p>
-      <p className={styles.nowSubtitle}>
-        {[currentSong.artistName, singer].filter(Boolean).join(" · ")}
-      </p>
-    </div>
+    <>
+      <span className={styles.now}>
+        <span className={styles.nowTitle}>{currentSong.name}</span>
+        <span className={styles.nowSubtitle}>{currentSong.artistName}</span>
+      </span>
+      <SingerBadge nickname={nicknameOf(currentSong)} />
+    </>
   );
 };
 
