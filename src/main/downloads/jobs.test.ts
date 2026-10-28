@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
+import type { JoysoundAPI } from "../joysoundApi";
 import { failureReason, REASONS } from "../../common/downloadFailure";
 import { songFileNames, type SongFiles } from "../../common/songFiles";
 import type { DownloadQueueItem } from "../state";
@@ -269,14 +270,25 @@ test("getJoysoundOggPlaytime reads the ogg's playtime comment", () => {
   assert.ok(Number.isNaN(getJoysoundOggPlaytime(Buffer.from("playtime=1"))));
 });
 
+type FakeJoysoundApi = Pick<JoysoundAPI, "getSongRawData" | "getMovieUrls">;
+
 const movieUrls = async () => ({
+  slc: "",
   movie: { mov1: "https://example.invalid/mov1.mp4" },
 });
 
+// Only the telop and the ogg matter to the job; the rest is filled in.
 const joysoundApi = (
   songData: () => Promise<{ telop: string; ogg: string }>,
-  getMovieUrls = movieUrls,
-) => ({ getSongRawData: songData, getMovieUrls });
+  getMovieUrls: FakeJoysoundApi["getMovieUrls"] = movieUrls,
+): FakeJoysoundApi => ({
+  getSongRawData: async () => ({
+    slc: "",
+    streaming_wifi_url: "",
+    ...(await songData()),
+  }),
+  getMovieUrls,
+});
 
 const getFmeFails = async (): Promise<never> => {
   throw new Error("getFME failed");

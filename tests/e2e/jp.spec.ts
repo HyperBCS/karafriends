@@ -1,6 +1,14 @@
 import type { Page } from "@playwright/test";
 
-import { expect, NICKNAME, test } from "./fixtures";
+import {
+  currentSongKey,
+  displayCall,
+  expect,
+  type Karafriends,
+  liveState,
+  NICKNAME,
+  test,
+} from "./fixtures";
 
 // DAM and Joysound only answer Japanese IPs and need the logins from the
 // installed app's config.yaml. Run with KARAFRIENDS_E2E_JP=1.
@@ -61,11 +69,10 @@ async function removeFromQueue(remote: Page, title: string) {
   await expect(queue.getByText("The queue is empty")).toBeVisible();
 }
 
-test.describe("DAM and Joysound", { tag: "@jp" }, () => {
+// One at a time, not in parallel, here and in settings.spec.ts: they all
+// sign in to the same DAM and Joysound accounts.
+test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
   test.use({ realCredentials: true });
-  // One at a time, not in parallel: they all sign in to the same DAM and
-  // Joysound accounts.
-  test.describe.configure({ mode: "default" });
 
   for (const catalog of CATALOGS) {
     test(`a ${catalog} title search finds Lemon`, async ({ remote }) => {
@@ -75,10 +82,10 @@ test.describe("DAM and Joysound", { tag: "@jp" }, () => {
   }
 
   test.describe("queueing", () => {
-    // A song the display starts at once and never finishes (a Niconico video
-    // that was never downloaded, so nothing plays), so a song queued after
-    // it waits in the queue until the test takes it off. The app is muted
-    // too.
+    // A song the display starts at once (a minute of black video, from
+    // seedVideos) and the test pauses, so it never finishes: a song queued
+    // after it waits in the queue, however long its download takes, until
+    // the test takes it off. The app is muted too.
     test.use({
       seedQueue: {
         currentSong: null,
@@ -98,20 +105,33 @@ test.describe("DAM and Joysound", { tag: "@jp" }, () => {
       },
     });
 
-    // The display starts it within 5 seconds.
-    async function waitForPlaceholder(remote: Page) {
+    // The display starts it within 5 seconds; then it's paused.
+    async function waitForPlaceholder(
+      remote: Page,
+      { display, remoconUrl }: Karafriends,
+    ) {
       await expect(
         remote
           .getByRole("region", { name: "Now playing" })
           .getByText("E2E placeholder")
           .first(),
       ).toBeVisible({ timeout: 15_000 });
+      expect(
+        await displayCall(display, "setPlaybackState", {
+          playbackState: "PAUSED",
+          song: await currentSongKey(remoconUrl),
+        }),
+      ).toMatchObject({ ok: true });
+      await expect
+        .poll(async () => (await liveState(remoconUrl)).playbackState)
+        .toBe("PAUSED");
     }
 
     test("a DAM song can be queued from its page and taken off", async ({
       remote,
+      karafriends,
     }) => {
-      await waitForPlaceholder(remote);
+      await waitForPlaceholder(remote, karafriends);
       const title = await openFirstSong(
         remote,
         await searchTitle(remote, "DAM", "Lemon"),
@@ -141,8 +161,9 @@ test.describe("DAM and Joysound", { tag: "@jp" }, () => {
 
       test("a Joysound song can be queued from its page and taken off", async ({
         remote,
+        karafriends,
       }) => {
-        await waitForPlaceholder(remote);
+        await waitForPlaceholder(remote, karafriends);
         const title = await openFirstSong(
           remote,
           await searchTitle(remote, "Joysound", "Lemon"),

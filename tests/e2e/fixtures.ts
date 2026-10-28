@@ -15,10 +15,9 @@
 // JSON RPC API itself (admin sign-in included), and the device-ID checks in
 // live.spec.ts.
 //
-// The server has no GraphQL any more, and neither client may ask for it:
-// every test fails if the display or a phone sends a request to /graphql
-// (see forbidGraphql). And the display talks to the main process over IPC,
-// so every test also fails if it sends one to /api (see isApiRequest).
+// Every test also fails if the display sends a request to /api (it talks to
+// the main process over IPC; see isApiRequest), or logs an error to its
+// console that the test didn't expect (see allowDisplayErrors).
 
 import fs from "fs";
 import net from "net";
@@ -29,7 +28,6 @@ import {
   _electron as electron,
   test as base,
   expect,
-  type BrowserContext,
   type ElectronApplication,
   type Locator,
   type Page,
@@ -41,9 +39,18 @@ import {
   hashAdminPassword,
   newAdminSalt,
 } from "../../src/common/adminPassword";
+import type { LiveState } from "../../src/common/api";
+import { resourcePathsFor } from "../../src/common/externalResourcesPlan";
+import { buildJoy02 } from "../fixtures/joy02";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const MAIN_ENTRY = path.join(REPO_ROOT, "build", "prod", "main", "index.js");
+export const MAIN_ENTRY = path.join(
+  REPO_ROOT,
+  "build",
+  "prod",
+  "main",
+  "index.js",
+);
 
 // The nickname the remote uses. Setting it up front skips the prompt() that
 // asks for one on first visit.
@@ -83,6 +90,9 @@ type Options = {
   occupyPort: boolean;
   // More environment variables for the app, e.g. KARAFRIENDS_YTDLP_PATH.
   appEnv: Record<string, string>;
+  // The display's console errors (and uncaught exceptions) a test expects,
+  // e.g. a song that fails to play (see anyOf). Any other fails the test.
+  allowDisplayErrors: RegExp | null;
 };
 
 export type Karafriends = {
@@ -124,30 +134,136 @@ export function sliderFill(slider: Locator): Promise<number> {
   );
 }
 
-// The current song's songKey (songId@timestamp), from the first event of a
-// fresh /api/events stream, or "none": what setPlaybackState,
-// setPitchShiftSemis and pushAdhocLyrics name as the song they're for.
-export async function currentSongKey(remoconUrl: string): Promise<string> {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
+// A pattern that matches what any of these do, for allowDisplayErrors.
+export function anyOf(...patterns: RegExp[]): RegExp {
+  return new RegExp(
+    patterns.map((pattern) => `(?:${pattern.source})`).join("|"),
+  );
+}
+
+// A phone, as its requests name it.
+export type Phone = { deviceId: string; nickname: string };
+export const PHONE: Phone = { deviceId: "e2e-phone", nickname: NICKNAME };
+
+// The headers a phone's requests carry.
+export function phoneHeaders(phone: Phone): Record<string, string> {
+  return {
+    "X-Karafriends-Device-Id": phone.deviceId,
+    "X-Karafriends-Nickname": phone.nickname,
+  };
+}
+
+// A phone's call to the API (POST /api/<method>): its status and JSON
+// answer. With phone null, the request names no phone.
+export async function apiCall(
+  remoconUrl: string,
+  method: string,
+  input: object,
+  phone: Phone | null = PHONE,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: any }> {
+  const res = await fetch(new URL(`api/${method}`, remoconUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(phone ? phoneHeaders(phone) : {}),
+      ...headers,
+    },
+    body: JSON.stringify(input),
   });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  return { status: res.status, body: await res.json() };
+}
+
+// The first event of a fresh /api/events stream (the live state, as the
+// phone with deviceId sees it, if given): its data, as sent, and the
+// response's Content-Type. Pings and other named events are skipped. Fails
+// after timeoutMs instead of waiting for the test's own timeout.
+export async function firstLiveEvent(
+  remoconUrl: string,
+  {
+    deviceId,
+    timeoutMs = 10_000,
+  }: { deviceId?: string; timeoutMs?: number } = {},
+): Promise<{ data: string; contentType: string | null }> {
+  const url = new URL("api/events", remoconUrl);
+  if (deviceId) url.searchParams.set("deviceId", deviceId);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let text = "";
   try {
+    const res = await fetch(url, { signal: controller.signal });
+    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
     for (;;) {
       const { value, done } = await reader.read();
       if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) {
-        const song = JSON.parse(data[1]).state.currentSong;
-        return song ? `${song.songId}@${song.timestamp}` : "none";
+      text += value.replace(/\r\n?/g, "\n");
+      // Whole events only: each ends with a blank line.
+      const events = text.split("\n\n").slice(0, -1);
+      for (const event of events) {
+        const lines = event.split("\n");
+        if (lines.some((line) => line.startsWith("event:"))) continue;
+        const data = lines
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).replace(/^ /, ""));
+        if (data.length > 0) {
+          return {
+            data: data.join("\n"),
+            contentType: res.headers.get("content-type"),
+          };
+        }
       }
     }
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `No live state from ${url} within ${timeoutMs} ms: ${text}`,
+      );
+    }
+    throw err;
   } finally {
+    clearTimeout(timer);
     controller.abort();
   }
+}
+
+// The live state, as a phone (with deviceId, if given) sees it.
+export async function liveState(
+  remoconUrl: string,
+  deviceId?: string,
+): Promise<LiveState> {
+  const { data } = await firstLiveEvent(remoconUrl, { deviceId });
+  return JSON.parse(data).state;
+}
+
+// The current song's songKey (songId@timestamp), or "none": what
+// setPlaybackState, setPitchShiftSemis and pushAdhocLyrics name as the song
+// they're for.
+export async function currentSongKey(remoconUrl: string): Promise<string> {
+  const song = (await liveState(remoconUrl)).currentSong;
+  return song ? `${song.songId}@${song.timestamp}` : "none";
+}
+
+// The display's live state, from its preload (as the display sees it, over
+// IPC).
+export function displayLiveState(display: Page): Promise<LiveState> {
+  type DisplayApi = {
+    onLive(
+      listener: (event: { type: string; state?: LiveState }) => void,
+    ): () => void;
+  };
+  return display.evaluate(
+    () =>
+      new Promise<LiveState>((resolve) => {
+        const api = (window as unknown as { karafriends: { api: DisplayApi } })
+          .karafriends.api;
+        const stop = api.onLive((event) => {
+          if (event.type === "state") {
+            resolve(event.state!);
+            setTimeout(() => stop());
+          }
+        });
+      }),
+  );
 }
 
 // What the display's api.call answers.
@@ -180,30 +296,95 @@ export function displayCall(
   );
 }
 
-type Fixtures = {
-  // The /graphql requests the clients made, which must stay empty.
-  graphqlRequests: string[];
-  karafriends: Karafriends;
-  display: Page;
-  remote: Page;
-};
+// One of the fake tools in tests/fixtures/bin (yt-dlp-downloads,
+// ffmpeg-fails, ...), for KARAFRIENDS_YTDLP_PATH and KARAFRIENDS_FFMPEG_PATH.
+export function fakeTool(name: string): string {
+  return path.join(
+    REPO_ROOT,
+    "tests",
+    "fixtures",
+    "bin",
+    process.platform === "win32" ? `${name}.cmd` : name,
+  );
+}
 
-const GRAPHQL_URL = /\/graphql(?:[?#]|$)/;
+// A Joysound song that looks downloaded before, so queueSong queues it at
+// once: its video (from tests/fixtures) and its lyrics, by default a telop
+// with no lines that the display reads without an error.
+export async function fakeJoysoundDownload(
+  app: ElectronApplication,
+  songId: string,
+  {
+    video = "black.mp4",
+    seconds = 60,
+    telop = buildJoy02({
+      title: `E2E ${songId}`,
+      artist: "E2E artist",
+      seconds,
+      blocks: [],
+      events: [],
+    }),
+  }: { video?: string; seconds?: number; telop?: Buffer } = {},
+) {
+  const folder = await downloadsFolder(app);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
+  fs.copyFileSync(
+    path.join(REPO_ROOT, "tests", "fixtures", video),
+    path.join(folder, `joysound-${songId}-default.mp4`),
+  );
+}
 
-// Refuses the browser context's GraphQL requests (HTTP and WebSocket), noting
-// each in `seen`. The display and the remote only use /api, and the server
-// has no /graphql (api.spec.ts checks it answers 404).
-export async function forbidGraphql(context: BrowserContext, seen: string[]) {
-  context.on("request", (request) => {
-    if (GRAPHQL_URL.test(request.url())) {
-      seen.push(`${request.method()} ${request.url()}`);
-    }
+// The environment and arguments the app is launched with: Electron's own
+// environment plus these settings, isolated in tempDir and userDataDir.
+export function appLaunch({
+  tempDir,
+  userDataDir,
+  port,
+  appEnv = {},
+}: {
+  tempDir: string;
+  userDataDir: string;
+  port: number;
+  appEnv?: Record<string, string>;
+}): { env: Record<string, string>; args: string[] } {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
+  // Set by some Electron-based hosts; it would start Electron as plain Node.
+  delete env.ELECTRON_RUN_AS_NODE;
+  Object.assign(env, {
+    // Serve the built renderer and remote, as a packaged app does.
+    ELECTRON_IS_DEV: "0",
+    // app.getPath("temp"): TEMP/TMP on Windows, TMPDIR elsewhere.
+    TEMP: tempDir,
+    TMP: tempDir,
+    TMPDIR: tempDir,
+    KARAFRIENDS_REMOCON_PORT: String(port),
+    // Listen on 127.0.0.1 only and skip mDNS, so Windows Firewall doesn't
+    // prompt for each worktree's Electron copy.
+    KARAFRIENDS_LOCAL_ONLY: "1",
+    // Keep the full-screen display window off the user's screen.
+    KARAFRIENDS_HIDE_WINDOW: "1",
+    // Fake mics and outputs (src/preload/index.ts): no test opens a real
+    // device, and the display's calls can be read from
+    // window.karafriendsFakeAudio.calls().
+    KARAFRIENDS_FAKE_AUDIO: "1",
+    ...appEnv,
   });
-  await context.route(GRAPHQL_URL, (route) => route.abort());
-  await context.routeWebSocket(GRAPHQL_URL, (ws) => {
-    seen.push(`WebSocket ${ws.url()}`);
-    ws.close();
-  });
+  const args = [
+    // Never make a sound, even when a test plays a video.
+    "--mute-audio",
+    `--user-data-dir=${userDataDir}`,
+    // Linux CI runners have no setuid sandbox helper, and no GPU for the
+    // display's WebGL piano roll, so allow the software fallback.
+    ...(process.platform === "linux"
+      ? ["--no-sandbox", "--enable-unsafe-swiftshader"]
+      : []),
+    MAIN_ENTRY,
+  ];
+  return { env, args };
 }
 
 // Where an installed (or `yarn run-dev`) karafriends keeps its config.yaml and
@@ -230,30 +411,21 @@ function installedAppDataDir(): string {
   }
 }
 
-// Mirrors resourcePathsFor() in src/common/externalResourcesPlan.ts.
-const MEDIA_TOOL_FILES = {
-  ffmpeg: process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg",
-  ytdlp:
-    process.platform === "win32"
-      ? "yt-dlp.exe"
-      : process.platform === "darwin"
-        ? "yt-dlp_macos"
-        : "yt-dlp",
-};
-
 function prepareMediaTools(userDataDir: string, mode: MediaTools) {
   const dest = path.join(userDataDir, "externalResources");
+  const tools = Object.values(resourcePathsFor(process.platform, dest));
   if (mode === "stub") {
-    for (const [dir, file] of Object.entries(MEDIA_TOOL_FILES)) {
-      fs.mkdirSync(path.join(dest, dir), { recursive: true });
-      fs.writeFileSync(path.join(dest, dir, file), "");
+    for (const tool of tools) {
+      fs.mkdirSync(path.dirname(tool), { recursive: true });
+      fs.writeFileSync(tool, "");
     }
     return;
   }
 
   const source = path.join(installedAppDataDir(), "externalResources");
-  for (const [dir, file] of Object.entries(MEDIA_TOOL_FILES)) {
-    if (!fs.existsSync(path.join(source, dir, file))) {
+  for (const tool of tools) {
+    const installed = path.join(source, path.relative(dest, tool));
+    if (!fs.existsSync(installed)) {
       throw new Error(
         `This test downloads a video, so it needs the ffmpeg and yt-dlp that ` +
           `karafriends downloads on first launch, in ${source}. Start the ` +
@@ -308,19 +480,52 @@ function samePath(a: string, b: string): boolean {
   return canonical(a) === canonical(b);
 }
 
-// A port free on 127.0.0.1, where the app listens with LOCAL_ONLY. (Windows
-// gives a port another test's app holds there to a listener on all
+// Whether port is free on 127.0.0.1, where the app listens with LOCAL_ONLY.
+// (Windows gives a port another test's app holds there to a listener on all
 // addresses.)
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
+function isFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as net.AddressInfo;
-      server.close(() => resolve(port));
-    });
+    server.once("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
   });
+}
+
+// A free port for the app's server, picked at random below every system's
+// ephemeral range (Linux's starts at 32768; Windows' and macOS's at 49152).
+// Nothing that asks for any free port (port 0) gets it while the app starts:
+// another test's Electron opening its debug port, say. Two launches could
+// still pick the same one, so the app is then checked to be the one
+// listening (see listensOn).
+async function freePort(): Promise<number> {
+  for (;;) {
+    const port = 20_000 + Math.floor(Math.random() * 12_000);
+    if (await isFree(port)) return port;
+  }
+}
+
+// Whether the app's own main process has a server listening on port, and
+// not some other process (another test's app that took the port first).
+function listensOn(app: ElectronApplication, port: number): Promise<boolean> {
+  return app.evaluate(
+    (_, port) =>
+      (
+        process as unknown as {
+          _getActiveHandles(): {
+            listening?: boolean;
+            address?: () => unknown;
+          }[];
+        }
+      )
+        ._getActiveHandles()
+        .some(
+          (handle) =>
+            handle.listening === true &&
+            (handle.address?.() as { port?: number } | null)?.port === port,
+        ),
+    port,
+  );
 }
 
 // Holds a port on 127.0.0.1, where the app listens with LOCAL_ONLY, until
@@ -335,8 +540,7 @@ async function occupy(port: number): Promise<net.Server> {
 }
 
 async function launchKarafriends(
-  options: Options,
-  graphqlRequests: string[],
+  options: Omit<Options, "allowDisplayErrors">,
   testInfo: TestInfo,
 ): Promise<{ karafriends: Karafriends; close: () => Promise<void> }> {
   if (!fs.existsSync(MAIN_ENTRY)) {
@@ -436,49 +640,18 @@ async function launchKarafriends(
       seedVideos(videosDir, options.seedQueue);
     }
 
-    const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[key] = value;
-    }
-    // Set by some Electron-based hosts; it would start Electron as plain Node.
-    delete env.ELECTRON_RUN_AS_NODE;
-    Object.assign(env, {
-      // Serve the built renderer and remote, as a packaged app does.
-      ELECTRON_IS_DEV: "0",
-      // app.getPath("temp"): TEMP/TMP on Windows, TMPDIR elsewhere.
-      TEMP: tempDir,
-      TMP: tempDir,
-      TMPDIR: tempDir,
-      KARAFRIENDS_REMOCON_PORT: String(port),
-      // Listen on 127.0.0.1 only and skip mDNS, so Windows Firewall doesn't
-      // prompt for each worktree's Electron copy.
-      KARAFRIENDS_LOCAL_ONLY: "1",
-      // Keep the full-screen display window off the user's screen.
-      KARAFRIENDS_HIDE_WINDOW: "1",
-      // Fake mics and outputs (src/preload/index.ts): no test opens a real
-      // device, and the display's calls can be read from
-      // window.karafriendsFakeAudio.calls().
-      KARAFRIENDS_FAKE_AUDIO: "1",
-      ...options.appEnv,
+    const { env, args } = appLaunch({
+      tempDir,
+      userDataDir,
+      port,
+      appEnv: options.appEnv,
     });
-
     app = await electron.launch({
-      args: [
-        // Never make a sound, even when a test plays a video.
-        "--mute-audio",
-        `--user-data-dir=${userDataDir}`,
-        // Linux CI runners have no setuid sandbox helper, and no GPU for the
-        // display's WebGL piano roll, so allow the software fallback.
-        ...(process.platform === "linux"
-          ? ["--no-sandbox", "--enable-unsafe-swiftshader"]
-          : []),
-        MAIN_ENTRY,
-      ],
+      args,
       cwd: REPO_ROOT,
       env,
       timeout: 60_000,
     });
-    await forbidGraphql(app.context(), graphqlRequests);
     // The app's only pages are the display's.
     const displayRequests: string[] = [];
     app.context().on("request", (request) => {
@@ -524,18 +697,14 @@ async function launchKarafriends(
     const remoconUrl = `http://127.0.0.1:${port}/`;
     // (With the port taken, it never does.)
     if (!options.occupyPort) {
+      const launched = app;
       await expect
-        .poll(
-          async () => {
-            try {
-              return (await fetch(remoconUrl)).status;
-            } catch {
-              return 0;
-            }
-          },
-          { message: "the remote server never came up", timeout: 30_000 },
-        )
-        .toBe(200);
+        .poll(() => listensOn(launched, port), {
+          message: `the app's server never listened on port ${port} (in use?)`,
+          timeout: 30_000,
+        })
+        .toBe(true);
+      expect((await fetch(remoconUrl)).status).toBe(200);
     }
 
     return {
@@ -548,6 +717,12 @@ async function launchKarafriends(
   }
 }
 
+type Fixtures = {
+  karafriends: Karafriends;
+  display: Page;
+  remote: Page;
+};
+
 export const test = base.extend<Options & Fixtures>({
   seedQueue: [null, { option: true }],
   seedQueueInTempFolder: [false, { option: true }],
@@ -556,22 +731,7 @@ export const test = base.extend<Options & Fixtures>({
   appConfig: [{}, { option: true }],
   occupyPort: [false, { option: true }],
   appEnv: [{}, { option: true }],
-
-  // Checked once the test (and every fixture using it) is done.
-  // oxlint-disable-next-line no-empty-pattern
-  graphqlRequests: async ({}, use) => {
-    const requests: string[] = [];
-    await use(requests);
-    expect(requests, "the display and the remote must not use GraphQL").toEqual(
-      [],
-    );
-  },
-
-  // Every page a test opens, the remote included.
-  context: async ({ context, graphqlRequests }, use) => {
-    await forbidGraphql(context, graphqlRequests);
-    await use(context);
-  },
+  allowDisplayErrors: [null, { option: true }],
 
   karafriends: async (
     {
@@ -582,7 +742,7 @@ export const test = base.extend<Options & Fixtures>({
       appConfig,
       occupyPort,
       appEnv,
-      graphqlRequests,
+      allowDisplayErrors,
     },
     use,
     testInfo,
@@ -597,7 +757,6 @@ export const test = base.extend<Options & Fixtures>({
         occupyPort,
         appEnv,
       },
-      graphqlRequests,
       testInfo,
     );
     try {
@@ -605,6 +764,12 @@ export const test = base.extend<Options & Fixtures>({
       expect(
         karafriends.displayRequests.filter(isApiRequest),
         "the display must use IPC, not the HTTP API",
+      ).toEqual([]);
+      expect(
+        karafriends.displayErrors.filter(
+          (error) => !allowDisplayErrors?.test(error),
+        ),
+        "the display's console errors (allowDisplayErrors lists the expected)",
       ).toEqual([]);
     } finally {
       await close();

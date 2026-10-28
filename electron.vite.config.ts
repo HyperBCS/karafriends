@@ -10,8 +10,9 @@
 //                              and static/ (the kuromoji dict/ and the
 //                              remote's service worker)
 //
-// The remote runs in phone browsers, so it's built on its own, for them (see
-// remoconBuild). Everything else targets Electron's Chromium.
+// The remote runs in phone browsers, so the two pages are built for them,
+// back to iPhones on iOS 15 (REMOCON_TARGET); the display's Chromium runs
+// that too. Main and preload target Electron's Node.
 //
 // `yarn dev` (electron-vite dev -w) builds main and preload into build/dev,
 // rebuilding and restarting on change, and serves the pages from the Vite dev
@@ -25,7 +26,7 @@ import path from "node:path";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
-import { build, type Plugin } from "vite";
+import type { Plugin } from "vite";
 
 import { HOSTNAME } from "./src/common/constants";
 
@@ -55,7 +56,9 @@ const PAGES = {
   remocon: path.resolve("src/remocon/index.html"),
 };
 
-// The remote's browsers: Vite's defaults, with iPhones back to iOS 15.
+// The remote's browsers: Vite's defaults, with iPhones back to iOS 15. The
+// CSS keeps the prefixes they need, such as the -webkit-user-select that iOS
+// Safari does (remote.spec.ts checks the build).
 const REMOCON_TARGET = [
   "chrome111",
   "edge111",
@@ -64,34 +67,22 @@ const REMOCON_TARGET = [
   "ios15",
 ];
 
-// Builds only; the dev server serves the remote as it is. The display's build
-// targets Electron's Chromium, and its minifier drops CSS prefixes Chromium
-// doesn't need, such as the -webkit-user-select that iOS Safari does. So once
-// the display is written, the remote is built by itself for phones, which
-// also lowers its JS for older iPhones.
-function remoconBuild(mode: string, outDir: string): Plugin {
+// Builds the pages for REMOCON_TARGET. electron-vite's own plugin sets the
+// renderer's target to Electron's Chromium, and merges a build.target given
+// in this config into it (two Chromes, which the bundler refuses), so this
+// plugin replaces it afterwards. electron-vite then warns that the target
+// "is not chrome?": expected.
+function phoneTarget(): Plugin {
   return {
-    name: "karafriends:remocon-build",
+    name: "karafriends:phone-target",
     apply: "build",
-    async writeBundle() {
-      await build({
-        configFile: false,
-        mode,
-        root: "src",
-        base: "./",
-        // The display's build has copied static/ already.
-        publicDir: false,
-        plugins: [react()],
-        build: {
-          outDir,
-          emptyOutDir: false,
-          target: REMOCON_TARGET,
-          minify: mode === "production",
-          sourcemap: mode !== "production",
-          reportCompressedSize: false,
-          rolldownOptions: { input: { remocon: PAGES.remocon } },
-        },
-      });
+    enforce: "post",
+    config(config) {
+      config.build = {
+        ...config.build,
+        target: REMOCON_TARGET,
+        cssTarget: REMOCON_TARGET,
+      };
     },
   };
 }
@@ -211,11 +202,7 @@ export default defineConfig(({ command, mode }) => {
       root: "src",
       // Copied to the root of build/<mode>/web once, and served at / in dev.
       publicDir: STATIC_DIR,
-      plugins: [
-        react(),
-        devServerRoutes(),
-        remoconBuild(mode, path.join(outDir, "web")),
-      ],
+      plugins: [react(), devServerRoutes(), phoneTarget()],
       resolve: {
         // kuromoji (the display's furigana): its own browser bundle. Its
         // sources need Node's path, and the gunzip they use only works with
@@ -230,11 +217,7 @@ export default defineConfig(({ command, mode }) => {
         sourcemap: !production,
         // The display's bundle is about 1 MB; it loads from disk.
         chunkSizeWarningLimit: 1500,
-        rolldownOptions: {
-          // Both pages for the dev server (which also scans them for
-          // dependencies); a build leaves the remote to remoconBuild.
-          input: command === "serve" ? PAGES : { renderer: PAGES.renderer },
-        },
+        rolldownOptions: { input: PAGES },
       },
       server: {
         host: localOnly ? "127.0.0.1" : true,

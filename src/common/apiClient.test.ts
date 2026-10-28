@@ -4,7 +4,12 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, mock, test } from "node:test";
 
-import type { LiveEvent, LiveState, SharedQueueItem } from "./api";
+import type {
+  DownloadProgress,
+  LiveEvent,
+  LiveState,
+  SharedQueueItem,
+} from "./api";
 import {
   adminCheck,
   adminMayHaveChanged,
@@ -183,7 +188,7 @@ describe("call on the display", () => {
       // As JSON.stringify would send it.
       ["history", { limit: 5 }],
     ]);
-    assert.equal(Object.hasOwn(calls[1][1], "offset"), false);
+    assert.equal(Object.hasOwn(calls[1][1] as object, "offset"), false);
   });
 
   test("throws what it would over HTTP", async () => {
@@ -604,11 +609,14 @@ describe("liveStore", () => {
 
     // A download's progress changes the state, but a component that shows
     // the queue picks the same queue as before, so React leaves it be.
-    const download = {
-      kind: "youtube" as const,
+    const download: DownloadProgress = {
+      id: 1,
+      kind: "youtube",
       songId: "v",
       suffix: null,
       progress: 0.5,
+      status: "downloading",
+      reason: null,
       isMine: false,
     };
     store.set(mergeLiveState(first, state({ downloads: [download] })));

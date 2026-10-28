@@ -77,7 +77,8 @@ const files: DisplayFiles = {
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
 // endpoint ids, and labels) and two fake outputs, and every call is kept,
 // for the tests to read with window.karafriendsFakeAudio.calls(). The
-// tests can have devices fail (failOpen, stopMics, failListing below).
+// tests can have devices fail (failOpen, stopMics, failListing below), and
+// the mics hear a pitch (setPitch).
 // KARAFRIENDS_FAKE_AUDIO=linux: the same, as on Linux with PipeWire.
 type FakeAudioCall = [string, ...unknown[]];
 const fakeAudio = process.env.KARAFRIENDS_FAKE_AUDIO;
@@ -95,6 +96,11 @@ function fakeNativeAudio(calls: FakeAudioCall[]): NativeAudio {
 // that is open stops too. Kept in sessionStorage, so a reload (the next
 // launch, to the display) finds them too.
 const FAIL_OPEN_KEY = "karafriendsFakeAudioFailOpen";
+
+// What every fake mic hears, for the tests to set with
+// window.karafriendsFakeAudio.setPitch(): a MIDI note, and how sure the
+// pitch detector is of it (the pitch bars draw only from 0.8).
+let fakePitch = { midiNumber: 0, confidence: 0 };
 
 // The open fake mics, by number: the input each is of, and why it stopped
 // (window.karafriendsFakeAudio.stopMics()), if it did.
@@ -192,9 +198,9 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
       if (failsToOpen(mic.name)) return "The device was unplugged (fake)";
       return mic.stopped ?? "ok";
     }),
+    // What window.karafriendsFakeAudio.setPitch() set: none, by default.
     inputDevice_getPitch: fake("inputDevice_getPitch", () => ({
-      midiNumber: 0,
-      confidence: 0,
+      ...fakePitch,
     })),
     inputDevice_stop: fake("inputDevice_stop", () => undefined),
   };
@@ -258,6 +264,9 @@ if (fakeAudioCalls) {
     failListing: (on: boolean) => {
       if (on) sessionStorage.setItem(FAIL_LISTING_KEY, "1");
       else sessionStorage.removeItem(FAIL_LISTING_KEY);
+    },
+    setPitch: (midiNumber: number, confidence: number) => {
+      fakePitch = { midiNumber, confidence };
     },
     // The open mics of these inputs stop, as a stream that stops calling
     // back does; they open again as usual.

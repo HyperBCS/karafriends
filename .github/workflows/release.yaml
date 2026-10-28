@@ -2,32 +2,85 @@ name: Release
 on:
   release:
     types: [published]
+  # A trial run: it builds, signs and zips everything, and keeps each zip as
+  # a workflow artifact instead of uploading it to a release. To build a
+  # published release again, re-run that release's run.
   workflow_dispatch:
 # Every job uploads its zip to the release. The repo's default token is
 # read-only.
 permissions:
   contents: write
 # The Rust toolchain steps keep the old actions-rs/toolchain behaviour: no
-# cache (a release builds from scratch) and no RUSTFLAGS (setup-rust-toolchain
-# would otherwise set "-D warnings", and a new compiler warning shouldn't stop
-# a release; the Build workflow already fails on warnings).
+# cache (a release builds from scratch) and no "-D warnings" (a new compiler
+# warning shouldn't stop a release; the Build workflow already fails on
+# warnings). setup-rust-toolchain sets RUSTFLAGS only when given some, and
+# Linux needs some: see matrix.rustflags.
 
 jobs:
-  release-macos-aarch64:
-    runs-on: macos-latest
+  release:
+    name: ${{ matrix.zip }}
+    strategy:
+      # One platform failing doesn't stop the others' zips.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            arch: arm64
+            cargo_args: --target aarch64-apple-darwin
+            zip: karafriends-darwin-arm64.zip
+          # Intel Macs, cross-compiled on Apple Silicon.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            arch: x64
+            cargo_args: --target x86_64-apple-darwin
+            zip: karafriends-darwin-x64.zip
+          # ASIO is a default feature of the native crates.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            zip: karafriends-win32-x64.zip
+          # Ubuntu 24.04, not ubuntu-latest: the oldest Ubuntu with the
+          # PipeWire headers the native module needs (0.3.53). A newer
+          # runner's glibc could raise the oldest Linux the release runs on
+          # (built here it needs glibc 2.34, so Ubuntu 22.04 runs it; built on
+          # 26.04, glibc 2.43).
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            zip: karafriends-linux-x64.zip
+            # A RUSTFLAGS replaces .cargo/config.toml's rustflags, so this
+            # repeats them: without partial RELRO the module won't load with
+            # Ubuntu 22.04's libpipewire (checkLazyPipewire.sh checks).
+            rustflags: -C relro-level=partial
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      # The zips' version (the macOS bundle's, the Windows exe's) is
+      # package.json's.
+      - name: Check the tag is package.json's version
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="v$(node -p 'require("./package.json").version')"
+          if [[ "$TAG" != "$version" ]]; then
+            echo "::error::The release's tag is $TAG, but package.json's version makes it $version"
+            exit 1
+          fi
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: aarch64-apple-darwin
+          target: ${{ matrix.target }}
           cache: false
-          rustflags: ""
+          rustflags: ${{ matrix.rustflags || '' }}
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: yarn
       - name: Setup code signing cert
+        if: runner.os == 'macOS'
         env:
           MACOS_NOTARIZATION_API_KEY_BASE64: ${{ secrets.MACOS_NOTARIZATION_API_KEY_BASE64 }}
           MACOS_SIGNING_CERT_BASE64: ${{ secrets.MACOS_SIGNING_CERT_BASE64 }}
@@ -47,105 +100,28 @@ jobs:
 
           security import $CERTIFICATE_PATH -P "$MACOS_SIGNING_CERT_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libdbus-1-dev libclang-dev
       - run: yarn install --immutable
       - run: yarn build-prod
         env:
-          CARGO_ARGS: --target aarch64-apple-darwin
-      - run: |
-          NOTARIZATION_KEY_PATH=$RUNNER_TEMP/notarization_key.p8 yarn package-prod
-        env:
-          PACKAGER_ARCH: arm64
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist/karafriends-darwin-arm64.zip
-  release-macos-x86_64:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-apple-darwin
-          cache: false
-          rustflags: ""
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: yarn
-      - name: Setup code signing cert
-        env:
-          MACOS_NOTARIZATION_API_KEY_BASE64: ${{ secrets.MACOS_NOTARIZATION_API_KEY_BASE64 }}
-          MACOS_SIGNING_CERT_BASE64: ${{ secrets.MACOS_SIGNING_CERT_BASE64 }}
-          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
-          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-        run: |
-          NOTARIZATION_KEY_PATH=$RUNNER_TEMP/notarization_key.p8
-          CERTIFICATE_PATH=$RUNNER_TEMP/signing_cert.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
-
-          echo -n "$MACOS_NOTARIZATION_API_KEY_BASE64" | base64 --decode -o $NOTARIZATION_KEY_PATH
-          echo -n "$MACOS_SIGNING_CERT_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          security import $CERTIFICATE_PATH -P "$MACOS_SIGNING_CERT_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-      - run: yarn install --immutable
-      - run: yarn build-prod
-        env:
-          CARGO_ARGS: --target x86_64-apple-darwin
-      - run: |
-          NOTARIZATION_KEY_PATH=$RUNNER_TEMP/notarization_key.p8 yarn package-prod
-        env:
-          PACKAGER_ARCH: x64
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist/karafriends-darwin-x64.zip
-  release-windows-x86_64:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-pc-windows-msvc
-          cache: false
-          rustflags: ""
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: yarn
-      - run: yarn install --immutable
-      # ASIO is a default feature of the native crates.
-      - run: yarn build-prod
+          CARGO_ARGS: ${{ matrix.cargo_args }}
+      - if: runner.os == 'Linux'
+        run: scripts/checkLazyPipewire.sh native/index.node
+      # The notarization key is only there on macOS; packager.js uses it only
+      # there.
       - run: yarn package-prod
-      - uses: softprops/action-gh-release@v3
+        env:
+          PACKAGER_ARCH: ${{ matrix.arch }}
+          NOTARIZATION_KEY_PATH: ${{ runner.temp }}/notarization_key.p8
+      - if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
         with:
-          files: dist/karafriends-win32-x64.zip
-  # Ubuntu 24.04, not ubuntu-latest: the oldest Ubuntu with the PipeWire
-  # headers the native module needs (0.3.53). A newer runner's glibc could
-  # raise the oldest Linux the release runs on (built here it needs glibc
-  # 2.34, so Ubuntu 22.04 runs it; built on 26.04, glibc 2.43).
-  release-linux-x86_64:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+          files: dist/${{ matrix.zip }}
+          fail_on_unmatched_files: true
+      - if: github.event_name != 'release'
+        uses: actions/upload-artifact@v7
         with:
-          toolchain: stable
-          target: x86_64-unknown-linux-gnu
-          cache: false
-          rustflags: ""
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: yarn
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libdbus-1-dev libclang-dev
-      - run: yarn install --immutable
-      - run: yarn build-prod
-      - run: yarn package-prod
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist/karafriends-linux-x64.zip
+          name: ${{ matrix.zip }}
+          path: dist/${{ matrix.zip }}
+          if-no-files-found: error

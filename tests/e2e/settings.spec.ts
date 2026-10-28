@@ -12,10 +12,16 @@ import { parse } from "yaml";
 
 import {
   adminPasswordConfig,
+  apiCall,
   currentSongKey,
   displayCall,
+  displayLiveState,
   downloadsFolder,
+  anyOf,
   expect,
+  fakeJoysoundDownload,
+  liveState as phoneLiveState,
+  NICKNAME,
   sliderFill,
   test,
 } from "./fixtures";
@@ -26,28 +32,6 @@ async function output(display: Page, method: string, input: object = {}) {
   const answer = await displayCall(display, method, input);
   expect(answer, `${method} over IPC`).toMatchObject({ ok: true });
   return answer.output;
-}
-
-// The first event of a fresh /api/events stream: the live state, as a
-// phone sees it.
-async function phoneLiveState(remoconUrl: string) {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]).state;
-    }
-  } finally {
-    controller.abort();
-  }
 }
 
 async function configOnDisk(app: ElectronApplication) {
@@ -119,33 +103,7 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
     everyoneIsAdmin: false,
   });
   await expect
-    .poll(() =>
-      display.evaluate(
-        () =>
-          new Promise((resolve) => {
-            const k = (
-              window as unknown as {
-                karafriends: {
-                  api: {
-                    onLive(
-                      listener: (event: {
-                        type: string;
-                        state?: { config: { supervisedMode: boolean } };
-                      }) => void,
-                    ): () => void;
-                  };
-                };
-              }
-            ).karafriends;
-            const stop = k.api.onLive((event) => {
-              if (event.type === "state") {
-                resolve(event.state!.config.supervisedMode);
-                setTimeout(() => stop());
-              }
-            });
-          }),
-      ),
-    )
+    .poll(async () => (await displayLiveState(display)).config.supervisedMode)
     .toBe(true);
   expect((await configOnDisk(karafriends.app)).supervisedMode).toBe(true);
 
@@ -636,45 +594,17 @@ test.describe("the pitch bars", () => {
     ).toBeChecked();
   });
 
-  // A Joysound song that looks downloaded before: its video, from
-  // tests/fixtures, and lyrics without lines that the display reads without
-  // an error (empty names, a palette, no timing events).
-  function fakeJoysoundDownload(
-    folder: string,
-    songId: string,
-    video: string,
-    seconds: number,
-  ) {
-    const telop = Buffer.alloc(68);
-    telop.writeUInt32LE(18, 6); // where the names start
-    telop.writeUInt32LE(38, 10); // the lyrics: 15 colours, no lines
-    telop.writeUInt32LE(68, 14); // the timing: no events
-    for (let i = 1; i <= 7; i++) telop.writeUInt16LE(20, 18 + i * 2);
-    telop.writeUInt16LE(seconds, 18 + 18); // the playtime
-    fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
-    fs.copyFileSync(
-      path.resolve(__dirname, "..", "fixtures", video),
-      path.join(folder, `joysound-${songId}-default.mp4`),
-    );
-  }
-
-  // A call from a phone (one song in the queue each, by default).
+  // A call from a phone (one song in the queue each, by default): its
+  // answer.
   async function phoneCall(
     remoconUrl: string,
     deviceId: string,
     method: string,
     input: object,
   ) {
-    const res = await fetch(new URL(`api/${method}`, remoconUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Karafriends-Device-Id": deviceId,
-        "X-Karafriends-Nickname": "e2e",
-      },
-      body: JSON.stringify(input),
-    });
-    return res.json();
+    return (
+      await apiCall(remoconUrl, method, input, { deviceId, nickname: NICKNAME })
+    ).body;
   }
 
   test("a Joysound song shows them from its guide melody, and one without a guide shows none", async ({
@@ -682,17 +612,18 @@ test.describe("the pitch bars", () => {
     display,
   }) => {
     const { remoconUrl } = karafriends;
-    const folder = await downloadsFolder(karafriends.app);
-    fs.mkdirSync(folder, { recursive: true });
     // A minute of black video without sound: no guide channel.
-    fakeJoysoundDownload(folder, "e2e-no-guide", "black.mp4", 60);
+    await fakeJoysoundDownload(karafriends.app, "e2e-no-guide");
     // 12 s of black video whose sound is 3-channel Vorbis, as Joysound's
     // ogg: silent left and right, so the bars can only come from the third
     // channel, and nine sine notes there (C5 E5 G5 E5, D5 F5 A5 F5, C5, 0.9
     // s each, from 0.5 s). Made with the app's ffmpeg:
     //   ffmpeg -f lavfi -i "aevalsrc=exprs=0|0|0.3*sin(2*PI*t*(<each note's between(t,start,end)*Hz, summed>))*(<the same betweens, summed>):s=44100:c=3.0:d=12" -c:a libvorbis -q:a 0 guide.ogg
     //   ffmpeg -f lavfi -i color=black:s=320x180:r=10:d=12 -i guide.ogg -c:v libx264 -pix_fmt yuv420p -c:a copy -shortest -movflags faststart joysound-guide.mp4
-    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    await fakeJoysoundDownload(karafriends.app, "e2e-guide", {
+      video: "joysound-guide.mp4",
+      seconds: 12,
+    });
     for (const songId of ["e2e-no-guide", "e2e-guide"]) {
       expect(
         await phoneCall(remoconUrl, `e2e-phone-${songId}`, "queueSong", {
@@ -774,9 +705,10 @@ test.describe("the pitch bars", () => {
     karafriends: { app: ElectronApplication; remoconUrl: string },
     display: Page,
   ) {
-    const folder = await downloadsFolder(karafriends.app);
-    fs.mkdirSync(folder, { recursive: true });
-    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    await fakeJoysoundDownload(karafriends.app, "e2e-guide", {
+      video: "joysound-guide.mp4",
+      seconds: 12,
+    });
     expect(
       await phoneCall(karafriends.remoconUrl, "e2e-phone", "queueSong", {
         kind: "joysound",
@@ -926,6 +858,127 @@ test.describe("the pitch bars", () => {
           .evaluate((v: HTMLVideoElement) => v.currentTime > 2),
       )
       .toBe(true);
+  });
+
+  test("a mic's pitch is read while the song plays, by one poller per mic, and drawn over the bars", async ({
+    karafriends,
+    display,
+  }) => {
+    // Every fake mic hears C5, surely.
+    await display.evaluate(() =>
+      (
+        window as unknown as {
+          karafriendsFakeAudio: {
+            setPitch(midiNumber: number, confidence: number): void;
+          };
+        }
+      ).karafriendsFakeAudio.setPitch(72, 0.95),
+    );
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await openTab(display, "Sound");
+    const section = settings.getByRole("region", { name: "Microphones" });
+    await section
+      .getByLabel("Add a microphone")
+      .selectOption("E2E Mic (USB), channel 1");
+    const mic = section.getByRole("group", {
+      name: "E2E Mic (USB), channel 1",
+    });
+    await expect(mic).toBeVisible();
+    await settings.getByRole("button", { name: "Close" }).click();
+
+    await playGuideSong(karafriends, display);
+    await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(1, {
+      timeout: 20_000,
+    });
+    // The song is 12 s long: each check starts it again from 1 s in.
+    const video = display.locator("video");
+    const rewind = () =>
+      video.evaluate((v: HTMLVideoElement) => {
+        v.currentTime = 1;
+      });
+    const pitchCalls = async () =>
+      (await fakeAudioCalls(display)).filter(
+        ([name]) => name === "inputDevice_getPitch",
+      ).length;
+    // How many times the mic was asked in about a second, and in how long.
+    const askedInASecond = async () => {
+      await rewind();
+      const before = await pitchCalls();
+      const start = Date.now();
+      await display.waitForTimeout(1_000);
+      return { calls: (await pitchCalls()) - before, ms: Date.now() - start };
+    };
+    // One poller asks every 25 ms (PITCH_POLL_MS), and no faster: two would
+    // ask about twice as often.
+    const onePoller = ({ calls, ms }: { calls: number; ms: number }) =>
+      calls > 0 && calls <= ms / 25 + 2;
+
+    await expect
+      .poll(async () => onePoller(await askedInASecond()), {
+        message: "the mic is asked every 25 ms, by one poller",
+      })
+      .toBe(true);
+    // The trace, in the mic's colour (the only mic: micColor(0, 1), a pale
+    // red), is drawn over the bars.
+    const tracePixels = () =>
+      display.evaluate(
+        () =>
+          new Promise<number>((resolve) =>
+            requestAnimationFrame(() => {
+              const canvas = document.querySelector<HTMLCanvasElement>(
+                "canvas.pianoRollRoll",
+              );
+              const gl = canvas?.getContext("webgl2");
+              if (!canvas || !gl || gl.isContextLost()) return resolve(0);
+              const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+              gl.readPixels(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+              );
+              let count = 0;
+              for (let i = 0; i < pixels.length; i += 4) {
+                const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+                if (r > 250 && Math.abs(g - 178) <= 3 && Math.abs(b - 178) <= 3)
+                  count++;
+              }
+              resolve(count);
+            }),
+          ),
+      );
+    await rewind();
+    await expect.poll(tracePixels).toBeGreaterThan(0);
+
+    // Two key changes leave one poller.
+    for (const semis of [1, 2]) {
+      expect(
+        await phoneCall(
+          karafriends.remoconUrl,
+          "e2e-phone",
+          "setPitchShiftSemis",
+          { semis, song: await currentSongKey(karafriends.remoconUrl) },
+        ),
+      ).toBe(true);
+    }
+    await expect
+      .poll(async () => (await displayLiveState(display)).pitchShiftSemis)
+      .toBe(2);
+    await expect
+      .poll(async () => onePoller(await askedInASecond()), {
+        message: "the mic is asked every 25 ms, by one poller",
+      })
+      .toBe(true);
+
+    // Removed, the mic isn't asked again.
+    await display.getByRole("button", { name: "Settings" }).click();
+    await openTab(display, "Sound");
+    await mic.getByRole("button", { name: "Remove" }).click();
+    await expect(mic).toHaveCount(0);
+    await expect.poll(async () => (await askedInASecond()).calls).toBe(0);
   });
 });
 
@@ -1499,6 +1552,13 @@ test.describe("the microphones", () => {
 });
 
 test.describe("devices that won't open", () => {
+  // What the display logs of the fakes that fail.
+  test.use({
+    allowDisplayErrors: anyOf(
+      /^Couldn't switch the mic output to E2E Speakers \(Windows\): Error: E2E Speakers \(Windows\) won't open \(fake\)/,
+      /^Couldn't list the (inputs|outputs): Error: A device won't give its name \(fake\)/,
+    ),
+  });
   const MIC_DEVICE = "{0.0.1.00000000}.{e2e-mic} (USB)";
   const INTERFACE_DEVICE = "{0.0.1.00000000}.{e2e-interface} (USB)";
 
@@ -1867,18 +1927,24 @@ test.describe("export, then import on a second launch", () => {
   });
 });
 
-test.describe("@jp with the installed app's logins", () => {
-  test.use({ realCredentials: true });
+// Not at the same time as jp.spec.ts's tests, which sign in to the same
+// accounts.
+test.describe(
+  "@jp with the installed app's logins",
+  { tag: "@jp", lock: "jp-accounts" },
+  () => {
+    test.use({ realCredentials: true });
 
-  test("testLogin signs in to DAM and Joysound @jp", async ({ display }) => {
-    expect(await output(display, "testLogin", { service: "dam" })).toEqual({
-      ok: true,
+    test("testLogin signs in to DAM and Joysound @jp", async ({ display }) => {
+      expect(await output(display, "testLogin", { service: "dam" })).toEqual({
+        ok: true,
+      });
+      expect(
+        await output(display, "testLogin", { service: "joysound" }),
+      ).toEqual({ ok: true });
     });
-    expect(await output(display, "testLogin", { service: "joysound" })).toEqual(
-      { ok: true },
-    );
-  });
-});
+  },
+);
 
 test.describe("the downloads", () => {
   test("Settings shows the downloads and clears them; a phone can do neither", async ({

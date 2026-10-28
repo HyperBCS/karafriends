@@ -1,22 +1,48 @@
 import fs from "fs";
 import path from "path";
 
-import type {
-  ElectronApplication,
-  Locator,
-  Page,
-  Route,
-} from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 
 import {
   adminPasswordConfig,
   currentSongKey,
   displayCall,
-  downloadsFolder,
   expect,
+  fakeJoysoundDownload,
+  liveState,
+  MAIN_ENTRY,
   NICKNAME,
   test,
 } from "./fixtures";
+
+// The remote's build is for phones back to iOS 15 (REMOCON_TARGET in
+// electron.vite.config.ts), read from build/prod without starting the app:
+// its CSS keeps the -webkit-user-select iOS Safari needs (Chromium doesn't,
+// so a Chromium target drops it), and no JS it loads has a class static
+// block, which Safari only runs from 16.4.
+test("the remote's build is for iOS 15", () => {
+  const web = path.join(path.dirname(MAIN_ENTRY), "..", "web");
+  const page = fs.readFileSync(path.join(web, "remocon", "index.html"), "utf8");
+  const assets = (pattern: RegExp, text: string) =>
+    [...text.matchAll(pattern)].map((match) => path.basename(match[1]));
+  const css = assets(/href="\.\.\/assets\/([^"]+\.css)"/g, page);
+  expect(css).toHaveLength(1);
+  const cssText = fs.readFileSync(path.join(web, "assets", css[0]), "utf8");
+  expect(
+    cssText.match(/-webkit-user-select:none/g)?.length ?? 0,
+    "-webkit-user-select in the remote's CSS",
+  ).toBeGreaterThan(0);
+  // The entry, and every chunk it imports.
+  const scripts = assets(/src="\.\.\/assets\/([^"]+\.js)"/g, page);
+  expect(scripts).toHaveLength(1);
+  for (let i = 0; i < scripts.length; i++) {
+    const js = fs.readFileSync(path.join(web, "assets", scripts[i]), "utf8");
+    expect(js, scripts[i]).not.toMatch(/\bstatic\s*\{/);
+    for (const chunk of assets(/["']\.\/([\w.-]+\.js)["']/g, js)) {
+      if (!scripts.includes(chunk)) scripts.push(chunk);
+    }
+  }
+});
 
 test("the remote opens on the search screen", async ({ remote }) => {
   await expect(
@@ -2030,44 +2056,9 @@ test.describe("dragging the queue", () => {
   });
 });
 
-// Joysound songs, offline: each looks downloaded before (its lyrics and
-// video in the app's temp folder), so queueSong queues it at once. The
-// lyrics file is just enough for its playtime (getSongDuration), so the
-// display plays a minute of black video without lyrics.
-async function fakeJoysoundDownload(app: ElectronApplication, songId: string) {
-  const dir = await downloadsFolder(app);
-  fs.mkdirSync(dir, { recursive: true });
-  const telop = Buffer.alloc(32);
-  telop.writeUInt32LE(10, 6); // where the metadata starts
-  telop.writeUInt16LE(60, 10 + 18); // the playtime, in seconds
-  fs.writeFileSync(path.join(dir, `joysound-${songId}.joy_02`), telop);
-  fs.copyFileSync(
-    path.join(__dirname, "..", "fixtures", "black.mp4"),
-    path.join(dir, `joysound-${songId}-default.mp4`),
-  );
-}
-
-// The server's live state: the first event of a fresh /api/events stream.
-async function liveState(remoconUrl: string) {
-  const controller = new AbortController();
-  const res = await fetch(new URL("api/events", remoconUrl), {
-    signal: controller.signal,
-  });
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]).state;
-    }
-  } finally {
-    controller.abort();
-  }
-}
-
+// Joysound songs, offline: each looks downloaded before (fakeJoysoundDownload:
+// its lyrics, without lines, and a minute of black video), so queueSong
+// queues it at once.
 test.describe("the lyrics mode", () => {
   // Three songs from one phone.
   test.use({ appConfig: { paxSongQueueLimit: 0 } });
@@ -2137,7 +2128,7 @@ test.describe("the lyrics mode", () => {
         const { currentSong, queue } = await liveState(remoconUrl);
         return Object.fromEntries(
           [currentSong, ...queue]
-            .filter(Boolean)
+            .filter((item) => item?.kind === "joysound")
             .map((item) => [item.songId, item.lyricsMode]),
         );
       })

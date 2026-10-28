@@ -19,7 +19,7 @@ import {
   toolOverrides,
   toolStatus,
   type Platform,
-} from "./externalResourcesPlan.ts";
+} from "./externalResourcesPlan";
 
 const PLATFORMS: Platform[] = ["win32", "darwin", "linux"];
 

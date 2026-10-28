@@ -40,7 +40,7 @@ const shoot = (page: Page, name: string, fullPage = false) =>
     animations: "disabled",
   });
 
-// Songs that were never downloaded, so nothing plays (as in live.spec.ts).
+// Seeded songs: each plays a minute of black video (as in live.spec.ts).
 const song = (
   n: number,
   name: string,

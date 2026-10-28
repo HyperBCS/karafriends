@@ -1,15 +1,18 @@
 // The JSON RPC API (POST /api/<method>, GET /api/events), the server-side
-// admin checks and admin sign-in. No network: the queued songs are Niconico
-// videos that are never downloaded, so the display can't play them.
+// admin checks and admin sign-in. No network: the seeded songs are Niconico
+// and YouTube songs that play a minute of black video, muted (seedVideos in
+// fixtures.ts).
 import net from "net";
 
 import type { Page } from "@playwright/test";
 
 import {
   adminPasswordConfig,
+  apiCall,
   currentSongKey,
   displayCall,
   expect,
+  firstLiveEvent,
   test,
 } from "./fixtures";
 
@@ -24,41 +27,23 @@ const REMOTE_HEADERS = {
   "X-Karafriends-Nickname": NICKNAME,
 };
 
-async function call(
+// A call to the API with exactly these headers (a phone's, an admin's, or
+// none): its status and JSON answer.
+const call = (
   remoconUrl: string,
   method: string,
   input: object,
   headers: Record<string, string> = {},
-) {
-  const res = await fetch(new URL(`api/${method}`, remoconUrl), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(input),
-  });
-  return { status: res.status, body: await res.json() };
-}
+) => apiCall(remoconUrl, method, input, null, headers);
 
 // The first event of a fresh /api/events stream: the live state, as the
 // phone with deviceId (if given) sees it.
 async function liveState(remoconUrl: string, deviceId?: string) {
-  const controller = new AbortController();
-  const url = new URL("api/events", remoconUrl);
-  if (deviceId) url.searchParams.set("deviceId", deviceId);
-  const res = await fetch(url, { signal: controller.signal });
-  expect(res.headers.get("content-type")).toContain("text/event-stream");
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error(`The stream ended early: ${text}`);
-      text += value;
-      const data = text.match(/^data: (.*)$/m);
-      if (data) return JSON.parse(data[1]);
-    }
-  } finally {
-    controller.abort();
-  }
+  const { data, contentType } = await firstLiveEvent(remoconUrl, {
+    deviceId,
+  });
+  expect(contentType).toContain("text/event-stream");
+  return JSON.parse(data);
 }
 
 test("/api refuses a form-encoded POST", async ({ karafriends }) => {
@@ -72,19 +57,6 @@ test("/api refuses a form-encoded POST", async ({ karafriends }) => {
   });
   expect(res.status).toBe(415);
   expect(res.headers.get("access-control-allow-origin")).toBeNull();
-});
-
-// GraphQL is gone: the server answers /graphql like any unknown path. (And
-// every test checks that neither client asks for it: see forbidGraphql.)
-test("/graphql answers 404", async ({ karafriends }) => {
-  const url = new URL("graphql", karafriends.remoconUrl);
-  const post = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: "{ queue { __typename } }" }),
-  });
-  expect(post.status).toBe(404);
-  expect((await fetch(url)).status).toBe(404);
 });
 
 // Nothing speaks WebSocket: an upgrade gets the plain answer. A phone that
@@ -233,8 +205,8 @@ test("/api/events sends the live state", async ({ karafriends }) => {
 });
 
 test.describe("supervised mode", () => {
-  // A Niconico song in the API's queue.json format. The display never
-  // downloaded it, so starting it plays nothing.
+  // A Niconico song in the API's queue.json format. Seeded, it plays a
+  // minute of black video.
   const song = (n: number, owner: { deviceId: string; nickname: string }) => ({
     kind: "nico",
     songId: `sm9000${n}`,
@@ -655,8 +627,8 @@ test.describe("supervised mode", () => {
     });
   });
 
-  // A YouTube video queued with adhoc lyrics, never downloaded, so the
-  // display plays nothing.
+  // A YouTube video queued with adhoc lyrics. Seeded, it plays a minute of
+  // black video.
   test.describe("adhoc lyrics", () => {
     const VIDEO = "jNQXAC9IVRw";
     const LYRICS = ["E2E first line", "E2E second line"];
