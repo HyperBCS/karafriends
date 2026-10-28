@@ -51,38 +51,9 @@ function SongOutputSetting(props: {
   output: SongOutput | null;
   onChange: (output: SongOutput | null) => void;
 }) {
-  const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
-  useEffect(() => {
-    const list = () =>
-      navigator.mediaDevices.enumerateDevices().then(
-        (devices) =>
-          setOutputs(
-            devices
-              // "default" and "communications" are the system's choices:
-              // System default stands for them.
-              .filter(
-                ({ kind, deviceId }) =>
-                  kind === "audiooutput" &&
-                  deviceId !== "default" &&
-                  deviceId !== "communications",
-              )
-              .map(({ deviceId, label }) => ({
-                id: deviceId,
-                label: label || "Unnamed output",
-              })),
-          ),
-        () => setOutputs([]),
-      );
-    list();
-    navigator.mediaDevices.addEventListener("devicechange", list);
-    return () =>
-      navigator.mediaDevices.removeEventListener("devicechange", list);
-  }, []);
+  const outputs = useOutputs();
   const { output } = props;
-  const missing =
-    output !== null &&
-    outputs !== null &&
-    !outputs.some(({ id }) => id === output.id);
+  const missing = isMissing(output, outputs);
   return (
     <label className="kfLabel">
       Song output
@@ -111,23 +82,71 @@ function SongOutputSetting(props: {
   );
 }
 
+// Whether a saved output isn't among the listed ones (null while the list
+// hasn't come yet).
+function isMissing(output: SongOutput | null, outputs: SongOutput[] | null) {
+  return (
+    output !== null &&
+    outputs !== null &&
+    !outputs.some(({ id }) => id === output.id)
+  );
+}
+
+// The outputs as Chromium lists them, listed again as devices come and go;
+// null until the first list.
+function useOutputs() {
+  const [outputs, setOutputs] = useState<SongOutput[] | null>(null);
+  useEffect(() => {
+    const list = () =>
+      navigator.mediaDevices.enumerateDevices().then(
+        (devices) =>
+          setOutputs(
+            devices
+              // "default" and "communications" are the system's choices:
+              // System default stands for them.
+              .filter(
+                ({ kind, deviceId }) =>
+                  kind === "audiooutput" &&
+                  deviceId !== "default" &&
+                  deviceId !== "communications",
+              )
+              .map(({ deviceId, label }) => ({
+                id: deviceId,
+                label: label || "Unnamed output",
+              })),
+          ),
+        () => setOutputs([]),
+      );
+    list();
+    navigator.mediaDevices.addEventListener("devicechange", list);
+    return () =>
+      navigator.mediaDevices.removeEventListener("devicechange", list);
+  }, []);
+  return outputs;
+}
+
 // Where the songs play while it isn't the chosen output: looked at again
-// every tick, as the output can go and come back while Settings is open.
+// every tick, as the output can go and come back while Settings is open. A
+// chosen output that isn't listed "is connected" later, whether the songs
+// play on the default meanwhile or silently (a machine with no output at
+// all); one that is listed but lost "went away".
 function SongOutputPlace(props: {
   output: SongOutput | null;
   place: () => OutputPlace;
 }) {
   useTick();
+  const outputs = useOutputs();
   const place = props.place();
   const name = props.output?.label ?? "System default";
   if (place === "chosen" || (place === "default" && !props.output)) {
     return null;
   }
+  const where = place === "silent" ? "silently" : "on System default";
   return (
     <p className="settingsHint" role="status">
-      {place === "silent"
+      {place === "silent" && !isMissing(props.output, outputs)
         ? `${name} went away: the songs play silently until it's back.`
-        : `The songs play on System default until ${name} is connected.`}
+        : `The songs play ${where} until ${name} is connected.`}
     </p>
   );
 }

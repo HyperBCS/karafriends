@@ -288,11 +288,12 @@ test("the songs' output can be picked; a saved one that isn't connected says so"
     "E2E Gone (not connected)",
   );
   // Kept, to be used once it's listed, and said where the songs play
-  // meanwhile.
+  // meanwhile: on the default output, or silently where the machine has no
+  // output at all (CI).
   const sound = display.getByRole("region", { name: "Sound", exact: true });
   await expect(
     sound.getByText(
-      "The songs play on System default until E2E Gone is connected.",
+      /^The songs play (on System default|silently) until E2E Gone is connected\.$/,
     ),
   ).toBeVisible();
   await output.selectOption("System default");
