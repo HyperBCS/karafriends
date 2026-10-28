@@ -18,7 +18,7 @@ import { youtubeVideoId as parseYoutubeVideoId } from "../videoLink";
 // What the row that opened a DAM song's page tells it (router state): the
 // artist's reading, which DAM's song details don't give. Opened any other
 // way, the artist shows as written.
-export interface SongPageState {
+interface SongPageState {
   artistNameYomi?: string;
 }
 
