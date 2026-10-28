@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router";
 
 import { useLiveState } from "../../../common/apiClient";
+import { getItem, setItem } from "../../../common/storage";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
 import songLink from "../../songLink";
@@ -15,13 +16,11 @@ import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
 // so it stays as it was across a reload.
 function useStoredFlag(key: string): [boolean, (value: boolean) => void] {
-  const [value, setValue] = useState(
-    () => localStorage.getItem(key) === "true",
-  );
+  const [value, setValue] = useState(() => getItem(key) === "true");
   return [
     value,
     (next) => {
-      localStorage.setItem(key, String(next));
+      setItem(key, String(next));
       setValue(next);
     },
   ];

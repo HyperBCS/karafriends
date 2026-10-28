@@ -9,6 +9,7 @@ import {
   type QueueSongInput,
   type VocalType,
 } from "../../common/api";
+import { getItem, setItem } from "../../common/storage";
 import useDownloadButtonText, {
   DOWNLOADING,
   downloadButtonLabel,
@@ -97,22 +98,12 @@ const LYRICS_MODE_KEY = "lyricsMode";
 // The phone's choice of how Joysound lyrics show on the TV (in the
 // settings, under "On the TV"), kept in localStorage; kana without one.
 export function savedLyricsMode(): LyricsMode {
-  let saved: string | null = null;
-  try {
-    saved = localStorage.getItem(LYRICS_MODE_KEY);
-  } catch {
-    // Storage blocked: the default.
-  }
+  const saved = getItem(LYRICS_MODE_KEY);
   return LYRICS_MODES.find((mode) => mode === saved) ?? "kana";
 }
 
-export function saveLyricsMode(mode: LyricsMode) {
-  try {
-    localStorage.setItem(LYRICS_MODE_KEY, mode);
-  } catch {
-    // Not saved; the song page still starts at kana.
-  }
-}
+export const saveLyricsMode = (mode: LyricsMode) =>
+  setItem(LYRICS_MODE_KEY, mode);
 
 // Kana, romaji or both: on a Joysound song's page, and in the settings.
 export const LyricsModeChoice = (props: {

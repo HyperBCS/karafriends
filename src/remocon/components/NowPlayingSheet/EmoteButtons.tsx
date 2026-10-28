@@ -1,22 +1,37 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import { useApiMutation } from "../../../common/apiQueries";
+import { getItem, setItem } from "../../../common/storage";
 import { t } from "../../i18n";
 import { MdEdit } from "../../icons";
 import { IconButton } from "../ui";
 import * as styles from "./NowPlayingSheet.module.scss";
 
 const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
+const EMOTES_KEY = "emotes";
+
+// The phone's own list, or the defaults.
+function savedEmotes(): string[] {
+  try {
+    const saved: unknown = JSON.parse(getItem(EMOTES_KEY) ?? "null");
+    if (
+      Array.isArray(saved) &&
+      saved.length > 0 &&
+      saved.every((emote) => typeof emote === "string")
+    ) {
+      return saved;
+    }
+  } catch {
+    // Not JSON: the defaults.
+  }
+  return DEFAULT_EMOTES;
+}
 
 // Emotes that float up the display, sent again and again while held. The
 // phone keeps its own list.
 const EmoteButtons = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [emotes, setEmotes] = useState<string[]>(() =>
-    JSON.parse(
-      localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES),
-    ),
-  );
+  const [emotes, setEmotes] = useState(savedEmotes);
   // Sent again every 200 ms while held, so sent ones needn't be kept.
   const { mutate: sendEmote } = useApiMutation("sendEmote", {
     gcTime: 0,
@@ -44,7 +59,7 @@ const EmoteButtons = () => {
     const emojis =
       input.match(/\p{Emoji_Presentation}|\p{Emoji}️/gu) || DEFAULT_EMOTES;
     const uniqueEmojis = [...new Set(emojis)];
-    localStorage.setItem("emotes", JSON.stringify(uniqueEmojis));
+    setItem(EMOTES_KEY, JSON.stringify(uniqueEmojis));
     setEmotes(uniqueEmojis);
   };
 

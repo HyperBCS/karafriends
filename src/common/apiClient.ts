@@ -16,6 +16,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 import {
   ADMIN_TOKEN_HEADER,
@@ -29,6 +30,7 @@ import {
   type LiveState,
 } from "./api";
 import type { ApiResponse, DisplayApi } from "./ipc";
+import { getItem, removeItem, setItem } from "./storage";
 
 // The display window's IPC transport, from its preload. Phones have none.
 function displayApi(): DisplayApi | null {
@@ -38,35 +40,31 @@ function displayApi(): DisplayApi | null {
 // Where a phone keeps its admin session token, once signed in.
 export const ADMIN_TOKEN_KEY = "adminToken";
 
-function storedIdentity(): {
-  deviceId: string | null;
-  nickname: string | null;
-  adminToken: string | null;
-} {
-  try {
-    return {
-      deviceId: localStorage.getItem("deviceId") || null,
-      nickname: localStorage.getItem("nickname") || null,
-      adminToken: localStorage.getItem(ADMIN_TOKEN_KEY) || null,
-    };
-  } catch {
-    // No localStorage (blocked, or not a browser): anonymous.
-    return { deviceId: null, nickname: null, adminToken: null };
+// The phone's device ID, made on its first request and kept in
+// localStorage. (uuid, not crypto.randomUUID: phones load the remote over
+// plain http, where that isn't there.) With storage blocked, one ID for as
+// long as the page is open (see storage.ts).
+export function deviceId(): string {
+  let id = getItem("deviceId");
+  if (!id) {
+    id = uuidv4();
+    setItem("deviceId", id);
   }
+  return id;
 }
 
 // Who is asking, for the server's checks: a phone's device ID and nickname
 // (percent-encoded, since a nickname may not be ASCII), and its admin token
 // once it has signed in.
 export function identityHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const { deviceId, nickname, adminToken } = storedIdentity();
-  if (deviceId) {
-    headers[IDENTITY_HEADERS.deviceId] = encodeURIComponent(deviceId);
-  }
+  const headers: Record<string, string> = {
+    [IDENTITY_HEADERS.deviceId]: encodeURIComponent(deviceId()),
+  };
+  const nickname = getItem("nickname");
   if (nickname) {
     headers[IDENTITY_HEADERS.nickname] = encodeURIComponent(nickname);
   }
+  const adminToken = storedAdminToken();
   if (adminToken) {
     headers[ADMIN_TOKEN_HEADER] = encodeURIComponent(adminToken);
   }
@@ -75,7 +73,7 @@ export function identityHeaders(): Record<string, string> {
 
 // The phone's admin token, or null.
 export function storedAdminToken(): string | null {
-  return storedIdentity().adminToken;
+  return getItem(ADMIN_TOKEN_KEY) || null;
 }
 
 const adminTokenListeners = new Set<() => void>();
@@ -88,14 +86,10 @@ export function onAdminTokenChange(listener: () => void): () => void {
 }
 
 function storeAdminToken(token: string | null) {
-  try {
-    if (token) {
-      localStorage.setItem(ADMIN_TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(ADMIN_TOKEN_KEY);
-    }
-  } catch {
-    // No localStorage: the phone can't stay signed in.
+  if (token) {
+    setItem(ADMIN_TOKEN_KEY, token);
+  } else {
+    removeItem(ADMIN_TOKEN_KEY);
   }
   for (const listener of adminTokenListeners) listener();
 }
@@ -301,10 +295,7 @@ export function openLiveStream(
   let stopped = false;
 
   const connect = () => {
-    // Read now, not when the page rendered: the remote stores a new phone's
-    // device ID in an effect, which runs before the one that opens this.
-    const { deviceId } = storedIdentity();
-    const current = new EventSource(eventsUrl(deviceId));
+    const current = new EventSource(eventsUrl(deviceId()));
     source = current;
     current.onopen = onOpen;
     current.onmessage = (message) => {
