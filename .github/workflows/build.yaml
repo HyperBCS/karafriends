@@ -14,8 +14,9 @@ permissions:
 #   Cargo workspace is in native/, hence `workspaces: native`). The toolchain
 #   action's own cache is off: it looks for Cargo.toml at the repo root, finds
 #   none, and saved only ~/.cargo/bin.
-# - setup-rust-toolchain sets RUSTFLAGS to "-D warnings" unless RUSTFLAGS is
-#   already set.
+# - setup-rust-toolchain fails the build on warnings through cargo's
+#   build.warnings (CARGO_BUILD_WARNINGS=deny), not RUSTFLAGS, which it
+#   leaves alone.
 # - Each job stops after an hour, and each run of the unit tests after 10
 #   minutes: a test that hangs fails the run instead of holding a runner for
 #   GitHub's 6 hours.
@@ -31,7 +32,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           components: clippy
@@ -57,7 +58,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           target: x86_64-apple-darwin
@@ -81,7 +82,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           components: clippy
@@ -145,12 +146,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Before stable, so stable stays the default.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: ${{ env.CAREFUL_NIGHTLY }}
           components: rust-src
           cache: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           components: clippy, rustfmt
