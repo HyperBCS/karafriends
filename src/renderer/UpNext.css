@@ -23,7 +23,14 @@
   color: var(--kf-muted);
 }
 
-/* The idle screen: a row per song, title over artist over singer and ETA. */
+/* The idle screen: a row per song, title over artist over singer and ETA,
+   beside the QR code. */
+.upNext-rows {
+  flex: 1;
+  min-width: 0;
+  max-width: 900px;
+}
+
 .upNext-rows .upNextHeading {
   margin-bottom: var(--kf-space-4);
   font-size: var(--kf-text-heading);

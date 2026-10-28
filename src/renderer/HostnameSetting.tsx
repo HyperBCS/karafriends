@@ -7,9 +7,9 @@ import "./global";
 // with the remote's port: "karafriends.local:8080".
 export default function HostnameSetting(props: {
   hostname: string;
-  port: number;
   onChange: (hostname: string) => void;
 }) {
+  const port = window.karafriends.remoconPort();
   const names = [HOSTNAME, ...window.karafriends.ipAddresses()];
   return (
     <label className="kfLabel">
@@ -20,7 +20,7 @@ export default function HostnameSetting(props: {
         onChange={(event) => props.onChange(event.target.value)}
       >
         {names.map((name) => (
-          <option key={name} value={`${name}:${props.port}`}>
+          <option key={name} value={`${name}:${port}`}>
             {name}
           </option>
         ))}

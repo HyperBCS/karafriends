@@ -8,7 +8,6 @@ import {
   type ToolsStatus,
 } from "../common/api";
 import { call } from "../common/apiClient";
-import { DEFAULT_CONFIG } from "../common/configSchema";
 import "./global";
 import HostnameSetting from "./HostnameSetting";
 import MicrophoneSetting from "./MicrophoneSetting";
@@ -25,15 +24,6 @@ interface Message {
   text: string;
   list?: string[];
   tone?: "busy" | "problem";
-}
-
-// A fresh config.yaml's usernames and proxy settings are placeholders,
-// which show as empty fields.
-function shown(
-  key: "damUsername" | "joysoundEmail" | "proxyHost" | "proxyUser",
-  value: string,
-): string {
-  return value === DEFAULT_CONFIG[key] ? "" : value;
 }
 
 // A text or number field that saves when the host leaves it or presses
@@ -80,10 +70,11 @@ function TextSetting(props: {
 }
 
 // A checkbox that saves at once, and shows the new state while it does.
+// onChange says whether it saved; if not, the box goes back.
 function Checkbox(props: {
   label: string;
   checked: boolean;
-  onChange: (checked: boolean) => void;
+  onChange: (checked: boolean) => Promise<boolean>;
 }) {
   const [checked, setChecked] = useState(props.checked);
   const [saved, setSaved] = useState(props.checked);
@@ -98,7 +89,9 @@ function Checkbox(props: {
         checked={checked}
         onChange={(event) => {
           setChecked(event.target.checked);
-          props.onChange(event.target.checked);
+          void props.onChange(event.target.checked).then((ok) => {
+            if (!ok) setChecked(props.checked);
+          });
         }}
       />
       {props.label}
@@ -181,9 +174,9 @@ export default function Settings(props: {
   }, []);
 
   // Runs task after the ones before it, and shows what it says (or its
-  // error) under the section.
-  const act = (section: Section, task: () => Promise<Message | null>) => {
-    chain.current = chain.current.then(async () => {
+  // error) under the section. Settles when it has.
+  const act = (section: Section, task: () => Promise<Message | null>) =>
+    (chain.current = chain.current.then(async () => {
       try {
         say(section, await task());
       } catch (err) {
@@ -192,18 +185,21 @@ export default function Settings(props: {
           tone: "problem",
         });
       }
-    });
-  };
+    }));
 
-  const save = (section: Section, changes: SettingsChanges) =>
-    act(section, async () => {
+  // Whether it saved.
+  const save = (section: Section, changes: SettingsChanges) => {
+    let saved = false;
+    return act(section, async () => {
       const result = await call("setSettings", { settings: changes });
       if (!result.ok) {
         return { text: result.problems.join(" "), tone: "problem" };
       }
+      saved = true;
       await reload();
       return { text: "Saved." };
-    });
+    }).then(() => saved);
+  };
 
   // A whole number, or a message saying it isn't one.
   const saveNumber = (
@@ -324,7 +320,6 @@ export default function Settings(props: {
       service === "dam"
         ? (["damUsername", "damPassword", "Username"] as const)
         : (["joysoundEmail", "joysoundPassword", "Email"] as const);
-    const user = shown(userKey, settings[userKey]);
     return (
       <SettingsSection
         title={`${SERVICE_NAMES[service]} login`}
@@ -333,7 +328,7 @@ export default function Settings(props: {
         <div className="settingsFields">
           <TextSetting
             label={userLabel}
-            value={user}
+            value={settings[userKey]}
             onCommit={(value) => save(service, { [userKey]: value })}
           />
           <TextSetting
@@ -355,8 +350,6 @@ export default function Settings(props: {
       </SettingsSection>
     );
   };
-
-  const port = window.karafriends.remoconPort();
 
   return (
     <div className="settings" role="dialog" aria-label="Settings">
@@ -470,7 +463,7 @@ export default function Settings(props: {
           <div className="settingsFields">
             <TextSetting
               label="Proxy host"
-              value={shown("proxyHost", settings.proxyHost)}
+              value={settings.proxyHost}
               onCommit={(value) => save("network", { proxyHost: value })}
             />
             <TextSetting
@@ -483,7 +476,7 @@ export default function Settings(props: {
             />
             <TextSetting
               label="Proxy username"
-              value={shown("proxyUser", settings.proxyUser)}
+              value={settings.proxyUser}
               onCommit={(value) => save("network", { proxyUser: value })}
             />
             <TextSetting
@@ -518,7 +511,6 @@ export default function Settings(props: {
           </p>
           <HostnameSetting
             hostname={props.hostname}
-            port={port}
             onChange={props.onHostnameChange}
           />
         </SettingsSection>
