@@ -23,8 +23,98 @@ test("the remote opens on the search screen", async ({ remote }) => {
       remote.getByRole("tablist", { name: group }).getByRole("tab"),
     ).toHaveText([...tabs]);
   }
-  await expect(remote.getByRole("link", { name: "Profile" })).toBeVisible();
-  await expect(remote.getByRole("link", { name: "History" })).toBeVisible();
+  // The empty search screen has no History row: the top bar has it.
+  await expect(remote.getByRole("main").getByRole("link")).toHaveCount(0);
+});
+
+// Home, History and Profile: the top bar's three, in that order.
+const PLACES = ["Home", "History", "Profile"] as const;
+const places = (page: Page) =>
+  page
+    .getByRole("banner")
+    .getByRole("link", { name: /^(Home|History|Profile)$/ });
+
+// "#1cb3ff" as getComputedStyle gives a color: "rgb(28, 179, 255)".
+// (The build may shorten a custom property's "#666666" to "#666".)
+const rgb = (hex: string) => {
+  const digits =
+    hex.length === 4 ? hex.slice(1).replace(/./g, "$&$&") : hex.slice(1);
+  const n = parseInt(digits, 16);
+  return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+
+test("the top bar has Home, History and Profile in the same place on every screen", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: {
+        ...damSong(1),
+        lyricsPreview: null,
+        vocalTypes: ["NORMAL"],
+        tieUp: null,
+        playtime: 200,
+      },
+    }),
+  );
+  let first: unknown;
+  for (const [hash, current] of [
+    ["#/", "Home"],
+    ["#/history", "History"],
+    ["#/profile", "Profile"],
+    ["#/song/e2e-1", null],
+  ] as const) {
+    await remote.goto(new URL(hash, karafriends.remoconUrl).href);
+    const buttons = places(remote);
+    await expect(buttons).toHaveCount(3);
+    for (const [i, name] of PLACES.entries()) {
+      const button = buttons.nth(i);
+      await expect(button).toHaveAccessibleName(name);
+      if (name === current) {
+        await expect(button).toHaveAttribute("aria-current", "page");
+      } else {
+        await expect(button).not.toHaveAttribute("aria-current");
+      }
+    }
+    const boxes = await Promise.all(
+      [0, 1, 2].map((i) => buttons.nth(i).boundingBox()),
+    );
+    for (const box of boxes) {
+      expect([box!.width, box!.height], hash).toEqual([44, 44]);
+    }
+    // Where they were on the first screen.
+    first ??= boxes;
+    expect(boxes, hash).toEqual(first);
+    // Back on the left, except on the search screen.
+    await expect(remote.getByRole("banner").getByLabel("Back")).toHaveCount(
+      current === "Home" ? 0 : 1,
+    );
+    if (current) {
+      // In the accent, and a tap stays put.
+      const button = buttons.nth(PLACES.indexOf(current));
+      const accent = await remote.evaluate(() =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--kf-accent")
+          .trim(),
+      );
+      await expect(button).toHaveCSS("color", rgb(accent));
+      const before = remote.url();
+      await button.click();
+      await expect(remote.getByRole("main")).toBeVisible();
+      expect(remote.url()).toBe(before);
+    }
+  }
+});
+
+test("History in the top bar opens the history", async ({ remote }) => {
+  await places(remote).nth(1).click();
+  await expect(remote.getByRole("heading", { name: "History" })).toBeVisible();
+  await expect(remote).toHaveURL(/#\/history$/);
+  await places(remote).nth(0).click();
+  await expect(
+    remote.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
 });
 
 test("a new phone picks a nickname before anything else", async ({
@@ -36,8 +126,16 @@ test("a new phone picks a nickname before anything else", async ({
   await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
   const nickname = page.getByLabel("Nickname");
   await expect(nickname).toBeFocused();
-  // Nothing else until it has one: no profile button, no sheet.
-  await expect(page.getByRole("link", { name: "Profile" })).toHaveCount(0);
+  // Nothing else until it has one: the top bar's three are there but
+  // disabled, there's no way back, and no sheet.
+  await expect(places(page)).toHaveCount(3);
+  for (const [i, name] of PLACES.entries()) {
+    const button = places(page).nth(i);
+    await expect(button).toHaveAccessibleName(name);
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).not.toHaveAttribute("href");
+  }
+  await expect(page.getByLabel("Back")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Now playing" })).toHaveCount(
     0,
   );
@@ -72,6 +170,70 @@ test("the language toggle switches the remote to Japanese", async ({
   await remote.getByRole("button", { name: "戻る" }).click();
   await expect(remote.getByRole("heading", { name: "曲を探す" })).toBeVisible();
   await expect(remote.locator("html")).toHaveAttribute("lang", "ja");
+});
+
+test("the Theme setting picks light, dark, or the phone's mode", async ({
+  remote,
+}) => {
+  const html = remote.locator("html");
+  const body = remote.locator("body");
+  const LIGHT = "rgb(245, 245, 245)";
+  const DARK = "rgb(18, 18, 18)";
+  const tab = (name: string) =>
+    remote
+      .getByRole("tablist", { name: "Theme" })
+      .getByRole("tab", { name, exact: true });
+
+  // Auto at first, following the phone's mode as it changes.
+  await remote.emulateMedia({ colorScheme: "light" });
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await expect(body).toHaveCSS("background-color", LIGHT);
+  await remote.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await expect(remote.getByRole("tablist", { name: "Theme" })).toBeVisible();
+  await expect(
+    remote.getByRole("tablist", { name: "Theme" }).getByRole("tab"),
+  ).toHaveText(["Light", "Dark", "Auto"]);
+  await expect(tab("Auto")).toHaveAttribute("aria-selected", "true");
+
+  // Light stays light in dark mode, and the sheet and the top bar go with
+  // it.
+  await tab("Light").click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await expect(body).toHaveCSS("background-color", LIGHT);
+  await expect(remote.getByRole("banner").locator("div").first()).toHaveCSS(
+    "background-color",
+    LIGHT,
+  );
+  await expect(remote.getByRole("region", { name: "Now playing" })).toHaveCSS(
+    "background-color",
+    "rgb(235, 235, 235)",
+  );
+  expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
+    "light",
+  );
+
+  // Dark stays dark in light mode, and after a reload.
+  await tab("Dark").click();
+  await remote.emulateMedia({ colorScheme: "light" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+  await remote.reload();
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(tab("Dark")).toHaveAttribute("aria-selected", "true");
+
+  // Auto follows the phone again.
+  await tab("Auto").click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await remote.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", DARK);
+  expect(await remote.evaluate(() => localStorage.getItem("theme"))).toBe(
+    "auto",
+  );
 });
 
 // DAM and Joysound only answer Japanese IPs, so the remote's searches and
@@ -234,8 +396,11 @@ test("Home on a song page goes to the search screen", async ({
   karafriends,
   remote,
 }) => {
-  // Not on the search screen itself.
-  await expect(remote.getByRole("link", { name: "Home" })).toHaveCount(0);
+  // On the search screen itself, it's the current screen's.
+  await expect(remote.getByRole("link", { name: "Home" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await remote.route("**/api/damSong", (route) =>
     route.fulfill({
       json: {
@@ -356,6 +521,23 @@ test("the playback controls fit on a narrow phone", async ({ remote }) => {
     .getAttribute("aria-controls");
   const first = remote.getByRole("button", { name: "Show emotes" });
   const last = remote.getByRole("button", { name: "Raise the key" });
+  // Every control in the row, the key included, is one 44px square with
+  // one 28px icon size.
+  const row = [
+    "Show emotes",
+    "Restart",
+    "Play",
+    "Skip",
+    "Lower the key",
+    "Raise the key",
+  ].map((name) => remote.getByRole("button", { name, exact: true }));
+  for (const control of [...row, remote.getByRole("status", { name: "Key" })]) {
+    const box = (await control.boundingBox())!;
+    expect([box.width, box.height]).toEqual([44, 44]);
+  }
+  for (const control of row) {
+    await expect(control).toHaveCSS("font-size", "28px");
+  }
   for (const width of [360, 320]) {
     await remote.setViewportSize({ width, height: 700 });
     // One row, inside the screen, and nothing to scroll sideways.
@@ -373,6 +555,84 @@ test("the playback controls fit on a narrow phone", async ({ remote }) => {
       `${width}px`,
     ).toBe(false);
   }
+});
+
+test.describe("the now-playing bar", () => {
+  const NICKNAME_LONG = "someone with a really very long nickname";
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "nico",
+          songId: "sm60002",
+          name: "E2E playing song with a title long enough to need cutting short",
+          artistName: "E2E artist",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-someone", nickname: NICKNAME_LONG },
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("is one toggle: title, artist, and the singer's whole nickname", async ({
+    remote,
+  }) => {
+    const sheet = remote.getByRole("region", { name: "Now playing" });
+    const bar = sheet.getByRole("button").first();
+    const title = bar.getByText(/^E2E playing song/);
+    // The display starts it within 5 seconds.
+    await expect(title).toBeVisible({ timeout: 15_000 });
+    await expect(bar).toHaveAttribute("aria-expanded", "false");
+    await expect(bar).toHaveAccessibleName(/E2E playing song.*Show queue/);
+    await expect(sheet.getByRole("button")).toHaveCount(1);
+
+    // Title over artist; the singer on the right, the nickname whole as
+    // far as the bar allows, cut after the title is.
+    const artist = bar.getByText("E2E artist", { exact: true });
+    const nickname = bar.getByText(NICKNAME_LONG);
+    const [t, a, n] = await Promise.all(
+      [title, artist, nickname].map(async (el) => (await el.boundingBox())!),
+    );
+    expect(a.y).toBeGreaterThan(t.y);
+    expect(n.x).toBeGreaterThan(t.x + t.width);
+    const cut = (el: Locator) =>
+      el.evaluate((node) => node.scrollWidth > node.clientWidth);
+    expect(await cut(title)).toBe(true);
+    await expect(nickname).toHaveCSS("text-overflow", "ellipsis");
+    const muted = await remote.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--kf-muted")
+        .trim(),
+    );
+    await expect(nickname).toHaveCSS("color", rgb(muted));
+
+    // A tap anywhere on it opens the sheet: on the title, then on the
+    // singer to close it, then on the arrow.
+    await title.click();
+    await expect(bar).toHaveAttribute("aria-expanded", "true");
+    await expect(bar).toHaveAccessibleName(/Hide queue/);
+    const queue = sheet.getByRole("region", { name: "Queue" });
+    await expect(queue).toBeVisible();
+    await nickname.click();
+    await expect(bar).toHaveAttribute("aria-expanded", "false");
+    await expect(queue).toBeHidden();
+    await bar.getByRole("img", { name: "Show queue" }).click();
+    await expect(bar).toHaveAttribute("aria-expanded", "true");
+
+    // The current row says the same: title, artist, the singer on the
+    // right.
+    const current = queue.getByRole("listitem").first();
+    await expect(current.getByRole("link")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(current).toContainText(NICKNAME_LONG);
+    await expect(current).not.toContainText("Now playing");
+  });
 });
 
 // Picking a background video changes the song page's address in place. Back
@@ -1193,46 +1453,32 @@ test.describe("the guide melody slider", () => {
   const PASSWORD = "e2e guide melody";
   test.use({ appConfig: adminPasswordConfig(PASSWORD) });
 
-  test("shows during a Joysound song, disabled for a guest; an admin sets the level", async ({
+  test("is in the profile's Admin section for an admin only, always enabled", async ({
     karafriends,
     remote,
   }) => {
-    const { app, remoconUrl } = karafriends;
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    const { remoconUrl } = karafriends;
     const slider = remote.getByRole("slider", { name: "Guide melody" });
+    // Not in the playback controls any more.
+    await remote.getByRole("button", { name: "Show queue" }).click();
     await expect(remote.getByText("Nothing playing")).toBeVisible();
+    await expect(
+      remote.getByRole("button", { name: "Raise the key" }),
+    ).toBeVisible();
     await expect(slider).toHaveCount(0);
 
-    await fakeJoysoundDownload(app, "e2e-melody");
-    const res = await fetch(new URL("api/queueSong", remoconUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Karafriends-Device-Id": "e2e-someone",
-        "X-Karafriends-Nickname": "someone",
-      },
-      body: JSON.stringify({
-        kind: "joysound",
-        songId: "e2e-melody",
-        name: "E2E melody song",
-        artistName: "E2E artist",
-        lyricsMode: "kana",
-        youtubeVideoId: null,
-      }),
-    });
-    expect(res.status).toBe(200);
-
-    // The display starts it at once.
-    await expect(slider).toBeVisible({ timeout: 15_000 });
-    await expect(slider).toBeDisabled();
-    await expect(slider).toHaveValue("0");
-
+    // A guest's profile: the sign-in, no slider.
     await remote.getByRole("link", { name: "Profile" }).click();
+    await expect(remote.getByLabel("Admin password")).toBeVisible();
+    await expect(slider).toHaveCount(0);
+
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
     await expect(remote.getByText("You're an admin")).toBeVisible();
 
+    // With nothing playing, as with anything else.
     await expect(slider).toBeEnabled();
+    await expect(slider).toHaveValue("0");
     expect((await slider.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await slider.fill("0.7");
     await expect
@@ -1263,6 +1509,11 @@ test.describe("the guide melody slider", () => {
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(level);
     await expect(slider).toHaveValue(String(level));
+
+    // Signed out, it goes.
+    await remote.getByRole("button", { name: "Sign out" }).click();
+    await expect(remote.getByLabel("Admin password")).toBeVisible();
+    await expect(slider).toHaveCount(0);
   });
 });
 
@@ -1276,7 +1527,7 @@ async function pickReadings(remote: Page, choice: string) {
   await remote.getByRole("button", { name: "Back" }).click();
 }
 
-test("the Readings setting shows DAM's readings in the search rows", async ({
+test("the Readings setting puts DAM's readings in place of the search rows' text", async ({
   remote,
 }) => {
   // As the real DAM answers: readings in hiragana. Joysound gives none.
@@ -1311,10 +1562,15 @@ test("the Readings setting shows DAM's readings in the search rows", async ({
     .getByRole("link");
   const joysound = "恋Joysound星野源";
   await expect(results).toHaveText(["恋DAM星野 源", joysound]);
+  // The choices: no "Both" any more.
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await expect(
+    remote.getByRole("tablist", { name: "Readings" }).getByRole("tab"),
+  ).toHaveText(["Written", "Kana", "Romaji"]);
+  await remote.getByRole("button", { name: "Back" }).click();
   for (const [choice, dam] of [
-    ["Kana", "恋こいDAM星野 源 ほしのげん"],
-    ["Romaji", "恋koiDAM星野 源 hoshinogen"],
-    ["Both", "恋こい · koiDAM星野 源 ほしのげん · hoshinogen"],
+    ["Kana", "こいDAMほしのげん"],
+    ["Romaji", "koiDAMhoshinogen"],
     ["Written", "恋DAM星野 源"],
   ]) {
     await pickReadings(remote, choice);
@@ -1323,6 +1579,79 @@ test("the Readings setting shows DAM's readings in the search rows", async ({
   expect(await remote.evaluate(() => localStorage.getItem("readings"))).toBe(
     "written",
   );
+
+  // An artist search too.
+  await remote.route("**/api/damSearchArtists", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: "e2e-gen",
+            name: "星野 源",
+            nameYomi: "ほしのげん",
+            songCount: 9,
+          },
+        ],
+        nextOffset: null,
+      },
+    }),
+  );
+  await remote.route("**/api/joysoundSearchArtists", (route) =>
+    route.fulfill({ json: { items: [], nextOffset: null } }),
+  );
+  await pickReadings(remote, "Romaji");
+  await remote.getByRole("tab", { name: "Artist" }).click();
+  await expect(results).toHaveText(["hoshinogenDAM9 songs"]);
+});
+
+test("an older phone's saved Both reads as written", async ({ remote }) => {
+  await remote.evaluate(() => localStorage.setItem("readings", "both"));
+  await remote.reload();
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await expect(
+    remote
+      .getByRole("tablist", { name: "Readings" })
+      .getByRole("tab", { name: "Written" }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
+test.describe("a DAM song's page", () => {
+  test("shows the reading as its title, and the title as written under it", async ({
+    karafriends,
+    remote,
+  }) => {
+    await remote.route("**/api/damSong", (route) =>
+      route.fulfill({
+        json: {
+          id: "5860-12",
+          name: "恋",
+          nameYomi: "コイ",
+          artistName: "星野 源",
+          artistNameYomi: "",
+          lyricsPreview: null,
+          vocalTypes: ["NORMAL"],
+          tieUp: null,
+          playtime: 252,
+        },
+      }),
+    );
+    const about = remote.getByRole("main");
+    for (const [choice, title, subtitle] of [
+      // As written, the title over its kana, as before.
+      ["Written", "恋", "こい"],
+      ["Kana", "こい", "恋"],
+      ["Romaji", "koi", "恋"],
+    ]) {
+      await pickReadings(remote, choice);
+      await remote.goto(new URL("#/song/5860-12", karafriends.remoconUrl).href);
+      const heading = about.getByRole("heading", { level: 2 });
+      await expect(heading).toHaveText(title);
+      // The subtitle comes right under the title.
+      const below = heading.locator("xpath=following-sibling::p[1]");
+      await expect(below).toHaveText(subtitle);
+      await remote.goto(new URL("#/", karafriends.remoconUrl).href);
+    }
+  });
 });
 
 test.describe("a queued DAM song", () => {
@@ -1347,7 +1676,10 @@ test.describe("a queued DAM song", () => {
     },
   });
 
-  test("shows its reading in the queue", async ({ karafriends, remote }) => {
+  test("goes with the phone's readings, and shows in the queue each phone's way", async ({
+    karafriends,
+    remote,
+  }) => {
     // DAM's song details give the reading in katakana, and no artist
     // reading.
     await remote.route("**/api/damSong", (route) =>
@@ -1373,15 +1705,26 @@ test.describe("a queued DAM song", () => {
     await remote
       .getByRole("button", { name: "Queue song", exact: true })
       .click();
-    expect(await (await queued).json()).toMatchObject({ ok: true });
+    const response = await queued;
+    expect(await response.json()).toMatchObject({ ok: true });
+    // The phone's choice goes with the song, for the TV.
+    expect(response.request().postDataJSON()).toMatchObject({
+      songId: "5860-12",
+      readingsMode: "romaji",
+    });
 
     await remote.getByRole("button", { name: "Show queue" }).click();
     const row = remote
       .getByRole("region", { name: "Queue" })
       .getByRole("listitem")
       .filter({ hasText: "星野 源" });
-    await expect(row).toContainText("恋koiDAM星野 源");
-    await pickReadings(remote, "Both");
-    await expect(row).toContainText("恋こい · koiDAM星野 源");
+    // DAM's song details give no artist reading: the artist as written.
+    await expect(row).toContainText("koiDAM星野 源");
+    await expect(row).not.toContainText("恋");
+    // This phone's choice, not the one the song was queued with.
+    await pickReadings(remote, "Kana");
+    await expect(row).toContainText("こいDAM星野 源");
+    await pickReadings(remote, "Written");
+    await expect(row).toContainText("恋DAM星野 源");
   });
 });

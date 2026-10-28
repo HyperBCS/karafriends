@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { pickReadings, READINGS_KEY, type Readings } from "../readings";
+import { pickReadings, READINGS_KEY, type Readings } from "../../common/readings";
 
 // The phone's Readings setting (see readings.ts), which every row with a
 // title follows, the queue sheet's included, as soon as it changes.

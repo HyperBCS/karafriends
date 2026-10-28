@@ -56,6 +56,14 @@ const song = (
   user: { deviceId: `e2e-screenshot-${nickname}`, nickname },
 });
 
+// The artist on the now-playing bar's second line, once the song plays.
+const nowPlaying = (page: Page, artist: string) =>
+  page
+    .getByRole("region", { name: "Now playing" })
+    .getByRole("button")
+    .first()
+    .getByText(artist, { exact: true });
+
 // Phases B and C took their shots as a Pixel 7; with
 // KARAFRIENDS_E2E_WEBKIT=1, the iPhone leaves them as they are.
 const CHROMIUM_ONLY = "Phases B and C are shot in Chromium only";
@@ -391,7 +399,7 @@ test.describe("phase M2", () => {
     // (No reloads here: after one, WebKit's searches got past these.)
     await fakeCatalogs(remote);
     // The display starts the first song within 5 seconds; six wait.
-    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
 
@@ -435,7 +443,7 @@ test.describe("phase M3", () => {
   });
 
   test("the queue mid-drag", async ({ remote, browserName }) => {
-    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
     await remote.getByRole("button", { name: "Show queue" }).click();
@@ -457,7 +465,8 @@ test.describe("phase M3", () => {
   });
 });
 
-// Phase M7: search results with the Readings setting on "Both".
+// Phase M7: search results with the Readings setting on "Romaji" (the
+// polish round made the reading replace the text).
 test.describe("phase M7", () => {
   test.use({
     seedQueue: {
@@ -476,17 +485,110 @@ test.describe("phase M7", () => {
     await remote.getByRole("link", { name: "Profile" }).click();
     await remote
       .getByRole("tablist", { name: "Readings" })
-      .getByRole("tab", { name: "Both", exact: true })
+      .getByRole("tab", { name: "Romaji", exact: true })
       .click();
     await remote.getByRole("button", { name: "Back" }).click();
-    await expect(remote.getByText("黒うさP · Ken")).toBeVisible({
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
 
     const search = remote.getByRole("searchbox", { name: "Search" });
     await search.fill("恋");
     await search.blur();
-    await expect(remote.getByText("こい · koi").first()).toBeVisible();
+    await expect(
+      remote.getByText("koi", { exact: true }).first(),
+    ).toBeVisible();
     await shoot(remote, `m-readings-${browserName}`);
+  });
+});
+
+// The polish round's P2, the same way with -g "phase P2": search (readings
+// in romaji), the open sheet, the profile as an admin and a song page, in
+// the light and the dark theme: p-<screen>-<theme>-<browser>.png.
+test.describe("phase P2", () => {
+  const ADMIN_PASSWORD = "screenshots";
+  test.use({
+    appConfig: adminPasswordConfig(ADMIN_PASSWORD),
+    seedQueue: {
+      currentSong: null,
+      songQueue: QUEUE,
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  // No reloads (after one, WebKit's searches got past the fake catalogs):
+  // the profile is set by hand, the theme stays Auto and follows the
+  // emulated mode, and every screen is reached by a tap.
+  test("search, the sheet, the profile and a song page in both themes", async ({
+    remote,
+    browserName,
+  }) => {
+    await fakeCatalogs(remote);
+    // A real-looking nickname, romaji, and signed in as an admin.
+    await remote.getByRole("link", { name: "Profile" }).click();
+    await remote.getByLabel("Nickname").fill("Ken");
+    await remote.getByRole("button", { name: "Save nickname" }).click();
+    await remote
+      .getByRole("tablist", { name: "Readings" })
+      .getByRole("tab", { name: "Romaji" })
+      .click();
+    await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
+    await remote.getByRole("button", { name: "Sign in" }).click();
+    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await remote.getByRole("link", { name: "Home" }).click();
+    // The display starts the first song within 5 seconds.
+    await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
+      timeout: 15_000,
+    });
+    const bar = remote
+      .getByRole("region", { name: "Now playing" })
+      .getByRole("button")
+      .first();
+    const top = (name: string) =>
+      remote.getByRole("banner").getByRole("link", { name, exact: true });
+
+    for (const theme of ["light", "dark"] as const) {
+      await remote.emulateMedia({ colorScheme: theme });
+      await expect(remote.locator("html")).toHaveAttribute("data-theme", theme);
+      const name = (screen: string) => `p-${screen}-${theme}-${browserName}`;
+
+      const search = remote.getByRole("searchbox", { name: "Search" });
+      await search.fill("恋");
+      await search.blur();
+      await expect(
+        remote.getByRole("link", { name: /恋愛裁判/ }),
+      ).toBeVisible();
+      await shoot(remote, name("search"));
+
+      await bar.click();
+      await expect(
+        remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
+      ).toHaveCount(5);
+      await shoot(remote, name("sheet"));
+      await bar.click();
+
+      // DAM's 恋, the first result.
+      await remote
+        .getByRole("main")
+        .getByRole("link", { name: /hoshinogen/ })
+        .first()
+        .click();
+      await expect(
+        remote.getByRole("heading", { name: "koi", exact: true }),
+      ).toBeVisible();
+      await shoot(remote, name("song"));
+
+      await top("Profile").click();
+      // Scrolled down to the theme, then the admin's slider.
+      await remote
+        .getByRole("heading", { name: "Theme" })
+        .evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await expect(
+        remote.getByRole("slider", { name: "Guide melody" }),
+      ).toBeInViewport();
+      await shoot(remote, name("profile"));
+      await top("Home").click();
+    }
   });
 });

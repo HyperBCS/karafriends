@@ -155,10 +155,10 @@ const DevUiPage = () => {
   ] as const;
 
   const nowPlaying = (
-    <div className={styles.nowPlaying}>
+    <span className={styles.nowPlaying}>
       <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
       <span className={styles.nowSinger}>{SONGS.marigold.artist} · Ken</span>
-    </div>
+    </span>
   );
 
   return (

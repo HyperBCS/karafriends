@@ -2,52 +2,108 @@
 // remote comes from here (see the design brief in notes/PLAN-product.md).
 //
 // Use them in a module with `@use "<relative path>/tokens" as *;`. This file
-// emits no CSS by itself; index.scss puts the same values on :root as custom
-// properties (--kf-*) with the custom-properties mixin below, for inline
-// styles and anything outside Sass.
+// emits no CSS by itself; index.scss puts the values on :root as custom
+// properties (--kf-*) with the mixins below.
 //
-// Contrast ratios are WCAG 2 ratios against $kf-bg unless noted.
+// Colors come in two sets, a dark theme and a light one, chosen by
+// data-theme="dark" | "light" on <html> (theme.ts; the dark set without
+// it). So a color here is the custom property, var(--kf-*), never a value:
+// every component that uses $kf-text follows the theme by itself.
+//
+// Contrast ratios are WCAG 2 ratios against the page unless noted.
 
 // Colors.
 
-// Three greys, each a step lighter: the page, the surface of lists and
-// fields, and the now-playing panel. The surface is 1.5:1 against the page
-// so a list reads as one block in a dim room. The panel is as light as it
-// can be with secondary text still at 4.5:1 on it, which leaves it 1.1:1
-// above the surface; its top border and shadow set it apart the rest of the
-// way.
+// Three greys: the page, the surface of lists and fields, and the
+// now-playing panel.
+$kf-bg: var(--kf-bg);
+$kf-surface: var(--kf-surface);
+$kf-panel: var(--kf-panel);
+// A surface or the panel while pressed.
+$kf-surface-pressed: var(--kf-surface-pressed);
+// Hairlines between rows and around lists.
+$kf-border: var(--kf-border);
+// The edge of a field or an outlined button.
+$kf-border-strong: var(--kf-border-strong);
+$kf-text: var(--kf-text);
+// Secondary text: artists, ETAs, labels.
+$kf-muted: var(--kf-muted);
+// The accent: the primary action or the current item, as text, an icon, an
+// edge, an underline, the slider's thumb or the focus ring.
+$kf-accent: var(--kf-accent);
+// The accent as the fill of the primary button, under $kf-on-accent.
+$kf-accent-fill: var(--kf-accent-fill);
+$kf-accent-pressed: var(--kf-accent-pressed);
+$kf-on-accent: var(--kf-on-accent);
+// Destructive actions and errors.
+$kf-danger: var(--kf-danger);
+$kf-danger-pressed: var(--kf-danger-pressed);
+// The one shadow, for the bottom sheet only.
+$kf-shadow-sheet: var(--kf-shadow-sheet);
 
-// The page: near-black, not pure black, so the surface reads against it.
-$kf-bg: #121212;
-// Lists, fields, secondary buttons: 1.5:1.
-$kf-surface: #343434;
-// The now-playing panel: 1.65:1 (1.1:1 against the surface).
-$kf-panel: #3a3a3a;
-// A surface or the panel while pressed: 2.1:1.
-$kf-surface-pressed: #4a4a4a;
-// Hairlines between rows and around lists: 3.2:1, the 3:1 a component's
-// boundary needs (2.1:1 on the surface, 1.9:1 on the panel).
-$kf-border: #646464;
-// The edge of a field or an outlined button: 3.5:1 (2.3:1 on the surface).
-$kf-border-strong: #6b6b6b;
-// Text, 17.2:1 (11.4:1 on the surface, 10.4:1 on the panel).
-$kf-text: #f5f5f5;
-// Secondary text: artists, ETAs, labels. 7.4:1 (4.9:1 on the surface,
-// 4.5:1 on the panel).
-$kf-muted: #a3a3a3;
-// The accent: the fill of the app icon's circle (icon.png), sampled as its
-// most common opaque pixel, #1cb3ff. It means one thing: the primary action
-// or the current item. 8.0:1 as text on the page, 5.3:1 on the surface,
-// 4.8:1 on the panel. White text on it is only 2.4:1, so text on the accent
-// is $kf-on-accent.
-$kf-accent: #1cb3ff;
-$kf-accent-pressed: #1590cc;
-// Text on the accent (8.0:1) and on the danger color (6.2:1).
-$kf-on-accent: #121212;
-// Destructive actions and errors. 6.2:1 as text (4.1:1 on the surface, 3.8:1
-// on the panel: icons only there).
-$kf-danger: #ff5c5c;
-$kf-danger-pressed: #e04848;
+// The dark theme, for the dim room the remote is mostly used in.
+@mixin dark-colors {
+  // Three greys, each a step lighter. The page is near-black, not pure
+  // black, so the surface reads against it. The surface is 1.5:1 against
+  // the page so a list reads as one block in a dim room. The panel is as
+  // light as it can be with secondary text still at 4.5:1 on it, which
+  // leaves it 1.1:1 above the surface; its top border and shadow set it
+  // apart the rest of the way.
+  --kf-bg: #121212;
+  --kf-surface: #343434; // 1.5:1
+  --kf-panel: #3a3a3a; // 1.65:1 (1.1:1 against the surface)
+  --kf-surface-pressed: #4a4a4a; // 2.1:1
+  // 3.2:1, the 3:1 a component's boundary needs (2.1:1 on the surface, 1.9:1
+  // on the panel).
+  --kf-border: #646464;
+  --kf-border-strong: #6b6b6b; // 3.5:1 (2.3:1 on the surface)
+  --kf-text: #f5f5f5; // 17.2:1 (11.4:1 on the surface, 10.4:1 on the panel)
+  --kf-muted: #a3a3a3; // 7.4:1 (4.9:1 on the surface, 4.5:1 on the panel)
+  // The fill of the app icon's circle (icon.png), sampled as its most common
+  // opaque pixel, #1cb3ff. 8.0:1 as text on the page, 5.3:1 on the surface,
+  // 4.8:1 on the panel. White text on it is only 2.4:1, so text on the
+  // accent is --kf-on-accent.
+  --kf-accent: #1cb3ff;
+  --kf-accent-fill: #1cb3ff;
+  --kf-accent-pressed: #1590cc;
+  // Text on the accent (8.0:1) and on the danger color (6.2:1).
+  --kf-on-accent: #121212;
+  // 6.2:1 as text (4.1:1 on the surface, 3.8:1 on the panel: icons only
+  // there).
+  --kf-danger: #ff5c5c;
+  --kf-danger-pressed: #e04848;
+  --kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.6);
+}
+
+// The light theme: the same type, spacing, radius and accent, for a
+// bright room or a phone in light mode. The surface is white on a
+// near-white page; the panel is a step darker than the surface.
+@mixin light-colors {
+  --kf-bg: #f5f5f5;
+  --kf-surface: #ffffff; // 1.09:1
+  --kf-panel: #ebebeb; // 1.09:1 (1.19:1 against the surface)
+  --kf-surface-pressed: #e0e0e0; // 1.21:1 (1.32:1 against the surface)
+  // 3.4:1, the 3:1 a component's boundary needs (3.7:1 on the surface,
+  // 3.1:1 on the panel).
+  --kf-border: #858585;
+  --kf-border-strong: #7a7a7a; // 3.9:1 (4.3:1 on the surface, 3.6:1 panel)
+  --kf-text: #1a1a1a; // 16.0:1 (17.4:1 on the surface, 14.6:1 on the panel)
+  --kf-muted: #666666; // 5.3:1 (5.7:1 on the surface, 4.8:1 on the panel)
+  // The icon's #1cb3ff is only 2.2:1 on the page, too faint for text, an
+  // icon or the focus ring, so those take the same blue a step darker:
+  // 5.0:1 (5.5:1 on the surface, 4.6:1 on the panel, 4.1:1 pressed). The
+  // primary button keeps the icon's own fill, with the dark text on it
+  // (8.0:1).
+  --kf-accent: #006fa8;
+  --kf-accent-fill: #1cb3ff;
+  --kf-accent-pressed: #1590cc; // 5.3:1 under the dark text
+  --kf-on-accent: #121212;
+  // Icons and the error bar: 3.7:1 (4.1:1 on the surface, 3.4:1 on the
+  // panel), with 4.6:1 for the dark text on it.
+  --kf-danger: #e04848;
+  --kf-danger-pressed: #cc4444;
+  --kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.15);
+}
 
 // Spacing.
 $kf-space-1: 4px;
@@ -59,8 +115,6 @@ $kf-space-6: 32px;
 
 // Shape. One radius everywhere; borders and spacing instead of shadows.
 $kf-radius: 4px;
-// The one shadow, for the bottom sheet only.
-$kf-shadow-sheet: 0 -2px 12px rgba(0, 0, 0, 0.6);
 
 // Tap targets.
 $kf-tap: 44px;
@@ -105,21 +159,9 @@ $kf-line-height: 1.35;
   }
 }
 
-// The tokens as custom properties; index.scss includes this under :root.
+// The other tokens as custom properties, for inline styles and anything
+// outside Sass; index.scss includes this under :root.
 @mixin custom-properties {
-  --kf-bg: #{$kf-bg};
-  --kf-surface: #{$kf-surface};
-  --kf-panel: #{$kf-panel};
-  --kf-surface-pressed: #{$kf-surface-pressed};
-  --kf-border: #{$kf-border};
-  --kf-border-strong: #{$kf-border-strong};
-  --kf-text: #{$kf-text};
-  --kf-muted: #{$kf-muted};
-  --kf-accent: #{$kf-accent};
-  --kf-accent-pressed: #{$kf-accent-pressed};
-  --kf-on-accent: #{$kf-on-accent};
-  --kf-danger: #{$kf-danger};
-  --kf-danger-pressed: #{$kf-danger-pressed};
   --kf-space-1: #{$kf-space-1};
   --kf-space-2: #{$kf-space-2};
   --kf-space-3: #{$kf-space-3};
@@ -127,7 +169,6 @@ $kf-line-height: 1.35;
   --kf-space-5: #{$kf-space-5};
   --kf-space-6: #{$kf-space-6};
   --kf-radius: #{$kf-radius};
-  --kf-shadow-sheet: #{$kf-shadow-sheet};
   --kf-tap: #{$kf-tap};
   --kf-font: #{$kf-font};
   --kf-text-label: #{$kf-text-label};

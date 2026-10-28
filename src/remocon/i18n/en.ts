@@ -152,11 +152,17 @@ export const en = {
   "lyricsMode.help":
     "For Joysound songs. You can change it for one song on its page.",
 
-  // Joysound's guide melody level, in the playback controls.
+  // Joysound's guide melody level, on the profile for admins.
   "guideMelody.label": "Guide melody",
+  "guideMelody.help": "For Joysound songs.",
   "readings.label": "Readings",
   "readings.written": "Written",
   "readings.kana": "Kana",
   "readings.romaji": "Romaji",
-  "readings.both": "Both",
+
+  // The light or dark theme, on the profile.
+  "theme.label": "Theme",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+  "theme.auto": "Auto",
 } as const;

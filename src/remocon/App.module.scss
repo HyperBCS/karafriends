@@ -23,20 +23,34 @@
   padding-bottom: $kf-space-4;
 }
 
-// The profile button at the end of the top bar.
+// Home, History and Profile at the end of the top bar: the current one in
+// the accent, without a pressed state, as it does nothing.
 .iconLink {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: $kf-tap;
-  min-height: $kf-tap;
+  width: $kf-tap;
+  height: $kf-tap;
   border-radius: $kf-radius;
   color: $kf-text;
   font-size: $kf-text-icon;
   touch-action: manipulation;
 
-  @include kf-pressed {
-    background-color: $kf-surface-pressed;
+  &:not([aria-current]) {
+    @include kf-pressed {
+      background-color: $kf-surface-pressed;
+    }
+  }
+
+  &[aria-current="page"] {
+    color: $kf-accent;
+    cursor: default;
+  }
+
+  // On a first visit, until there's a nickname.
+  &[aria-disabled="true"] {
+    color: $kf-border-strong;
+    pointer-events: none;
   }
 
   @include kf-focus-visible;

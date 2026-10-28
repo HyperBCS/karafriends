@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
@@ -7,6 +7,7 @@ import {
   ApiCallError,
   useIsAdmin,
 } from "../../common/apiClient";
+import useGuideMelodyLevel from "../../common/hooks/useGuideMelodyLevel";
 import {
   LyricsModeTabs,
   saveLyricsMode,
@@ -16,7 +17,8 @@ import { Button, InlineError, Tabs, TextField } from "../components/ui";
 import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
-import { READINGS, type Readings } from "../readings";
+import { READINGS, type Readings } from "../../common/readings";
+import { currentTheme, saveTheme, THEMES, type Theme } from "../theme";
 import * as styles from "./ProfilePage.module.scss";
 
 // What to tell a guest whose sign-in failed.
@@ -84,8 +86,9 @@ const LanguagePicker = () => {
   );
 };
 
-// How this phone shows song titles and artists: as written, or with their
-// kana reading, in romaji, or both (where DAM gives a reading).
+// How this phone shows song titles and artists: as written, or in their
+// kana reading or in romaji instead (where DAM gives a reading). Songs it
+// queues show that way on the TV too.
 const ReadingsPicker = () => {
   const readings = useReadings();
   return (
@@ -96,6 +99,25 @@ const ReadingsPicker = () => {
         tabs={READINGS.map((id) => ({ id, label: t(`readings.${id}`) }))}
         selected={readings}
         onSelect={saveReadings}
+      />
+    </div>
+  );
+};
+
+// Light, dark, or as the phone is set (theme.ts).
+const ThemePicker = () => {
+  const [theme, setTheme] = useState(currentTheme);
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.heading}>{t("theme.label")}</h2>
+      <Tabs<Theme>
+        label={t("theme.label")}
+        tabs={THEMES.map((id) => ({ id, label: t(`theme.${id}`) }))}
+        selected={theme}
+        onSelect={(next) => {
+          saveTheme(next);
+          setTheme(next);
+        }}
       />
     </div>
   );
@@ -136,7 +158,48 @@ const Notifications = () => {
   );
 };
 
-// Signing in and out as an admin with the password the host set.
+// How loud Joysound's guide melody plays, for an admin, whatever is
+// playing. While the thumb is dragged it moves here only; letting go (the
+// input's change event, which a key press also fires) sends the level
+// once, so the echo of an earlier step can't pull the thumb back or settle
+// on a stale level.
+const GuideMelodySlider = () => {
+  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
+  const [held, setHeld] = useState<number | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // React's onChange is the input event, which comes with every step.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    const send = () => {
+      setGuideMelodyLevel(Number(el.value));
+      setHeld(null);
+    };
+    el.addEventListener("change", send);
+    return () => el.removeEventListener("change", send);
+  });
+
+  return (
+    <>
+      <label className={styles.guideMelody}>
+        {t("guideMelody.label")}
+        <input
+          ref={input}
+          type="range"
+          min={0}
+          max={1}
+          step={0.1}
+          value={held ?? guideMelodyLevel}
+          onChange={(e) => setHeld(Number(e.target.value))}
+        />
+      </label>
+      <p className={styles.text}>{t("guideMelody.help")}</p>
+    </>
+  );
+};
+
+// Signing in and out as an admin with the password the host set. Signed
+// in, the admin's controls: the guide melody's level.
 const Admin = () => {
   const { adminToken } = useUserIdentity();
   const isAdmin = useIsAdmin();
@@ -174,6 +237,7 @@ const Admin = () => {
         <p className={styles.text} role="status">
           {t("profile.signedIn")}
         </p>
+        <GuideMelodySlider />
         <Button variant="secondary" disabled={pending} onClick={leave}>
           {t("profile.signOut")}
         </Button>
@@ -221,8 +285,9 @@ const LyricsOnTheTv = () => {
   );
 };
 
-// The phone's nickname, language, notifications and admin sign-in. On a
-// first visit, just the nickname (and the language, to read the rest in).
+// The phone's nickname, language, readings, theme, notifications, and the
+// admin sign-in and controls. On a first visit, just the nickname (and the
+// language, to read the rest in).
 const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
   <div className={styles.profile}>
     <Nickname firstVisit={firstVisit} />
@@ -230,6 +295,7 @@ const ProfilePage = ({ firstVisit = false }: { firstVisit?: boolean }) => (
     {!firstVisit && (
       <>
         <ReadingsPicker />
+        <ThemePicker />
         <Notifications />
         <Admin />
         <LyricsOnTheTv />

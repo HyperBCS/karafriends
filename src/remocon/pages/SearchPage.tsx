@@ -5,7 +5,7 @@ import SearchResults, {
   type SearchBy,
   type SearchSource,
 } from "../components/SearchResults";
-import { List, ListRow, Tabs, TextField } from "../components/ui";
+import { Tabs, TextField } from "../components/ui";
 import { t } from "../i18n";
 import { MdSearch } from "../icons";
 import songLink from "../songLink";
@@ -123,12 +123,7 @@ const SearchPage = () => {
       {query ? (
         <SearchResults query={query} by={by} source={source} />
       ) : (
-        <>
-          <p className={styles.hint}>{t("search.linkHint")}</p>
-          <List>
-            <ListRow title={t("nav.history")} to="/history" />
-          </List>
-        </>
+        <p className={styles.hint}>{t("search.linkHint")}</p>
       )}
     </>
   );

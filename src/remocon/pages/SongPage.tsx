@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { isRomaji, toRomaji } from "wanakana";
 
 import type { JoysoundSongDetail } from "../../common/api";
 import { useApiQuery } from "../../common/apiQueries";
@@ -8,7 +7,10 @@ import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
 import { withLoader } from "../components/Loader";
 import QueueButtons from "../components/QueueButtons";
 import { Button, TextField } from "../components/ui";
+import WithReading from "../components/WithReading";
+import useReadings from "../hooks/useReadings";
 import { t } from "../i18n";
+import { reading } from "../../common/readings";
 import { searchLink } from "./SearchPage";
 import * as styles from "./SongPage.module.scss";
 import { youtubeVideoId as parseYoutubeVideoId } from "../videoLink";
@@ -21,19 +23,28 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
     id: params.id!,
   });
   const dam = "vocalTypes" in song ? song : null;
+  const readings = useReadings();
+  // Two lines: in kana or romaji, the reading over the title as written;
+  // as written, the title over its kana.
+  const shown = reading(song.name, dam?.nameYomi, readings);
+  const [title, subtitle] =
+    shown !== null
+      ? [shown, song.name]
+      : [song.name, reading(song.name, dam?.nameYomi, "kana")];
 
   return (
     <div className={styles.page}>
       <div className={styles.about}>
-        <h2 className={styles.title}>{song.name}</h2>
-        {dam && dam.nameYomi && !isRomaji(dam.name) && (
-          <p className={styles.reading}>{toRomaji(dam.nameYomi)}</p>
-        )}
+        <h2 className={styles.title}>{title}</h2>
+        {subtitle && <p className={styles.reading}>{subtitle}</p>}
         <Link
           className={styles.artist}
           to={searchLink(song.artistName, "artist", kind)}
         >
-          {song.artistName}
+          <WithReading
+            text={song.artistName}
+            yomi={dam?.artistNameYomi || undefined}
+          />
         </Link>
         <p className={styles.source}>
           {t(kind === "dam" ? "source.dam" : "source.joysound")}

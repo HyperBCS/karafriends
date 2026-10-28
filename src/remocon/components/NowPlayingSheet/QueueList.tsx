@@ -21,8 +21,18 @@ const Initial = ({ nickname }: { nickname: string }) => (
   </span>
 );
 
-const nicknameOf = (item: SharedQueueItem) =>
+export const nicknameOf = (item: SharedQueueItem) =>
   item.user.nickname || t("common.unknownUser");
+
+// Who sings the current song: the initial and the whole nickname, muted,
+// at the end of the now-playing bar and the current row. The title gives
+// way before it does; a very long nickname ends in an ellipsis.
+export const SingerBadge = ({ nickname }: { nickname: string }) => (
+  <span className={styles.singer}>
+    <Initial nickname={nickname} />
+    <span className={styles.singerName}>{nickname}</span>
+  </span>
+);
 
 // The small label: where the song comes from, and for Joysound, how its
 // lyrics show on the TV.
@@ -97,7 +107,7 @@ const QueueRow = memo(function QueueRow({
   return (
     <ListRow
       leading={<Initial nickname={nickname} />}
-      title={<WithReading text={item.name} yomi={item.nameYomi} under />}
+      title={<WithReading text={item.name} yomi={item.nameYomi} />}
       subtitle={
         expanded ? (
           queuedBy
@@ -176,12 +186,10 @@ const QueueList = () => {
           {currentSong && (
             <ListRow
               current
-              leading={<Initial nickname={nicknameOf(currentSong)} />}
               title={
                 <WithReading
                   text={currentSong.name}
                   yomi={currentSong.nameYomi}
-                  under
                 />
               }
               subtitle={
@@ -192,7 +200,7 @@ const QueueList = () => {
               }
               source={sourceOf(currentSong)}
               to={songLink(currentSong)}
-              trailing={t("sheet.nowPlaying")}
+              trailing={<SingerBadge nickname={nicknameOf(currentSong)} />}
             />
           )}
           {queue.map(([item, eta], index) => (

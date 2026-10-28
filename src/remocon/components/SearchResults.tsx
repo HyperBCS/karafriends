@@ -95,7 +95,7 @@ const SearchResults = ({ query, by, source }: Props) => {
   const rows = rank(query, found).map((item) => (
     <ListRow
       key={`${item.catalog}_${item.id}`}
-      title={<WithReading text={item.name} yomi={item.nameYomi} under />}
+      title={<WithReading text={item.name} yomi={item.nameYomi} />}
       subtitle={
         item.songCount !== undefined
           ? t("search.songCount", { count: item.songCount })

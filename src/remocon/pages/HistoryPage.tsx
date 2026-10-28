@@ -33,7 +33,7 @@ const HistoryPage = () => {
         {paged.items.map((song) => (
           <ListRow
             key={historyKey(song)}
-            title={<WithReading text={song.name} yomi={song.nameYomi} under />}
+            title={<WithReading text={song.name} yomi={song.nameYomi} />}
             subtitle={
               <WithReading text={song.artistName} yomi={song.artistNameYomi} />
             }

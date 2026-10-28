@@ -1,5 +1,7 @@
 import { isRomaji, toHiragana, toKatakana, toRomaji } from "wanakana";
 
+import { READINGS_MODES, type ReadingsMode } from "./api";
+
 // How a query and a title are compared (the remote's search ranking), and a
 // reading told from its title: NFKC (which also makes full-width letters and
 // digits half-width, and half-width kana full-width), lowercase, katakana as
@@ -14,27 +16,24 @@ export function normalize(text: string): string {
 }
 
 // How this phone shows song titles and artists (the profile's Readings): as
-// written, or with the kana reading DAM gives, that reading in romaji, or
-// both. Kept in localStorage ("readings"); "written" until the guest picks.
-export type Readings = "written" | "kana" | "romaji" | "both";
-export const READINGS: readonly Readings[] = [
-  "written",
-  "kana",
-  "romaji",
-  "both",
-];
+// written, or in place of that, the kana reading DAM gives, or that reading
+// in romaji. Kept in localStorage ("readings"); "written" until the guest
+// picks, and for a choice this version no longer has (an older "both").
+// The same choices as a queued song's readingsMode.
+export type Readings = ReadingsMode;
+export const READINGS: readonly Readings[] = READINGS_MODES;
 export const READINGS_KEY = "readings";
 
 export function pickReadings(saved: string | null): Readings {
   return READINGS.includes(saved as Readings) ? (saved as Readings) : "written";
 }
 
-// What to show with a title or an artist's name, given its kana reading:
-// the kana, the romaji, or both. Null when there's nothing to add: as
-// written, no reading (Joysound gives none), or a name already in Latin
-// letters. Kana that only repeat a name written in kana are left out. The
-// kana are hiragana, as furigana are: DAM's search gives hiragana, its song
-// details katakana.
+// What to show instead of a title or an artist's name, given its kana
+// reading: the kana, or the romaji. Null when it shows as written: as
+// written, no reading (Joysound gives none), a name already in Latin
+// letters, or kana that only repeat a name written in kana. The kana are
+// hiragana, as furigana are: DAM's search gives hiragana, its song details
+// katakana.
 export function reading(
   written: string,
   yomi: string | undefined,
@@ -42,14 +41,12 @@ export function reading(
 ): string | null {
   if (mode === "written" || !yomi?.trim()) return null;
   if (isRomaji(written.normalize("NFKC"))) return null;
-  const kana =
-    normalize(yomi) === normalize(written)
+  if (mode === "kana") {
+    return normalize(yomi) === normalize(written)
       ? null
       : toHiragana(yomi, { convertLongVowelMark: false, passRomaji: true });
+  }
   // From katakana, so a long vowel mark doubles the vowel (さんたくろーす:
   // santakuroosu, not santakuro-su).
-  const romaji = toRomaji(toKatakana(yomi));
-  const parts =
-    mode === "kana" ? [kana] : mode === "romaji" ? [romaji] : [kana, romaji];
-  return parts.filter(Boolean).join(" · ") || null;
+  return toRomaji(toKatakana(yomi));
 }
