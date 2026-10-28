@@ -124,6 +124,7 @@ export const ja: Messages = {
   "profile.signOut": "ログアウト",
   "profile.signedIn": "管理者としてログイン中",
   "profile.wrongPassword": "パスワードが違います。ホストに確認してください。",
+  "profile.noPassword": "管理者パスワードは設定されていません。",
   "profile.tooManyTries":
     "試行回数が多すぎます。1分待ってから再試行してください。",
   "profile.signInFailed": "ログインできませんでした：{reason}",

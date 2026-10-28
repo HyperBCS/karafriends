@@ -11,6 +11,7 @@ import * as styles from "./ProfilePage.module.scss";
 function signInError(err: unknown): string {
   if (err instanceof ApiCallError) {
     if (err.status === 403) return t("profile.wrongPassword");
+    if (err.status === 409) return t("profile.noPassword");
     if (err.status === 429) return t("profile.tooManyTries");
     return t("profile.signInFailed", { reason: err.message });
   }

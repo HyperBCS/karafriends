@@ -416,6 +416,25 @@ test("a song already queued says why it wasn't queued again", async ({
   ).toBeEnabled();
 });
 
+// The server answers 409 when the host set no admin password (403 is a
+// wrong one). Made up here, so this tests what the remote says.
+test("signing in without an admin password says there is none", async ({
+  remote,
+}) => {
+  await remote.route("**/api/adminLogin", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: "No admin password is set" },
+    }),
+  );
+  await remote.getByRole("link", { name: "Profile" }).click();
+  await remote.getByLabel("Admin password").fill("anything");
+  await remote.getByRole("button", { name: "Sign in" }).click();
+  await expect(remote.getByRole("alert")).toHaveText(
+    "The host hasn't set an admin password.",
+  );
+});
+
 test.describe("an admin's queue", () => {
   const PASSWORD = "e2e remote admin";
   const song = (n: number) => ({
