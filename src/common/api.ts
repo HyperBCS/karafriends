@@ -203,6 +203,14 @@ export interface DownloadProgress {
   isMine: boolean;
 }
 
+// A mic the display has open, as the phones see it.
+export interface MicInfo {
+  id: string; // `${name}#${channel}`: stable while the mic stays plugged in
+  label: string; // "Blue Yeti (Windows), channel 1"
+  gain: number; // 0..200, percent
+  echo: number; // 0..100, percent of the full reverb
+}
+
 // A phone sees which songs and downloads are its own, but no device IDs: it
 // passes its own as GET /api/events?deviceId=..., and isMine is worked out on
 // the server.
@@ -224,6 +232,12 @@ export interface LiveState {
   // 0 (muted, as it always was) to 1. A party setting: it stays from song
   // to song and across restarts.
   guideMelodyLevel: number;
+  // The song's volume, 0 to 100 percent, for every source. Starts at 100 on
+  // every launch.
+  songVolume: number;
+  // The mics the display has open (setMics), with their levels. Starts empty
+  // on every launch.
+  mics: MicInfo[];
   // The current song's adhoc lyrics pushed so far.
   adhocLyrics: AdhocLyricsEntry[];
   downloads: DownloadProgress[];
@@ -436,6 +450,15 @@ export interface Api {
   setPitchShiftSemis: { input: { semis: number }; output: boolean };
   // For admins only, in supervised mode or not.
   setGuideMelodyLevel: { input: { level: number }; output: boolean };
+  // For admins only. volume: 0 to 100, a whole number.
+  setSongVolume: { input: { volume: number }; output: boolean };
+  // For admins only: one mic's levels (gain 0 to 200, echo 0 to 100, whole
+  // numbers; one left out stays as it is). The display applies them. False
+  // if the display has no such mic (any more).
+  setMicLevels: {
+    input: { id: string; gain?: number; echo?: number };
+    output: boolean;
+  };
   // Shows line lyricIndex of the current song's adhoc lyrics. In supervised
   // mode, for its owner or an admin. False if no song with adhoc lyrics is
   // playing (any more).
@@ -444,6 +467,9 @@ export interface Api {
 
   // The display only: start the next song, or null if the queue is empty.
   popSong: { input: Record<string, never>; output: PoppedSong | null };
+  // The display only (a phone gets 403): the mics it has open, whenever one
+  // is added, removed or its levels change on the display.
+  setMics: { input: { mics: MicInfo[] }; output: boolean };
 
   // Whether the caller is an admin: the display, or a phone that sent a
   // live session's token in ADMIN_TOKEN_HEADER.

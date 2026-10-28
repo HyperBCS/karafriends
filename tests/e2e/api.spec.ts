@@ -229,6 +229,8 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       playbackState: expect.any(String),
       pitchShiftSemis: 0,
       guideMelodyLevel: 0,
+      songVolume: 100,
+      mics: [],
       adhocLyrics: [],
       downloads: [],
       config: { supervisedMode: false, everyoneIsAdmin: false },
@@ -803,6 +805,73 @@ test.describe("the guide melody level", () => {
         (await liveState(remoconUrl, deviceId)).state.guideMelodyLevel,
       ).toBe(0.7);
     }
+  });
+});
+
+test.describe("the song volume and the mics", () => {
+  test.use({ appConfig: ADMIN_CONFIG });
+
+  const MIC = {
+    id: "E2E Mic (Windows)#0",
+    label: "E2E Mic (Windows), channel 1",
+    gain: 100,
+    echo: 40,
+  };
+
+  test("an admin sets them, the display lists the mics, and other phones see it all", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const other = "e2e-other-device";
+
+    expect(
+      await call(remoconUrl, "setSongVolume", { volume: 50 }, REMOTE_HEADERS),
+    ).toMatchObject({ status: 403 });
+    expect(
+      await call(remoconUrl, "setMics", { mics: [MIC] }, REMOTE_HEADERS),
+    ).toEqual({
+      status: 403,
+      body: { error: "setMics is for the display only, not phones" },
+    });
+
+    expect(await displayCall(display, "setMics", { mics: [MIC] })).toEqual({
+      ok: true,
+      output: true,
+    });
+    expect((await liveState(remoconUrl, other)).state.mics).toEqual([MIC]);
+
+    const login = await call(
+      remoconUrl,
+      "adminLogin",
+      { password: ADMIN_PASSWORD },
+      REMOTE_HEADERS,
+    );
+    const admin = {
+      ...REMOTE_HEADERS,
+      "X-Karafriends-Admin-Token": login.body.token,
+    };
+    // Still the display's only, signed in or not.
+    expect(
+      await call(remoconUrl, "setMics", { mics: [] }, admin),
+    ).toMatchObject({ status: 403 });
+
+    expect(
+      await call(remoconUrl, "setSongVolume", { volume: 101 }, admin),
+    ).toMatchObject({ status: 400 });
+    expect(
+      await call(remoconUrl, "setSongVolume", { volume: 50 }, admin),
+    ).toEqual({ status: 200, body: true });
+    expect(
+      await call(remoconUrl, "setMicLevels", { id: MIC.id, gain: 150 }, admin),
+    ).toEqual({ status: 200, body: true });
+    expect(
+      await call(remoconUrl, "setMicLevels", { id: "gone#0", echo: 0 }, admin),
+    ).toEqual({ status: 200, body: false });
+
+    const { state } = await liveState(remoconUrl, other);
+    expect(state.songVolume).toBe(50);
+    expect(state.mics).toEqual([{ ...MIC, gain: 150 }]);
   });
 });
 

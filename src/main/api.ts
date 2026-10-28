@@ -781,6 +781,29 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       return true;
     },
 
+    async setSongVolume({ volume }, caller) {
+      if (!isAdmin(caller)) {
+        throw new ApiError(403, "Only an admin can change the song volume");
+      }
+      store.update((state) => {
+        state.songVolume = volume;
+      });
+      return true;
+    },
+
+    async setMicLevels({ id, gain, echo }, caller) {
+      if (!isAdmin(caller)) {
+        throw new ApiError(403, "Only an admin can change the mics");
+      }
+      return store.update((state) => {
+        const mic = state.mics.find((m) => m.id === id);
+        if (!mic) return false;
+        if (gain !== undefined) mic.gain = gain;
+        if (echo !== undefined) mic.echo = echo;
+        return true;
+      });
+    },
+
     async pushAdhocLyrics({ lyricIndex }, caller) {
       const { currentSong, currentSongAdhocLyrics } = store.getState();
       const lyrics = adhocLyricsOf(currentSong);
@@ -812,6 +835,16 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
     async sendEmote({ emote }, caller) {
       deps.publish({ type: "emote", emote, user: requireIdentity(caller) });
+      return true;
+    },
+
+    async setMics({ mics }, caller) {
+      if (!caller.isDisplay) {
+        throw new ApiError(403, "Only the display has mics");
+      }
+      store.update((state) => {
+        state.mics = mics;
+      });
       return true;
     },
 

@@ -130,6 +130,23 @@ describe("createStateStore", () => {
     }
   });
 
+  test("starts the song volume and the mics over on every launch", () => {
+    const store = createStateStore(file);
+    store.update((state) => {
+      state.songVolume = 30;
+      state.mics = [
+        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+      ];
+    });
+    assert.equal("songVolume" in saved(), false);
+    assert.equal("mics" in saved(), false);
+    assert.equal(createStateStore(file).getState().songVolume, 100);
+    // Nor from a file that has them.
+    fs.writeFileSync(file, JSON.stringify({ songVolume: 30, mics: [{}] }));
+    assert.equal(createStateStore(file).getState().songVolume, 100);
+    assert.deepEqual(createStateStore(file).getState().mics, []);
+  });
+
   test("keeps the guide melody level across a restart", () => {
     const store = createStateStore(file);
     store.update((state) => {
