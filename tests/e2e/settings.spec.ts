@@ -450,13 +450,13 @@ test("a tab with something to look at gets a dot, until it's put right", async (
 });
 
 test.describe("the pitch bars", () => {
-  test("a DAM song shows them; the switch in Display takes them off and back at once, kept on the display", async ({
+  test("a DAM song without scoring data shows none, and no error", async ({
     karafriends,
     display,
   }) => {
     // The song "downloaded" as a minute of black video, as long as the song,
     // so it plays. Queued from a phone; without a DAM login, popSong brings
-    // no scoring data, and the roll is empty but there.
+    // no scoring data: no notes, so no bars (not an empty band).
     const folder = await downloadsFolder(karafriends.app);
     fs.mkdirSync(folder, { recursive: true });
     fs.copyFileSync(
@@ -481,42 +481,27 @@ test.describe("the pitch bars", () => {
     });
     expect(await res.json()).toMatchObject({ ok: true });
 
-    const roll = display.locator("canvas.pianoRollRoll");
-    await expect(roll).toHaveCount(1, { timeout: 20_000 });
     await expect
-      .poll(() =>
-        display
-          .locator("video")
-          .evaluate((video: HTMLVideoElement) => video.currentTime > 0),
+      .poll(
+        () =>
+          display
+            .locator("video")
+            .evaluate(
+              (video: HTMLVideoElement) =>
+                video.currentSrc.endsWith("2345-67-0.mp4") &&
+                video.currentTime > 1,
+            ),
+        { timeout: 20_000 },
       )
       .toBe(true);
-
-    // Settings opened on the first launch, over the song.
+    await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(0);
+    // The switch is on all the same.
     await openTab(display, "Display");
-    const pitchBars = display
-      .getByRole("region", { name: "Display" })
-      .getByLabel("Pitch bars", { exact: true });
-    await expect(pitchBars).toBeChecked();
-    await expect(pitchBars).toHaveAccessibleDescription(
-      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
-    );
-    await pitchBars.uncheck();
-    await expect(roll).toHaveCount(0);
-    expect(
-      await display.evaluate(() => localStorage.getItem("pitchBars")),
-    ).toBe("off");
-    await pitchBars.check();
-    await expect(roll).toHaveCount(1);
-    expect(
-      await display.evaluate(() => localStorage.getItem("pitchBars")),
-    ).toBeNull();
-
-    // Off, it stays off after a reload.
-    await pitchBars.uncheck();
-    await display.reload();
-    await openTab(display, "Display");
-    await expect(pitchBars).not.toBeChecked();
-    await expect(roll).toHaveCount(0);
+    await expect(
+      display
+        .getByRole("region", { name: "Display" })
+        .getByLabel("Pitch bars", { exact: true }),
+    ).toBeChecked();
   });
 
   // A Joysound song that looks downloaded before: its video, from
@@ -621,16 +606,191 @@ test.describe("the pitch bars", () => {
     await expect(video).toHaveJSProperty("paused", true);
 
     // The switch takes them off and back, at once: the melody is kept.
+    // Kept on the display.
     await openTab(display, "Display");
     const pitchBars = display
       .getByRole("region", { name: "Display" })
       .getByLabel("Pitch bars", { exact: true });
+    await expect(pitchBars).toBeChecked();
+    await expect(pitchBars).toHaveAccessibleDescription(
+      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
+    );
     await pitchBars.uncheck();
     await expect(roll).toHaveCount(0);
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBe("off");
     await pitchBars.check();
     await expect(roll).toHaveCount(1);
-
+    expect(
+      await display.evaluate(() => localStorage.getItem("pitchBars")),
+    ).toBeNull();
     expect(karafriends.displayErrors).toEqual([]);
+
+    // Off, it stays off after a reload.
+    await pitchBars.uncheck();
+    await display.reload();
+    await openTab(display, "Display");
+    await expect(pitchBars).not.toBeChecked();
+    await expect(roll).toHaveCount(0);
+  });
+
+  // Queues the guide melody's song and waits for it to start.
+  async function playGuideSong(
+    karafriends: { app: ElectronApplication; remoconUrl: string },
+    display: Page,
+  ) {
+    const folder = await downloadsFolder(karafriends.app);
+    fs.mkdirSync(folder, { recursive: true });
+    fakeJoysoundDownload(folder, "e2e-guide", "joysound-guide.mp4", 12);
+    expect(
+      await phoneCall(karafriends.remoconUrl, "e2e-phone", "queueSong", {
+        kind: "joysound",
+        songId: "e2e-guide",
+        name: "E2E guide",
+        artistName: "E2E artist",
+        lyricsMode: "kana",
+        youtubeVideoId: null,
+      }),
+    ).toMatchObject({ ok: true });
+    await expect
+      .poll(
+        () =>
+          display
+            .locator("video")
+            .evaluate((v: HTMLVideoElement) =>
+              v.currentSrc.endsWith("joysound-e2e-guide-default.mp4"),
+            ),
+        { timeout: 20_000 },
+      )
+      .toBe(true);
+  }
+
+  // Whether the roll drew anything: read in the next frame, just after the
+  // roll's own draw (its drawing buffer is cleared once shown).
+  function rollDrew(display: Page) {
+    return display.evaluate(
+      () =>
+        new Promise<boolean>((resolve) =>
+          requestAnimationFrame(() => {
+            const canvas = document.querySelector<HTMLCanvasElement>(
+              "canvas.pianoRollRoll",
+            );
+            const gl = canvas?.getContext("webgl2");
+            if (!canvas || !gl || gl.isContextLost()) return resolve(false);
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            );
+            resolve(pixels.some((value) => value !== 0));
+          }),
+        ),
+    );
+  }
+
+  const crashed = (display: Page) =>
+    display.getByRole("heading", { name: "Something went wrong" });
+
+  test("a lost WebGL context leaves the song playing, and the bars come back when it's restored", async ({
+    karafriends,
+    display,
+  }) => {
+    await playGuideSong(karafriends, display);
+    const roll = display.locator("canvas.pianoRollRoll");
+    await expect(roll).toHaveCount(1, { timeout: 20_000 });
+    expect(
+      await phoneCall(karafriends.remoconUrl, "e2e-phone", "setPlaybackState", {
+        playbackState: "PAUSED",
+      }),
+    ).toBe(true);
+    await expect.poll(() => rollDrew(display)).toBe(true);
+
+    // As when the GPU process goes: the context is lost. A key change after
+    // it (which used to rebuild the roll's GL) leaves the display up.
+    await display.evaluate(() => {
+      const gl = document
+        .querySelector<HTMLCanvasElement>("canvas.pianoRollRoll")!
+        .getContext("webgl2")!;
+      const lose = gl.getExtension("WEBGL_lose_context")!;
+      (window as unknown as { e2eLose: WEBGL_lose_context }).e2eLose = lose;
+      lose.loseContext();
+    });
+    await expect(roll).toBeHidden();
+    expect(
+      await phoneCall(
+        karafriends.remoconUrl,
+        "e2e-phone",
+        "setPitchShiftSemis",
+        { semis: 2 },
+      ),
+    ).toBe(true);
+    // The live state reaches the display.
+    await display.waitForTimeout(1_000);
+    await expect(display.locator("video")).toHaveCount(1);
+    await expect(crashed(display)).toHaveCount(0);
+    await expect(roll).toHaveCount(1);
+
+    // Restored: drawn again, on the same canvas.
+    await display.evaluate(() =>
+      (
+        window as unknown as { e2eLose: WEBGL_lose_context }
+      ).e2eLose.restoreContext(),
+    );
+    await expect(roll).toBeVisible();
+    await expect.poll(() => rollDrew(display)).toBe(true);
+    await expect(crashed(display)).toHaveCount(0);
+    expect(karafriends.displayErrors).toEqual([]);
+  });
+
+  test("without WebGL2 the bars don't show, and the song plays on", async ({
+    karafriends,
+    display,
+  }) => {
+    // As on a machine whose GPU Chromium blocklists: the roll's canvas gets
+    // no context. Counted, so the test knows the roll tried.
+    await display.evaluate(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      const counter = window as unknown as { e2eRollContexts: number };
+      counter.e2eRollContexts = 0;
+      HTMLCanvasElement.prototype.getContext = function (
+        this: HTMLCanvasElement,
+        ...args: Parameters<HTMLCanvasElement["getContext"]>
+      ) {
+        if (this.classList.contains("pianoRollRoll") && args[0] === "webgl2") {
+          counter.e2eRollContexts++;
+          return null;
+        }
+        return getContext.apply(this, args);
+      } as HTMLCanvasElement["getContext"];
+    });
+    await playGuideSong(karafriends, display);
+    await expect
+      .poll(
+        () =>
+          display.evaluate(
+            () =>
+              (window as unknown as { e2eRollContexts: number })
+                .e2eRollContexts,
+          ),
+        { timeout: 20_000 },
+      )
+      .toBeGreaterThan(0);
+    await expect(crashed(display)).toHaveCount(0);
+    expect(karafriends.displayErrors).toEqual([]);
+    await expect(display.locator("canvas.pianoRollRoll")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        display
+          .locator("video")
+          .evaluate((v: HTMLVideoElement) => v.currentTime > 2),
+      )
+      .toBe(true);
   });
 });
 
