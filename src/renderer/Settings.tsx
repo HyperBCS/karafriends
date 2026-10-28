@@ -12,10 +12,18 @@ import "./global";
 import HostnameSetting from "./HostnameSetting";
 import {
   AddMicrophone,
+  MicModeSetting,
+  MicOutputSetting,
   MicrophoneSetting,
   type MicLevels,
 } from "./MicrophoneSetting";
-import { asioStatus, InputDevice, outputDevices } from "./nativeAudio";
+import {
+  asioStatus,
+  InputDevice,
+  type MicMode,
+  type MicOutput,
+  outputDevices,
+} from "./nativeAudio";
 import { AV_OFFSETS, UI_SCALES } from "./playback";
 import "./Settings.css";
 
@@ -211,9 +219,10 @@ export default function Settings(props: {
   onChangeMic: (index: number, name: string, channel: number) => void;
   onChangeLevels: (mic: InputDevice, levels: MicLevels) => void;
   onRemoveMic: (index: number) => void;
-  // null: the system default.
-  micOutput: string | null;
-  onMicOutputChange: (name: string | null) => void;
+  micOutput: MicOutput;
+  onMicOutputChange: (output: MicOutput) => void;
+  micMode: MicMode;
+  onMicModeChange: (mode: MicMode) => void;
   avOffsetMs: number;
   onAvOffsetChange: (offsetMs: number) => void;
   uiScale: number;
@@ -615,31 +624,11 @@ export default function Settings(props: {
         <DownloadsSection />
 
         <SettingsSection title="Microphones">
-          <div className="settingsFields">
-            <label className="kfLabel">
-              Mic output
-              <select
-                className="kfField"
-                value={props.micOutput ?? ""}
-                onChange={(event) =>
-                  props.onMicOutputChange(event.target.value || null)
-                }
-              >
-                <option value="">System default</option>
-                {props.micOutput !== null &&
-                !outputs.includes(props.micOutput) ? (
-                  <option value={props.micOutput} disabled={true}>
-                    {`${props.micOutput} (not connected)`}
-                  </option>
-                ) : null}
-                {outputs.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <MicOutputSetting
+            outputs={outputs}
+            output={props.micOutput}
+            onChange={props.onMicOutputChange}
+          />
           <p className="settingsNote">{asio}</p>
           {outputNote ? (
             <p className="settingsNote" role="status">
@@ -652,6 +641,10 @@ export default function Settings(props: {
             a time can't play the songs and the mics at once (FlexASIO,
             ASIO4ALL, RME and MOTU drivers share; many others don't).
           </p>
+          <MicModeSetting
+            mode={props.micMode}
+            onChange={props.onMicModeChange}
+          />
           {props.mics.map((mic, i) => (
             <MicrophoneSetting
               key={mic.deviceId}

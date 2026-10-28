@@ -261,12 +261,15 @@ function samePath(a: string, b: string): boolean {
   return canonical(a) === canonical(b);
 }
 
+// A port free on 127.0.0.1, where the app listens with LOCAL_ONLY. (Windows
+// gives a port another test's app holds there to a listener on all
+// addresses.)
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.unref();
     server.on("error", reject);
-    server.listen(0, () => {
+    server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as net.AddressInfo;
       server.close(() => resolve(port));
     });
@@ -305,8 +308,18 @@ async function launchKarafriends(
   ) => {
     if (app) {
       const proc = app.process();
+      const closing = app;
       await Promise.race([
-        app.close().catch(() => {}),
+        (async () => {
+          // Playwright screenshots every page as its app closes, for the
+          // report in case the test failed, and the hidden display (which
+          // draws a frame or two a second) takes up to a second to give one.
+          // A test that passed closes the display first: the app then quits.
+          if (!failed) {
+            for (const window of closing.windows()) await window.close();
+          }
+          await closing.close();
+        })().catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 15_000)),
       ]);
       if (proc.exitCode === null && proc.signalCode === null) proc.kill();

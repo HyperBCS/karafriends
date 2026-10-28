@@ -35,6 +35,14 @@ import { HOSTNAME } from "./src/common/constants";
 process.env.KARAFRIENDS_REMOCON_PORT ??= "8080";
 const remoconPort = Number(process.env.KARAFRIENDS_REMOCON_PORT);
 
+// On Linux, `yarn dev` starts Electron with --no-sandbox (what electron-vite's
+// --noSandbox sets). Where the kernel blocks unprivileged user namespaces
+// (Ubuntu 23.10 and later), Chromium falls back to node_modules' chrome-sandbox,
+// which isn't setuid root, and aborts. The display runs unsandboxed anyway (its
+// preload loads the native module), so this only unsandboxes Chromium's
+// helper processes.
+if (process.platform === "linux") process.env.NO_SANDBOX ??= "1";
+
 // KARAFRIENDS_LOCAL_ONLY=1 (tests and checks): this machine only, so the dev
 // server doesn't raise a firewall prompt either (see src/common/config.ts).
 const localOnly = process.env.KARAFRIENDS_LOCAL_ONLY === "1";

@@ -24,8 +24,26 @@ declare global {
         // "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO
         // isn't in this build".
         asioStatus: () => string;
-        // Where every mic plays; null for the default output.
-        setOutputDevice: (name: string | null) => void;
+        // Where every mic plays (null for the default output), at a rate
+        // and a buffer size in frames (null for the device's own).
+        setOutputDevice: (
+          name: string | null,
+          rate: number | null,
+          bufferSize: number | null,
+        ) => void;
+        // The rates and buffer sizes an ASIO output takes; null for other
+        // outputs, where Windows sets them.
+        outputOptions: (
+          name: string,
+        ) => { rates: number[]; bufferSizes: number[] } | null;
+        // What the mic output runs at ("48 kHz, 512 samples (10.7 ms)");
+        // null while no mic is open.
+        outputFormat: () => string | null;
+        // Windows mics opened from now on: exclusive or shared, and in
+        // exclusive mode the buffer size in frames (null: the smallest).
+        setMicMode: (exclusive: boolean, bufferSize: number | null) => void;
+        // Whether there is an exclusive mode (Windows only).
+        exclusiveAvailable: () => boolean;
         inputDevice_new: (name: string, channelSelection: number) => number;
         inputDevice_delete: (deviceId: number) => void;
         // Linear, 0 to 2.
@@ -34,6 +52,8 @@ declare global {
         inputDevice_setEcho: (deviceId: number, echo: number) => void;
         // "ok", "ok: <a note>", or the error that stopped it.
         inputDevice_status: (deviceId: number) => string;
+        // How it is open: "Shared, 48 kHz, 480 samples (10.0 ms)".
+        inputDevice_format: (deviceId: number) => string;
         inputDevice_getPitch: (deviceId: number) => {
           midiNumber: number;
           confidence: number;

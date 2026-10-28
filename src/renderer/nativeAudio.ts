@@ -10,9 +10,47 @@ export function outputDevices(): string[] {
   return native.outputDevices();
 }
 
-// Where every mic plays; null for the default output.
-export function setOutputDevice(name: string | null) {
-  native.setOutputDevice(name);
+// Where every mic plays: the device (null for the default output), and for
+// an ASIO one its rate in Hz and buffer size in samples (null for the
+// driver's own).
+export interface MicOutput {
+  name: string | null;
+  rate: number | null;
+  bufferSize: number | null;
+}
+
+export function setOutputDevice(output: MicOutput) {
+  native.setOutputDevice(output.name, output.rate, output.bufferSize);
+}
+
+// How the mics open on Windows: shared with other programs (Windows
+// mixes, in 10 ms buffers), or exclusive, for less delay, with a buffer
+// size in samples (null for the smallest the mic takes). Mics opened
+// after it is set use it.
+export interface MicMode {
+  exclusive: boolean;
+  bufferSize: number | null;
+}
+
+export function setMicMode(mode: MicMode) {
+  native.setMicMode(mode.exclusive, mode.bufferSize);
+}
+
+// Whether there is an exclusive mode (Windows only).
+export function exclusiveAvailable(): boolean {
+  return native.exclusiveAvailable();
+}
+
+// The rates and buffer sizes an ASIO output takes; null for other outputs.
+export function outputOptions(
+  name: string,
+): { rates: number[]; bufferSizes: number[] } | null {
+  return native.outputOptions(name);
+}
+
+// What the mic output runs at; null while no mic is open.
+export function outputFormat(): string | null {
+  return native.outputFormat();
 }
 
 // "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO isn't in
@@ -68,6 +106,20 @@ export class InputDevice {
     return deviceId;
   }
 
+  // Opens the device again; when it won't, keeps why (the watchdog tries
+  // again).
+  private openAgain(): boolean {
+    try {
+      this.deviceId = this.create();
+      this.open = true;
+      this.error = null;
+      return true;
+    } catch (err) {
+      this.error = String(err);
+      return false;
+    }
+  }
+
   // Reopens the mic when its stream stopped. One that won't reopen (a mic
   // unplugged, a TV asleep) is tried again every time, until it is back.
   check() {
@@ -77,20 +129,25 @@ export class InputDevice {
     if (this.error === null) {
       console.warn(`Mic ${this.label} stopped (${status}); reopening`);
     }
-    try {
-      this.deviceId = this.create();
-      this.open = true;
-      this.reopenedAfter = status;
-      this.error = null;
-    } catch (err) {
-      this.error = String(err);
-    }
+    if (this.openAgain()) this.reopenedAfter = status;
+  }
+
+  // Opens it again as the mics are set now (see setMicMode).
+  reopen() {
+    this.close();
+    this.openAgain();
   }
 
   // "ok", "ok: <a note>", or why it stopped.
   status(): string {
     if (this.open) return native.inputDevice_status(this.deviceId);
     return this.error ?? "stopped";
+  }
+
+  // How it is open ("Shared, 48 kHz, 480 samples (10.0 ms)"); null while
+  // it's down.
+  format(): string | null {
+    return this.open ? native.inputDevice_format(this.deviceId) : null;
   }
 
   // Linear, 0 to 2.

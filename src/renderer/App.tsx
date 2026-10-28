@@ -10,7 +10,13 @@ import Announcements from "./Announcements";
 import Effects from "./Effects";
 import IdleScreen from "./IdleScreen";
 import type { MicLevels } from "./MicrophoneSetting";
-import { InputDevice, setOutputDevice } from "./nativeAudio";
+import {
+  InputDevice,
+  type MicMode,
+  type MicOutput,
+  setMicMode,
+  setOutputDevice,
+} from "./nativeAudio";
 import NoticeBar from "./NoticeBar";
 import {
   AV_OFFSET_KEY,
@@ -38,7 +44,48 @@ const DEFAULT_LEVELS: MicLevels = { gain: 100, echo: 40 };
 type SavedMic = { name: string; channel: number } & MicLevels;
 
 // The output device the mics play through; not set for the system default.
+// An ASIO one's rate and buffer size, when not the driver's own, apart.
 const MIC_OUTPUT_KEY = "micOutput";
+const MIC_OUTPUT_RATE_KEY = "micOutputRate";
+const MIC_OUTPUT_BUFFER_KEY = "micOutputBuffer";
+
+// A whole number saved under key, if there is one.
+function savedNumber(key: string): number | null {
+  const value = Number(localStorage.getItem(key));
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function savedMicOutput(): MicOutput {
+  return {
+    name: localStorage.getItem(MIC_OUTPUT_KEY),
+    rate: savedNumber(MIC_OUTPUT_RATE_KEY),
+    bufferSize: savedNumber(MIC_OUTPUT_BUFFER_KEY),
+  };
+}
+
+// Saves value under key, or forgets the key for null.
+function save(key: string, value: string | number | null) {
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, String(value));
+}
+
+function saveMicOutput({ name, rate, bufferSize }: MicOutput) {
+  save(MIC_OUTPUT_KEY, name);
+  save(MIC_OUTPUT_RATE_KEY, rate);
+  save(MIC_OUTPUT_BUFFER_KEY, bufferSize);
+}
+
+// Windows mics: "exclusive" (not set for shared), and the buffer size an
+// exclusive mic asks for (not set for the smallest).
+const MIC_MODE_KEY = "micMode";
+const MIC_BUFFER_KEY = "micBuffer";
+
+function savedMicMode(): MicMode {
+  return {
+    exclusive: localStorage.getItem(MIC_MODE_KEY) === "exclusive",
+    bufferSize: savedNumber(MIC_BUFFER_KEY),
+  };
+}
 
 // How the phones tell the mics apart (MicInfo.id).
 function micId(name: string, channel: number): string {
@@ -62,14 +109,16 @@ function openMic(name: string, channel: number, levels: MicLevels) {
 let openedSavedMics: InputDevice[] | null = null;
 
 // The mic output and the microphones picked last time, those still plugged
-// in and that open. The output first, so the mics open on it.
+// in and that open. The output and the mode first, so the mics open on the
+// one and in the other.
 function savedMics(): InputDevice[] {
   openedSavedMics ??= openSavedMics();
   return openedSavedMics;
 }
 
 function openSavedMics(): InputDevice[] {
-  setOutputDevice(localStorage.getItem(MIC_OUTPUT_KEY));
+  setOutputDevice(savedMicOutput());
+  setMicMode(savedMicMode());
   const channelCounts = new Map(
     window.karafriends.nativeAudio
       .inputDevices()
@@ -110,9 +159,8 @@ function App(props: {
   // Apart from the devices, so the piano roll keeps its mics (and what they
   // sang) while a level changes. By micId.
   const [levels, setLevels] = useState(savedLevels);
-  const [micOutput, setMicOutput] = useState(() =>
-    localStorage.getItem(MIC_OUTPUT_KEY),
-  );
+  const [micOutput, setMicOutput] = useState(savedMicOutput);
+  const [micMode, setMicModeState] = useState(savedMicMode);
   // The mic lists this display sent with setMics lately, as levelsKey.
   const sentMics = useRef<string[]>([]);
   const seenLiveMics = useRef<MicInfo[] | undefined>(undefined);
@@ -219,19 +267,28 @@ function App(props: {
   });
 
   // Kept only once it opened (or fell back to the default), so a choice
-  // that fails can't break the next launch. Mics that went down with the
-  // old output reopen on the new one at once.
-  const changeMicOutput = (name: string | null) => {
+  // that fails can't break the next launch.
+  const changeMicOutput = (output: MicOutput) => {
     try {
-      setOutputDevice(name);
+      setOutputDevice(output);
     } catch (err) {
-      console.error(`Couldn't switch the mic output to ${name}:`, err);
+      console.error(`Couldn't switch the mic output to ${output.name}:`, err);
       return;
     }
-    for (const mic of mics.filter((m) => m.error)) mic.check();
-    if (name === null) localStorage.removeItem(MIC_OUTPUT_KEY);
-    else localStorage.setItem(MIC_OUTPUT_KEY, name);
-    setMicOutput(name);
+    // Mics that went down with the old output, or that resample to its old
+    // rate, reopen now rather than at the watchdog's next look.
+    for (const mic of mics) mic.check();
+    saveMicOutput(output);
+    setMicOutput(output);
+  };
+
+  // Every mic reopens in the new mode.
+  const changeMicMode = (mode: MicMode) => {
+    setMicMode(mode);
+    for (const mic of mics) mic.reopen();
+    save(MIC_MODE_KEY, mode.exclusive ? "exclusive" : null);
+    save(MIC_BUFFER_KEY, mode.bufferSize);
+    setMicModeState(mode);
   };
 
   const changeAvOffset = (offsetMs: number) => {
@@ -351,6 +408,8 @@ function App(props: {
             onRemoveMic={removeMic}
             micOutput={micOutput}
             onMicOutputChange={changeMicOutput}
+            micMode={micMode}
+            onMicModeChange={changeMicMode}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}

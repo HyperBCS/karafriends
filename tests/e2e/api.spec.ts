@@ -819,6 +819,12 @@ test.describe("the song volume and the mics", () => {
       body: { error: "setMics is for the display only, not phones" },
     });
 
+    // As it starts, the display sends its own mics (none), then opens
+    // Settings on a first launch. Wait for that, or its list could replace
+    // this one.
+    await expect(
+      display.getByRole("dialog", { name: "Settings" }),
+    ).toBeVisible();
     expect(await displayCall(display, "setMics", { mics: [MIC] })).toEqual({
       ok: true,
       output: true,

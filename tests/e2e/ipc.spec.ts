@@ -1,9 +1,9 @@
 // The display talks to the main process over Electron IPC, not HTTP: it
 // makes no /api requests (every test checks that too, see fixtures.ts), and
 // it keeps working when the remote's port is taken. No network: the songs
-// are Niconico videos that were never downloaded, so the display "plays"
-// nothing (and logs errors about the missing files, so these tests don't
-// check for console errors; display.spec.ts does, with an empty queue).
+// are Niconico videos, which the fixture gives a minute of black video.
+// (These tests don't check for console errors; display.spec.ts does, with
+// an empty queue.)
 import type { Page } from "@playwright/test";
 
 import { expect, isApiRequest, test } from "./fixtures";
@@ -62,6 +62,14 @@ test("a reloaded display gets the live state again, and its updates", async ({
   display,
 }) => {
   await expectSong1Started(display);
+  // Wait for song 1's video to play: reloading while it was still starting
+  // crashed the display's renderer now and then (1 in 10 with several tests
+  // at once), and page.reload() failed with it.
+  await expect
+    .poll(() =>
+      display.locator("video").evaluate((v: HTMLVideoElement) => v.currentTime),
+    )
+    .toBeGreaterThan(0);
   await display.reload();
   const queue = display.getByRole("list", { name: "Queue" });
   await expect(queue.getByText(title(2)).first()).toBeVisible();
