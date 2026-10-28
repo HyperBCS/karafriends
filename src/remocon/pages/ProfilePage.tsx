@@ -315,7 +315,7 @@ const Mics = () => {
       ) : (
         <ul className={styles.mics}>
           {mics.map((mic, index) => (
-            <li key={`${mic.id}-${index}`} className={styles.mic}>
+            <li key={`${mic.id}-${index}`}>
               <span className={styles.text}>{mic.label}</span>
               <MicLevelSlider mic={mic} level="gain" />
               <MicLevelSlider mic={mic} level="echo" />
