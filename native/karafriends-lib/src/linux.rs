@@ -153,22 +153,12 @@ const PIPEWIRE_DEFAULT_OUTPUTS: [&str; 2] = ["output_default", "sink_default"];
 pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
     let devices: Vec<_> = host.input_devices()?.collect();
     Ok(match host.id().name() {
-        "PipeWire" => {
-            let classes = pipewire_classes();
-            devices
-                .into_iter()
-                .filter(|device| {
-                    let node = node(device);
-                    node == PIPEWIRE_DEFAULT_INPUT
-                        || is_pipewire_device(device, &node, classes.as_ref(), "Audio/Source")
-                })
-                .collect()
-        }
+        "PipeWire" => pipewire_devices(devices, Wanted::Mic),
         "PulseAudio" => devices
             .into_iter()
-            .filter(|device| !node(device).ends_with(".monitor"))
+            .filter(|device| keep_pulse_input(&node(device)))
             .collect(),
-        "ALSA" => alsa_devices(devices, &["plughw:"]),
+        "ALSA" => alsa_devices(devices, ALSA_INPUTS),
         _ => devices,
     })
 }
@@ -179,39 +169,74 @@ pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
 pub(crate) fn output_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>> {
     let devices: Vec<_> = host.output_devices()?.collect();
     Ok(match host.id().name() {
-        "PipeWire" => {
-            let classes = pipewire_classes();
-            devices
-                .into_iter()
-                .filter(|device| {
-                    let node = node(device);
-                    !PIPEWIRE_DEFAULT_OUTPUTS.contains(&node.as_str())
-                        && is_pipewire_device(device, &node, classes.as_ref(), "Audio/Sink")
-                })
-                .collect()
-        }
-        "ALSA" => alsa_devices(devices, &["plughw:", "dmix:"]),
+        "PipeWire" => pipewire_devices(devices, Wanted::Output),
+        "ALSA" => alsa_devices(devices, ALSA_OUTPUTS),
         _ => devices,
     })
 }
 
-// A device of `class` ("Audio/Source", "Audio/Sink"), or one that is both
-// ("Audio/Duplex"), as PipeWire's registry says; or, if it didn't answer,
-// one with a driver (other programs' streams have none).
-fn is_pipewire_device(
-    device: &cpal::Device,
+// What a listing is for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Wanted {
+    Mic,
+    Output,
+}
+
+// The PipeWire devices keep_pipewire keeps.
+fn pipewire_devices(devices: Vec<cpal::Device>, wanted: Wanted) -> Vec<cpal::Device> {
+    let classes = pipewire_classes();
+    devices
+        .into_iter()
+        .filter(|device| {
+            let description = device.description().ok();
+            keep_pipewire(
+                wanted,
+                &node(device),
+                classes.as_ref(),
+                description.as_ref().map(|d| d.direction()),
+                description.is_some_and(|d| d.driver().is_some()),
+            )
+        })
+        .collect()
+}
+
+// Whether Settings lists PipeWire's `node` as a mic or an output. A mic is
+// the system default or an "Audio/Source", an output an "Audio/Sink" (not
+// the defaults: Settings has its own entry for those), and either can be an
+// "Audio/Duplex", as the registry's `classes` say. If the registry didn't
+// answer (None): a node with a driver (other programs' streams have none),
+// and for a mic one cpal lists as input only. cpal lists the outputs as
+// inputs too (to record what they play), and one picked as a mic would
+// play the speakers back through themselves. `direction` and `has_driver`
+// are from cpal's description of the node.
+fn keep_pipewire(
+    wanted: Wanted,
     node: &str,
     classes: Option<&HashMap<String, String>>,
-    class: &str,
+    direction: Option<cpal::DeviceDirection>,
+    has_driver: bool,
 ) -> bool {
+    let class = match wanted {
+        Wanted::Mic if node == PIPEWIRE_DEFAULT_INPUT => return true,
+        Wanted::Output if PIPEWIRE_DEFAULT_OUTPUTS.contains(&node) => return false,
+        Wanted::Mic => "Audio/Source",
+        Wanted::Output => "Audio/Sink",
+    };
     match classes {
         Some(classes) => classes
             .get(node)
             .is_some_and(|c| c == class || c == "Audio/Duplex"),
-        None => device
-            .description()
-            .is_ok_and(|description| description.driver().is_some()),
+        None => {
+            has_driver
+                && (wanted == Wanted::Output || direction == Some(cpal::DeviceDirection::Input))
+        }
     }
+}
+
+// PulseAudio's sources, but not the outputs' monitors (which record what
+// they play).
+fn keep_pulse_input(node: &str) -> bool {
+    !node.ends_with(".monitor")
 }
 
 // Each node's media class, by node name: mics are "Audio/Source", outputs
@@ -302,12 +327,27 @@ fn pipewire_classes() -> Option<HashMap<String, String>> {
     None
 }
 
-// ALSA's "default", and each card's devices with one of `prefixes` (plughw:
-// converts any format; dmix: shares the device with other programs). Cards
-// by name (plughw:CARD=Microphones,DEV=0) where ALSA lists them so; by
-// number (CARD=1) only where it doesn't, since numbers change as USB devices
-// come and go.
+// The ALSA devices listed as mics (plughw: converts any format) and as
+// outputs (dmix: also shares the device with other programs).
+const ALSA_INPUTS: &[&str] = &["plughw:"];
+const ALSA_OUTPUTS: &[&str] = &["plughw:", "dmix:"];
+
+// The ALSA devices alsa_kept keeps.
 fn alsa_devices(devices: Vec<cpal::Device>, prefixes: &[&str]) -> Vec<cpal::Device> {
+    let nodes: Vec<String> = devices.iter().map(node).collect();
+    let kept = alsa_kept(&nodes, prefixes);
+    devices
+        .into_iter()
+        .zip(kept)
+        .filter_map(|(device, kept)| kept.then_some(device))
+        .collect()
+}
+
+// Which of ALSA's `nodes` Settings lists: "default", and each card's
+// devices with one of `prefixes`. Cards by name (plughw:CARD=Microphones,
+// DEV=0) where ALSA lists them so; by number (CARD=1) only where it
+// doesn't, since numbers change as USB devices come and go.
+fn alsa_kept(nodes: &[impl AsRef<str>], prefixes: &[&str]) -> Vec<bool> {
     let by_name = |node: &str| {
         prefixes.iter().any(|prefix| {
             node.strip_prefix(prefix)
@@ -315,14 +355,14 @@ fn alsa_devices(devices: Vec<cpal::Device>, prefixes: &[&str]) -> Vec<cpal::Devi
                 .is_some_and(|card| !card.starts_with(|c: char| c.is_ascii_digit()))
         })
     };
-    let named = devices.iter().any(|device| by_name(&node(device)));
-    devices
-        .into_iter()
-        .filter(|device| {
-            let node = node(device);
+    let named = nodes.iter().any(|node| by_name(node.as_ref()));
+    nodes
+        .iter()
+        .map(|node| {
+            let node = node.as_ref();
             node == "default"
                 || if named {
-                    by_name(&node)
+                    by_name(node)
                 } else {
                     prefixes.iter().any(|prefix| node.starts_with(prefix))
                 }
@@ -437,6 +477,152 @@ mod tests {
         assert!(!version_at_least("0.3.48", (0, 3, 50)));
         assert!(!version_at_least("0.2", (0, 3, 50)));
         assert!(!version_at_least("", (0, 3, 50)));
+    }
+
+    // Node names as PipeWire calls them on a laptop, and a USB mic.
+    const LAPTOP_MIC: &str =
+        "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Mic1__source";
+    const USB_MIC: &str = "alsa_input.usb-Shure_Inc_Shure_MV7-00.mono-fallback";
+    const SPEAKER: &str =
+        "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink";
+    const HEADSET: &str = "bluez_card.00_1B_66_A1_B2_C3.headset";
+    // Other programs' streams, karafriends' own among them.
+    const RECORDING: &str = "karafriends";
+    const PLAYBACK: &str = "Chromium";
+    const CAMERA: &str = "v4l2_input.pci-0000_00_05.0";
+
+    fn registry() -> HashMap<String, String> {
+        [
+            (LAPTOP_MIC, "Audio/Source"),
+            (USB_MIC, "Audio/Source"),
+            (SPEAKER, "Audio/Sink"),
+            (HEADSET, "Audio/Duplex"),
+            (RECORDING, "Stream/Input/Audio"),
+            (PLAYBACK, "Stream/Output/Audio"),
+            (CAMERA, "Video/Source"),
+        ]
+        .iter()
+        .map(|(node, class)| (node.to_string(), class.to_string()))
+        .collect()
+    }
+
+    #[test]
+    fn test_pipewire_mics_and_outputs_by_class() {
+        use Wanted::{Mic, Output};
+        let classes = registry();
+        // (wanted, node, kept): cpal's direction and driver don't count
+        // while the registry answers.
+        let table = [
+            (Mic, "input_default", true),
+            (Mic, LAPTOP_MIC, true),
+            (Mic, USB_MIC, true),
+            (Mic, HEADSET, true),
+            (Mic, SPEAKER, false),
+            (Mic, RECORDING, false),
+            (Mic, PLAYBACK, false),
+            (Mic, CAMERA, false),
+            (Mic, "alsa_input.usb-plugged-in-since", false),
+            (Output, SPEAKER, true),
+            (Output, HEADSET, true),
+            (Output, "output_default", false),
+            (Output, "sink_default", false),
+            (Output, LAPTOP_MIC, false),
+            (Output, PLAYBACK, false),
+            (Output, RECORDING, false),
+        ];
+        for (wanted, node, kept) in table {
+            for direction in [
+                None,
+                Some(cpal::DeviceDirection::Input),
+                Some(cpal::DeviceDirection::Duplex),
+            ] {
+                for has_driver in [false, true] {
+                    assert_eq!(
+                        keep_pipewire(wanted, node, Some(&classes), direction, has_driver),
+                        kept,
+                        "{wanted:?} {node} {direction:?} {has_driver}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pipewire_mics_and_outputs_without_the_registry() {
+        use cpal::DeviceDirection::{Duplex, Input, Output as Out};
+        use Wanted::{Mic, Output};
+        // (wanted, node, cpal's direction, has a driver, kept). cpal lists
+        // sources as Input and sinks as Duplex (to record what they play).
+        let table = [
+            (Mic, "input_default", Some(Input), false, true),
+            (Mic, LAPTOP_MIC, Some(Input), true, true),
+            (Mic, USB_MIC, Some(Input), true, true),
+            // An output never passes for a mic: it would record the
+            // speakers and play them back through them.
+            (Mic, SPEAKER, Some(Duplex), true, false),
+            (Mic, HEADSET, Some(Duplex), true, false),
+            (Mic, RECORDING, Some(Input), false, false),
+            (Mic, LAPTOP_MIC, None, false, false),
+            (Output, SPEAKER, Some(Duplex), true, true),
+            (Output, "output_default", Some(Out), false, false),
+            (Output, "sink_default", Some(Duplex), false, false),
+            (Output, PLAYBACK, Some(Out), false, false),
+        ];
+        for (wanted, node, direction, has_driver, kept) in table {
+            assert_eq!(
+                keep_pipewire(wanted, node, None, direction, has_driver),
+                kept,
+                "{wanted:?} {node} {direction:?} {has_driver}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_pulse_inputs() {
+        assert!(keep_pulse_input(LAPTOP_MIC));
+        assert!(keep_pulse_input(USB_MIC));
+        assert!(!keep_pulse_input(&format!("{SPEAKER}.monitor")));
+    }
+
+    #[test]
+    fn test_alsa_cards_by_name() {
+        // As `aplay -L` lists them on a laptop.
+        let nodes = [
+            "default",
+            "sysdefault:CARD=sofhdadsp",
+            "hw:CARD=sofhdadsp,DEV=0",
+            "plughw:CARD=sofhdadsp,DEV=0",
+            "plughw:CARD=sofhdadsp,DEV=3",
+            "dmix:CARD=sofhdadsp,DEV=0",
+            "front:CARD=sofhdadsp,DEV=0",
+            "surround51:CARD=sofhdadsp,DEV=0",
+            "plughw:CARD=Microphones,DEV=0",
+        ];
+        assert_eq!(
+            alsa_kept(&nodes, ALSA_INPUTS),
+            [true, false, false, true, true, false, false, false, true]
+        );
+        assert_eq!(
+            alsa_kept(&nodes, ALSA_OUTPUTS),
+            [true, false, false, true, true, true, false, false, true]
+        );
+    }
+
+    #[test]
+    fn test_alsa_cards_by_number() {
+        // Only by number: those are kept.
+        let nodes = [
+            "default",
+            "hw:CARD=0,DEV=0",
+            "plughw:CARD=0,DEV=0",
+            "dmix:CARD=0,DEV=0",
+        ];
+        assert_eq!(alsa_kept(&nodes, ALSA_INPUTS), [true, false, true, false]);
+        assert_eq!(alsa_kept(&nodes, ALSA_OUTPUTS), [true, false, true, true]);
+        // By name and by number: only by name, since numbers move.
+        let nodes = ["plughw:CARD=PCH,DEV=0", "plughw:CARD=0,DEV=0"];
+        assert_eq!(alsa_kept(&nodes, ALSA_INPUTS), [true, false]);
+        assert_eq!(alsa_kept(&[] as &[&str], ALSA_INPUTS), [] as [bool; 0]);
     }
 
     #[test]
