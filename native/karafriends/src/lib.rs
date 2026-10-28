@@ -54,20 +54,82 @@ fn output_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
     Ok(js_array)
 }
 
-// A name, or null for the default output.
-fn set_output_device(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    let name = match cx.argument_opt(0) {
-        Some(value) if !value.is_a::<JsNull, _>(&mut cx) => Some(
-            value
-                .downcast_or_throw::<JsString, _>(&mut cx)?
-                .value(&mut cx),
+// Argument i as a string, or None when it is missing or null.
+fn optional_string(cx: &mut FunctionContext, i: usize) -> NeonResult<Option<String>> {
+    match cx.argument_opt(i) {
+        Some(value) if !value.is_a::<JsNull, _>(cx) && !value.is_a::<JsUndefined, _>(cx) => {
+            Ok(Some(value.downcast_or_throw::<JsString, _>(cx)?.value(cx)))
+        }
+        _ => Ok(None),
+    }
+}
+
+// Argument i as a whole number, or None when it is missing or null.
+fn optional_u32(cx: &mut FunctionContext, i: usize) -> NeonResult<Option<u32>> {
+    match cx.argument_opt(i) {
+        Some(value) if !value.is_a::<JsNull, _>(cx) && !value.is_a::<JsUndefined, _>(cx) => Ok(
+            Some(value.downcast_or_throw::<JsNumber, _>(cx)?.value(cx) as u32),
         ),
-        _ => None,
-    };
-    if let Err(e) = karafriends_lib::set_output_device(name) {
+        _ => Ok(None),
+    }
+}
+
+// A name (null for the default output), and its rate and buffer size in
+// frames (null for the device's own).
+fn set_output_device(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let name = optional_string(&mut cx, 0)?;
+    let rate = optional_u32(&mut cx, 1)?;
+    let buffer = optional_u32(&mut cx, 2)?;
+    if let Err(e) = karafriends_lib::set_output_device(name, rate, buffer) {
         return cx.throw_error(e.to_string());
     }
     Ok(cx.undefined())
+}
+
+// { rates, bufferSizes } for an ASIO output; null for others.
+fn output_options(mut cx: FunctionContext) -> JsResult<JsValue> {
+    let name = cx.argument::<JsString>(0)?.value(&mut cx);
+    let options = match karafriends_lib::output_options(&name) {
+        Ok(options) => options,
+        Err(e) => return cx.throw_error(e.to_string()),
+    };
+    let Some((rates, buffers)) = options else {
+        return Ok(cx.null().upcast());
+    };
+    let js_object = JsObject::new(&mut cx);
+    let js_rates = JsArray::new(&mut cx, rates.len());
+    for (i, rate) in rates.iter().enumerate() {
+        let value = cx.number(*rate);
+        js_rates.set(&mut cx, i as u32, value)?;
+    }
+    let js_buffers = JsArray::new(&mut cx, buffers.len());
+    for (i, frames) in buffers.iter().enumerate() {
+        let value = cx.number(*frames);
+        js_buffers.set(&mut cx, i as u32, value)?;
+    }
+    js_object.set(&mut cx, "rates", js_rates)?;
+    js_object.set(&mut cx, "bufferSizes", js_buffers)?;
+    Ok(js_object.upcast())
+}
+
+// Exclusive or not, and the buffer size in frames (null: the smallest).
+fn set_mic_mode(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let exclusive = cx.argument::<JsBoolean>(0)?.value(&mut cx);
+    let buffer = optional_u32(&mut cx, 1)?;
+    karafriends_lib::set_mic_mode(exclusive, buffer);
+    Ok(cx.undefined())
+}
+
+fn exclusive_available(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    Ok(cx.boolean(karafriends_lib::exclusive_available()))
+}
+
+// "48 kHz, 512 samples (10.7 ms)", or null while no mic is open.
+fn output_format(mut cx: FunctionContext) -> JsResult<JsValue> {
+    Ok(match karafriends_lib::output_format() {
+        Some(format) => cx.string(format).upcast(),
+        None => cx.null().upcast(),
+    })
 }
 
 fn input_device__new(
@@ -117,11 +179,15 @@ fn input_device__status(mut cx: FunctionContext) -> JsResult<JsString> {
     Ok(cx.string(status))
 }
 
+fn input_device__format(mut cx: FunctionContext) -> JsResult<JsString> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let format = device.borrow().format();
+    Ok(cx.string(format))
+}
+
 fn input_device__stop(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
-    if let Err(e) = device.borrow().stop() {
-        return cx.throw_error(e.to_string());
-    }
+    device.borrow_mut().stop();
     Ok(cx.undefined())
 }
 
@@ -132,10 +198,15 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("outputDevices", output_devices)?;
     cx.export_function("asioStatus", asio_status)?;
     cx.export_function("setOutputDevice", set_output_device)?;
+    cx.export_function("outputOptions", output_options)?;
+    cx.export_function("outputFormat", output_format)?;
+    cx.export_function("setMicMode", set_mic_mode)?;
+    cx.export_function("exclusiveAvailable", exclusive_available)?;
     cx.export_function("inputDevice_new", input_device__new)?;
     cx.export_function("inputDevice_setGain", input_device__set_gain)?;
     cx.export_function("inputDevice_setEcho", input_device__set_echo)?;
     cx.export_function("inputDevice_status", input_device__status)?;
+    cx.export_function("inputDevice_format", input_device__format)?;
     cx.export_function("inputDevice_getPitch", input_device__get_pitch)?;
     cx.export_function("inputDevice_stop", input_device__stop)?;
 

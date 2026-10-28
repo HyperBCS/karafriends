@@ -25,7 +25,8 @@ export const configStore = createConfigStore(
 export const LOCAL_ONLY = process.env.KARAFRIENDS_LOCAL_ONLY === "1";
 
 // KARAFRIENDS_HIDE_WINDOW=1 creates the display window hidden (and not full
-// screen), so tests and automated checks don't take over the user's screen.
+// screen), and opens no native console window, so tests and automated
+// checks don't take over the user's screen.
 export const HIDE_WINDOW = process.env.KARAFRIENDS_HIDE_WINDOW === "1";
 
 // The running config (configStore.get()): one object, kept up to date in

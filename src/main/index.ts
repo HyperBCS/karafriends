@@ -59,12 +59,17 @@ import { api, hub } from "./services";
 // on this machine could attach to it and run code in the main process.
 if (isDev && inspector.url() === undefined) inspector.open();
 
-try {
-  nativeAudio.allocConsole();
-} catch (e) {
-  // Started from a terminal, the process already has a console and Windows
-  // refuses a second one with "Access is denied" (os error 5). That's fine.
-  if (!String(e).includes("os error 5")) console.error(e);
+// Not under tests: the console window would pop up and take the focus for
+// every launch.
+if (!HIDE_WINDOW) {
+  try {
+    nativeAudio.allocConsole();
+  } catch (e) {
+    // Started from a terminal, the process already has a console and
+    // Windows refuses a second one with "Access is denied" (os error 5).
+    // That's fine.
+    if (!String(e).includes("os error 5")) console.error(e);
+  }
 }
 
 if (!LOCAL_ONLY) setupMdns();

@@ -51,6 +51,8 @@ macro_rules! with_sample_type {
     };
 }
 
+#[cfg(windows)]
+mod exclusive;
 mod mixer;
 mod pitch_detector;
 mod reverb_module;
@@ -58,7 +60,7 @@ mod reverb_module;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::{FromIterator, Iterator};
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -68,13 +70,37 @@ use ringbuf::traits::{Consumer, Producer, Split};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::Resampler;
 
-pub use mixer::{output_devices, set_output_device};
+pub use mixer::{output_devices, output_format, output_options, set_output_device};
+
+// How the platform's mics open: exclusive (Windows only, see exclusive.rs)
+// with a buffer size in frames (None: the mic's smallest), or shared.
+#[derive(Clone, Copy)]
+struct MicMode {
+    exclusive: bool,
+    buffer: Option<u32>,
+}
+
+static MIC_MODE: Mutex<MicMode> = Mutex::new(MicMode {
+    exclusive: false,
+    buffer: None,
+});
+
+// For the mics opened from now on.
+pub fn set_mic_mode(exclusive: bool, buffer: Option<u32>) {
+    *lock(&MIC_MODE) = MicMode { exclusive, buffer };
+}
+
+pub fn exclusive_available() -> bool {
+    cfg!(windows)
+}
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 // Rubato is fed whole chunks of this many frames, whatever size the mic's
-// callbacks are; the remainder waits for the next callback.
-const RESAMPLER_CHUNK: usize = 1024;
+// callbacks are; the remainder waits for the next callback. Small, since a
+// chunk waits before it plays: a mic resampled for an output at another
+// rate is about 4 ms late with 128, 24 ms with 1024.
+const RESAMPLER_CHUNK: usize = 128;
 
 // The ASIO host, and what Settings says about ASIO (see asio_status).
 #[cfg(all(windows, feature = "asio"))]
@@ -82,6 +108,8 @@ struct Asio {
     // None when it didn't start; the status says why.
     host: Option<cpal::Host>,
     status: String,
+    // The devices as last listed with no ASIO stream open (see asio_devices).
+    devices: Mutex<Vec<cpal::Device>>,
 }
 
 // Made the first time anything lists or opens a device, before any ASIO
@@ -94,6 +122,7 @@ static ASIO: LazyLock<Asio> = LazyLock::new(|| {
         Ok(host) => Asio {
             host: Some(host),
             status: asio_drivers(),
+            devices: Mutex::new(Vec::new()),
         },
         Err(e) => {
             eprintln!("The ASIO host didn't start: {e}");
@@ -102,7 +131,11 @@ static ASIO: LazyLock<Asio> = LazyLock::new(|| {
             } else {
                 format!("ASIO didn't start: {e}")
             };
-            Asio { host: None, status }
+            Asio {
+                host: None,
+                status,
+                devices: Mutex::new(Vec::new()),
+            }
         }
     }
 });
@@ -140,7 +173,7 @@ pub fn asio_status() -> String {
     "ASIO isn't in this build".to_string()
 }
 
-static INPUT_DEVICES: LazyLock<Mutex<HashMap<String, cpal::Device>>> =
+static INPUT_DEVICES: LazyLock<Mutex<HashMap<String, (cpal::Device, DeviceType)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 enum DeviceType {
@@ -150,13 +183,64 @@ enum DeviceType {
     DefaultHost,
 }
 
+impl DeviceType {
+    fn is_asio(&self) -> bool {
+        match self {
+            #[cfg(all(windows, feature = "asio"))]
+            DeviceType::Asio => true,
+            DeviceType::DefaultHost => false,
+        }
+    }
+}
+
+// The ASIO streams open now (see asio_devices).
+static ASIO_STREAMS: AtomicUsize = AtomicUsize::new(0);
+
+// Counts one open ASIO stream until it is dropped.
+struct AsioInUse;
+
+impl Drop for AsioInUse {
+    fn drop(&mut self) {
+        ASIO_STREAMS.fetch_sub(1, Relaxed);
+    }
+}
+
 // cpal streams aren't Send on purpose: some hosts need a stream dropped on the
 // thread that made it. That holds here: every stream is built, paused and
 // dropped by the neon functions, which all run on the JS thread; the audio
 // threads only ever see the callbacks, never the stream.
-struct Stream(cpal::Stream);
+struct Stream {
+    // Held, not read: dropping it closes the stream.
+    _stream: cpal::Stream,
+    // After the stream, so it counts until the stream has let its driver go.
+    _asio: Option<AsioInUse>,
+}
+
+impl Stream {
+    fn new(stream: cpal::Stream, device_type: &DeviceType) -> Self {
+        let asio = device_type.is_asio().then(|| {
+            ASIO_STREAMS.fetch_add(1, Relaxed);
+            AsioInUse
+        });
+        Stream {
+            _stream: stream,
+            _asio: asio,
+        }
+    }
+}
 
 unsafe impl Send for Stream {}
+
+// A rate and a buffer size as Settings shows them: "48 kHz, 512 samples
+// (10.7 ms)", or "48 kHz" before the first callback.
+fn describe(rate: cpal::SampleRate, frames: u32) -> String {
+    let khz = format!("{}", rate as f64 / 1000.0);
+    if frames == 0 {
+        return format!("{khz} kHz");
+    }
+    let ms = frames as f64 * 1000.0 / rate as f64;
+    format!("{khz} kHz, {frames} samples ({ms:.1} ms)")
+}
 
 // A panic elsewhere shouldn't take the mics down with it.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -226,7 +310,16 @@ impl Levels {
 }
 
 pub struct InputDevice {
-    input_stream: Stream,
+    // The open stream, a cpal one or an exclusive one, held to be dropped:
+    // None once stopped, which lets the device go at once, not when JS gets
+    // round to collecting this.
+    input_stream: Option<Box<dyn Send>>,
+    // How the mic is open ("Shared", "Exclusive", "ASIO"), and why not as
+    // asked if it isn't; its rate, and the frames per callback (see format).
+    kind: &'static str,
+    note: Option<String>,
+    rate: cpal::SampleRate,
+    frames: Arc<AtomicU32>,
     source_id: u64,
     levels: Arc<Levels>,
     // Why the input stream stopped, or why the mixer wants it reopened.
@@ -284,7 +377,7 @@ impl InputDevice {
         mixer: &mut mixer::Mixer,
     ) -> Result<Self> {
         let mut input_devices = lock(&INPUT_DEVICES);
-        let input_device = match input_devices.get(name) {
+        let (input_device, device_type) = match input_devices.get(name) {
             Some(device) => device,
             None => {
                 input_devices.insert(
@@ -293,12 +386,31 @@ impl InputDevice {
                         .find(|(input_device, device_type)| {
                             _device_name(input_device, device_type) == name
                         })
-                        .ok_or(format!("Could not find device: {}", name))?
-                        .0,
+                        .ok_or(format!("Could not find device: {}", name))?,
                 );
                 &input_devices[name]
             }
         };
+        // Exclusive when it's set and Windows gives the mic; else shared,
+        // saying why.
+        let mode = *lock(&MIC_MODE);
+        let mut note = None;
+        if mode.exclusive && !device_type.is_asio() {
+            match Self::open_exclusive(
+                input_device,
+                channel_selection,
+                output_rate,
+                mode.buffer,
+                mixer,
+            ) {
+                Ok(device) => return Ok(device),
+                Err(e) => {
+                    eprintln!("Exclusive mode was refused: {e}");
+                    note = Some(format!("Exclusive mode was refused: {e}"));
+                }
+            }
+        }
+
         // Only configs that have the chosen channel, the output's rate first.
         let mut supported_input_configs: Vec<_> = input_device
             .supported_input_configs()?
@@ -318,38 +430,74 @@ impl InputDevice {
             best_supported_input_config.sample_format(),
         );
 
+        let status = Arc::new(Mutex::new(None));
+        let mut device = with_sample_type!(best_supported_input_config.sample_format(), T => {
+            Self::assemble::<T, _>(
+                &input_config,
+                output_rate,
+                channel_selection,
+                mixer,
+                input_kind(device_type),
+                status.clone(),
+                |mut callback| {
+                    let stream = input_device.build_input_stream(
+                        input_config,
+                        move |samples: &[T], _: &_| callback(samples),
+                        error_callback(status.clone(), "Mic"),
+                        None,
+                    )?;
+                    stream.play()?;
+                    Ok(Stream::new(stream, device_type))
+                },
+            )
+        })?;
+        device.note = note;
+        Ok(device)
+    }
+
+    // The mic around a stream that `start` opens, given the mic's callback:
+    // the pitch and mixer buffers it feeds, its levels, and its place in the
+    // mixer. `status` is where the stream says why it stopped.
+    fn assemble<Sample, S: Send + 'static>(
+        input_config: &cpal::StreamConfig,
+        output_rate: cpal::SampleRate,
+        channel_selection: usize,
+        mixer: &mut mixer::Mixer,
+        kind: &'static str,
+        status: Arc<Mutex<Option<String>>>,
+        start: impl FnOnce(Box<dyn FnMut(&[Sample]) + Send>) -> Result<S>,
+    ) -> Result<Self>
+    where
+        Sample: cpal::Sample + Copy + 'static,
+        f32: cpal::FromSample<Sample>,
+    {
         let pitch_sample_count = input_config.sample_rate.div_ceil(40) as usize;
         let (pitch_tx, pitch_rx) = ringbuf::HeapRb::new(pitch_sample_count).split();
         let (output_tx, output_rx) =
             ringbuf::HeapRb::new(mixer::ring_capacity(output_rate)).split();
-
         let pitch_detector =
             pitch_detector::PitchDetector::new(input_config.sample_rate as f32, pitch_sample_count);
-
         let levels = Arc::new(Levels::new(1.0, 0.4));
-        let status = Arc::new(Mutex::new(None));
+        let frames = Arc::new(AtomicU32::new(0));
 
-        let input_stream = with_sample_type!(best_supported_input_config.sample_format(), T => {
-            let mut input_callback = Self::input_data_callback::<T>(
-                &input_config,
-                output_rate,
-                channel_selection,
-                levels.clone(),
-                pitch_tx,
-                output_tx,
-            )?;
-            Ok(input_device.build_input_stream(
-                input_config,
-                move |samples: &[T], _: &_| input_callback(samples),
-                error_callback(status.clone(), "Mic"),
-                None,
-            )?)
-        })?;
-        input_stream.play()?;
+        let callback = Self::input_data_callback::<Sample>(
+            input_config,
+            output_rate,
+            channel_selection,
+            levels.clone(),
+            frames.clone(),
+            pitch_tx,
+            output_tx,
+        )?;
+        let stream = start(Box::new(callback))?;
 
         let source_id = mixer.register(output_rx, output_rate, status.clone());
         Ok(InputDevice {
-            input_stream: Stream(input_stream),
+            input_stream: Some(Box::new(stream)),
+            kind,
+            note: None,
+            rate: input_config.sample_rate,
+            frames,
             source_id,
             levels,
             status,
@@ -357,6 +505,81 @@ impl InputDevice {
             pitch_sample_count,
             pitch_detector,
         })
+    }
+
+    // A Windows mic in exclusive mode (see exclusive.rs), at the output's
+    // rate if it takes it.
+    #[cfg(windows)]
+    fn open_exclusive(
+        input_device: &cpal::Device,
+        channel_selection: usize,
+        output_rate: cpal::SampleRate,
+        buffer: Option<u32>,
+        mixer: &mut mixer::Mixer,
+    ) -> Result<Self> {
+        type Callback = Box<dyn FnMut(&[f32]) + Send>;
+        let id = input_device.id()?.to_string();
+        let endpoint = id.strip_prefix("wasapi:").unwrap_or(&id);
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        // The stream runs before its format is known, and so before the
+        // mic's callback can be made: until it is (a period or two), the
+        // sound is dropped.
+        let slot: Arc<Mutex<Option<Callback>>> = Arc::default();
+        let feed = slot.clone();
+        let failed = status.clone();
+        let (input, format) = exclusive::ExclusiveInput::open(
+            endpoint,
+            output_rate,
+            buffer,
+            move |data| {
+                if let Ok(mut callback) = feed.try_lock() {
+                    if let Some(callback) = callback.as_mut() {
+                        callback(data);
+                    }
+                }
+            },
+            move |e| {
+                eprintln!("Mic stopped: {e}");
+                let mut status = lock(&failed);
+                if status.is_none() {
+                    *status = Some(e);
+                }
+            },
+        )?;
+        if channel_selection >= format.channels as usize {
+            return Err(
+                format!("The mic has {} channels in exclusive mode", format.channels).into(),
+            );
+        }
+        let input_config = cpal::StreamConfig {
+            channels: format.channels,
+            sample_rate: format.rate,
+            buffer_size: cpal::BufferSize::Fixed(format.frames),
+        };
+        println!("Created input device {id} in exclusive mode with config {input_config:#?}");
+        Self::assemble::<f32, _>(
+            &input_config,
+            output_rate,
+            channel_selection,
+            mixer,
+            "Exclusive",
+            status,
+            |callback| {
+                *lock(&slot) = Some(callback);
+                Ok(input)
+            },
+        )
+    }
+
+    #[cfg(not(windows))]
+    fn open_exclusive(
+        _: &cpal::Device,
+        _: usize,
+        _: cpal::SampleRate,
+        _: Option<u32>,
+        _: &mut mixer::Mixer,
+    ) -> Result<Self> {
+        Err("exclusive mode is for Windows only".into())
     }
 
     pub fn get_pitch(&mut self) -> Result<(f32, f32)> {
@@ -388,10 +611,23 @@ impl InputDevice {
         lock(&mixer::MIXER).status()
     }
 
-    pub fn stop(&self) -> Result<()> {
+    // "Shared, 48 kHz, 480 samples (10.0 ms)": how the mic is open, and why
+    // not as asked if it isn't.
+    pub fn format(&self) -> String {
+        let format = format!(
+            "{}, {}",
+            self.kind,
+            describe(self.rate, self.frames.load(Relaxed))
+        );
+        match &self.note {
+            Some(note) => format!("{format}. {note}"),
+            None => format,
+        }
+    }
+
+    pub fn stop(&mut self) {
         lock(&mixer::MIXER).deregister(self.source_id);
-        self.input_stream.0.pause()?;
-        Ok(())
+        self.input_stream = None;
     }
 
     // The input callback: the chosen channel goes to the pitch buffer as it
@@ -402,6 +638,7 @@ impl InputDevice {
         output_rate: cpal::SampleRate,
         channel_selection: usize,
         levels: Arc<Levels>,
+        frames: Arc<AtomicU32>,
         mut pitch_tx: ringbuf::HeapProd<f32>,
         mut output_tx: ringbuf::HeapProd<f32>,
     ) -> Result<impl FnMut(&[Sample]) + Send + 'static>
@@ -444,6 +681,7 @@ impl InputDevice {
         let mut error_prints = RateLimit::default();
 
         Ok(move |samples: &[Sample]| {
+            frames.store((samples.len() / input_channels) as u32, Relaxed);
             mono.clear();
             mono.extend(samples.chunks(input_channels).map(|frame| {
                 frame
@@ -588,7 +826,7 @@ fn _input_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> 
         .input_devices()?
         .map(|device| (device, DeviceType::DefaultHost));
     #[cfg(all(windows, feature = "asio"))]
-    let devices = devices.chain(asio_devices(|host| host.input_devices()));
+    let devices = devices.chain(asio_devices(DeviceTrait::supports_input));
     Ok(devices)
 }
 
@@ -597,26 +835,47 @@ fn _output_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>>
         .output_devices()?
         .map(|device| (device, DeviceType::DefaultHost));
     #[cfg(all(windows, feature = "asio"))]
-    let devices = devices.chain(asio_devices(|host| host.output_devices()));
+    let devices = devices.chain(asio_devices(DeviceTrait::supports_output));
     Ok(devices)
 }
 
-// The ASIO host's devices; none when it didn't start (the ASIO status says
-// why) or can't list them, so the platform's devices always list.
+// The ASIO host's devices that `wanted` keeps; none when it didn't start
+// (the ASIO status says why), so the platform's devices always list. ASIO
+// holds one driver at a time, and while a stream has one, cpal's listing
+// stops at the first other driver: the interface the mics play through
+// would vanish from Settings. So they are listed while no ASIO stream is
+// open, and that list stands meanwhile. (A cpal ASIO device is only a
+// description: a stream loads its driver when it opens.)
 #[cfg(all(windows, feature = "asio"))]
-fn asio_devices<Devices: Iterator<Item = cpal::Device>>(
-    list: impl FnOnce(&cpal::Host) -> std::result::Result<Devices, cpal::Error>,
-) -> impl Iterator<Item = (cpal::Device, DeviceType)> {
-    ASIO.host
-        .as_ref()
-        .and_then(|host| {
-            list(host)
-                .inspect_err(|e| eprintln!("The ASIO devices are left out: {e}"))
-                .ok()
-        })
+fn asio_devices(
+    wanted: fn(&cpal::Device) -> bool,
+) -> std::vec::IntoIter<(cpal::Device, DeviceType)> {
+    let Some(host) = ASIO.host.as_ref() else {
+        return Vec::new().into_iter();
+    };
+    let mut devices = lock(&ASIO.devices);
+    if ASIO_STREAMS.load(Relaxed) == 0 {
+        match host.devices() {
+            Ok(listed) => *devices = listed.collect(),
+            Err(e) => eprintln!("The ASIO devices are left out: {e}"),
+        }
+    }
+    devices
+        .iter()
+        .filter(|device| wanted(device))
+        .map(|device| (device.clone(), DeviceType::Asio))
+        .collect::<Vec<_>>()
         .into_iter()
-        .flatten()
-        .map(|device| (device, DeviceType::Asio))
+}
+
+// How a mic is open, for its format line.
+fn input_kind(device_type: &DeviceType) -> &'static str {
+    match device_type {
+        #[cfg(all(windows, feature = "asio"))]
+        DeviceType::Asio => "ASIO",
+        DeviceType::DefaultHost if cfg!(windows) => "Shared",
+        DeviceType::DefaultHost => "System",
+    }
 }
 
 // What an input's id and label end with.
@@ -692,6 +951,7 @@ mod tests {
             output_rate,
             0,
             Arc::new(levels),
+            Arc::default(),
             pitch_tx,
             output_tx,
         )?;
@@ -868,10 +1128,15 @@ mod tests {
         assert!(lock(&status).is_some());
     }
 
+    // The tests that list devices take turns: two threads loading ASIO
+    // drivers at once crash (the app lists them from one thread only).
+    static DEVICES: Mutex<()> = Mutex::new(());
+
     // Lists the outputs without opening any. CI machines may have no audio
     // system at all, so only the names are checked.
     #[test]
     fn test_output_device_names() {
+        let _devices = lock(&DEVICES);
         if let Ok(names) = output_devices() {
             for name in names {
                 assert!(
@@ -890,6 +1155,7 @@ mod tests {
     // with the same host.
     #[test]
     fn test_input_device_ids_and_labels() {
+        let _devices = lock(&DEVICES);
         if let Ok(devices) = InputDevice::collect_devices::<Vec<_>>() {
             for (id, label, _) in &devices {
                 let host = if id.ends_with(" (ASIO)") {
@@ -905,6 +1171,7 @@ mod tests {
 
     #[test]
     fn test_asio_status() {
+        let _devices = lock(&DEVICES);
         let status = asio_status();
         if cfg!(all(windows, feature = "asio")) {
             assert!(

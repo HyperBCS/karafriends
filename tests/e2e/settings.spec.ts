@@ -363,6 +363,8 @@ test.describe("the microphones", () => {
     expect(await fakeAudioCalls(display)).toContainEqual([
       "setOutputDevice",
       "E2E Interface (ASIO)",
+      null,
+      null,
     ]);
     // The outputs are listed again each time Settings opens.
     const listings = async () =>
@@ -413,7 +415,7 @@ test.describe("the microphones", () => {
     const calls = await fakeAudioCalls(display);
     expect(calls).toEqual(
       expect.arrayContaining([
-        ["setOutputDevice", "E2E Interface (ASIO)"],
+        ["setOutputDevice", "E2E Interface (ASIO)", null, null],
         ["inputDevice_new", INTERFACE_DEVICE, 1],
         ["inputDevice_setGain", 0, 0.5],
       ]),
@@ -491,10 +493,155 @@ test.describe("the microphones", () => {
     expect(await fakeAudioCalls(display)).toContainEqual([
       "setOutputDevice",
       null,
+      null,
+      null,
     ]);
     expect(
       await display.evaluate(() => localStorage.getItem("micOutput")),
     ).toBeNull();
+  });
+
+  test("an ASIO mic output takes a buffer size and a sample rate, kept on the display; the mics say what they run at", async ({
+    display,
+  }) => {
+    const section = display.getByRole("region", { name: "Microphones" });
+    const output = section.getByLabel("Mic output");
+    // A Windows output has none: Windows sets them.
+    await output.selectOption("E2E Speakers (Windows)");
+    await expect(section.getByLabel("Buffer")).toHaveCount(0);
+    await expect(section.getByLabel("Sample rate")).toHaveCount(0);
+
+    await output.selectOption("E2E Interface (ASIO)");
+    const buffer = section.getByLabel("Buffer");
+    const rate = section.getByLabel("Sample rate");
+    await expect(buffer).toHaveValue("");
+    await expect(buffer.locator("option")).toHaveText([
+      "Driver's setting",
+      "64 samples",
+      "128 samples",
+      "256 samples",
+      "512 samples",
+    ]);
+    await expect(rate.locator("option")).toHaveText([
+      "Driver's setting",
+      "44.1 kHz",
+      "48 kHz",
+      "96 kHz",
+    ]);
+    await buffer.selectOption("128 samples");
+    await rate.selectOption("96 kHz");
+    expect(await fakeAudioCalls(display)).toEqual(
+      expect.arrayContaining([
+        ["setOutputDevice", "E2E Interface (ASIO)", null, 128],
+        ["setOutputDevice", "E2E Interface (ASIO)", 96000, 128],
+      ]),
+    );
+
+    // What the output and a mic run at.
+    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    await expect(
+      section.getByText("In use: 48 kHz, 256 samples (5.3 ms)"),
+    ).toBeVisible();
+    await expect(
+      section
+        .getByRole("group", { name: MIC.label })
+        .getByText("In use: Shared, 48 kHz, 480 samples (10.0 ms)"),
+    ).toBeVisible();
+
+    // Kept, and set again at the next launch.
+    await display.reload();
+    await expect(buffer).toHaveValue("128");
+    await expect(rate).toHaveValue("96000");
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "setOutputDevice",
+      "E2E Interface (ASIO)",
+      96000,
+      128,
+    ]);
+
+    // Another device starts from its driver's settings.
+    await output.selectOption("E2E Speakers (Windows)");
+    await output.selectOption("E2E Interface (ASIO)");
+    await expect(buffer).toHaveValue("");
+    await expect(rate).toHaveValue("");
+    expect(
+      await display.evaluate(() => [
+        localStorage.getItem("micOutputRate"),
+        localStorage.getItem("micOutputBuffer"),
+      ]),
+    ).toEqual([null, null]);
+  });
+
+  test("the Windows mics go exclusive and back, reopening, kept on the display", async ({
+    display,
+  }) => {
+    const section = display.getByRole("region", { name: "Microphones" });
+    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    const mic = section.getByRole("group", { name: MIC.label });
+    const mode = section.getByLabel("Windows mics");
+    await expect(mode).toHaveValue("shared");
+    await expect(section.getByLabel("Mic buffer")).toHaveCount(0);
+    await expect(
+      mic.getByText("In use: Shared, 48 kHz, 480 samples (10.0 ms)"),
+    ).toBeVisible();
+
+    // Exclusive: the mic reopens in it, at its smallest buffer.
+    await mode.selectOption("Exclusive");
+    await expect(
+      mic.getByText("In use: Exclusive, 48 kHz, 144 samples (3.0 ms)"),
+    ).toBeVisible();
+    const calls = await fakeAudioCalls(display);
+    const modeAt = calls.findIndex(
+      (call) => JSON.stringify(call) === '["setMicMode",true,null]',
+    );
+    expect(modeAt).toBeGreaterThan(-1);
+    expect(calls.slice(modeAt)).toEqual(
+      expect.arrayContaining([
+        ["inputDevice_stop", 0],
+        ["inputDevice_new", MIC_DEVICE, 0],
+      ]),
+    );
+    const buffer = section.getByLabel("Mic buffer");
+    await expect(buffer.locator("option")).toHaveText([
+      "Smallest",
+      "128 samples",
+      "256 samples",
+      "512 samples",
+    ]);
+    await buffer.selectOption("256 samples");
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "setMicMode",
+      true,
+      256,
+    ]);
+
+    // Kept: the next launch sets it before the mic opens.
+    await display.reload();
+    await expect(mode).toHaveValue("exclusive");
+    await expect(buffer).toHaveValue("256");
+    const relaunched = await fakeAudioCalls(display);
+    expect(
+      relaunched.findIndex(
+        (call) => JSON.stringify(call) === '["setMicMode",true,256]',
+      ),
+    ).toBeLessThan(
+      relaunched.findIndex(([name]) => name === "inputDevice_new"),
+    );
+
+    // Shared again forgets the buffer.
+    await mode.selectOption("Shared");
+    await expect(section.getByLabel("Mic buffer")).toHaveCount(0);
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "setMicMode",
+      false,
+      null,
+    ]);
+    expect(
+      await display.evaluate(() => [
+        localStorage.getItem("micMode"),
+        localStorage.getItem("micBuffer"),
+      ]),
+    ).toEqual([null, null]);
   });
 
   // Saved by the id, as before the labels: it opens and shows its label.

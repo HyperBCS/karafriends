@@ -95,11 +95,12 @@ const fakeAudioCalls: FakeAudioCall[] | null =
 
 function fakeNativeAudio(calls: FakeAudioCall[]) {
   let nextDeviceId = 0;
+  let exclusive = false;
   const fake =
-    <T>(name: string, answer: () => T) =>
+    <T>(name: string, answer: (...args: any[]) => T) =>
     (...args: unknown[]): T => {
       calls.push([name, ...args]);
-      return answer();
+      return answer(...args);
     };
   return {
     inputDevices: fake("inputDevices", (): [string, string, number][] => [
@@ -112,6 +113,22 @@ function fakeNativeAudio(calls: FakeAudioCall[]) {
     ]),
     asioStatus: fake("asioStatus", () => "ASIO: E2E Interface"),
     setOutputDevice: fake("setOutputDevice", () => undefined),
+    // The ASIO output has options; the Windows one has none.
+    outputOptions: fake("outputOptions", (name: string) =>
+      name.endsWith(" (ASIO)")
+        ? { rates: [44100, 48000, 96000], bufferSizes: [64, 128, 256, 512] }
+        : null,
+    ),
+    outputFormat: fake("outputFormat", () => "48 kHz, 256 samples (5.3 ms)"),
+    setMicMode: fake("setMicMode", (on: boolean) => {
+      exclusive = on;
+    }),
+    exclusiveAvailable: fake("exclusiveAvailable", () => true),
+    inputDevice_format: fake("inputDevice_format", () =>
+      exclusive
+        ? "Exclusive, 48 kHz, 144 samples (3.0 ms)"
+        : "Shared, 48 kHz, 480 samples (10.0 ms)",
+    ),
     inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
     inputDevice_delete: fake("inputDevice_delete", () => undefined),
     inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
@@ -157,9 +174,19 @@ contextBridge.exposeInMainWorld("karafriends", {
         outputDevices: nativeAudio.outputDevices,
         // Found once, as the first device is listed.
         asioStatus: nativeAudio.asioStatus,
-        setOutputDevice(name: string | null) {
-          return nativeAudio.setOutputDevice(name);
+        setOutputDevice(
+          name: string | null,
+          rate: number | null,
+          bufferSize: number | null,
+        ) {
+          return nativeAudio.setOutputDevice(name, rate, bufferSize);
         },
+        outputOptions: nativeAudio.outputOptions,
+        outputFormat: nativeAudio.outputFormat,
+        setMicMode(exclusive: boolean, bufferSize: number | null) {
+          return nativeAudio.setMicMode(exclusive, bufferSize);
+        },
+        exclusiveAvailable: nativeAudio.exclusiveAvailable,
         inputDevice_new(name: string, channelSelection: number) {
           console.debug(
             `preload: creating input device ${inputDeviceCount}: ${name}`,
@@ -182,6 +209,9 @@ contextBridge.exposeInMainWorld("karafriends", {
         },
         inputDevice_status(deviceId: number) {
           return nativeAudio.inputDevice_status(inputDevices[deviceId]);
+        },
+        inputDevice_format(deviceId: number) {
+          return nativeAudio.inputDevice_format(inputDevices[deviceId]);
         },
         inputDevice_getPitch(deviceId: number) {
           return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
