@@ -119,4 +119,4 @@ Two Opus fix sessions, one per area: remote (#1 to #6 and the two remote cuts) a
 
 ### Status
 
-Fixes in progress; this section is updated when they merge.
+All 11 rows fixed and merged on 2026-10-28 (display `9fdb606`, phone remote `0fbc821`), and every simplicity cut made except `latencyHint`, kept on purpose. Two deviations: #5 darkens the muted text (light `#616161`, dark `#b3b3b3`, pressed dark `#444444`) rather than the pressed surface, which would have made a press invisible on the panel; and for #6 DAM's song details carry no artist reading (checked against the live API), so the row that opens a song passes the artist's reading in router state and the screenshot fixture no longer fakes one. Left as is: the low-bitrate switch's own seek still clears the mic trace once per song (cosmetic), and a pressed current-song row puts its accent title at 4.1:1.
