@@ -427,14 +427,10 @@ function App(props: { audio: KarafriendsAudio }) {
     setMics(mics.filter((_, i) => i !== index));
   };
 
-  // Q shows or hides the up-next strip, S opens Settings, Escape closes it.
-  // Not while typing in a field.
+  // Q shows or hides the up-next strip, S opens Settings (Escape closes it:
+  // see Settings). Not while typing in a field.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSettingsOpen(false);
-        return;
-      }
       if (event.ctrlKey || event.altKey || event.metaKey) return;
       if ((event.target as Element).closest?.("input, select, textarea")) {
         return;

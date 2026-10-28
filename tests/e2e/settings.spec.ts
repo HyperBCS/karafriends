@@ -232,6 +232,49 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(settings).toHaveCount(0);
 });
 
+test("leaving Settings saves the field being edited: Escape keeps it, and Close stays open to say why one was refused", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const close = settings.getByRole("button", { name: "Close" });
+  const joysound = settings.getByRole("region", { name: "Joysound login" });
+  await joysound.getByLabel("Email").fill("e2e-escape@example.com");
+  await display.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect
+    .poll(
+      async () => (await output(display, "getSettings")).settings.joysoundEmail,
+    )
+    .toBe("e2e-escape@example.com");
+  await display.keyboard.press("s");
+  await expect(joysound.getByLabel("Email")).toHaveValue(
+    "e2e-escape@example.com",
+  );
+
+  // A refused port, left with Close: it stays open, saying why.
+  await openTab(display, "Party");
+  const network = settings.getByRole("region", { name: "Phones", exact: true });
+  await network.getByLabel("Port").fill("80800");
+  await close.click();
+  await expect(network.getByRole("status")).toHaveText(
+    "Port must be a whole number from 1 to 65535",
+  );
+  await expect(settings).toBeVisible();
+  // Seen: Close closes.
+  await close.click();
+  await expect(settings).toHaveCount(0);
+
+  // The same from Escape.
+  await display.keyboard.press("s");
+  await network.getByLabel("Port").fill("80801");
+  await display.keyboard.press("Escape");
+  await expect(network.getByRole("status")).toHaveText(
+    "Port must be a whole number from 1 to 65535",
+  );
+  await display.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+});
+
 test("the songs' output can be picked; a saved one that isn't connected says so", async ({
   display,
 }) => {

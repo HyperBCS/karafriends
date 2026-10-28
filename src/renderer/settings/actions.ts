@@ -111,18 +111,39 @@ export function createSettingsActions(deps: SettingsDeps) {
   };
 
   // Runs task after the ones before it, and shows what it says (or its
-  // error) under the section. Settles when it has.
-  const act = (section: Section, task: () => Promise<Message | null>) =>
+  // error) under the section; undefined leaves the message as it is.
+  // Settles when it has.
+  const act = (
+    section: Section,
+    task: () => Promise<Message | null | undefined>,
+  ) =>
     (chain = chain.then(async () => {
       try {
-        say(section, await task());
+        const message = await task();
+        if (message !== undefined) say(section, message);
       } catch (err) {
         say(section, problemMessage(err));
       }
     }));
 
+  // Each save is numbered as it is asked for. The sections whose last save
+  // didn't save (a field there holds a value the app doesn't), and the
+  // number of the last save that didn't.
+  let saves = 0;
+  let lastUnsaved = -1;
+  const unsaved = new Set<Section>();
+  const settle = (section: Section, number: number, saved: boolean) => {
+    if (saved) {
+      unsaved.delete(section);
+    } else {
+      unsaved.add(section);
+      lastUnsaved = Math.max(lastUnsaved, number);
+    }
+  };
+
   // Whether it saved.
   const save = (section: Section, changes: SettingsChanges) => {
+    const number = saves++;
     let saved = false;
     return act(section, async () => {
       const result = await call("setSettings", { settings: changes });
@@ -135,7 +156,10 @@ export function createSettingsActions(deps: SettingsDeps) {
       saved = true;
       await reload();
       return { text: "Saved." };
-    }).then(() => saved);
+    }).then(() => {
+      settle(section, number, saved);
+      return saved;
+    });
   };
 
   // A whole number, or a message saying it isn't one.
@@ -145,6 +169,7 @@ export function createSettingsActions(deps: SettingsDeps) {
     value: string,
   ) => {
     if (!/^\d+$/.test(value.trim())) {
+      settle(section, saves++, false);
       say(section, {
         text: `${LABELS[key]}: enter a whole number.`,
         tone: "problem",
@@ -154,14 +179,28 @@ export function createSettingsActions(deps: SettingsDeps) {
     save(section, { [key]: Number(value) });
   };
 
-  const testLogin = (service: LoginService) => {
-    say(service, { text: "Signing in…", tone: "busy" });
+  // After the saves before it: if the login's last one didn't save, the
+  // test would sign in with the old login, so it doesn't run, and the
+  // save's message stays.
+  const testLogin = (service: LoginService) =>
     act(service, async () => {
+      if (unsaved.has(service)) return undefined;
+      say(service, { text: "Signing in…", tone: "busy" });
       const result = await call("testLogin", { service });
       return result.ok
         ? { text: `Signed in to ${SERVICE_NAMES[service]}.` }
         : { text: result.reason, tone: "problem" };
     });
+
+  // How many saves were asked for so far, to give failedSince.
+  const saveCount = () => saves;
+
+  // Whether a save asked for since saveCount() was `from` didn't save, once
+  // it has run: Settings stays open to say why.
+  const failedSince = async (from: number) => {
+    if (saves === from) return false;
+    await chain;
+    return lastUnsaved >= from;
   };
 
   // `done` runs once it is set, before the settings load again.
@@ -222,6 +261,8 @@ export function createSettingsActions(deps: SettingsDeps) {
     save,
     saveNumber,
     testLogin,
+    saveCount,
+    failedSince,
     setAdminPassword,
     restart,
     exportConfig,

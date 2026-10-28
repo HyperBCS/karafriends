@@ -1,7 +1,7 @@
 // The settings screen: the header, the tabs and the open tab's panel. Each
 // tab is a file in settings/, with the parts they share in
 // settings/controls.tsx and what the fields do in settings/actions.ts.
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 import { call } from "../common/apiClient";
 import "./global";
@@ -72,10 +72,37 @@ export default function Settings(
     actions.reload().catch((err) => setLoadError(errorText(err)));
   }, []);
 
+  // Leaving Settings saves the field being edited, as leaving the field
+  // does: Close and Escape wait for that save, and Settings stays open,
+  // saying why under the field, if it didn't save. A pointer down on Close
+  // blurs the field before the click, so the saves are counted from there.
+  const closingFrom = useRef<number | null>(null);
+  const close = async () => {
+    const from = closingFrom.current ?? actions.saveCount();
+    closingFrom.current = null;
+    (document.activeElement as HTMLElement | null)?.blur();
+    if (!(await actions.failedSince(from))) props.onClose();
+  };
+  const latestClose = useRef(close);
+  latestClose.current = close;
+  // Escape closes it, from a field too.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") void latestClose.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const header = (
     <header className="settingsHeader">
       <h1>Settings</h1>
-      <button type="button" className="kfButton" onClick={props.onClose}>
+      <button
+        type="button"
+        className="kfButton"
+        onPointerDown={() => (closingFrom.current = actions.saveCount())}
+        onClick={close}
+      >
         Close
       </button>
     </header>
