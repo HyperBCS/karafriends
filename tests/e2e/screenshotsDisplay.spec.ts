@@ -6,11 +6,9 @@
 //   yarn build-prod
 //   KARAFRIENDS_SCREENSHOTS=1 yarn test:e2e screenshotsDisplay
 //
-// The songs are Niconico videos that were never downloaded; the one that
-// plays gets a black video (tests/fixtures/black.mp4). The failed Test login
-// is a real sign-in to DAM with a wrong password, so that shot needs the
-// internet.
-import fs from "fs";
+// The songs are Niconico videos; the fixture gives each a black video
+// (tests/fixtures/black.mp4). The failed Test login is a real sign-in to
+// DAM with a wrong password, so that shot needs the internet.
 import path from "path";
 
 import type { Page } from "@playwright/test";
@@ -24,9 +22,6 @@ const OUT_DIR = path.resolve(
   "notes",
   "ui-refresh-screenshots",
 );
-
-// 60 s of black at 1280×720, no sound.
-const BLACK_VIDEO = path.resolve(__dirname, "..", "fixtures", "black.mp4");
 
 test.skip(
   process.env.KARAFRIENDS_SCREENSHOTS !== "1",
@@ -82,8 +77,7 @@ test.describe("phase D, with a login", () => {
   test.describe("four queued", () => {
     // Saved as paused with no current song, the display starts the first
     // song only at its first check, 5 s after it loads, instead of at once:
-    // time for the idle screen with the queue, and to put the first song's
-    // video in place.
+    // time for the idle screen with the queue.
     test.use({
       seedQueue: {
         currentSong: null,
@@ -94,7 +88,6 @@ test.describe("phase D, with a login", () => {
     });
 
     test("idle with four queued, then the first playing", async ({
-      karafriends,
       display,
     }) => {
       await expect(
@@ -102,15 +95,7 @@ test.describe("phase D, with a login", () => {
       ).toHaveCount(4);
       await shoot(display, "idle-queued");
 
-      // The first song "downloaded": a black video, so the shot shows what
-      // the display puts over a video.
-      const temp = await karafriends.app.evaluate(({ app }) =>
-        app.getPath("temp"),
-      );
-      fs.copyFileSync(
-        BLACK_VIDEO,
-        path.join(temp, "karafriends_tmp", `nico-${SONGS[0].songId}.mp4`),
-      );
+      // The shot shows what the display puts over a (black) video.
       await expect(
         display.getByRole("status").filter({ hasText: "Now playing" }),
       ).toBeVisible({ timeout: 10_000 });

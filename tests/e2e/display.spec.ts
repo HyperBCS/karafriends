@@ -62,8 +62,8 @@ test("the display opens on its idle screen without console errors", async ({
 });
 
 test.describe("while a song plays", () => {
-  // Niconico songs the display never downloaded: song 1 starts (playing
-  // nothing) at the display's first check, and song 2 is up next.
+  // Niconico songs (the fixture gives them a black video): song 1 starts
+  // at the display's first check, and song 2 is up next.
   const song = (n: number) => ({
     kind: "nico",
     songId: `sm7000${n}`,
