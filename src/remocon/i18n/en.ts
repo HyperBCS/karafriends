@@ -73,7 +73,6 @@ export const en = {
 
   // Queueing a song, and the download that comes before it.
   "queueButton.song": "Queue song",
-  "queueButton.songRomaji": "Queue song (romaji lyrics)",
   "queueButton.guide": "Queue song with guide vocal",
   "queueButton.guideMale": "Queue song with male guide vocal",
   "queueButton.guideFemale": "Queue song with female guide vocal",
@@ -143,4 +142,16 @@ export const en = {
   // Reordering the queue by drag.
   "queue.dragToReorder": "Drag to reorder",
   "queue.moveFailed": "Couldn't move the song: {reason}",
+
+  // How a Joysound song's lyrics show on the TV: the choice on its page,
+  // and the phone's default on the profile. Also a queued row's label.
+  "lyricsMode.label": "Lyrics on the TV",
+  "lyricsMode.kana": "Kana",
+  "lyricsMode.romaji": "Romaji",
+  "lyricsMode.both": "Both",
+  "lyricsMode.help":
+    "For Joysound songs. You can change it for one song on its page.",
+
+  // Joysound's guide melody level, in the playback controls.
+  "guideMelody.label": "Guide melody",
 } as const;
