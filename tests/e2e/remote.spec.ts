@@ -1561,6 +1561,52 @@ test.describe("the song volume and mic sliders", () => {
     await expect(volume).toHaveValue("40");
   });
 
+  test("a slider dragged back to where it started follows the live level again", async ({
+    display,
+    remote,
+  }) => {
+    const setSongVolume = (volume: number) =>
+      display.evaluate(
+        (volume) =>
+          (
+            window as unknown as {
+              karafriends: {
+                api: { call(method: string, input: object): Promise<unknown> };
+              };
+            }
+          ).karafriends.api.call("setSongVolume", { volume }),
+        volume,
+      );
+    const sent: unknown[] = [];
+    remote.on("request", (request) => {
+      if (request.url().endsWith("/api/setSongVolume")) {
+        sent.push(request.postDataJSON());
+      }
+    });
+    await signIn(remote);
+    const volume = remote.getByRole("slider", { name: "Song volume" });
+    await setSongVolume(50);
+    await expect(volume).toHaveValue("50");
+
+    // From the thumb, in the middle, out and back: no change, nothing sent.
+    const box = (await volume.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await remote.mouse.move(x, y);
+    await remote.mouse.down();
+    await remote.mouse.move(box.x + box.width * 0.8, y, { steps: 5 });
+    await expect(volume).not.toHaveValue("50");
+    await remote.mouse.move(x, y, { steps: 5 });
+    await remote.mouse.up();
+    await expect(volume).toHaveValue("50");
+    expect(sent).toEqual([]);
+
+    // The display changes it: the thumb follows.
+    await setSongVolume(30);
+    await expect(volume).toHaveValue("30");
+    expect(sent).toEqual([]);
+  });
+
   test("the display's mics show with their gain and echo, which send setMicLevels", async ({
     karafriends,
     display,

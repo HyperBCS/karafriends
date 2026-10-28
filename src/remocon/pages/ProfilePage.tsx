@@ -177,7 +177,8 @@ interface LevelSliderProps {
 // An admin's level slider. While the thumb is dragged it moves here only;
 // letting go (the input's change event, which a key press also fires) sends
 // the level once, so the echo of an earlier step can't pull the thumb back
-// or settle on a stale level.
+// or settle on a stale level. A drag that ends where it started fires no
+// change, so letting go there lets the thumb follow the live level again.
 const LevelSlider = ({
   label,
   min,
@@ -188,6 +189,10 @@ const LevelSlider = ({
 }: LevelSliderProps) => {
   const [held, setHeld] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // The value when the drag began. Only a drag back to it is let go of on
+  // pointerup: any other comes with a change after it, which needs the
+  // input's value as dragged.
+  const start = useRef("");
   // React's onChange is the input event, which comes with every step.
   useEffect(() => {
     const el = input.current;
@@ -211,6 +216,12 @@ const LevelSlider = ({
         step={step}
         value={held ?? value}
         onChange={(e) => setHeld(Number(e.target.value))}
+        onPointerDown={(e) => (start.current = e.currentTarget.value)}
+        onPointerUp={(e) => {
+          if (e.currentTarget.value === start.current) setHeld(null);
+        }}
+        onPointerCancel={() => setHeld(null)}
+        onBlur={() => setHeld(null)}
       />
     </label>
   );
