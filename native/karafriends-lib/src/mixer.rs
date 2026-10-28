@@ -491,6 +491,13 @@ fn mix_into(sources: &mut [Source], mix: &mut [f32], rate: cpal::SampleRate) -> 
     events
 }
 
+// The loudest a mix sample is written. The integer conversions take -1.0 up
+// to just below 1.0, as integers have one more step below 0 than above:
+// a 24-bit sample at 1.0 would wrap round to full scale negative (a click).
+// Just below 1.0 is the top step of every integer format, and inaudibly
+// below 1.0 for floats.
+const FULL_SCALE: f32 = 1.0 - f32::EPSILON;
+
 // The output callback: sums the mics, mono to every channel. Notes in
 // `frames` how many each callback asks for.
 fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
@@ -530,7 +537,7 @@ fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
             }
         }
         for (frame, sample) in samples.chunks_mut(channels).zip(&mix) {
-            frame.fill(Sample::from_sample(sample.clamp(-1.0, 1.0)));
+            frame.fill(Sample::from_sample(sample.clamp(-1.0, FULL_SCALE)));
         }
     }
 }
@@ -822,6 +829,31 @@ mod tests {
         let mut out = [7_i16; 8];
         callback(&mut out);
         assert_eq!(out, [0; 8]);
+    }
+
+    // A clipped mix lands on each format's ends, not past them (dasp's
+    // 24-bit conversions don't saturate).
+    fn clipped<T: cpal::Sample + cpal::FromSample<f32>>() -> (T, T) {
+        let mut samples = [1.5, -1.5].repeat(START / 2);
+        samples.resize(START, 0.0);
+        let sources = Arc::new(Mutex::new(vec![source(1, &samples, 64)]));
+        let mut callback = output_data_callback::<T>(sources, 1, RATE, Arc::default());
+        let mut out = [T::EQUILIBRIUM; 4];
+        callback(&mut out);
+        (out[0], out[1])
+    }
+
+    #[test]
+    fn test_output_clips_at_full_scale() {
+        let (high, low) = clipped::<cpal::I24>();
+        assert_eq!((high.inner(), low.inner()), (8_388_607, -8_388_608));
+        let (high, low) = clipped::<cpal::U24>();
+        assert_eq!((high.inner(), low.inner()), (16_777_215, 0));
+        assert_eq!(clipped::<i16>(), (i16::MAX, i16::MIN));
+        assert_eq!(clipped::<u8>(), (u8::MAX, 0));
+        assert_eq!(clipped::<i32>(), (i32::MAX - 255, i32::MIN));
+        let (high, low) = clipped::<f32>();
+        assert!(high < 1.0 && high > 0.999_999 && low == -1.0);
     }
 
     #[test]

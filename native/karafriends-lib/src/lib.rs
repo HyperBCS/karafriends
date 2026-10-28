@@ -12,6 +12,10 @@ macro_rules! with_sample_type {
                 type $T = u16;
                 $body
             }
+            cpal::SampleFormat::U24 => {
+                type $T = cpal::U24;
+                $body
+            }
             cpal::SampleFormat::U32 => {
                 type $T = u32;
                 $body
@@ -26,6 +30,10 @@ macro_rules! with_sample_type {
             }
             cpal::SampleFormat::I16 => {
                 type $T = i16;
+                $body
+            }
+            cpal::SampleFormat::I24 => {
+                type $T = cpal::I24;
                 $body
             }
             cpal::SampleFormat::I32 => {
@@ -1321,6 +1329,35 @@ mod tests {
         assert_eq!(f32::from_bits(meters.peak.swap(0, Relaxed)), 0.5);
         assert_eq!(f32::from_bits(meters.peak.load(Relaxed)), 0.0);
         assert_eq!(meters.frames.load(Relaxed), 1);
+        Ok(())
+    }
+
+    // A mic in 24-bit samples (PulseAudio's s24le, an Int24 ASIO driver)
+    // opens like any other: its samples reach the mixer as floats.
+    #[test]
+    fn test_24_bit_mics_open() -> Result<()> {
+        for format in [cpal::SampleFormat::I24, cpal::SampleFormat::U24] {
+            let (pitch_tx, _pitch_rx) = ringbuf::HeapRb::new(16).split();
+            let (output_tx, mut output_rx) = ringbuf::HeapRb::new(16).split();
+            with_sample_type!(format, T => {
+                let mut callback = InputDevice::input_data_callback::<T>(
+                    &config(48000),
+                    48000,
+                    0,
+                    Arc::new(Levels::new(1.0, 0.0)),
+                    Arc::default(),
+                    pitch_tx,
+                    output_tx,
+                )?;
+                callback(&[
+                    <T as cpal::Sample>::from_sample(0.5_f32),
+                    <T as cpal::Sample>::from_sample(-1.0_f32),
+                ]);
+                Ok(())
+            })?;
+            let output: Vec<f32> = output_rx.pop_iter().collect();
+            assert_eq!(output, [0.5, -1.0], "{format}");
+        }
         Ok(())
     }
 
