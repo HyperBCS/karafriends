@@ -1,20 +1,31 @@
-import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
 
 import { ApiError } from "./api";
+import { NoLoginError } from "./credentials";
 import {
   formBody,
   getSetCookies,
-  http,
   httpFetch,
+  type HttpRequest,
   HttpResponse,
   HttpStatusError,
+  NO_RETRIES,
+  QUICK_RETRIES,
+  readBody,
+  type RetryPolicy,
+  type Session,
+  SessionLostError,
+  withSession,
 } from "./http";
 
-export type JoysoundCredentialsProvider = () => Promise<{
+interface JoysoundSession {
   cookies: JoysoundCookies;
   csrfToken: string;
-}>;
+}
+
+// The shared login (credentials.joysound): forget drops a session that has
+// ended.
+export type JoysoundCredentialsProvider = Session<JoysoundSession>;
 
 // Keyed by cookie name. sound-cafe changes which cookies it sets (JSESSIONID
 // is now only issued after login, and the CSRF token lives in XSRF-TOKEN), so
@@ -125,39 +136,100 @@ function unescapeJoysoundString(str: string) {
   });
 }
 
+// A search's answer when no Joysound login is set: no results, without a
+// request, so a DAM-only host's phones search DAM without an error.
+// Any other failure rejects, and the phone shows it with a Retry button.
+function noResultsWithoutLogin<T>(err: unknown): T[] {
+  if (err instanceof NoLoginError) return [];
+  throw err;
+}
+
 export class JoysoundAPI {
   baseURL = "https://www.sound-cafe.jp";
   credsProvider: JoysoundCredentialsProvider;
+  // For the downloads (getFME, contentsInfo). Lookups aren't tried again:
+  // the phone that asked shows the error.
+  retryPolicy: RetryPolicy = QUICK_RETRIES;
 
   constructor(credsProvider: JoysoundCredentialsProvider) {
     this.credsProvider = credsProvider;
   }
 
-  async post<T>(url: string, data: Record<string, string>): Promise<T> {
+  // path, sent with the session's cookies. Cookies the answer sets go into
+  // the session's jar, for its later requests. An answer that sends the
+  // request to the login page, or 401 or 403, is a SessionLostError.
+  private async request<T>(
+    creds: JoysoundSession,
+    path: string,
+    req: HttpRequest,
+  ): Promise<T> {
+    const url = `${this.baseURL}${path}`;
+    const resp = await httpFetch(url, {
+      ...req,
+      headers: { ...req.headers, Cookie: generateCookieString(creds.cookies) },
+    });
+    parseCookies(resp, creds.cookies);
+    if (
+      resp.status === 401 ||
+      resp.status === 403 ||
+      new URL(resp.url || url).pathname.startsWith("/login")
+    ) {
+      await resp.text().catch(() => "");
+      throw new SessionLostError(
+        `Joysound answered ${path} with ${
+          resp.ok ? "its login page" : resp.status
+        }: the session may have ended`,
+      );
+    }
+    return readBody<T>(resp, url);
+  }
+
+  // One of sound-cafe's JSON APIs. An HTML page where JSON was expected is
+  // the login page, or one like it: a SessionLostError.
+  private async postJson<T>(
+    creds: JoysoundSession,
+    path: string,
+    data: Record<string, string>,
+  ): Promise<T> {
     const body = formBody(data);
-
-    const creds = await this.credsProvider();
-
     console.debug(
       `[joysound] curl ${
         this.baseURL
-      }${url} -d "${body}" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Cookie: ${generateCookieString(
+      }${path} -d "${body}" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Cookie: ${generateCookieString(
         creds.cookies,
       )}" -H "X-XSRF-TOKEN: ${creds.csrfToken}"`,
     );
-
-    return http<T>(`${this.baseURL}${url}`, {
+    const answer = await this.request<T | string>(creds, path, {
       method: "POST",
       body,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        Cookie: generateCookieString(creds.cookies),
         Referer: "https://www.sound-cafe.jp/player",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
         "X-XSRF-TOKEN": creds.csrfToken,
       },
     });
+    if (typeof answer === "string") {
+      throw new SessionLostError(
+        `Joysound answered ${path} with a page, not data: the session may have ended`,
+      );
+    }
+    return answer;
+  }
+
+  // postJson in the shared session: logged in again once if the session has
+  // ended, and with policy's retries.
+  post<T>(
+    url: string,
+    data: Record<string, string>,
+    policy: RetryPolicy = NO_RETRIES,
+  ): Promise<T> {
+    return withSession(
+      this.credsProvider,
+      (creds) => this.postJson<T>(creds, url, data),
+      { policy, label: `Joysound ${url}` },
+    );
   }
 
   getArtistListByKeyword(keyword: string, start: number, count: number) {
@@ -168,43 +240,26 @@ export class JoysoundAPI {
       order: "asc",
       start: start.toString(),
       count: count.toString(),
-    }).catch((err) => {
-      console.log(err);
-      return [] as JoysoundArtistListItem[];
-    });
+    }).catch(noResultsWithoutLogin<JoysoundArtistListItem>);
   }
 
   async getMovieUrls(id: string) {
     checkId(id, "song number");
-    return promiseRetry((retryFn, retryCount: number) => {
-      console.log(`contentsInfo for songId: ${id}, retry no. ${retryCount}`);
-
-      return this.post<JoysoundMovieList>("/player/contentsInfo", {
-        songNumber: id,
-        serviceType: "003000761",
-      }).catch(retryFn);
-    });
+    return this.post<JoysoundMovieList>(
+      "/player/contentsInfo",
+      { songNumber: id, serviceType: "003000761" },
+      this.retryPolicy,
+    );
   }
 
   async getSongDetail(id: string) {
     checkId(id, "song number");
-    const creds = await this.credsProvider().catch(() => {
-      console.log("Login Failed");
-      return null;
-    });
-    if (creds === undefined || creds === null) {
-      return {
-        name: "Error",
-        artistName: "Error",
-        lyricsPreview: "Error",
-        tieUp: "Error",
-      };
-    }
-
-    const url = `${this.baseURL}/songdetail/${encodeURIComponent(id)}`;
-    const data = await http<string>(url, {
-      headers: { Cookie: generateCookieString(creds.cookies) },
-    });
+    const path = `/songdetail/${encodeURIComponent(id)}`;
+    const data = await withSession(
+      this.credsProvider,
+      (creds) => this.request<string>(creds, path, {}),
+      { label: `Joysound ${path}` },
+    );
 
     const re = new RegExp(
       /<div class="flex items-center w-full border-b border-gray">([^<>]*)/,
@@ -249,10 +304,7 @@ export class JoysoundAPI {
       order: "asc",
       start: start.toString(),
       count: count.toString(),
-    }).catch((err) => {
-      console.log(err);
-      return [] as JoysoundSongListItem[];
-    });
+    }).catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 
   getSongListByKeyword(keyword: string, start: number, count: number) {
@@ -263,22 +315,16 @@ export class JoysoundAPI {
       order: "asc",
       start: start.toString(),
       count: count.toString(),
-    }).catch((err) => {
-      console.log(err);
-      return [] as JoysoundSongListItem[];
-    });
+    }).catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 
   async getSongRawData(id: string) {
     checkId(id, "song number");
-    return promiseRetry((retryFn, retryCount: number) => {
-      console.log(`getFME for songId: ${id}, retry no. ${retryCount}`);
-
-      return this.post<JoysoundSongRawData>("/player/getFME", {
-        songNumber: id,
-        serviceType: "003000761",
-      }).catch(retryFn);
-    });
+    return this.post<JoysoundSongRawData>(
+      "/player/getFME",
+      { songNumber: id, serviceType: "003000761" },
+      this.retryPolicy,
+    );
   }
 
   static async login(email: string, password: string) {
