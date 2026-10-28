@@ -27,15 +27,20 @@ export const IDENTITY_HEADERS = {
 // header, as it is (it's hex).
 export const ADMIN_TOKEN_HEADER = "X-Karafriends-Admin-Token";
 
+// WAITING: nothing plays, or popSong has made the next song current and the
+// display is still loading it (a DAM song may wait for DAM). The display's
+// PLAYING, once it has started the song, ends it.
 export type PlaybackState =
   "PAUSED" | "PLAYING" | "RESTARTING" | "SKIPPING" | "WAITING";
 
-export const PLAYBACK_STATES: readonly PlaybackState[] = [
+// What setPlaybackState may set: WAITING is the server's own (popSong).
+export type PlaybackCommand = Exclude<PlaybackState, "WAITING">;
+
+export const PLAYBACK_COMMANDS: readonly PlaybackCommand[] = [
   "PAUSED",
   "PLAYING",
   "RESTARTING",
   "SKIPPING",
-  "WAITING",
 ];
 
 // One page of a list. Pass `nextOffset` back as `offset` to get the next page;
@@ -218,14 +223,14 @@ export interface LiveState {
   // Its playtime is its video's length, in whole seconds, once the display
   // knows it (reportSongPosition).
   currentSong: SharedQueueItem | null;
-  // When currentSong started (ms since the epoch, by the server's clock;
-  // null while none plays), how long it was paused before, and since when it
-  // is paused now (null while it isn't). How far into the song the party is:
-  // now - startedAt - pausedMs - (now - pausedSince, while paused). The
-  // display's reports of where its video is keep it right after a seek or a
-  // stall.
+  // The current song's clock, from the display's reports of where its video
+  // is (reportSongPosition): when it would have started had it played
+  // straight through (ms since the epoch, by the server's clock; null while
+  // none plays, or until the display has loaded it), and since when it is
+  // paused or stalled (null while it plays). How far into the song the party
+  // is: (pausedSince ?? now) - startedAt (secondsPlayed in
+  // src/common/currentSong.ts).
   currentSongStartedAt: number | null;
-  currentSongPausedMs: number;
   currentSongPausedSince: number | null;
   // The songs after currentSong. Clients work out ETAs from playtime and the
   // timing above.
@@ -449,11 +454,21 @@ export interface Api {
     input: { songId: string; timestamp: string; toIndex: number };
     output: { ok: boolean };
   };
+  // The commands that act on the current song (setPlaybackState,
+  // setPitchShiftSemis, pushAdhocLyrics) name it: song is its songKey
+  // (songId@timestamp, src/common/currentSong.ts). They answer false, and
+  // change nothing, when that isn't the current song (a tap meant for the
+  // song before, sent just as it ended) or nothing plays, and from a phone
+  // while the display is still loading the song (WAITING). The song's clock
+  // follows the display's reports (reportSongPosition), not these.
   setPlaybackState: {
-    input: { playbackState: PlaybackState };
+    input: { playbackState: PlaybackCommand; song: string };
     output: boolean;
   };
-  setPitchShiftSemis: { input: { semis: number }; output: boolean };
+  setPitchShiftSemis: {
+    input: { semis: number; song: string };
+    output: boolean;
+  };
   // For admins only, in supervised mode or not.
   setGuideMelodyLevel: { input: { level: number }; output: boolean };
   // For admins only. volume: 0 to 100, a whole number.
@@ -466,13 +481,17 @@ export interface Api {
     output: boolean;
   };
   // Shows line lyricIndex of the current song's adhoc lyrics. In supervised
-  // mode, for its owner or an admin. False if no song with adhoc lyrics is
-  // playing (any more).
-  pushAdhocLyrics: { input: { lyricIndex: number }; output: boolean };
+  // mode, for its owner or an admin. False as for setPlaybackState, and if
+  // the song has no adhoc lyrics.
+  pushAdhocLyrics: {
+    input: { lyricIndex: number; song: string };
+    output: boolean;
+  };
   sendEmote: { input: { emote: string }; output: boolean };
 
   // The display only: start the next song, or null if the queue is empty.
-  // resume: the display's page asks for the first time (it has just
+  // Either way the playback state is WAITING after it, until the display
+  // has loaded the song and sets PLAYING. resume: the display's page asks for the first time (it has just
   // loaded, or reloaded after a crash or F5). It gets the current song
   // again, to play from the start, if there is one and it wasn't being
   // skipped. Once per song (songId@timestamp), so a song that crashes the

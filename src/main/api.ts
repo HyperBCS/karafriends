@@ -26,6 +26,7 @@ import type {
 import { isAdminPassword } from "../common/adminPassword";
 import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
 import type { KarafriendsConfig } from "../common/config";
+import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
 import type { DkwebsysAPI, MinseiAPI } from "./damApi";
@@ -34,9 +35,9 @@ import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
 import {
-  adhocLyricsKey,
   currentSongSecondsLeft,
   isDownloading,
+  type PendingSong,
   type StateStore,
 } from "./state";
 
@@ -187,7 +188,9 @@ const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
 // Every method but the settings ones (settings.ts).
-export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
+export function createApi(
+  deps: ApiDeps,
+): Omit<ApiHandlers, SettingsMethod> & { resumeDownloads(): void } {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
 
@@ -222,6 +225,20 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         "Supervised mode: only an admin or the current singer can do that",
       );
     }
+  };
+
+  // Whether a command for song (its songKey) may act now: song must be the
+  // current one, and for a phone, one the display has started (not WAITING,
+  // while it loads). Otherwise it's a tap meant for the song before, sent
+  // just as it ended, or one sent while nothing plays: it changes nothing
+  // and isn't an error.
+  const isForCurrentSong = (song: string, caller: Caller) => {
+    const { currentSong, playbackState } = store.getState();
+    return (
+      currentSong !== null &&
+      songKey(currentSong) === song &&
+      (caller.isDisplay || playbackState !== "WAITING")
+    );
   };
 
   // server.ts refuses the display's methods to phones; this checks again.
@@ -263,12 +280,16 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     );
   };
 
-  // Seconds until a song added to the end of the queue would start.
-  const queueEta = () => {
+  // Seconds until a song queued now would start: what is left of the current
+  // song and the playtimes ahead of it, the whole queue's, or for a song
+  // pushed to the head (which goes in second: pushSongToQueue) the next
+  // song's only.
+  const queueEta = (pushToHead: boolean) => {
     const state = store.getState();
+    const ahead = pushToHead ? state.songQueue.slice(0, 1) : state.songQueue;
     return (
       currentSongSecondsLeft(state, now()) +
-      state.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
+      ahead.reduce((acc, cur) => acc + (cur.playtime || 0), 0)
     );
   };
 
@@ -281,7 +302,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   // A YouTube song's adhoc lyrics, if it has them.
   const adhocLyricsOf = (item: QueueItem | null) =>
     item?.kind === "youtube" && item.hasAdhocLyrics
-      ? store.getState().idToAdhocLyrics[adhocLyricsKey(item)]
+      ? store.getState().idToAdhocLyrics[songKey(item)]
       : undefined;
 
   // adhocLyrics: a YouTube song's, kept with it while it is queued.
@@ -295,7 +316,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
     );
     store.update((state) => {
       if (adhocLyrics) {
-        state.idToAdhocLyrics[adhocLyricsKey(item)] = adhocLyrics;
+        state.idToAdhocLyrics[songKey(item)] = adhocLyrics;
       }
       if (pushToHead) {
         // To give things time to download, we don't actually push to the
@@ -330,6 +351,89 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       });
     }
     queueFailed(item)(reason);
+  };
+
+  // Downloads a YouTube, Niconico or Joysound song (queueSong's, or one a
+  // restart cut short: resumeDownloads), which is a pending song until the
+  // download is done and the song is queued, or it fails.
+  const downloadSong = (pending: PendingSong) => {
+    const { item, pushToHead } = pending;
+    const done = () =>
+      store.update((state) => {
+        const index = state.pendingSongs.findIndex(
+          (other) => songKey(other.item) === songKey(item),
+        );
+        if (index !== -1) state.pendingSongs.splice(index, 1);
+      });
+    switch (item.kind) {
+      case "joysound":
+        deps.downloads.joysound(
+          item,
+          pushToHead,
+          (ready, toHead) => {
+            done();
+            pushSongToQueue(ready, toHead);
+          },
+          (reason) => {
+            done();
+            queueFailed(item)(reason);
+          },
+        );
+        break;
+      case "youtube": {
+        const lyrics = pending.adhocLyrics;
+        deps.downloads.youtube(
+          item,
+          pending.captionCode,
+          () => {
+            done();
+            ytdlpWorked();
+            if (!item.hasAdhocLyrics) {
+              pushSongToQueue(item, pushToHead);
+            } else if (
+              queuedLyricsLength() + totalLength(lyrics) <=
+              MAX_ADHOC_CHARS_QUEUED
+            ) {
+              pushSongToQueue(item, pushToHead, lyrics);
+            } else {
+              // Others came in while it downloaded.
+              console.warn(
+                `Queueing ${item.songId} without its lyrics: the queue holds too many`,
+              );
+              pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
+            }
+          },
+          (reason) => {
+            done();
+            ytdlpFailed(item)(reason);
+          },
+        );
+        break;
+      }
+      case "nico":
+        deps.downloads.nico(
+          item,
+          () => {
+            done();
+            ytdlpWorked();
+            pushSongToQueue(item, pushToHead);
+          },
+          (reason) => {
+            done();
+            ytdlpFailed(item)(reason);
+          },
+        );
+        break;
+    }
+  };
+
+  // queueSong's start of a download: kept in the state (and queue.json)
+  // until it's done.
+  const queueAfterDownload = (pending: PendingSong) => {
+    store.update((state) => {
+      state.pendingSongs.push(pending);
+    });
+    downloadSong(pending);
   };
 
   // One per vocal type, at both bitrates.
@@ -382,6 +486,19 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
   let resumedSong: string | null = null;
 
   return {
+    // Not a method: index.ts calls it once, at launch. Starts again the
+    // downloads queue.json says were running when the app last stopped.
+    resumeDownloads() {
+      // A copy: a Joysound song already downloaded is done at once, and
+      // leaves the list as it goes.
+      for (const pending of store.getState().pendingSongs.slice()) {
+        console.log(
+          `resumeDownloads: ${pending.item.kind} ${pending.item.songId}`,
+        );
+        downloadSong(pending);
+      }
+    },
+
     async damSearchSongs({ query, offset = 0, limit = DEFAULT_LIMIT.dam }) {
       const result = await deps.dkwebsys.getMusicByKeyword(
         query,
@@ -600,7 +717,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
 
       const pushToHead = input.tryHeadOfQueue === true && isAdmin(caller);
       console.log(`queueSong: ${input.kind}, pushToHead=${pushToHead}`);
-      const eta = queueEta();
+      const eta = queueEta(pushToHead);
       const base = {
         songId: input.songId,
         name: input.name,
@@ -655,22 +772,22 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             lyricsMode: input.lyricsMode,
             youtubeVideoId: input.youtubeVideoId,
           };
-          deps.downloads.joysound(
+          queueAfterDownload({
             item,
             pushToHead,
-            pushSongToQueue,
-            queueFailed(item),
-          );
+            captionCode: null,
+            adhocLyrics: [],
+          });
           break;
         }
         case "youtube": {
           const lyrics = (input.adhocLyrics ?? "")
             .split("\n")
             .filter((line) => line.trim() !== "");
-          const fits = () =>
-            queuedLyricsLength() + totalLength(lyrics) <=
-            MAX_ADHOC_CHARS_QUEUED;
-          if (lyrics.length > 0 && !fits()) {
+          if (
+            lyrics.length > 0 &&
+            queuedLyricsLength() + totalLength(lyrics) > MAX_ADHOC_CHARS_QUEUED
+          ) {
             return {
               ok: false,
               reason:
@@ -684,39 +801,24 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
             hasCaptions: Boolean(input.captionCode),
             gainValue: input.gainValue,
           };
-          // The lyrics are kept only once the song is queued: a download
-          // that fails never is.
-          deps.downloads.youtube(
+          // The lyrics join idToAdhocLyrics only once the song is queued: a
+          // download that fails never is.
+          queueAfterDownload({
             item,
-            input.captionCode,
-            () => {
-              ytdlpWorked();
-              if (!item.hasAdhocLyrics) {
-                pushSongToQueue(item, pushToHead);
-              } else if (fits()) {
-                pushSongToQueue(item, pushToHead, lyrics);
-              } else {
-                // Others came in while it downloaded.
-                console.warn(
-                  `Queueing ${item.songId} without its lyrics: the queue holds too many`,
-                );
-                pushSongToQueue({ ...item, hasAdhocLyrics: false }, pushToHead);
-              }
-            },
-            ytdlpFailed(item),
-          );
+            pushToHead,
+            captionCode: input.captionCode,
+            adhocLyrics: lyrics,
+          });
           break;
         }
         case "nico": {
           const item: NicoQueueItem = { kind: "nico", ...base };
-          deps.downloads.nico(
+          queueAfterDownload({
             item,
-            () => {
-              ytdlpWorked();
-              pushSongToQueue(item, pushToHead);
-            },
-            ytdlpFailed(item),
-          );
+            pushToHead,
+            captionCode: null,
+            adhocLyrics: [],
+          });
           break;
         }
       }
@@ -741,7 +843,7 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       }
       return store.update((state) => {
         state.songQueue.splice(state.songQueue.indexOf(item), 1);
-        delete state.idToAdhocLyrics[adhocLyricsKey(item)];
+        delete state.idToAdhocLyrics[songKey(item)];
         return true;
       });
     },
@@ -763,37 +865,12 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       });
     },
 
-    async setPlaybackState({ playbackState }, caller) {
+    async setPlaybackState({ playbackState, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
+      // Only the state: the song's clock follows the display's video, which
+      // reports each start, pause, restart and seek (reportSongPosition).
       store.update((state) => {
-        // The current song's timing, for the countdowns. popSong clears it
-        // and the display's PLAYING, sent once it starts the song, starts
-        // the clock: not popSong, which may wait for DAM first. A skip
-        // leaves it: the next popSong starts over. The display's
-        // reportSongPosition then puts it where the video really is.
-        const at = now();
-        if (state.currentSongStartedAt === null) {
-          // Not started yet, or no song: nothing to time until then.
-          if (
-            playbackState === "PLAYING" &&
-            caller.isDisplay &&
-            state.currentSong !== null
-          ) {
-            state.currentSongStartedAt = at;
-          }
-        } else if (playbackState === "PAUSED") {
-          state.currentSongPausedSince ??= at;
-        } else if (playbackState === "RESTARTING") {
-          state.currentSongStartedAt = at;
-          state.currentSongPausedMs = 0;
-          state.currentSongPausedSince = null;
-        } else if (
-          playbackState === "PLAYING" &&
-          state.currentSongPausedSince !== null
-        ) {
-          state.currentSongPausedMs += at - state.currentSongPausedSince;
-          state.currentSongPausedSince = null;
-        }
         state.playbackState = playbackState;
       });
       return true;
@@ -815,28 +892,24 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       const inStep =
         startedAt !== null &&
         (pausedSince === null) === playing &&
-        Math.abs(
-          (pausedSince ?? at) -
-            startedAt -
-            state.currentSongPausedMs -
-            positionMs,
-        ) < POSITION_SLACK_MS;
+        Math.abs((pausedSince ?? at) - startedAt - positionMs) <
+          POSITION_SLACK_MS;
       const songLength =
         length === null ? state.currentSongLength : Math.round(length);
       if (inStep && songLength === state.currentSongLength) return true;
       store.update((state) => {
         state.currentSongLength = songLength;
         if (inStep) return;
-        // The same timing, from scratch: position played by now, and
-        // paused since now unless it's moving.
+        // From scratch: position played by now, and paused since now unless
+        // it's moving.
         state.currentSongStartedAt = at - positionMs;
-        state.currentSongPausedMs = 0;
         state.currentSongPausedSince = playing ? null : at;
       });
       return true;
     },
 
-    async setPitchShiftSemis({ semis }, caller) {
+    async setPitchShiftSemis({ semis, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
       store.update((state) => {
         state.pitchShiftSemis = semis;
@@ -877,10 +950,10 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
       });
     },
 
-    async pushAdhocLyrics({ lyricIndex }, caller) {
+    async pushAdhocLyrics({ lyricIndex, song }, caller) {
+      if (!isForCurrentSong(song, caller)) return false;
       const { currentSong, currentSongAdhocLyrics } = store.getState();
       const lyrics = adhocLyricsOf(currentSong);
-      // The song may just have ended.
       if (lyrics === undefined) return false;
       // Who may sing along is who may control the song.
       requirePlaybackControl(caller);
@@ -958,32 +1031,33 @@ export function createApi(deps: ApiDeps): Omit<ApiHandlers, SettingsMethod> {
         throw new ApiError(403, "Only the display starts the next song");
       }
       const song = store.update((state) => {
+        const skipping = state.playbackState === "SKIPPING";
+        // WAITING until the display has loaded the song and says PLAYING:
+        // the phones' controls wait, and the server drops their commands
+        // (isForCurrentSong), so none can act on the video before, which
+        // has ended. The display's first report starts the clock
+        // (reportSongPosition).
+        state.playbackState = "WAITING";
+        state.currentSongStartedAt = null;
+        state.currentSongPausedSince = null;
+        state.currentSongLength = null;
         const current = state.currentSong;
         if (
           resume &&
           current &&
-          state.playbackState !== "SKIPPING" &&
-          adhocLyricsKey(current) !== resumedSong
+          !skipping &&
+          songKey(current) !== resumedSong
         ) {
           // A reloaded display: the same song from the start, keeping its
           // place in the history and its lines pushed so far.
-          resumedSong = adhocLyricsKey(current);
-          state.currentSongStartedAt = null;
-          state.currentSongPausedMs = 0;
-          state.currentSongPausedSince = null;
-          state.currentSongLength = null;
+          resumedSong = songKey(current);
           return current;
         }
         const next = state.songQueue.shift() ?? null;
         state.currentSongAdhocLyrics = [];
         const previous = state.currentSong;
-        if (previous) delete state.idToAdhocLyrics[adhocLyricsKey(previous)];
+        if (previous) delete state.idToAdhocLyrics[songKey(previous)];
         state.currentSong = next;
-        // The display's PLAYING starts the clock (setPlaybackState).
-        state.currentSongStartedAt = null;
-        state.currentSongPausedMs = 0;
-        state.currentSongPausedSince = null;
-        state.currentSongLength = null;
 
         if (next) {
           const last = state.songHistory[0]?.song;

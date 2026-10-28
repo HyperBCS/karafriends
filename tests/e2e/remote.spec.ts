@@ -10,6 +10,7 @@ import type {
 
 import {
   adminPasswordConfig,
+  currentSongKey,
   displayCall,
   downloadsFolder,
   expect,
@@ -842,7 +843,6 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
 });
 
 test("the sheet's toolbar: the switch, the transport and the key, in that order", async ({
-  karafriends,
   remote,
 }) => {
   await remote.setViewportSize({ width: 412, height: 800 });
@@ -916,24 +916,8 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
     ).toBe(false);
   }
 
-  // The key shows its sign (below zero, a minus sign, U+2212).
+  // (Its sign: see "the now-playing bar".)
   await expect(key).toHaveText("0");
-  for (const [semis, shown] of [
-    [2, "+2"],
-    [-1, "−1"],
-    [0, "0"],
-  ] as const) {
-    const res = await fetch(
-      new URL("api/setPitchShiftSemis", karafriends.remoconUrl),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semis }),
-      },
-    );
-    expect(res.status).toBe(200);
-    await expect(key).toHaveText(shown);
-  }
 
   // Showing the emotes, the switch stays where it is, and the emotes and
   // the button to change them take the rest of the row.
@@ -1091,6 +1075,74 @@ test.describe("the now-playing bar", () => {
     await expect(remote).toHaveURL(/#\/search\/niconico\/sm60002$/);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
+
+  test("the key shows its sign, and a key change for no song is dropped", async ({
+    karafriends,
+    remote,
+  }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    // Once the display has started the song, the controls work.
+    const pause = remote.getByRole("button", { name: "Pause", exact: true });
+    await expect(pause).toHaveAttribute("aria-disabled", "false", {
+      timeout: 15_000,
+    });
+    const key = remote.getByRole("status", { name: "Key" });
+    const song = await currentSongKey(karafriends.remoconUrl);
+    expect(song).toBe(`sm60002@${Date.UTC(2026, 0, 1)}`);
+    const setKey = async (semis: number, song: string) => {
+      const res = await fetch(
+        new URL("api/setPitchShiftSemis", karafriends.remoconUrl),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ semis, song }),
+        },
+      );
+      expect(res.status).toBe(200);
+      return res.json();
+    };
+
+    // Below zero, a minus sign (U+2212).
+    await expect(key).toHaveText("0");
+    for (const [semis, shown] of [
+      [2, "+2"],
+      [-1, "−1"],
+      [0, "0"],
+    ] as const) {
+      expect(await setKey(semis, song)).toBe(true);
+      await expect(key).toHaveText(shown);
+    }
+    // A late tap meant for the song before.
+    expect(await setKey(3, "sm1@1")).toBe(false);
+    await remote.waitForTimeout(500);
+    await expect(key).toHaveText("0");
+  });
+
+  test("quick ♯ taps each count", async ({ karafriends, remote }) => {
+    await remote.getByRole("button", { name: "Show queue" }).click();
+    const raise = remote.getByRole("button", {
+      name: "Raise the key",
+      exact: true,
+    });
+    await expect(raise).toHaveAttribute("aria-disabled", "false", {
+      timeout: 15_000,
+    });
+    const key = remote.getByRole("status", { name: "Key" });
+    // Faster than the live state's 250 ms: each tap's echo comes after the
+    // next tap, and used to undo it.
+    for (let i = 0; i < 5; i++) {
+      await raise.click();
+      await remote.waitForTimeout(60);
+    }
+    await expect(key).toHaveText("+5");
+    await expect
+      .poll(
+        async () => (await liveState(karafriends.remoconUrl)).pitchShiftSemis,
+      )
+      .toBe(5);
+    await remote.waitForTimeout(1_500);
+    await expect(key).toHaveText("+5");
+  });
 });
 
 // Picking a background video changes the song page's address in place. Back
@@ -1172,6 +1224,7 @@ test("a Joysound song with a background keeps the way back", async ({
 // button's 2.5-second reset from ever going off.
 test("a DAM queue button is ready again while the live state keeps changing", async ({
   karafriends,
+  display,
   remote,
 }) => {
   // Made-up answers, as above. queueSong too, so nothing asks DAM for the
@@ -1196,20 +1249,17 @@ test("a DAM queue button is ready again while the live state keeps changing", as
   });
   await expect(button).toHaveText("Queue song");
 
-  // Change the key about 6 times a second, as download progress would.
+  // Change the song volume about 6 times a second, as download progress
+  // would change the state. (Not the key: with no song playing, the server
+  // takes no key change.)
   let changing = true;
   let changed = 0;
   const changes = (async () => {
-    for (let semis = 1; changing; semis = (semis % 4) + 1) {
-      const res = await fetch(
-        new URL("api/setPitchShiftSemis", karafriends.remoconUrl),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ semis }),
-        },
-      );
-      expect(res.status).toBe(200);
+    for (let volume = 60; changing; volume = volume === 90 ? 60 : volume + 10) {
+      expect(await displayCall(display, "setSongVolume", { volume })).toEqual({
+        ok: true,
+        output: true,
+      });
       changed++;
       await new Promise((resolve) => setTimeout(resolve, 150));
     }

@@ -82,7 +82,6 @@ describe("toLiveState", () => {
         { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
       ];
       state.currentSongStartedAt = 1000;
-      state.currentSongPausedMs = 200;
       state.currentSongPausedSince = 1500;
     });
     const live = toLiveState(store.getState(), {
@@ -102,12 +101,8 @@ describe("toLiveState", () => {
       { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
     ]);
     assert.deepEqual(
-      [
-        live.currentSongStartedAt,
-        live.currentSongPausedMs,
-        live.currentSongPausedSince,
-      ],
-      [1000, 200, 1500],
+      [live.currentSongStartedAt, live.currentSongPausedSince],
+      [1000, 1500],
     );
     assert.deepEqual(live.queue, [shared(false)]);
     const [download, failed] = store.getState().downloadQueue;
@@ -401,6 +396,31 @@ describe("createLiveHub", () => {
     // The first change goes out at once (it's been a while), the rest
     // together after the interval.
     assert.deepEqual(queueLengths, [0, 1, 5]);
+  });
+
+  test("a backward step of the wall clock doesn't hold back the state", async (t) => {
+    const hub = createLiveHub(store, config, INTERVAL_MS);
+    const states: string[] = [];
+    const stop = hub.subscribe((event) => {
+      if (event.type === "state") states.push(event.state.playbackState);
+    });
+    // The host's clock goes back 3 s (a time sync), just after a flush.
+    await sleep(INTERVAL_MS * 2);
+    store.update((state) => {
+      state.playbackState = "PLAYING";
+    });
+    const realNow = Date.now;
+    t.mock.method(Date, "now", () => realNow() - 3000);
+    store.update((state) => {
+      state.pitchShiftSemis = 1;
+    });
+    store.update((state) => {
+      state.playbackState = "PAUSED";
+    });
+    await sleep(INTERVAL_MS * 4);
+    stop();
+    // It used to wait the 3 s out.
+    assert.deepEqual(states, ["WAITING", "PLAYING", "PAUSED"]);
   });
 
   test("a listener that joins between flushes ends up with the latest state", async () => {

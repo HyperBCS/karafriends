@@ -217,16 +217,30 @@ export function mergeLiveState(
   return changed ? merged : prev;
 }
 
-// How far this device's clock is ahead of the server's, in ms: the least
-// arrival time less sentAt of the state events so far, since a late one only
-// adds to it. Null until the first.
+// How many of the latest state events serverNow() takes its offset from.
+export const CLOCK_SAMPLES = 20;
+
+// Each recent state event's arrival time less its sentAt, newest last. The
+// least of them is how far this device's clock is ahead of the server's,
+// since a late event only adds to it. Only the latest few: should either
+// clock step (a time sync), the offset follows within CLOCK_SAMPLES events.
+const clockSamples: number[] = [];
 let clockOffset: number | null = null;
 
 // Takes in a state event sent at sentAt (by the server's clock) that arrived
 // at arrivedAt (by this device's).
 export function noteStateSentAt(sentAt: number, arrivedAt: number) {
-  const offset = arrivedAt - sentAt;
-  if (clockOffset === null || offset < clockOffset) clockOffset = offset;
+  clockSamples.push(arrivedAt - sentAt);
+  if (clockSamples.length > CLOCK_SAMPLES) clockSamples.shift();
+  clockOffset = Math.min(...clockSamples);
+}
+
+// Forgets the offset, as the stream (re)opens (LiveStateProvider, on the
+// first state event after): the server may have restarted, or either clock
+// moved while the phone slept.
+export function resetClockOffset() {
+  clockSamples.length = 0;
+  clockOffset = null;
 }
 
 // Now by the server's clock (ms since the epoch), for the countdowns, which
@@ -367,12 +381,18 @@ export function LiveStateProvider({
     const stopWatchingToken = checkAdmin
       ? onAdminTokenChange(askWhoami)
       : () => {};
+    // The first state event of each (re)connect takes the clock offset
+    // afresh (resetClockOffset).
+    let reconnected = false;
     const close = openLiveStream(
       () => {
+        reconnected = true;
         if (checkAdmin) askWhoami();
       },
       (event) => {
         if (event.type === "state") {
+          if (reconnected) resetClockOffset();
+          reconnected = false;
           noteStateSentAt(event.sentAt, Date.now());
           const before = store.get()?.config.everyoneIsAdmin;
           store.set(mergeLiveState(store.get(), event.state));

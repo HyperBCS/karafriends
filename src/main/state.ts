@@ -21,7 +21,9 @@ import type {
   ReadingsMode,
   UserIdentity,
 } from "../common/api";
-import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
+import { LYRICS_MODES, READINGS_MODES } from "../common/api";
+import { isCaptionCode } from "../common/captionCode";
+import { secondsLeft, songKey } from "../common/currentSong";
 
 // A download in progress, or one that failed in the last
 // FAILED_DOWNLOAD_KEPT_MS (so the phone that asked for it can say why).
@@ -142,16 +144,24 @@ export interface HistoryItem {
   song: QueueItem;
 }
 
+// A YouTube, Niconico or Joysound song whose download is running: it joins
+// the queue once that's done (queueSong), with what came with it. Saved, so
+// a restart starts the download again instead of losing the song.
+export interface PendingSong {
+  item: Exclude<QueueItem, { kind: "dam" }>;
+  pushToHead: boolean;
+  // A YouTube song's: the captions to download, and its adhoc lyrics.
+  captionCode: string | null;
+  adhocLyrics: string[];
+}
+
 export interface State {
   currentSong: QueueItem | null;
-  // When currentSong started (ms since the epoch; null while none plays or
-  // until the display starts it), how long it has been paused before, and
-  // since when it is paused now (null while it isn't), so a phone can tell
-  // how far into it the party is. Set by popSong, setPlaybackState and the
-  // display's reportSongPosition; not saved, since after a restart the song
+  // The current song's clock (see LiveState), so a phone can tell how far
+  // into it the party is. The display's reportSongPosition is its one
+  // writer; popSong clears it. Not saved, since after a restart the song
   // plays again from the start.
   currentSongStartedAt: number | null;
-  currentSongPausedMs: number;
   currentSongPausedSince: number | null;
   // The current song's video's length, in whole seconds, once the display
   // reports it (null until then). The countdowns use it in place of the
@@ -159,7 +169,8 @@ export interface State {
   currentSongLength: number | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   // The lines of each queued (or current) YouTube song with adhoc lyrics, by
-  // adhocLyricsKey. Nothing else: they go when the song does.
+  // songKey: the queue item, not the video, since anyone may queue the same
+  // video again with other lyrics. Nothing else: they go when the song does.
   idToAdhocLyrics: Record<string, string[]>;
   pitchShiftSemis: number;
   // 0 to 1. Saved, unlike the pitch.
@@ -171,6 +182,7 @@ export interface State {
   playbackState: PlaybackState;
   // The songs after currentSong.
   songQueue: QueueItem[];
+  pendingSongs: PendingSong[];
   downloadQueue: DownloadQueueItem[];
   // Newest first.
   songHistory: HistoryItem[];
@@ -190,26 +202,14 @@ export interface StateStore {
   onChange(listener: (state: Readonly<State>) => void): () => void;
 }
 
-// A queue item's key in idToAdhocLyrics: the queue item, not the video,
-// since anyone may queue the same video again with other lyrics.
-export function adhocLyricsKey(item: {
-  songId: string;
-  timestamp: string;
-}): string {
-  return `${item.songId}@${item.timestamp}`;
-}
-
-// Seconds left of the current song at now (ms since the epoch): its length
-// (the video's, else the playtime it was queued with) less the time it has
-// played, never below 0, rounded as the phones' queue rounds it (withETAs in
-// src/common/hooks/useQueue.ts). Before the song has started
-// (currentSongStartedAt null), all of it.
+// Seconds left of the current song at now (ms since the epoch): of its
+// length (the video's, else the playtime it was queued with), counted as the
+// phones count it (secondsLeft).
 export function currentSongSecondsLeft(
   state: Pick<
     State,
     | "currentSong"
     | "currentSongStartedAt"
-    | "currentSongPausedMs"
     | "currentSongPausedSince"
     | "currentSongLength"
   >,
@@ -218,18 +218,13 @@ export function currentSongSecondsLeft(
   const playtime = state.currentSong
     ? (state.currentSongLength ?? state.currentSong.playtime) || 0
     : 0;
-  if (state.currentSongStartedAt === null) return playtime;
-  const until = state.currentSongPausedSince ?? now;
-  const playedMs =
-    until - state.currentSongStartedAt - state.currentSongPausedMs;
-  return Math.max(0, Math.round(playtime - Math.max(0, playedMs) / 1000));
+  return secondsLeft(playtime, state, now);
 }
 
 export function emptyState(): State {
   return {
     currentSong: null,
     currentSongStartedAt: null,
-    currentSongPausedMs: 0,
     currentSongPausedSince: null,
     currentSongLength: null,
     currentSongAdhocLyrics: [],
@@ -240,6 +235,7 @@ export function emptyState(): State {
     mics: [],
     playbackState: "WAITING",
     songQueue: [],
+    pendingSongs: [],
     downloadQueue: [],
     songHistory: [],
     toolsProblem: null,
@@ -295,30 +291,22 @@ export function createStateStore(filePath: string): StateStore {
   };
 }
 
-// What goes in queue.json. The current song is saved at the head of the queue,
-// so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics, the song's timing and length, the song volume, the
-// mics and the tools problem start over. The guide melody level is kept.
+// What goes in queue.json: the queue, with the current song at its head so
+// that after a restart it plays again from the start, the queued songs' adhoc
+// lyrics, the songs still downloading (to download again), the history and
+// the guide melody level. Everything else starts over: nothing plays
+// (WAITING, until the display takes the first song), and the download
+// queue, pitch, pushed lines, the song's timing, the song volume, the mics
+// and the tools problem are a launch's own.
 export function serializeState(state: Readonly<State>): string {
-  const {
-    toolsProblem: _,
-    songVolume: _songVolume,
-    mics: _mics,
-    currentSongStartedAt: _startedAt,
-    currentSongPausedMs: _pausedMs,
-    currentSongPausedSince: _pausedSince,
-    currentSongLength: _length,
-    ...saved
-  } = state;
   return JSON.stringify({
-    ...saved,
-    pitchShiftSemis: 0,
-    currentSong: null,
-    currentSongAdhocLyrics: [],
     songQueue: state.currentSong
       ? [state.currentSong, ...state.songQueue]
       : state.songQueue,
-    downloadQueue: [],
+    idToAdhocLyrics: state.idToAdhocLyrics,
+    pendingSongs: state.pendingSongs,
+    songHistory: state.songHistory,
+    guideMelodyLevel: state.guideMelodyLevel,
   });
 }
 
@@ -346,36 +334,29 @@ export function loadState(filePath: string): State {
   return parseState(raw);
 }
 
-// Builds a State from a parsed queue.json, keeping whatever is valid. Reads
-// both this format and the GraphQL-shaped items older versions saved
-// (`__typename` and `userIdentity` instead of `kind` and `user`). Drops the
-// null that older versions saved at the head of the queue when nothing was
-// playing.
+// Builds a State from a parsed queue.json (serializeState), keeping whatever
+// is valid. Reads the GraphQL-shaped items older versions saved too
+// (`__typename` and `userIdentity` instead of `kind` and `user`), and drops
+// the null they saved at the head of the queue when nothing was playing. A
+// current song in the file (none has saved one, but in case) goes at the
+// head of the queue.
 export function parseState(raw: Record<string, unknown>): State {
   const state = emptyState();
-  state.currentSong = parseQueueItem(raw.currentSong);
+  const current = parseQueueItem(raw.currentSong);
   state.songQueue = parseList(raw.songQueue, parseQueueItem);
+  if (current) state.songQueue.unshift(current);
   state.songHistory = parseList(raw.songHistory, (entry) => {
     const song = isObject(entry) ? parseQueueItem(entry.song) : null;
     return song ? { song } : null;
   });
-  state.currentSongAdhocLyrics = parseList(
-    raw.currentSongAdhocLyrics,
-    (entry) =>
-      isObject(entry) &&
-      typeof entry.lyric === "string" &&
-      typeof entry.lyricIndex === "number"
-        ? { lyric: entry.lyric, lyricIndex: entry.lyricIndex }
-        : null,
-  );
   // Only the lyrics of songs still queued: older versions kept those of
   // songs that never played. And they saved them by video ID.
   const savedLyrics = isObject(raw.idToAdhocLyrics) ? raw.idToAdhocLyrics : {};
   const saved = (key: string) =>
     Object.hasOwn(savedLyrics, key) ? savedLyrics[key] : undefined;
-  for (const item of [state.currentSong, ...state.songQueue]) {
-    if (item?.kind !== "youtube" || !item.hasAdhocLyrics) continue;
-    const key = adhocLyricsKey(item);
+  for (const item of state.songQueue) {
+    if (item.kind !== "youtube" || !item.hasAdhocLyrics) continue;
+    const key = songKey(item);
     const lyrics = saved(key) ?? saved(item.songId);
     if (Array.isArray(lyrics)) {
       state.idToAdhocLyrics[key] = lyrics.filter(
@@ -383,15 +364,10 @@ export function parseState(raw: Record<string, unknown>): State {
       );
     }
   }
-  if (typeof raw.pitchShiftSemis === "number") {
-    state.pitchShiftSemis = raw.pitchShiftSemis;
-  }
+  state.pendingSongs = parseList(raw.pendingSongs, parsePendingSong);
   const level = raw.guideMelodyLevel;
   if (typeof level === "number" && level >= 0 && level <= 1) {
     state.guideMelodyLevel = level;
-  }
-  if (PLAYBACK_STATES.includes(raw.playbackState as PlaybackState)) {
-    state.playbackState = raw.playbackState as PlaybackState;
   }
   return state;
 }
@@ -402,6 +378,27 @@ const KIND_BY_TYPENAME: Record<string, QueueItemKind> = {
   YoutubeQueueItem: "youtube",
   NicoQueueItem: "nico",
 };
+
+function parsePendingSong(raw: unknown): PendingSong | null {
+  if (!isObject(raw)) return null;
+  const item = parseQueueItem(raw.item);
+  if (item === null || item.kind === "dam") return null;
+  // It goes to yt-dlp: only a code queueSong would have taken.
+  const captionCode =
+    typeof raw.captionCode === "string" && isCaptionCode(raw.captionCode)
+      ? raw.captionCode
+      : null;
+  return {
+    item,
+    pushToHead: raw.pushToHead === true,
+    captionCode,
+    adhocLyrics: Array.isArray(raw.adhocLyrics)
+      ? raw.adhocLyrics.filter(
+          (line): line is string => typeof line === "string",
+        )
+      : [],
+  };
+}
 
 function parseQueueItem(raw: unknown): QueueItem | null {
   if (!isObject(raw)) return null;

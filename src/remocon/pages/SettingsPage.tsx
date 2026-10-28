@@ -5,12 +5,11 @@ import {
   adminSignIn,
   adminSignOut,
   ApiCallError,
+  call,
   useIsAdmin,
   useLiveState,
 } from "../../common/apiClient";
-import { useApiMutation } from "../../common/apiQueries";
-import useGuideMelodyLevel from "../../common/hooks/useGuideMelodyLevel";
-import useOptimisticValue from "../../common/hooks/useOptimisticValue";
+import useLiveSetter from "../../common/hooks/useLiveSetter";
 import {
   LyricsModeChoice,
   saveLyricsMode,
@@ -223,7 +222,11 @@ const LevelSlider = ({
 
 // How loud Joysound's guide melody plays, whatever is playing.
 const GuideMelodySlider = () => {
-  const { guideMelodyLevel, setGuideMelodyLevel } = useGuideMelodyLevel();
+  const [guideMelodyLevel, setGuideMelodyLevel] = useLiveSetter(
+    useLiveState((state) => state?.guideMelodyLevel ?? 0),
+    (level: number) => call("setGuideMelodyLevel", { level }),
+    "change the guide melody level",
+  );
   return (
     <div className={styles.setting}>
       <LevelSlider
@@ -242,14 +245,11 @@ const GuideMelodySlider = () => {
 
 // The song's volume on the display, 0 to 100 %.
 const SongVolumeSlider = () => {
-  const live = useLiveState((state) => state?.songVolume ?? 100);
-  const [volume, setPending, clearPending] = useOptimisticValue(live);
-  const { mutate } = useApiMutation("setSongVolume", {
-    onError: (err) => {
-      console.error("Couldn't change the song volume:", err);
-      clearPending();
-    },
-  });
+  const [volume, setVolume] = useLiveSetter(
+    useLiveState((state) => state?.songVolume ?? 100),
+    (volume: number) => call("setSongVolume", { volume }),
+    "change the song volume",
+  );
   return (
     <LevelSlider
       label={t("songVolume.label")}
@@ -257,10 +257,7 @@ const SongVolumeSlider = () => {
       max={100}
       step={5}
       value={volume}
-      onSend={(next) => {
-        setPending(next);
-        mutate({ volume: next });
-      }}
+      onSend={setVolume}
     />
   );
 };
@@ -273,13 +270,11 @@ const MicLevelSlider = ({
   mic: MicInfo;
   level: "gain" | "echo";
 }) => {
-  const [value, setPending, clearPending] = useOptimisticValue(mic[level]);
-  const { mutate } = useApiMutation("setMicLevels", {
-    onError: (err) => {
-      console.error(`Couldn't change the mic's ${level}:`, err);
-      clearPending();
-    },
-  });
+  const [value, setValue] = useLiveSetter(
+    mic[level],
+    (value: number) => call("setMicLevels", { id: mic.id, [level]: value }),
+    `change the mic's ${level}`,
+  );
   return (
     <LevelSlider
       label={t(`mics.${level}`)}
@@ -288,10 +283,7 @@ const MicLevelSlider = ({
       max={level === "gain" ? 200 : 100}
       step={1}
       value={value}
-      onSend={(next) => {
-        setPending(next);
-        mutate({ id: mic.id, [level]: next });
-      }}
+      onSend={setValue}
     />
   );
 };

@@ -1,23 +1,19 @@
-import type { PlaybackState } from "../api";
-import { useLiveState } from "../apiClient";
-import { useApiMutation } from "../apiQueries";
-import useOptimisticValue from "./useOptimisticValue";
+import type { PlaybackCommand, PlaybackState } from "../api";
+import { call, useLiveState } from "../apiClient";
+import useLiveSetter from "./useLiveSetter";
 
-// The display's playback state, live, and a setter for it.
+// The display's playback state, live, and a setter for it that names the
+// song it is for (its songKey).
 export default function usePlaybackState() {
   const live = useLiveState((state) => state?.playbackState ?? "WAITING");
-  const [playbackState, setPending, clearPending] = useOptimisticValue(live);
-  const { mutate } = useApiMutation("setPlaybackState", {
-    onError: (err) => {
-      console.error("Couldn't set the playback state:", err);
-      clearPending();
-    },
-  });
-
-  const setPlaybackState = (next: PlaybackState) => {
-    setPending(next);
-    mutate({ playbackState: next });
-  };
-
+  const [playbackState, set] = useLiveSetter(
+    live,
+    (next: PlaybackState, song: string) =>
+      next === "WAITING"
+        ? Promise.resolve(false)
+        : call("setPlaybackState", { playbackState: next, song }),
+    "set the playback state",
+  );
+  const setPlaybackState: (next: PlaybackCommand, song: string) => void = set;
   return { playbackState, setPlaybackState };
 }

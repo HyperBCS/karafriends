@@ -192,7 +192,7 @@ describe("POST /api/<method>", () => {
   test("the handler's ApiError status, or 500", async () => {
     const forbidden = await post(
       "setPlaybackState",
-      '{"playbackState":"PAUSED"}',
+      '{"playbackState":"PAUSED","song":"sm1@1"}',
     );
     assert.equal(forbidden.status, 403);
     assert.deepEqual(await forbidden.json(), { error: "Supervised mode: no" });

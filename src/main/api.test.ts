@@ -7,14 +7,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { hashAdminPassword } from "../common/adminPassword";
-import type { PlaybackState, QueueItem } from "../common/api";
+import type { PlaybackCommand, QueueItem } from "../common/api";
+import { songKey } from "../common/currentSong";
 import { REASONS } from "../common/downloadFailure";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import { shareQueueItem, type HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
 import {
-  adhocLyricsKey,
   createStateStore,
   failDownload,
   startDownload,
@@ -245,13 +245,17 @@ describe("admin checks", () => {
     store.update((state) => {
       state.currentSong = song(1, alice);
       state.songQueue.push(song(2, alice));
+      state.playbackState = "PLAYING";
     });
     assert.equal(
       await api.removeSong({ songId: "sm2", timestamp: "2" }, bob),
       true,
     );
     assert.equal(
-      await api.setPlaybackState({ playbackState: "PAUSED" }, bob),
+      await api.setPlaybackState(
+        { playbackState: "PAUSED", song: "sm1@1" },
+        bob,
+      ),
       true,
     );
     assert.equal(store.getState().playbackState, "PAUSED");
@@ -295,15 +299,18 @@ describe("admin checks", () => {
       const api = makeApi({ supervisedMode: true });
 
       await rejectsWith(
-        api.setPlaybackState({ playbackState: "PAUSED" }, bob),
+        api.setPlaybackState({ playbackState: "PAUSED", song: "sm1@1" }, bob),
         403,
       );
-      await rejectsWith(api.setPitchShiftSemis({ semis: 2 }, bob), 403);
+      await rejectsWith(
+        api.setPitchShiftSemis({ semis: 2, song: "sm1@1" }, bob),
+        403,
+      );
       // The singer's or an admin's nickname, from another phone.
       for (const nickname of ["alice", ADMIN_NICK]) {
         await rejectsWith(
           api.setPlaybackState(
-            { playbackState: "SKIPPING" },
+            { playbackState: "SKIPPING", song: "sm1@1" },
             phone("other-device", nickname),
           ),
           403,
@@ -313,18 +320,30 @@ describe("admin checks", () => {
       assert.equal(store.getState().pitchShiftSemis, 0);
 
       assert.equal(
-        await api.setPlaybackState({ playbackState: "PAUSED" }, alice),
+        await api.setPlaybackState(
+          { playbackState: "PAUSED", song: "sm1@1" },
+          alice,
+        ),
         true,
       );
       assert.equal(
-        await api.setPlaybackState({ playbackState: "SKIPPING" }, admin("x")),
+        await api.setPlaybackState(
+          { playbackState: "SKIPPING", song: "sm1@1" },
+          admin("x"),
+        ),
         true,
       );
       assert.equal(
-        await api.setPlaybackState({ playbackState: "PLAYING" }, display),
+        await api.setPlaybackState(
+          { playbackState: "PLAYING", song: "sm1@1" },
+          display,
+        ),
         true,
       );
-      assert.equal(await api.setPitchShiftSemis({ semis: -1 }, alice), true);
+      assert.equal(
+        await api.setPitchShiftSemis({ semis: -1, song: "sm1@1" }, alice),
+        true,
+      );
       assert.equal(store.getState().pitchShiftSemis, -1);
     });
   });
@@ -354,11 +373,17 @@ describe("admin checks", () => {
         true,
       );
       assert.equal(
-        await api.setPlaybackState({ playbackState: "PAUSED" }, bob),
+        await api.setPlaybackState(
+          { playbackState: "PAUSED", song: "sm1@1" },
+          bob,
+        ),
         true,
       );
       assert.equal(store.getState().playbackState, "PAUSED");
-      assert.equal(await api.setPitchShiftSemis({ semis: 2 }, bob), true);
+      assert.equal(
+        await api.setPitchShiftSemis({ semis: 2, song: "sm1@1" }, bob),
+        true,
+      );
       assert.equal(store.getState().pitchShiftSemis, 2);
     });
 
@@ -397,9 +422,25 @@ describe("admin checks", () => {
     test("gets the current song back, from the start, once", async () => {
       const handlers = api();
       await handlers.popSong({}, display);
-      await handlers.setPlaybackState({ playbackState: "PLAYING" }, display);
+      await handlers.setPlaybackState(
+        { playbackState: "PLAYING", song: "sm1@1" },
+        display,
+      );
+      await handlers.reportSongPosition(
+        {
+          songId: "sm1",
+          timestamp: "1",
+          position: 0,
+          length: 100,
+          playing: true,
+        },
+        display,
+      );
       clock = 30_000;
-      await handlers.setPlaybackState({ playbackState: "PAUSED" }, alice);
+      await handlers.setPlaybackState(
+        { playbackState: "PAUSED", song: "sm1@1" },
+        alice,
+      );
       assert.equal(store.getState().currentSongStartedAt, 1000);
 
       const resumed = await handlers.popSong({ resume: true }, display);
@@ -415,14 +456,14 @@ describe("admin checks", () => {
         state.songHistory.map((entry) => entry.song.songId),
         ["sm1"],
       );
-      // Its clock starts again with the display's PLAYING.
+      // Its clock starts again with the display's first report.
       assert.deepEqual(
         [
           state.currentSongStartedAt,
-          state.currentSongPausedMs,
           state.currentSongPausedSince,
+          state.currentSongLength,
         ],
-        [null, 0, null],
+        [null, null, null],
       );
 
       // Reloaded again (the song crashes the display, say): it moves on.
@@ -452,7 +493,14 @@ describe("admin checks", () => {
     test("takes the next song when the current one was being skipped", async () => {
       const handlers = api();
       await handlers.popSong({}, display);
-      await handlers.setPlaybackState({ playbackState: "SKIPPING" }, alice);
+      await handlers.setPlaybackState(
+        { playbackState: "PLAYING", song: "sm1@1" },
+        display,
+      );
+      await handlers.setPlaybackState(
+        { playbackState: "SKIPPING", song: "sm1@1" },
+        alice,
+      );
       assert.equal(
         (await handlers.popSong({ resume: true }, display))?.songId,
         "sm2",
@@ -483,130 +531,113 @@ describe("admin checks", () => {
     let clock: number;
     const timing = () => {
       const state = store.getState();
-      return [
-        state.currentSongStartedAt,
-        state.currentSongPausedMs,
-        state.currentSongPausedSince,
-      ];
+      return [state.currentSongStartedAt, state.currentSongPausedSince];
     };
     const api = () => makeApi({}, { now: () => clock });
-    const play = (playbackState: PlaybackState) =>
-      api().setPlaybackState({ playbackState }, display);
+    const play = (playbackState: PlaybackCommand, song = "sm1@1") =>
+      api().setPlaybackState({ playbackState, song }, display);
+    // Where song 1's video is: position seconds in, moving or not.
+    const report = (
+      position: number,
+      playing = true,
+      length: number | null = null,
+      timestamp = "1",
+    ) =>
+      api().reportSongPosition(
+        { songId: "sm1", timestamp, position, length, playing },
+        display,
+      );
+    // Seconds played at the clock, as the phones work it out.
+    const played = () => {
+      const [startedAt, pausedSince] = timing() as [number, number | null];
+      return ((pausedSince ?? clock) - startedAt) / 1000;
+    };
 
-    // Song 1 is popped at 0 and starts playing at 1000.
+    // Song 1 is popped at 0, and its video starts playing at 1000.
     beforeEach(async () => {
       clock = 0;
       store.update((state) => state.songQueue.push(song(1, alice)));
       await api().popSong({}, display);
       clock = 1000;
       await play("PLAYING");
+      await report(0);
     });
 
-    test("starts when the display plays the song, not at popSong", async () => {
+    test("starts with the display's first report, not at popSong or PLAYING", async () => {
       store.update((state) => state.songQueue.push(song(2, alice)));
       clock = 2000;
       await api().popSong({}, display);
       // popSong may wait for DAM, and the display has yet to load the song.
-      assert.deepEqual(timing(), [null, 0, null]);
-      // A phone's play or pause before then doesn't start it.
+      assert.deepEqual(timing(), [null, null]);
+      clock = 2500;
+      assert.equal(await play("PLAYING", "sm2@2"), true);
+      assert.deepEqual(timing(), [null, null]);
+      // Its video has loaded (loadedmetadata), and then plays.
+      const report2 = (position: number, playing: boolean) =>
+        api().reportSongPosition(
+          { songId: "sm2", timestamp: "2", position, length: 99.6, playing },
+          display,
+        );
       clock = 3000;
-      await api().setPlaybackState({ playbackState: "PAUSED" }, alice);
-      await api().setPlaybackState({ playbackState: "PLAYING" }, alice);
-      assert.deepEqual(timing(), [null, 0, null]);
-      clock = 4000;
-      await play("PLAYING");
-      assert.deepEqual(timing(), [4000, 0, null]);
-      // Once started, the display's PLAYING leaves it.
-      clock = 5000;
-      await play("PLAYING");
-      assert.deepEqual(timing(), [4000, 0, null]);
+      assert.equal(await report2(0, false), true);
+      assert.deepEqual(timing(), [3000, 3000]);
+      assert.equal(store.getState().currentSongLength, 100);
+      clock = 3100;
+      await report2(0, true);
+      assert.deepEqual(timing(), [3100, null]);
     });
 
-    test("adds each pause once it resumes", async () => {
+    test("setPlaybackState leaves it to the video's reports", async () => {
       clock = 5000;
       await play("PAUSED");
-      assert.deepEqual(timing(), [1000, 0, 5000]);
-      // A second pause keeps the first's start.
-      clock = 6000;
-      await play("PAUSED");
+      assert.deepEqual(timing(), [1000, null]);
+      // The video's 'pause', a moment later.
+      await report(4, false);
+      assert.deepEqual(timing(), [1000, 5000]);
       clock = 8000;
       await play("PLAYING");
-      assert.deepEqual(timing(), [1000, 3000, null]);
+      await report(4, true);
+      assert.deepEqual(timing(), [4000, null]);
+      // A restart: the video's 'seeked' at 0.
       clock = 9000;
-      await play("PAUSED");
-      clock = 9500;
-      await play("PLAYING");
-      assert.deepEqual(timing(), [1000, 3500, null]);
-    });
-
-    test("starts over on a restart, paused or not", async () => {
-      clock = 5000;
-      await play("PAUSED");
-      clock = 7000;
       await play("RESTARTING");
-      assert.deepEqual(timing(), [7000, 0, null]);
-      await play("PLAYING");
-      assert.deepEqual(timing(), [7000, 0, null]);
+      assert.deepEqual(timing(), [4000, null]);
+      await report(0, true);
+      assert.deepEqual(timing(), [9000, null]);
     });
 
     test("a skip leaves it, and the next popSong starts over", async () => {
       clock = 5000;
-      await play("PAUSED");
+      await report(4, false);
       await play("SKIPPING");
-      assert.deepEqual(timing(), [1000, 0, 5000]);
+      assert.deepEqual(timing(), [1000, 5000]);
       store.update((state) => state.songQueue.push(song(2, alice)));
       clock = 6000;
       await api().popSong({}, display);
-      assert.deepEqual(timing(), [null, 0, null]);
-      clock = 6500;
-      await play("PLAYING");
-      assert.deepEqual(timing(), [6500, 0, null]);
+      assert.deepEqual(timing(), [null, null]);
     });
 
     test("is empty while no song plays", async () => {
       await api().popSong({}, display);
-      assert.deepEqual(timing(), [null, 0, null]);
-      await play("PAUSED");
-      await play("PLAYING");
-      assert.deepEqual(timing(), [null, 0, null]);
+      assert.deepEqual(timing(), [null, null]);
+      assert.equal(await report(0), false);
+      assert.deepEqual(timing(), [null, null]);
     });
 
     describe("from the display's reports", () => {
-      // Where song 1's video is: position seconds in, moving or not.
-      const report = (
-        position: number,
-        playing = true,
-        length: number | null = null,
-        timestamp = "1",
-      ) =>
-        api().reportSongPosition(
-          { songId: "sm1", timestamp, position, length, playing },
-          display,
-        );
-      // Seconds played at the clock, as the phones work it out.
-      const played = () => {
-        const [startedAt, pausedMs, pausedSince] = timing() as [
-          number,
-          number,
-          number | null,
-        ];
-        return ((pausedSince ?? clock) - startedAt - pausedMs) / 1000;
-      };
-
       test("follows a seek, paused or not", async () => {
         clock = 11_000;
         assert.equal(played(), 10);
         // Sought forward to 40 s.
         assert.equal(await report(40), true);
-        assert.deepEqual(timing(), [11_000 - 40_000, 0, null]);
+        assert.deepEqual(timing(), [11_000 - 40_000, null]);
         clock = 13_000;
         assert.equal(played(), 42);
         // Back to 5 s while paused: it stays there.
-        await play("PAUSED");
         await report(5, false);
         clock = 60_000;
         assert.equal(played(), 5);
-        await play("PLAYING");
+        await report(5, true);
         clock = 61_000;
         assert.equal(played(), 6);
       });
@@ -628,32 +659,11 @@ describe("admin checks", () => {
         clock = 11_000;
         await report(10.3);
         await report(9.7);
-        assert.deepEqual(timing(), [1000, 0, null]);
+        assert.deepEqual(timing(), [1000, null]);
         assert.equal(changes, 0);
         // A second off is a change.
         await report(11);
         assert.equal(changes, 1);
-      });
-
-      test("starts the clock if the display's PLAYING hasn't", async () => {
-        store.update((state) => state.songQueue.push(song(2, alice)));
-        await api().popSong({}, display);
-        clock = 2000;
-        assert.equal(
-          await api().reportSongPosition(
-            {
-              songId: "sm2",
-              timestamp: "2",
-              position: 0,
-              length: 99.6,
-              playing: false,
-            },
-            display,
-          ),
-          true,
-        );
-        assert.deepEqual(timing(), [2000, 0, 2000]);
-        assert.equal(store.getState().currentSongLength, 100);
       });
 
       test("keeps the video's length, in whole seconds, until the next song", async () => {
@@ -679,7 +689,7 @@ describe("admin checks", () => {
       test("ignores the song before's, and anyone but the display", async () => {
         clock = 11_000;
         assert.equal(await report(40, true, 60, "0"), false);
-        assert.deepEqual(timing(), [1000, 0, null]);
+        assert.deepEqual(timing(), [1000, null]);
         assert.equal(store.getState().currentSongLength, null);
         await rejectsWith(
           api().reportSongPosition(
@@ -694,7 +704,7 @@ describe("admin checks", () => {
           ),
           403,
         );
-        assert.deepEqual(timing(), [1000, 0, null]);
+        assert.deepEqual(timing(), [1000, null]);
       });
     });
   });
@@ -1056,6 +1066,192 @@ describe("the downloads folder", () => {
   });
 });
 
+describe("commands for the current song", () => {
+  // Song 1 is playing, song 2 is next.
+  const start = async (api: ReturnType<typeof makeApi>) => {
+    store.update((state) => state.songQueue.push(song(1, alice), song(2, bob)));
+    await api.popSong({}, display);
+    await api.setPlaybackState(
+      { playbackState: "PLAYING", song: "sm1@1" },
+      display,
+    );
+  };
+
+  test("a skip meant for the song before doesn't skip the next one", async () => {
+    const api = makeApi();
+    await start(api);
+    // Two guests tap Skip. The first one's ends song 1, and the display
+    // starts song 2...
+    assert.equal(
+      await api.setPlaybackState(
+        { playbackState: "SKIPPING", song: "sm1@1" },
+        alice,
+      ),
+      true,
+    );
+    await api.popSong({}, display);
+    await api.setPlaybackState(
+      { playbackState: "PLAYING", song: "sm2@2" },
+      display,
+    );
+    // ...before the second one's lands.
+    assert.equal(
+      await api.setPlaybackState(
+        { playbackState: "SKIPPING", song: "sm1@1" },
+        bob,
+      ),
+      false,
+    );
+    assert.equal(store.getState().playbackState, "PLAYING");
+    // A late key tap, and the display's own command for the song before.
+    assert.equal(
+      await api.setPitchShiftSemis({ semis: 3, song: "sm1@1" }, alice),
+      false,
+    );
+    assert.equal(
+      await api.setPlaybackState(
+        { playbackState: "PAUSED", song: "sm1@1" },
+        display,
+      ),
+      false,
+    );
+    assert.equal(store.getState().pitchShiftSemis, 0);
+    assert.equal(store.getState().playbackState, "PLAYING");
+    // For song 2, they work.
+    assert.equal(
+      await api.setPitchShiftSemis({ semis: 3, song: "sm2@2" }, alice),
+      true,
+    );
+    assert.equal(store.getState().pitchShiftSemis, 3);
+  });
+
+  test("with no song current, every command is dropped", async () => {
+    const api = makeApi();
+    await start(api);
+    store.update((state) => state.songQueue.splice(0));
+    // The queue ran dry.
+    assert.equal(await api.popSong({}, display), null);
+    assert.equal(store.getState().playbackState, "WAITING");
+    for (const caller of [alice, display]) {
+      for (const playbackState of ["PAUSED", "PLAYING", "SKIPPING"] as const) {
+        assert.equal(
+          await api.setPlaybackState({ playbackState, song: "sm1@1" }, caller),
+          false,
+        );
+      }
+    }
+    assert.equal(
+      await api.setPitchShiftSemis({ semis: 1, song: "sm1@1" }, alice),
+      false,
+    );
+    assert.equal(store.getState().playbackState, "WAITING");
+    assert.equal(store.getState().pitchShiftSemis, 0);
+  });
+
+  describe("while the display loads the next song", () => {
+    // A DAM song whose streaming URLs take as long as the test says.
+    let answerDam: (() => void) | null;
+    const damSong: QueueItem = {
+      kind: "dam",
+      songId: "1234-56",
+      name: "DAM song",
+      artistName: "Artist",
+      playtime: 200,
+      timestamp: "7",
+      user: { deviceId: "alice-device", nickname: "alice" },
+      streamingUrlIdx: 0,
+    };
+    const slowDam = () =>
+      makeApi(
+        {},
+        {
+          minsei: {
+            getMusicStreamingUrls: () =>
+              new Promise((resolve) => {
+                answerDam = () => resolve({ list: [] });
+              }),
+            getScoringData: async () => new ArrayBuffer(0),
+          },
+        },
+      );
+
+    beforeEach(() => {
+      answerDam = null;
+    });
+
+    test("phones see WAITING, and their commands wait for the display's PLAYING", async () => {
+      const api = slowDam();
+      await start(api);
+      store.update((state) => state.songQueue.splice(0, 1, damSong));
+      const popping = api.popSong({}, display);
+      // The DAM song is current, but the display has yet to start it.
+      const state = store.getState();
+      assert.equal(state.currentSong?.songId, "1234-56");
+      assert.equal(state.playbackState, "WAITING");
+      for (const playbackState of [
+        "SKIPPING",
+        "RESTARTING",
+        "PAUSED",
+        "PLAYING",
+      ] as const) {
+        assert.equal(
+          await api.setPlaybackState(
+            { playbackState, song: "1234-56@7" },
+            admin("x"),
+          ),
+          false,
+        );
+      }
+      assert.equal(
+        await api.setPitchShiftSemis({ semis: 2, song: "1234-56@7" }, alice),
+        false,
+      );
+      assert.equal(store.getState().playbackState, "WAITING");
+
+      answerDam!();
+      assert.equal((await popping)?.songId, "1234-56");
+      // The display resets the key and starts the song, and from then on
+      // the phones' commands work.
+      assert.equal(
+        await api.setPitchShiftSemis({ semis: 0, song: "1234-56@7" }, display),
+        true,
+      );
+      assert.equal(
+        await api.setPlaybackState(
+          { playbackState: "PLAYING", song: "1234-56@7" },
+          display,
+        ),
+        true,
+      );
+      assert.equal(
+        await api.setPlaybackState(
+          { playbackState: "SKIPPING", song: "1234-56@7" },
+          alice,
+        ),
+        true,
+      );
+      assert.equal(store.getState().playbackState, "SKIPPING");
+    });
+
+    test("a reloaded display's song waits too", async () => {
+      const api = makeApi();
+      await start(api);
+      assert.equal(
+        (await api.popSong({ resume: true }, display))?.songId,
+        "sm1",
+      );
+      assert.equal(store.getState().playbackState, "WAITING");
+      assert.equal(
+        await api.setPlaybackState(
+          { playbackState: "PAUSED", song: "sm1@1" },
+          alice,
+        ),
+        false,
+      );
+    });
+  });
+});
+
 describe("admin sign-in", () => {
   test("the right password gives a token that makes the phone an admin", async () => {
     const api = makeApi({ supervisedMode: true });
@@ -1072,8 +1268,20 @@ describe("admin sign-in", () => {
       ),
       { isAdmin: true },
     );
+    // Alice's song, which supervised mode keeps from bob but not an admin.
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.playbackState = "PLAYING";
+    });
+    await rejectsWith(
+      api.setPlaybackState({ playbackState: "PAUSED", song: "sm1@1" }, bob),
+      403,
+    );
     assert.equal(
-      await api.setPlaybackState({ playbackState: "PAUSED" }, signedIn),
+      await api.setPlaybackState(
+        { playbackState: "PAUSED", song: "sm1@1" },
+        signedIn,
+      ),
       true,
     );
   });
@@ -1295,11 +1503,10 @@ describe("queueSong", () => {
   });
 
   test("counts only what is left of the current song", async () => {
-    // Song 1 (100 s) started 40 s ago and was paused for 10 of them.
+    // Song 1 (100 s) has played 30 s.
     store.update((state) => {
       state.currentSong = song(1, alice);
-      state.currentSongStartedAt = 20_000;
-      state.currentSongPausedMs = 10_000;
+      state.currentSongStartedAt = 30_000;
       state.songQueue.push(song(2, alice));
     });
     const api = makeApi({}, { now: () => 60_000 });
@@ -1309,6 +1516,45 @@ describe("queueSong", () => {
         bob,
       ),
       { ok: true, eta: 70 + 100 },
+    );
+  });
+
+  test("an admin's song for the head of the queue waits for the current song and the next", async () => {
+    // Song 1 (100 s) has played 30 s; four more wait.
+    store.update((state) => {
+      state.currentSong = song(1, alice);
+      state.currentSongStartedAt = 30_000;
+      state.songQueue.push(song(2, alice), song(3, alice), song(4, alice));
+    });
+    const api = makeApi({}, { now: () => 60_000 });
+    const result = await api.queueSong(
+      {
+        kind: "dam",
+        songId: "1234-56",
+        name: "",
+        artistName: "",
+        streamingUrlIdx: 0,
+        tryHeadOfQueue: true,
+      },
+      admin("x"),
+    );
+    // It goes in second (after song 2).
+    assert.equal(store.getState().songQueue[1].songId, "1234-56");
+    assert.deepEqual(result, { ok: true, eta: 70 + 100 });
+    // A guest's goes to the end, as before (the DAM song came with no
+    // playtime).
+    assert.deepEqual(
+      await api.queueSong(
+        {
+          kind: "nico",
+          songId: "sm9",
+          name: "",
+          artistName: "",
+          tryHeadOfQueue: true,
+        },
+        bob,
+      ),
+      { ok: true, eta: 70 + 300 },
     );
   });
 
@@ -1375,6 +1621,114 @@ describe("queueSong", () => {
     assert.equal(store.getState().songQueue[0].kind, "youtube");
   });
 
+  describe("a song still downloading when the app restarts", () => {
+    // Downloads that finish when the test says, and what each was asked.
+    let started: { kind: string; args: unknown[]; ready: () => void }[];
+    const api = () =>
+      makeApi(
+        {},
+        {
+          downloads: {
+            youtube: (item, captionCode, onReady) =>
+              started.push({
+                kind: "youtube",
+                args: [item, captionCode],
+                ready: onReady,
+              }),
+            nico: (item, onReady) =>
+              started.push({ kind: "nico", args: [item], ready: onReady }),
+            joysound: (item, pushToHead, onReady) =>
+              started.push({
+                kind: "joysound",
+                args: [item, pushToHead],
+                ready: () => onReady(item, pushToHead),
+              }),
+          } as ApiDeps["downloads"],
+        },
+      );
+    // A relaunch: the state as queue.json has it.
+    const relaunch = () => {
+      store = createStateStore(path.join(dir, "queue.json"));
+      started = [];
+    };
+
+    beforeEach(() => {
+      started = [];
+    });
+
+    test("downloads again at launch, and joins the queue as it would have", async () => {
+      const before = api();
+      await before.queueSong(
+        {
+          kind: "youtube",
+          songId: "jNQXAC9IVRw",
+          name: "Me at the zoo",
+          artistName: "",
+          adhocLyrics: "line one\nline two",
+          captionCode: "en",
+          gainValue: 1,
+        },
+        alice,
+      );
+      await before.queueSong(
+        {
+          kind: "joysound",
+          songId: "123",
+          name: "Joysound song",
+          artistName: "",
+          lyricsMode: "kana",
+          youtubeVideoId: null,
+          tryHeadOfQueue: true,
+        },
+        admin("x"),
+      );
+      const [youtube, joysound] = started;
+
+      relaunch();
+      assert.deepEqual(store.getState().songQueue, []);
+      const after = api();
+      after.resumeDownloads();
+      assert.deepEqual(
+        started.map(({ kind, args }) => [kind, args]),
+        [
+          ["youtube", youtube.args],
+          ["joysound", joysound.args],
+        ],
+      );
+      for (const download of started) download.ready();
+      const [item] = store.getState().songQueue;
+      assert.deepEqual(
+        store.getState().songQueue.map((song) => song.songId),
+        ["jNQXAC9IVRw", "123"],
+      );
+      assert.deepEqual(store.getState().idToAdhocLyrics, {
+        [songKey(item)]: ["line one", "line two"],
+      });
+      // Done: nothing to download at the next launch.
+      relaunch();
+      api().resumeDownloads();
+      assert.deepEqual(started, []);
+    });
+
+    test("one that failed is forgotten", async () => {
+      const failing = makeApi(
+        {},
+        {
+          downloads: {
+            nico: (_item, _onReady, onFailed) => onFailed("Video unavailable"),
+          } as ApiDeps["downloads"],
+        },
+      );
+      await failing.queueSong(
+        { kind: "nico", songId: "sm9", name: "", artistName: "" },
+        alice,
+      );
+      relaunch();
+      api().resumeDownloads();
+      assert.deepEqual(started, []);
+    });
+  });
+
   describe("a YouTube song's adhoc lyrics", () => {
     const VIDEO = "jNQXAC9IVRw";
     // Downloads that finish when the test says.
@@ -1420,7 +1774,7 @@ describe("queueSong", () => {
 
       finishDownloads[0]();
       const [item] = store.getState().songQueue;
-      assert.deepEqual(stored(), { [adhocLyricsKey(item)]: ["la"] });
+      assert.deepEqual(stored(), { [songKey(item)]: ["la"] });
     });
 
     test("are each queueing's own, and go with it", async () => {
@@ -1445,15 +1799,22 @@ describe("queueSong", () => {
         ),
         true,
       );
-      assert.deepEqual(stored(), { [adhocLyricsKey(bobs)]: ["bob's line"] });
+      assert.deepEqual(stored(), { [songKey(bobs)]: ["bob's line"] });
 
       // Played: they go when the next song starts.
       await handlers.popSong({}, display);
       assert.deepEqual(await handlers.adhocLyrics({ songId: VIDEO }, bob), [
         "bob's line",
       ]);
+      await handlers.setPlaybackState(
+        { playbackState: "PLAYING", song: songKey(bobs) },
+        display,
+      );
       assert.equal(
-        await handlers.pushAdhocLyrics({ lyricIndex: 0 }, bob),
+        await handlers.pushAdhocLyrics(
+          { lyricIndex: 0, song: songKey(bobs) },
+          bob,
+        ),
         true,
       );
       assert.deepEqual(store.getState().currentSongAdhocLyrics, [
@@ -1775,25 +2136,36 @@ describe("pushAdhocLyrics", () => {
     gainValue: 1,
   };
 
+  const LYRICS_SONG = songKey(lyricsSong);
   // Alice's video, playing, with these lyrics.
   const play = (lyrics: string[]) =>
     store.update((state) => {
       state.currentSong = lyricsSong;
-      state.idToAdhocLyrics[adhocLyricsKey(lyricsSong)] = lyrics;
+      state.idToAdhocLyrics[LYRICS_SONG] = lyrics;
+      state.playbackState = "PLAYING";
     });
   const shown = () => store.getState().currentSongAdhocLyrics;
 
   test("shows the line the singer picks, from the song's own lyrics", async () => {
     const api = makeApi();
     play(["line one", "line two"]);
-    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 1 }, alice), true);
-    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), true);
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 1, song: LYRICS_SONG }, alice),
+      true,
+    );
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice),
+      true,
+    );
     assert.deepEqual(shown(), [
       { lyric: "line two", lyricIndex: 1 },
       { lyric: "line one", lyricIndex: 0 },
     ]);
     // Only lines the song has.
-    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 2 }, alice), 400);
+    await rejectsWith(
+      api.pushAdhocLyrics({ lyricIndex: 2, song: LYRICS_SONG }, alice),
+      400,
+    );
     assert.equal(shown().length, 2);
   });
 
@@ -1806,11 +2178,17 @@ describe("pushAdhocLyrics", () => {
       phone("other-device", ADMIN_NICK),
       anonymous,
     ]) {
-      await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, caller), 403);
+      await rejectsWith(
+        api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, caller),
+        403,
+      );
     }
     assert.deepEqual(shown(), []);
     for (const caller of [alice, admin("x"), display]) {
-      assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, caller), true);
+      assert.equal(
+        await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, caller),
+        true,
+      );
     }
     assert.equal(shown().length, 3);
   });
@@ -1818,37 +2196,79 @@ describe("pushAdhocLyrics", () => {
   test("without supervised mode, anyone may", async () => {
     const api = makeApi();
     play(["line one"]);
-    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, bob), true);
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, bob),
+      true,
+    );
   });
 
   test("does nothing unless a song with adhoc lyrics is playing", async () => {
     const api = makeApi();
-    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), false);
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice),
+      false,
+    );
     store.update((state) => {
       state.currentSong = song(1, alice);
+      state.playbackState = "PLAYING";
     });
-    assert.equal(await api.pushAdhocLyrics({ lyricIndex: 0 }, alice), false);
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: "sm1@1" }, alice),
+      false,
+    );
     assert.deepEqual(shown(), []);
+  });
+
+  test("drops a line meant for the song before", async () => {
+    const api = makeApi();
+    play(["line one"]);
+    // The same video, queued again with other lyrics, now playing.
+    store.update((state) => {
+      state.currentSong = { ...lyricsSong, timestamp: "6" };
+      state.idToAdhocLyrics[`${VIDEO}@6`] = ["other line"];
+    });
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice),
+      false,
+    );
+    assert.deepEqual(shown(), []);
+    assert.equal(
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: `${VIDEO}@6` }, alice),
+      true,
+    );
+    assert.deepEqual(shown(), [{ lyric: "other line", lyricIndex: 0 }]);
   });
 
   test("stops at a few hundred lines, or 30,000 characters", async () => {
     const api = makeApi();
     play(["la", "x".repeat(10_000)]);
     for (let i = 0; i < 400; i++) {
-      await api.pushAdhocLyrics({ lyricIndex: 0 }, alice);
+      await api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice);
     }
-    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, alice), 400);
+    await rejectsWith(
+      api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice),
+      400,
+    );
     assert.equal(shown().length, 400);
 
     store.update((state) => {
       state.currentSongAdhocLyrics = [];
     });
     for (let i = 0; i < 3; i++) {
-      assert.equal(await api.pushAdhocLyrics({ lyricIndex: 1 }, alice), true);
+      assert.equal(
+        await api.pushAdhocLyrics({ lyricIndex: 1, song: LYRICS_SONG }, alice),
+        true,
+      );
     }
     // 30,000 characters: no more, however short.
-    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 1 }, alice), 400);
-    await rejectsWith(api.pushAdhocLyrics({ lyricIndex: 0 }, alice), 400);
+    await rejectsWith(
+      api.pushAdhocLyrics({ lyricIndex: 1, song: LYRICS_SONG }, alice),
+      400,
+    );
+    await rejectsWith(
+      api.pushAdhocLyrics({ lyricIndex: 0, song: LYRICS_SONG }, alice),
+      400,
+    );
     assert.equal(shown().length, 3);
   });
 });
@@ -2018,12 +2438,30 @@ describe("validators", () => {
     invalid("adminLogin", { password: "x", token: "y" });
     assert.deepEqual(validators.adminLogout({}), {});
     invalid("adminLogout", { token: "y" });
-    assert.deepEqual(validators.setPlaybackState({ playbackState: "PAUSED" }), {
+    assert.deepEqual(
+      validators.setPlaybackState({ playbackState: "PAUSED", song: "sm1@1" }),
+      { playbackState: "PAUSED", song: "sm1@1" },
+    );
+    invalid("setPlaybackState", { playbackState: "paused", song: "sm1@1" });
+    // WAITING is the server's own.
+    invalid("setPlaybackState", { playbackState: "WAITING", song: "sm1@1" });
+    // Each names its song.
+    invalid("setPlaybackState", { playbackState: "PAUSED" });
+    invalid("setPlaybackState", { playbackState: "PAUSED", song: 1 });
+    invalid("setPlaybackState", {
       playbackState: "PAUSED",
+      song: "x".repeat(98),
     });
-    invalid("setPlaybackState", { playbackState: "paused" });
-    invalid("setPitchShiftSemis", { semis: 99 });
-    invalid("setPitchShiftSemis", { semis: "1" });
+    assert.deepEqual(
+      validators.setPitchShiftSemis({ semis: -2, song: "a@1" }),
+      {
+        semis: -2,
+        song: "a@1",
+      },
+    );
+    invalid("setPitchShiftSemis", { semis: 99, song: "sm1@1" });
+    invalid("setPitchShiftSemis", { semis: "1", song: "sm1@1" });
+    invalid("setPitchShiftSemis", { semis: 1 });
     assert.deepEqual(validators.setGuideMelodyLevel({ level: 0.7 }), {
       level: 0.7,
     });
@@ -2110,12 +2548,14 @@ describe("validators", () => {
     invalid("moveSong", { songId: "sm9", timestamp: "9", toIndex: "0" });
     invalid("moveSong", { songId: 9, timestamp: "9", toIndex: 0 });
     invalid("sendEmote", { emote: "" });
-    assert.deepEqual(validators.pushAdhocLyrics({ lyricIndex: 3 }), {
-      lyricIndex: 3,
-    });
-    invalid("pushAdhocLyrics", { lyricIndex: -1 });
+    assert.deepEqual(
+      validators.pushAdhocLyrics({ lyricIndex: 3, song: "sm1@1" }),
+      { lyricIndex: 3, song: "sm1@1" },
+    );
+    invalid("pushAdhocLyrics", { lyricIndex: -1, song: "sm1@1" });
+    invalid("pushAdhocLyrics", { lyricIndex: 0 });
     // The server looks the line up: a phone can't send its own text.
-    invalid("pushAdhocLyrics", { lyric: "la", lyricIndex: 0 });
+    invalid("pushAdhocLyrics", { lyric: "la", lyricIndex: 0, song: "sm1@1" });
   });
 });
 

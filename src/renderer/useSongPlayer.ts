@@ -10,6 +10,7 @@ import {
 
 import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
+import { songKey } from "../common/currentSong";
 import { isDamSample } from "../common/downloadFailure";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
@@ -332,10 +333,11 @@ export default function useSongPlayer({
     if (!video) return;
     release(video);
     if (!song) {
-      setPlaybackState("WAITING");
+      // popSong has set WAITING.
       schedulePoll();
       return;
     }
+    const key = songKey(song);
 
     // Reset the captions and the key only for a song to play; doing it on
     // every empty poll would spam the pitch-shift mutation while idle.
@@ -343,7 +345,7 @@ export default function useSongPlayer({
       trackRef.current.default = false;
       trackRef.current.src = "";
     }
-    setPitchShiftSemis(0);
+    setPitchShiftSemis(0, key);
     audio.setJoysoundMode(song.kind === "joysound");
     audio.gain(songGain(song));
     songRef.current = song;
@@ -374,7 +376,8 @@ export default function useSongPlayer({
         loadNico(video, song);
         break;
     }
-    setPlaybackState("PLAYING");
+    // Out of popSong's WAITING: the phones' controls work from now on.
+    setPlaybackState("PLAYING", key);
   });
 
   // Once: ask for a song now if the display is waiting, and whenever one
@@ -440,19 +443,24 @@ export default function useSongPlayer({
     if (pollTimeoutRef.current !== null) pollQueue();
   }, [playbackState, hasQueue, hasCurrentSong]);
 
+  // The phones' commands, for the song playing. (The server takes them only
+  // for the current song, once the display has started it.)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    const song = songRef.current;
+    if (!video || !song) return;
     switch (playbackState) {
       case "PAUSED":
         video.pause();
         break;
       case "PLAYING":
-        video.play();
+        // Also as the song starts, out of popSong's WAITING: a DAM song may
+        // have no source yet, and plays once it has (loadDam).
+        video.play().catch((err) => console.warn("Couldn't play yet:", err));
         break;
       case "RESTARTING":
         video.currentTime = 0;
-        setPlaybackState("PLAYING");
+        setPlaybackState("PLAYING", songKey(song));
         break;
       case "SKIPPING":
         // To the end, which starts the next song; a video that never loaded

@@ -55,7 +55,7 @@ import { createDisplayIpc } from "./ipc";
 import setupMdns from "./mdns";
 import { createCrashReloads } from "./rendererRecovery";
 import { apiRouter, shouldCompress } from "./server";
-import { api, hub } from "./services";
+import { api, hub, resumeDownloads } from "./services";
 
 // In dev, start a debug server if we don't have one already (opening a
 // second one would throw). Packaged builds don't open one, since anything
@@ -354,6 +354,8 @@ app.on("ready", () => {
   ensureExternalResources().catch((err) =>
     console.error(`Error preparing external resources: ${err}`),
   );
+  // Songs whose downloads a restart cut short download again.
+  resumeDownloads();
   createWindow();
 });
 

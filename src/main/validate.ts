@@ -9,12 +9,12 @@ import type {
   ApiMethod,
   MicInfo,
   PageInput,
-  PlaybackState,
+  PlaybackCommand,
   QueueItemKind,
   QueueSongInput,
   SettingsChanges,
 } from "../common/api";
-import { LYRICS_MODES, PLAYBACK_STATES, READINGS_MODES } from "../common/api";
+import { LYRICS_MODES, PLAYBACK_COMMANDS, READINGS_MODES } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
 import { ApiError } from "./api";
 import { SETTABLE_KEYS } from "./settings";
@@ -103,6 +103,11 @@ function oneOf<T extends string>(
     fail(`"${key}" must be one of ${values.join(", ")}`);
   }
   return input[key] as T;
+}
+
+// The song a command acts on: its songKey, a song ID (64) @ a timestamp (32).
+function songKeyOf(input: Fields): string {
+  return string(input, "song", 64 + 1 + 32);
 }
 
 // The display's mic list: more than any party plugs in.
@@ -287,13 +292,17 @@ export const validators: {
       toIndex: integer(input, "toIndex", 0, 1_000_000),
     };
   },
-  setPlaybackState: (raw) => ({
-    playbackState: oneOf<PlaybackState>(
-      fields(raw, ["playbackState"]),
-      "playbackState",
-      PLAYBACK_STATES,
-    ),
-  }),
+  setPlaybackState: (raw) => {
+    const input = fields(raw, ["playbackState", "song"]);
+    return {
+      playbackState: oneOf<PlaybackCommand>(
+        input,
+        "playbackState",
+        PLAYBACK_COMMANDS,
+      ),
+      song: songKeyOf(input),
+    };
+  },
   reportSongPosition: (raw) => {
     const input = fields(raw, [
       "songId",
@@ -311,9 +320,10 @@ export const validators: {
       playing: boolean(input, "playing"),
     };
   },
-  setPitchShiftSemis: (raw) => ({
-    semis: integer(fields(raw, ["semis"]), "semis", -24, 24),
-  }),
+  setPitchShiftSemis: (raw) => {
+    const input = fields(raw, ["semis", "song"]);
+    return { semis: integer(input, "semis", -24, 24), song: songKeyOf(input) };
+  },
   setGuideMelodyLevel: (raw) => ({
     level: number(fields(raw, ["level"]), "level", 0, 1),
   }),
@@ -328,9 +338,13 @@ export const validators: {
       echo: optionalInteger(input, "echo", 0, 100),
     };
   },
-  pushAdhocLyrics: (raw) => ({
-    lyricIndex: integer(fields(raw, ["lyricIndex"]), "lyricIndex", 0, 100_000),
-  }),
+  pushAdhocLyrics: (raw) => {
+    const input = fields(raw, ["lyricIndex", "song"]);
+    return {
+      lyricIndex: integer(input, "lyricIndex", 0, 100_000),
+      song: songKeyOf(input),
+    };
+  },
   sendEmote: (raw) => {
     const emote = string(fields(raw, ["emote"]), "emote", 32);
     if (emote === "") fail(`"emote" must not be empty`);

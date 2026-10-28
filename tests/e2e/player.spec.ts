@@ -10,7 +10,13 @@ import path from "path";
 import type { Page } from "@playwright/test";
 
 import { buildJoy02, type Joy02Event, joy02Events } from "../fixtures/joy02";
-import { displayCall, downloadsFolder, expect, test } from "./fixtures";
+import {
+  currentSongKey,
+  displayCall,
+  downloadsFolder,
+  expect,
+  test,
+} from "./fixtures";
 
 const fakeYtdlp = (name: string) =>
   path.resolve(
@@ -217,15 +223,22 @@ test.describe("a queued song whose files are missing", () => {
     ]);
 
     // A phone skips song 1, then song 2; then the display waits.
-    expect(
-      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
-    ).toBe(true);
+    const skip = async (song: string) =>
+      call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING", song });
+    const song1 = await currentSongKey(remoconUrl);
+    expect(await skip(song1)).toBe(true);
     await expect
       .poll(() => nowPlaying(remoconUrl))
       .toEqual(["E2E next song 2", "PLAYING"]);
-    expect(
-      await call(remoconUrl, "setPlaybackState", { playbackState: "SKIPPING" }),
-    ).toBe(true);
+    // A second Skip meant for song 1, landing late, doesn't skip song 2.
+    expect(await skip(song1)).toBe(false);
+    await display.waitForTimeout(1_000);
+    expect(await nowPlaying(remoconUrl)).toEqual([
+      "E2E next song 2",
+      "PLAYING",
+    ]);
+    const song2 = await currentSongKey(remoconUrl);
+    expect(await skip(song2)).toBe(true);
     await expect.poll(() => nowPlaying(remoconUrl)).toEqual([null, "WAITING"]);
     expect(await history(remoconUrl)).toEqual([
       "E2E next song 2",
@@ -241,9 +254,13 @@ test.describe("a queued song whose files are missing", () => {
         video.evaluate((v: HTMLVideoElement) => v.hasAttribute("src")),
       )
       .toBe(false);
+    // Nor will the server take one: no song is current.
     expect(
-      await call(remoconUrl, "setPlaybackState", { playbackState: "PLAYING" }),
-    ).toBe(true);
+      await call(remoconUrl, "setPlaybackState", {
+        playbackState: "PLAYING",
+        song: song2,
+      }),
+    ).toBe(false);
     await display.waitForTimeout(1_000);
     expect(
       await video.evaluate((v: HTMLVideoElement) => [
@@ -332,8 +349,7 @@ test.describe("where the song really is", () => {
       );
       const played =
         (state.currentSongPausedSince ?? Date.now()) -
-        state.currentSongStartedAt -
-        state.currentSongPausedMs;
+        state.currentSongStartedAt;
       return Math.abs(played / 1000 - position);
     };
 

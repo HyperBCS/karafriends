@@ -137,7 +137,7 @@ function innertubeApiProvider(): Promise<Innertube> {
   return innertubePromise;
 }
 
-const queueApi = createApi({
+const { resumeDownloads: resume, ...queueApi } = createApi({
   config: karafriendsConfig,
   store,
   adminSessions,
@@ -150,6 +150,10 @@ const queueApi = createApi({
   ),
   publish: hub.publish,
 });
+
+// Starts again the downloads a restart cut short (queue.json's pending
+// songs). For index.ts, once the app is ready.
+export const resumeDownloads = resume;
 
 export const api: ApiHandlers = {
   ...queueApi,

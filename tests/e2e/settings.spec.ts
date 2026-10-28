@@ -12,6 +12,7 @@ import { parse } from "yaml";
 
 import {
   adminPasswordConfig,
+  currentSongKey,
   displayCall,
   downloadsFolder,
   expect,
@@ -594,6 +595,7 @@ test.describe("the pitch bars", () => {
     expect(
       await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
         playbackState: "SKIPPING",
+        song: await currentSongKey(remoconUrl),
       }),
     ).toBe(true);
     await expect(roll).toHaveCount(1, { timeout: 20_000 });
@@ -601,6 +603,7 @@ test.describe("the pitch bars", () => {
     expect(
       await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
         playbackState: "PAUSED",
+        song: await currentSongKey(remoconUrl),
       }),
     ).toBe(true);
     await expect(video).toHaveJSProperty("paused", true);
