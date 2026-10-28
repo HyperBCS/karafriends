@@ -357,16 +357,15 @@ test.describe("supervised mode", () => {
       const pause = page.getByRole("button", { name: "Pause", exact: true });
       await expect(pause).toHaveAttribute("aria-disabled", "true");
 
-      // ...and the server refuses the Pause button's request anyway, clicked
-      // regardless.
-      const pauseResponse = page.waitForResponse((res) =>
-        res.url().endsWith("/api/setPlaybackState"),
-      );
+      // ...and a press on the dimmed Pause button sends nothing (the server's
+      // refusal of the request itself is checked above).
+      const sent: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().endsWith("/api/setPlaybackState")) sent.push(req.url());
+      });
       await pause.dispatchEvent("click");
-      expect((await pauseResponse).status()).toBe(403);
-      expect((await (await pauseResponse).json()).error).toContain(
-        "Supervised mode",
-      );
+      await page.waitForTimeout(500);
+      expect(sent).toEqual([]);
 
       const { state } = await liveState(remoconUrl);
       expect(state.playbackState).toBe("PLAYING");
