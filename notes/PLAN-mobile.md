@@ -4,14 +4,17 @@ The product round ([`PLAN-product.md`](PLAN-product.md)) is merged. The user the
 
 ## Status (keep this table current; it is how any session picks up where things stand)
 
-| Step                                        | State       | Branch / commit | Notes |
-| ------------------------------------------- | ----------- | --------------- | ----- |
-| M1: everyone-admin mode                     | not started |                 |       |
-| M2: locked shell, home button, contrast     | not started |                 |       |
-| M3: drag to reorder the queue               | not started |                 |       |
-| M4: relevance-ranked search across catalogs | not started |                 |       |
-| M5: review and fixes                        | not started |                 |       |
-| Final: iPhone check by the user             | not started |                 |       |
+| Step                                                          | State       | Branch / commit | Notes |
+| ------------------------------------------------------------- | ----------- | --------------- | ----- |
+| M1: everyone-admin mode                                       | not started |                 |       |
+| M2: locked shell, home button, contrast                       | not started |                 |       |
+| M3: drag to reorder the queue                                 | not started |                 |       |
+| M4: relevance-ranked search across catalogs                   | not started |                 |       |
+| M6: lyrics mode when queueing (kana, romaji, both)            | not started |                 |       |
+| M7: readings in the phone's own text                          | not started |                 |       |
+| M8: guide vocal volume (spike, then implement where possible) | not started |                 |       |
+| M5: review and fixes                                          | not started |                 |       |
+| Final: iPhone check by the user                               | not started |                 |       |
 
 ## What the user saw (2026-10-27, iPhone, Safari)
 
@@ -32,11 +35,13 @@ The product round ([`PLAN-product.md`](PLAN-product.md)) is merged. The user the
 - **Drag:** a grip handle on each queue row for admins, dragged with pointer events and no library; the row follows the finger and the others slide apart. Move to top stays as a button; Up and Down go.
 - **Everyone-admin mode:** a Settings checkbox on the display, "Everyone is an admin": every phone can reorder, remove any song, pause, skip and change key with no password. It overrides supervised mode. The display's settings stay display-only.
 - **Search ranking:** results from DAM and Joysound are ranked together by how well they match the query, best first; no more source blocks.
+- **Readings (added later the same day):** two things. When queueing a Japanese song, the guest picks how its lyrics show on the TV: kana ruby, romaji, or both (today Joysound has a per-song romaji toggle; DAM has no lyrics display, so this is Joysound only). And a per-phone setting on the profile screen shows the phone's own song titles and artists as written, with a kana reading, with romaji, or both.
+- **Guide vocal volume:** an admin control, for DAM and Joysound wherever the service delivers the guide vocal as a separate track that the display can mix. Investigate both first; where it's mixed into the stream, say so and do nothing.
 - **Autonomy and roles:** as the product round ended: Fable coordinates, phases run as background Opus subagents in their own worktrees, the coordinator reviews, re-runs checks, merges into master and pushes, with no confirmation per phase. The "Keep it simple" rule and the design brief from `PLAN-product.md` bind every phase.
 
 ## How this plan is run
 
-- Lanes: M1 (server and the display's Settings checkbox) runs alongside M2 (the remote's shell). After M2 merges, M3 and M4 run alongside each other (M3 owns the now-playing panel and queue rows, M4 the search page and a new ranking module; both add i18n keys, which the coordinator merges). Then M5, then the user's check.
+- Lanes: M1 (server and the display's Settings checkbox) runs alongside M2 (the remote's shell) and the M8 spike (read-only investigation). After M2 merges, M3 and M4 run alongside each other (M3 owns the now-playing panel and queue rows, M4 the search page and a new ranking module; both add i18n keys, which the coordinator merges). After those, M6 and M7 run alongside each other (M6 owns the Joysound queue buttons, the queue item's lyrics field end to end and the display's Joysound renderer; M7 owns the rows that show titles and artists and the readings helper; both add a section to the profile screen and i18n keys, which the coordinator merges), and M8's implementation if the spike found a track. Then M5, then the user's check.
 - Checks for every phase: `yarn typecheck`, `yarn lint`, `yarn prettier --check .`, `yarn test:unit`, `yarn build-prod`, `yarn test:e2e:ci`, and for remote phases the WebKit smoke run below, plus a real launch with `KARAFRIENDS_LOCAL_ONLY=1 KARAFRIENDS_HIDE_WINDOW=1`.
 - Screenshots for M2 and M3 as in the product round (`KARAFRIENDS_SCREENSHOTS=1 yarn test:e2e screenshots` after `yarn build-prod`), into `notes/ui-refresh-screenshots/m-*.png`, reviewed against the design brief.
 - The Windows/MSIX notes from `PLAN-product.md` apply unchanged.
@@ -84,10 +89,32 @@ Files: a new `src/remocon/rank.ts` (pure, no React) with `rank.test.ts`, `src/re
 - Tests: unit cases for kana/kanji/romaji queries, tokens, ties; e2e in `remote.spec.ts` with faked DAM and Joysound responses asserting the order of the first three rows.
 - One CHANGELOG line.
 
+### M6: lyrics mode when queueing (branch `lyrics-mode`)
+
+Files: `src/common/api.ts` (`JoysoundQueueItem.lyricsMode`), `src/main/validate.ts`, `src/main/api.ts` (`queueSong` input), `src/main/state.ts` (`parseState` reads old `isRomaji` as `"romaji"`/`"kana"`), `src/renderer/JoysoundRenderer.tsx` and `useSongPlayer.ts` (the mode reaches the renderer), `src/remocon/` (the Joysound queue buttons on `SongPage`, a "Lyrics on the TV" default on the profile screen kept in `localStorage`), `i18n`, tests.
+
+- `lyricsMode: "kana" | "romaji" | "both"` replaces `isRomaji` on Joysound queue items (the download file names don't depend on it; keep them). "kana" is today's default rendering (kanji with kana ruby), "romaji" is today's romaji rendering, "both" draws the romaji line under the kanji line in the renderer; keep the renderer change to the layout of the lines it already draws (the romaji conversion exists in `src/common/joysoundParser.ts`).
+- Remote: the Joysound song page's queue buttons become one "Queue" button plus a three-way choice (kana / romaji / both) next to it, preset from the phone's profile default; the queued row shows the mode as a small label.
+- Tests: unit for `parseState` reading old items; e2e queueing a Joysound song with each mode through the fixture's fake tools and checking the queue item's `lyricsMode` in the live state; a renderer screenshot for "both" if a telop fixture exists in `tests/fixtures` (else say it needs the party check).
+- One CHANGELOG line.
+
+### M7: readings in the phone's own text (branch `readings`)
+
+Files: a new `src/remocon/readings.ts` (pure: given a title and the reading DAM gives, return the line to show for the chosen mode; kana to romaji through `wanakana.toRomaji`) with `readings.test.ts`; the rows that show titles and artists (search results, the queue rows, history, the song page heading); a "Readings" section on the profile screen (as written / kana / romaji / both) in `localStorage`; `i18n`.
+
+- DAM results carry `nameYomi`/`artistNameYomi` already (see `DamSong` in `src/common/api.ts`); Joysound results carry readings only where its API gives them, else the row shows the title as written. Queue items don't carry readings today: add `nameYomi` and `artistNameYomi` as optional fields on `SongToQueue`/`QueueItem` (server passes them through, `parseState` tolerates their absence) so the queue and history can show readings too. That is the one server change in this phase; keep it to those two optional strings.
+- Tests: unit for the readings helper (kana → romaji, missing reading, "both"); e2e that switching the setting changes a search row's text.
+- One CHANGELOG line.
+
+### M8: guide vocal volume (spike first, branch `guide-vocal`)
+
+- **Spike (read-only, reports back):** read `src/main/damApi.ts` (`getMusicStreamingUrls`, the vocal types the DAM song page offers: the "guide vocal" queue button) and `src/main/joysoundApi.ts` (`getSongRawData`, `getMovieUrls`) and, on a Japanese IP with the installed app's logins, fetch one DAM song's streaming URLs and probe each HLS variant with ffprobe (the app's ffmpeg comes with it) for the number and language of audio tracks; fetch one Joysound song's raw data and probe its ogg for channels and any second stream. Report: for each service, whether the guide vocal is a separate audio track or stream (mixable), a separate full mix (selectable, not mixable), or mixed in; and the smallest way to control its level.
+- **Implement only if a separate track exists:** a `guideVocalVolume` (0 to 1) in the live state like `pitchShiftSemis`, admin-only `setGuideVocalVolume`, a slider on the phone's playback controls next to the key, and the display's audio graph (`src/renderer/webAudio.ts`) mixing that track at that gain. If only separate full mixes exist, do nothing beyond the report, and say so in the Status table.
+
 ### M5: review and fixes
 
 Two reviewers (remote; server and display) over `git diff <start of this round>..HEAD` with the product round's reviewer brief, a Fable verification pass, findings appended to `notes/code-review-2026-10-27-product.md` under a "Mobile round" heading, and one fix session per area.
 
 ### Final: iPhone check by the user
 
-On the phone: scroll a long result list and the queue, open a song page and go Home, turn on everyone-admin on the display and reorder by drag from a plain phone, search "恋", "lemon" and "よあそび" and check the order. Note every snag in the Status table's Notes column.
+On the phone: scroll a long result list and the queue, open a song page and go Home, turn on everyone-admin on the display and reorder by drag from a plain phone, search "恋", "lemon" and "よあそび" and check the order. Queue a Joysound song with lyrics set to "both" and read the TV. Switch the readings setting and look at the search rows. If M8 shipped, drag the guide vocal down during a DAM song. Note every snag in the Status table's Notes column.
