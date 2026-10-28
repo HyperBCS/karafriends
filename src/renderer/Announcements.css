@@ -11,11 +11,22 @@
   pointer-events: none;
 }
 
+/* The label, then the title, the artist and the singer, each on its own
+   line, then what went wrong, if anything. */
 .announcement {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--kf-space-1);
   padding: var(--kf-space-5) var(--kf-space-6);
   border: 1px solid var(--kf-border);
   border-radius: var(--kf-radius);
   background-color: var(--kf-surface);
+  font-size: var(--kf-text-body);
+}
+
+.announcement > * {
+  max-width: 100%;
 }
 
 .announcement p {
@@ -38,13 +49,18 @@
   color: var(--kf-danger);
 }
 
-.announcementTitle {
+/* A long title wraps here instead of ending in an ellipsis. */
+.announcement .songTitle {
   font-size: var(--kf-text-heading);
   font-weight: 700;
   line-height: 1.2;
+  white-space: normal;
+}
+
+.announcement .songSinger {
+  margin-top: var(--kf-space-2);
 }
 
 .announcementDetail {
   color: var(--kf-muted);
-  font-size: var(--kf-text-body);
 }

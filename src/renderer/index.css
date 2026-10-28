@@ -12,9 +12,12 @@
 
 /* Every size is in rem (tokens.css), so the display scales with its window:
    exactly 16px at 1080p (1080 / 67.5), 32px at 2160p, and no smaller than
-   10px in a small dev window. */
+   10px in a small dev window. Then times Settings' UI scale (App.tsx sets
+   --kf-ui-scale); the lyrics size from the video, not from this. */
 html {
-  font-size: clamp(10px, calc(100vh / 67.5), 32px);
+  font-size: calc(
+    clamp(10px, calc(100vh / 67.5), 32px) * var(--kf-ui-scale, 1)
+  );
 }
 
 html,

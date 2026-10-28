@@ -1,5 +1,6 @@
 // The pitch shifter, bundled as its own script for addModule().
 import phazeAudioWorkletUrl from "./audio/phazeAudioWorklet.ts?worker&url";
+import { AV_OFFSETS, audioDelay } from "./playback";
 
 // A centred channel mixed into left and right at this gain each keeps its
 // loudness (-3 dB per side).
@@ -14,10 +15,11 @@ const CENTRE_TO_SIDE = 0.7;
 // song by 8.5 dB, and a loud YouTube gain could clip.
 const VOCODER_LEVEL = 0.375;
 
-// The display's sound: input → [Joysound routing] → gain → vocoder (once its
-// worklet loads, and only while the key is changed; otherwise bypassGain) →
-// speakers.
+// The display's sound: input → [Joysound routing] → delay (the audio/video
+// offset) → gain → vocoder (once its worklet loads, and only while the key
+// is changed; otherwise bypassGain) → speakers.
 export default class KarafriendsAudio {
+  private delayNode: DelayNode;
   private gainNode: GainNode;
   private bypassGain: GainNode;
   private vocoderNode: AudioWorkletNode | null;
@@ -36,10 +38,14 @@ export default class KarafriendsAudio {
   input: GainNode;
 
   constructor() {
-    this.audioContext = new AudioContext();
+    this.audioContext = new AudioContext({ latencyHint: "interactive" });
     this.input = this.audioContext.createGain();
+    this.delayNode = this.audioContext.createDelay(
+      audioDelay(Math.max(...AV_OFFSETS)),
+    );
     this.gainNode = this.audioContext.createGain();
-    this.input.connect(this.gainNode);
+    this.input.connect(this.delayNode);
+    this.delayNode.connect(this.gainNode);
     this.bypassGain = this.audioContext.createGain();
     this.bypassGain.gain.value = VOCODER_LEVEL;
     this.bypassGain.connect(this.audioContext.destination);
@@ -54,7 +60,7 @@ export default class KarafriendsAudio {
     this.splitter.connect(this.guideGain, 2);
     this.guideGain.connect(merger, 0, 0);
     this.guideGain.connect(merger, 0, 1);
-    merger.connect(this.gainNode);
+    merger.connect(this.delayNode);
 
     this.vocoderNode = null;
     try {
@@ -110,7 +116,21 @@ export default class KarafriendsAudio {
   // On while a Joysound song plays: see splitter.
   setJoysoundMode(on: boolean) {
     this.input.disconnect();
-    this.input.connect(on ? this.splitter : this.gainNode);
+    this.input.connect(on ? this.splitter : this.delayNode);
+  }
+
+  // The display's audio/video offset in ms: a positive one delays the sound.
+  avOffset(offsetMs: number) {
+    this.delayNode.delayTime.value = audioDelay(offsetMs);
+  }
+
+  // What the context says the speakers add, in ms: its measured output
+  // latency once it plays, else its base latency.
+  latencyMs(): number {
+    const context = this.audioContext;
+    return Math.round(
+      (context.outputLatency || context.baseLatency || 0) * 1000,
+    );
   }
 
   // How loud the Joysound guide melody plays, 0 to 1.

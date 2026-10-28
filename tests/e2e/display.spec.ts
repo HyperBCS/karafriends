@@ -108,7 +108,7 @@ test.describe("while a song plays", () => {
     const next = display
       .getByRole("region", { name: "Up next" })
       .getByRole("listitem");
-    // Song 2's wait, in seconds: "someone · in 0:58".
+    // Song 2's wait, in seconds: "in 0:58".
     const wait = async () => {
       const [, minutes, seconds] = (await next.innerText()).match(
         /in (\d+):(\d\d)/,
@@ -146,5 +146,76 @@ test.describe("while a song plays", () => {
     const paused = await wait();
     await display.waitForTimeout(2_000);
     expect(await wait()).toBe(paused);
+  });
+});
+
+test.describe("readings and singers on the TV", () => {
+  // Niconico songs again, queued by phones that read kana (song 1, which
+  // starts at once), romaji (song 2) and as written (song 3).
+  const song = (n: number, fields: object) => ({
+    kind: "nico",
+    songId: `sm7100${n}`,
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user: { deviceId: "e2e-ken", nickname: "Ken" },
+    ...fields,
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        song(1, {
+          name: "恋",
+          artistName: "星野 源",
+          nameYomi: "こい",
+          artistNameYomi: "ほしのげん",
+          readingsMode: "kana",
+        }),
+        song(2, {
+          name: "千本桜",
+          artistName: "黒うさP",
+          nameYomi: "せんぼんざくら",
+          artistNameYomi: "くろうさぴー",
+          readingsMode: "romaji",
+        }),
+        song(3, { name: "紅蓮華", artistName: "LiSA", nameYomi: "ぐれんげ" }),
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("the corner and the strip show the queuer's reading instead of the text, and the artist apart from the singer", async ({
+    display,
+  }) => {
+    // The corner, for the 4 seconds it shows song 1.
+    const corner = display
+      .getByRole("status")
+      .filter({ hasText: "Now playing" });
+    await expect(corner.getByText("こい", { exact: true })).toBeVisible();
+    await expect(corner.getByText("ほしのげん", { exact: true })).toBeVisible();
+    await expect(corner.getByText("Ken", { exact: true })).toBeVisible();
+    await expect(corner).not.toContainText("恋");
+    await expect(corner).not.toContainText("·");
+
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    const rows = display
+      .getByRole("region", { name: "Up next" })
+      .getByRole("listitem");
+    await expect(rows).toHaveCount(2);
+    // Each its own element: an artist joined to the singer wouldn't match.
+    for (const text of ["senbonzakura", "kurousapii", "Ken"]) {
+      await expect(rows.nth(0).getByText(text, { exact: true })).toBeVisible();
+    }
+    await expect(rows.nth(0)).not.toContainText("千本桜");
+    // As written: no mode, and LiSA has no reading to give.
+    for (const text of ["紅蓮華", "LiSA", "Ken"]) {
+      await expect(rows.nth(1).getByText(text, { exact: true })).toBeVisible();
+    }
+    for (const row of await rows.allTextContents()) {
+      expect(row).not.toContain("·");
+    }
   });
 });

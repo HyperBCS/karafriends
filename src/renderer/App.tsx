@@ -10,6 +10,13 @@ import Effects from "./Effects";
 import IdleScreen from "./IdleScreen";
 import { InputDevice } from "./nativeAudio";
 import NoticeBar from "./NoticeBar";
+import {
+  AV_OFFSET_KEY,
+  AV_OFFSETS,
+  savedChoice,
+  UI_SCALE_KEY,
+  UI_SCALES,
+} from "./playback";
 import Player from "./Player";
 import Settings from "./Settings";
 import UpNext from "./UpNext";
@@ -40,6 +47,12 @@ function App(props: {
   audio: KarafriendsAudio;
 }) {
   const [mics, _setMics] = useState(savedMics);
+  const [avOffsetMs, setAvOffsetMs] = useState(() =>
+    savedChoice(localStorage.getItem(AV_OFFSET_KEY), AV_OFFSETS, 0),
+  );
+  const [uiScale, setUiScale] = useState(() =>
+    savedChoice(localStorage.getItem(UI_SCALE_KEY), UI_SCALES, 100),
+  );
   const [hostname, setHostname] = useState(
     `${HOSTNAME}:${window.karafriends.remoconPort()}`,
   );
@@ -70,6 +83,26 @@ function App(props: {
     localStorage.setItem("mics", JSON.stringify(micsToSave));
     _setMics(newMics);
   };
+
+  const changeAvOffset = (offsetMs: number) => {
+    localStorage.setItem(AV_OFFSET_KEY, String(offsetMs));
+    setAvOffsetMs(offsetMs);
+  };
+
+  const changeUiScale = (scale: number) => {
+    localStorage.setItem(UI_SCALE_KEY, String(scale));
+    setUiScale(scale);
+  };
+
+  useEffect(() => props.audio.avOffset(avOffsetMs), [props.audio, avOffsetMs]);
+
+  // index.css multiplies the root font size by it.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--kf-ui-scale",
+      String(uiScale / 100),
+    );
+  }, [uiScale]);
 
   const onChangeMic = (index: number, newMic: InputDevice) => {
     const updatedMics = [...mics];
@@ -114,18 +147,14 @@ function App(props: {
   }, []);
 
   useLiveEvent("queueAdded", ({ item }) => {
-    announce({
-      label: "Queued",
-      title: item.name,
-      detail: [item.artistName, item.user.nickname].filter(Boolean).join(" · "),
-    });
+    announce({ label: "Queued", song: item });
   });
 
   useLiveEvent("queueFailed", ({ item, reason }) => {
     announce({
       label: "Couldn't download",
-      title: item.name,
-      detail: `for ${item.user.nickname}: ${reason}`,
+      song: item,
+      detail: reason,
       tone: "problem",
     });
   });
@@ -140,6 +169,7 @@ function App(props: {
             kuroshiro={props.kuroshiro}
             audio={props.audio}
             announce={announce}
+            avOffsetMs={avOffsetMs}
           />
         </div>
         {!idle && upNextVisible ? <UpNext layout="strip" /> : null}
@@ -159,6 +189,11 @@ function App(props: {
             mics={mics}
             onChangeMic={onChangeMic}
             onClearMics={clearMics}
+            avOffsetMs={avOffsetMs}
+            onAvOffsetChange={changeAvOffset}
+            uiScale={uiScale}
+            onUiScaleChange={changeUiScale}
+            audioLatencyMs={props.audio.latencyMs()}
           />
         ) : null}
       </main>

@@ -1,0 +1,48 @@
+import type { PoppedDamSong } from "../common/api";
+
+// The display's own settings (Settings → Display), kept in its localStorage
+// like the mics, and the playback arithmetic that follows from them. Pure,
+// so the unit tests reach them.
+
+// Audio/video offset in ms: positive delays the sound, negative delays what
+// the display draws from the video's time.
+export const AV_OFFSET_KEY = "avOffsetMs";
+export const AV_OFFSETS = Array.from({ length: 61 }, (_, i) => -300 + i * 10);
+
+// UI scale in percent of the root font size (index.css).
+export const UI_SCALE_KEY = "uiScale";
+export const UI_SCALES = Array.from({ length: 16 }, (_, i) => 50 + i * 10);
+
+// A saved choice, or fallback when nothing (or something else) is saved.
+export function savedChoice(
+  saved: string | null,
+  choices: readonly number[],
+  fallback: number,
+): number {
+  return saved && choices.includes(Number(saved)) ? Number(saved) : fallback;
+}
+
+// How long the sound waits for the picture, in seconds.
+export function audioDelay(offsetMs: number): number {
+  return Math.max(0, offsetMs) / 1000;
+}
+
+// The time the lyrics and the piano roll draw at, in seconds: behind the
+// video's by a negative offset, to wait for sound that comes late.
+export function drawTime(videoTime: number, offsetMs: number): number {
+  return videoTime + Math.min(0, offsetMs) / 1000;
+}
+
+// The buffer stalls in one DAM song before it moves to the low bitrate.
+export const STALLS_BEFORE_LOW = 3;
+
+// After a song's stalls-th buffer stall: the low-bitrate URL to switch to,
+// for the same vocal type, or null (not the third stall, or it started on
+// the low bitrate).
+export function lowBitrateFallback(
+  song: PoppedDamSong,
+  stalls: number,
+): string | null {
+  if (song.startWithLowBitrate || stalls !== STALLS_BEFORE_LOW) return null;
+  return song.streamingUrls[song.streamingUrlIdx]?.low ?? null;
+}

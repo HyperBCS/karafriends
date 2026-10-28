@@ -228,6 +228,39 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(settings).toHaveCount(0);
 });
 
+test("the display's offset and UI scale save on the display, and the scale sizes its text", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const section = settings.getByRole("region", { name: "Display" });
+  const offset = section.getByLabel("Audio/video offset");
+  const scale = section.getByLabel("UI scale");
+  await expect(offset).toHaveValue("0");
+  await expect(scale).toHaveValue("100");
+  await expect(section).toContainText(/Measured audio output latency: \d+ ms/);
+  const rootFontSize = () =>
+    display.evaluate(() =>
+      parseFloat(getComputedStyle(document.documentElement).fontSize),
+    );
+  const unscaled = await rootFontSize();
+
+  await offset.selectOption("-40");
+  await scale.selectOption("150");
+  await expect.poll(rootFontSize).toBeCloseTo(unscaled * 1.5, 1);
+  expect(
+    await display.evaluate(() => [
+      localStorage.getItem("avOffsetMs"),
+      localStorage.getItem("uiScale"),
+    ]),
+  ).toEqual(["-40", "150"]);
+
+  // Kept on the display, not in config.yaml: a reload brings them back.
+  await display.reload();
+  await expect(offset).toHaveValue("-40");
+  await expect(scale).toHaveValue("150");
+  await expect.poll(rootFontSize).toBeCloseTo(unscaled * 1.5, 1);
+});
+
 test("a phone gets 403 for getSettings, even signed in as nobody special", async ({
   karafriends,
 }) => {

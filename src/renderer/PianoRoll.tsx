@@ -6,6 +6,7 @@ import React, { useEffect, useRef } from "react";
 
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
+import { drawTime } from "./playback";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl?raw";
 import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl?raw";
 import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl?raw";
@@ -433,6 +434,8 @@ export default function PianoRoll(props: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mics: InputDevice[];
   pitchShiftSemis: number;
+  // The display's audio/video offset (see drawTime).
+  avOffsetMs: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -537,20 +540,18 @@ export default function PianoRoll(props: {
         midiNumber !== 0 &&
         !props.videoRef.current.paused
       ) {
+        const time = drawTime(
+          props.videoRef.current.currentTime,
+          props.avOffsetMs,
+        );
         while (
-          notes[currentNoteIndex].endTime <
-            props.videoRef.current.currentTime &&
+          notes[currentNoteIndex].endTime < time &&
           currentNoteIndex < notes.length - 2
         ) {
           currentNoteIndex++;
         }
         const currentMidiNumber = notes[currentNoteIndex].midiNumber;
-        buffer.push(
-          midiNumber,
-          medianMidiNumber,
-          currentMidiNumber,
-          props.videoRef.current.currentTime,
-        );
+        buffer.push(midiNumber, medianMidiNumber, currentMidiNumber, time);
       }
     }
 
@@ -583,7 +584,10 @@ export default function PianoRoll(props: {
     const draw = () => {
       if (!canvasRef.current || !props.videoRef.current) return;
 
-      const time = props.videoRef.current.currentTime;
+      const time = drawTime(
+        props.videoRef.current.currentTime,
+        props.avOffsetMs,
+      );
       const canvasWidth = canvasRef.current.width;
 
       gl.clear(gl.COLOR_BUFFER_BIT);
