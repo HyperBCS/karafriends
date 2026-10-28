@@ -19,7 +19,6 @@ import React, {
 
 import {
   ADMIN_TOKEN_HEADER,
-  EVENTS_ADMIN_TOKEN_PARAM,
   EVENTS_DEVICE_ID_PARAM,
   IDENTITY_HEADERS,
   type ApiInput,
@@ -183,21 +182,11 @@ async function callOverHttp<M extends ApiMethod>(
 }
 
 // A phone's stream address. It gives its device ID, so its copy of the state
-// marks its own songs (isMine), and its admin token if it has one.
-export function eventsUrl(
-  deviceId: string | null,
-  adminToken: string | null = null,
-): string {
-  const params: string[] = [];
-  if (deviceId) {
-    params.push(`${EVENTS_DEVICE_ID_PARAM}=${encodeURIComponent(deviceId)}`);
-  }
-  if (adminToken) {
-    params.push(
-      `${EVENTS_ADMIN_TOKEN_PARAM}=${encodeURIComponent(adminToken)}`,
-    );
-  }
-  return `/api/events${params.length > 0 ? `?${params.join("&")}` : ""}`;
+// marks its own songs (isMine).
+export function eventsUrl(deviceId: string | null): string {
+  return deviceId
+    ? `/api/events?${EVENTS_DEVICE_ID_PARAM}=${encodeURIComponent(deviceId)}`
+    : "/api/events";
 }
 
 // One `data:` line of the stream, or null if it isn't a LiveEvent.
@@ -296,8 +285,8 @@ export function openLiveStream(
   const connect = () => {
     // Read now, not when the page rendered: the remote stores a new phone's
     // device ID in an effect, which runs before the one that opens this.
-    const { deviceId, adminToken } = storedIdentity();
-    const current = new EventSource(eventsUrl(deviceId, adminToken));
+    const { deviceId } = storedIdentity();
+    const current = new EventSource(eventsUrl(deviceId));
     source = current;
     current.onopen = onOpen;
     current.onmessage = (message) => {

@@ -212,10 +212,9 @@ export type LiveEvent =
 
 export type LiveEventType = LiveEvent["type"];
 
-// The query parameters GET /api/events takes the phone's device ID and
-// admin token in. (EventSource can't send headers.)
+// The query parameter GET /api/events takes the phone's device ID in.
+// (EventSource can't send headers.)
 export const EVENTS_DEVICE_ID_PARAM = "deviceId";
-export const EVENTS_ADMIN_TOKEN_PARAM = "adminToken";
 
 // Lookups
 

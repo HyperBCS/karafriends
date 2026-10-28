@@ -10,9 +10,8 @@
 //   GET  /api/events    Server-Sent Events: the live state on connect and on
 //                       every change, plus emote and queueAdded events. A
 //                       phone adds ?deviceId=<its ID> to see which songs are
-//                       its own (and &adminToken=<its token> once signed in
-//                       as an admin); no device IDs are sent. 503 when too
-//                       many are open (STREAM_LIMITS).
+//                       its own; no device IDs are sent. 503 when too many
+//                       are open (STREAM_LIMITS).
 //
 // No CORS headers: requiring a JSON content type then keeps other web pages
 // from driving the queue (a cross-site form can't send it, and fetch() would
@@ -21,17 +20,12 @@ import compression from "compression";
 import express, { NextFunction, Request, Response, Router } from "express";
 
 import {
-  EVENTS_ADMIN_TOKEN_PARAM,
   EVENTS_DEVICE_ID_PARAM,
   type ApiMethod,
   type LiveEvent,
 } from "../common/api";
 import type { ApiHandlers } from "./api";
-import {
-  adminTokenFromQuery,
-  callerFromHeaders,
-  deviceIdFromQuery,
-} from "./caller";
+import { callerFromHeaders, deviceIdFromQuery } from "./caller";
 import { errorAnswer, isMethod, runMethod } from "./dispatch";
 import type { LiveHub } from "./live";
 import { SETTINGS_METHODS } from "./settings";
@@ -237,7 +231,6 @@ export function apiRouter(
     }
     const viewer = {
       deviceId: deviceIdFromQuery(req.query[EVENTS_DEVICE_ID_PARAM]),
-      adminToken: adminTokenFromQuery(req.query[EVENTS_ADMIN_TOKEN_PARAM]),
     };
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
