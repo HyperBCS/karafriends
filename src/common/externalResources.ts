@@ -15,6 +15,7 @@ import {
   AssetPlan,
   assetPlans,
   canSkipUnvalidated,
+  checkedRecently,
   conditionalHeaders,
   extractorFileName,
   fromOtherSource,
@@ -157,10 +158,18 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       return retry(new Error(`${res.status} from ${url}`));
     }, deps.retry ?? DEFAULT_RETRY);
 
-  const extract = async (archive: string, outDir: string): Promise<void> => {
-    await deps.exec(deps.extractorPath, ["e", archive, "-y", `-o${outDir}`], {
-      timeoutMs: EXTRACT_TIMEOUT_MS,
-    });
+  // 7za e: unpacks flat, so the binary is at the top of outDir. With only,
+  // just the files of that name, from any folder (-r).
+  const extract = async (
+    archive: string,
+    outDir: string,
+    only?: string,
+  ): Promise<void> => {
+    await deps.exec(
+      deps.extractorPath,
+      ["e", archive, "-y", `-o${outDir}`, ...(only ? [only, "-r"] : [])],
+      { timeoutMs: EXTRACT_TIMEOUT_MS },
+    );
   };
 
   // Download an asset into `tmpDir`, unpack it per its plan, and return the
@@ -187,6 +196,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       await extract(
         path.join(tmpDir, step.input),
         path.join(tmpDir, step.outDir),
+        step.only,
       );
     }
     return path.join(tmpDir, binary);
@@ -213,6 +223,14 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     if (!force && canSkipUnvalidated(exists, stored, stale)) {
       return false;
     }
+    // ffmpeg is asked about only every so often.
+    if (
+      !force &&
+      exists &&
+      checkedRecently(stored, mtimeMs(plan.dest), deps.now(), plan.checkEveryMs)
+    ) {
+      return false;
+    }
 
     let res: AssetResponse;
     try {
@@ -233,9 +251,15 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     }
 
     if (res.status === 304) {
-      if (versions[plan.id]?.url === plan.url) return false;
-      // Recorded before URLs were.
-      versions[plan.id] = { ...versions[plan.id], url: plan.url };
+      const gated = plan.checkEveryMs !== undefined;
+      if (versions[plan.id]?.url === plan.url && !gated) return false;
+      // The URL, if it was recorded before URLs were, and when it was
+      // confirmed.
+      versions[plan.id] = {
+        ...versions[plan.id],
+        url: plan.url,
+        ...(gated && { checkedAt: deps.now() }),
+      };
       return true;
     }
 
@@ -273,6 +297,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       version,
       updatedAt: deps.now(),
       url: plan.url,
+      checkedAt: deps.now(),
     };
     return true;
   };

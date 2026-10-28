@@ -7,6 +7,8 @@ import { describe, test } from "node:test";
 import {
   assetPlans,
   canSkipUnvalidated,
+  checkedRecently,
+  FFMPEG_CHECK_MS,
   conditionalHeaders,
   extractorFileName,
   hasValidator,
@@ -226,6 +228,10 @@ describe("assetPlans by architecture", () => {
     }
   });
 
+  test("linux arm64 gets BtbN's arm64 ffmpeg", () => {
+    assert.match(plan("linux", "arm64", "ffmpeg").url, /-linuxarm64-gpl\./);
+  });
+
   test("no Linux plan downloads the Python zipapp", () => {
     for (const arch of ["x64", "arm64"]) {
       assert.match(plan("linux", arch, "ytdlp").url, /\/yt-dlp_linux/);
@@ -291,6 +297,61 @@ describe("canSkipUnvalidated", () => {
   test("does not skip when a validator exists (a conditional request is cheap)", () => {
     assert.equal(canSkipUnvalidated(true, { etag: "abc" }, false), false);
     assert.equal(canSkipUnvalidated(true, { etag: "abc" }, true), false);
+  });
+});
+
+describe("checkEveryMs", () => {
+  for (const platform of PLATFORMS) {
+    test(`${platform}: ffmpeg is checked weekly, yt-dlp at every launch`, () => {
+      const plans = assetPlans(
+        platform,
+        "x64",
+        resourcePathsFor(platform, "cache"),
+      );
+      const byId = Object.fromEntries(plans.map((p) => [p.id, p]));
+      assert.equal(byId.ffmpeg.checkEveryMs, FFMPEG_CHECK_MS);
+      assert.equal(byId.ytdlp.checkEveryMs, undefined);
+    });
+  }
+});
+
+describe("checkedRecently", () => {
+  const url = "https://example.com/ffmpeg";
+  const now = 100 * STALE_MS;
+
+  test("is never true for a tool checked at every launch", () => {
+    assert.equal(
+      checkedRecently({ url, checkedAt: now }, now, now, undefined),
+      false,
+    );
+  });
+
+  test("is true within the window after the last check", () => {
+    assert.equal(
+      checkedRecently({ url, checkedAt: now - 1 }, 0, now, STALE_MS),
+      true,
+    );
+    assert.equal(
+      checkedRecently({ url, checkedAt: now - STALE_MS }, 0, now, STALE_MS),
+      false,
+    );
+  });
+
+  test("falls back to the download's time, then the file's", () => {
+    assert.equal(
+      checkedRecently({ url, updatedAt: now - 1 }, 0, now, STALE_MS),
+      true,
+    );
+    assert.equal(checkedRecently({ url }, now - 1, now, STALE_MS), true);
+    assert.equal(checkedRecently({ url }, 0, now, STALE_MS), false);
+  });
+
+  test("asks once about a copy whose source wasn't recorded", () => {
+    assert.equal(
+      checkedRecently({ checkedAt: now }, now, now, STALE_MS),
+      false,
+    );
+    assert.equal(checkedRecently(undefined, now, now, STALE_MS), false);
   });
 });
 

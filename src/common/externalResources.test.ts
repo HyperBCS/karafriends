@@ -59,6 +59,7 @@ function setup(
 ) {
   const fetches: { id: "ytdlp" | "ffmpeg"; headers: Record<string, string> }[] =
     [];
+  const extracts: string[][] = [];
   const deps: ToolsDeps = {
     platform: "linux",
     arch: "x64",
@@ -77,6 +78,7 @@ function setup(
     // file's contents as its version, or fails if they start with "broken".
     exec: async (file, args) => {
       if (file === "7za") {
+        extracts.push(args);
         const [, archive, , out] = args;
         const name = archive.endsWith(".tar.xz") ? "ffmpeg.tar" : "ffmpeg";
         fs.mkdirSync(out.slice(2), { recursive: true });
@@ -98,8 +100,11 @@ function setup(
     JSON.parse(
       fs.readFileSync(path.join(dir, "cache", "versions.json"), "utf8"),
     );
-  return { manager, fetches, read, versions };
+  return { manager, fetches, extracts, read, versions };
 }
+
+const DAY = 24 * 60 * 60 * 1000;
+const WEEK = 7 * DAY;
 
 const fresh = (id: "ytdlp" | "ffmpeg"): Answer => ({
   status: 200,
@@ -154,7 +159,10 @@ describe("createToolsManager", () => {
 
   test("offline: the cached copies are kept, and the check passes", async () => {
     await setup(fresh).manager.ensure();
-    const { manager, fetches, read } = setup(() => new Error("offline"));
+    // Over a week later, so ffmpeg is asked too.
+    const { manager, fetches, read } = setup(() => new Error("offline"), {
+      now: () => Date.now() + 2 * WEEK,
+    });
     await manager.ensure();
     assert.equal(read("ffmpeg"), FFMPEG);
     // promise-retry: the first try and two retries, for each tool.
@@ -236,6 +244,58 @@ describe("createToolsManager", () => {
     assert.deepEqual(ffmpeg.headers, {});
     assert.equal(versions().ffmpeg.version, "9.0.3");
     assert.match(versions().ffmpeg.url, /ffmpeg-master-latest/);
+  });
+
+  test("ffmpeg is asked about at most once a week, yt-dlp at every launch", async () => {
+    let now = Date.now();
+    const launch = (answer: (id: "ytdlp" | "ffmpeg") => Answer) => {
+      const tools = setup(answer, { now: () => now });
+      return tools.manager.ensure().then(() => tools);
+    };
+    await launch(fresh);
+
+    // The next day, BtbN's daily rebuild has a new etag: not downloaded.
+    now += DAY;
+    const nextDay = await launch((id) => ({ ...fresh(id), etag: '"new"' }));
+    assert.deepEqual(
+      nextDay.fetches.map((f) => f.id),
+      ["ytdlp"],
+    );
+
+    // A week on, it's asked with its validator. A 304 counts as asked.
+    now += WEEK;
+    const weekOn = await launch(() => ({ status: 304 }));
+    assert.deepEqual(
+      weekOn.fetches.map((f) => [f.id, f.headers["If-None-Match"]]),
+      [
+        ["ytdlp", '"new"'],
+        ["ffmpeg", '"ffmpeg-1"'],
+      ],
+    );
+    now += DAY;
+    const after = await launch(fresh);
+    assert.deepEqual(
+      after.fetches.map((f) => f.id),
+      ["ytdlp"],
+    );
+
+    // Update tools asks for both, whenever.
+    const update = setup(fresh, { now: () => now });
+    await update.manager.update();
+    assert.deepEqual(update.fetches.map((f) => f.id).sort(), [
+      "ffmpeg",
+      "ytdlp",
+    ]);
+  });
+
+  test("only the ffmpeg binary is unpacked from BtbN's archive", async () => {
+    const { manager, extracts, read } = setup(fresh);
+    await manager.ensure();
+    assert.equal(extracts.length, 2);
+    // The .tar.xz to the .tar, whole; then just the files named ffmpeg.
+    assert.deepEqual(extracts[0].slice(4), []);
+    assert.deepEqual(extracts[1].slice(4), ["ffmpeg", "-r"]);
+    assert.equal(read("ffmpeg"), FFMPEG);
   });
 
   test("Update tools downloads again, without validators", async () => {
