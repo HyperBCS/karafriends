@@ -16,6 +16,7 @@ import {
   TextField,
   TopBar,
 } from "../components/ui";
+import { SingerBadge } from "../components/NowPlayingSheet/QueueList";
 import { t, useLanguage, type Language } from "../i18n";
 import {
   FaSmile,
@@ -154,11 +155,16 @@ const DevUiPage = () => {
     { id: "joysound", label: t("source.joysound") },
   ] as const;
 
+  // As the real bar has it (NowPlaying): the artist under the title, the
+  // singer on the right.
   const nowPlaying = (
-    <span className={styles.nowPlaying}>
-      <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
-      <span className={styles.nowSinger}>{SONGS.marigold.artist} · Ken</span>
-    </span>
+    <>
+      <span className={styles.nowPlaying}>
+        <span className={styles.nowTitle}>{SONGS.marigold.title}</span>
+        <span className={styles.nowArtist}>{SONGS.marigold.artist}</span>
+      </span>
+      <SingerBadge nickname="Ken" />
+    </>
   );
 
   return (
