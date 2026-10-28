@@ -50,6 +50,9 @@ describe("reading", () => {
   test("a name in kana gets its romaji, not its kana again", () => {
     assert.equal(reading("レモン", "レモン", "kana"), null);
     assert.equal(reading("よあそび", "ヨアソビ", "both"), "yoasobi");
+    // With a long vowel mark, which the hiragana reading spells as ー too.
+    assert.equal(reading("ルーム", "るーむ", "kana"), null);
+    assert.equal(reading("ルーム", "るーむ", "both"), "ruumu");
   });
 });
 

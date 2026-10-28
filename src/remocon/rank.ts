@@ -1,4 +1,4 @@
-import { isKana, isRomaji, toHiragana, toRomaji } from "wanakana";
+import { isKana, isRomaji, toHiragana, toKatakana, toRomaji } from "wanakana";
 
 // What a search result is ranked by: its title (or, for an artist, its
 // name), the artist it's by, and the kana readings DAM gives for both.
@@ -11,11 +11,14 @@ export interface Candidate {
 
 // How a query and a title are compared: NFKC (which also makes full-width
 // letters and digits half-width, and half-width kana full-width),
-// lowercase, katakana as hiragana, and no spaces, punctuation or symbols.
+// lowercase, katakana as hiragana, a long vowel mark after kana as that
+// kana's vowel, and no spaces, punctuation or symbols. wanakana makes ー a
+// vowel only after katakana, so the kana go through katakana first:
+// らーめん and ラーメン are both らあめん.
 export function normalize(text: string): string {
-  return toHiragana(text.normalize("NFKC").toLowerCase(), {
-    passRomaji: true,
-  }).replace(/[\s\p{P}\p{S}]/gu, "");
+  const options = { passRomaji: true };
+  const katakana = toKatakana(text.normalize("NFKC").toLowerCase(), options);
+  return toHiragana(katakana, options).replace(/[\s\p{P}\p{S}]/gu, "");
 }
 
 interface Query {
