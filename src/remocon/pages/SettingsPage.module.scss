@@ -89,8 +89,61 @@
   gap: $kf-space-3;
   color: $kf-text;
   font-size: $kf-text-body;
+}
+
+// The thumb as seen, and the track's height.
+$dot: 24px;
+$track: 6px;
+// How far the thumb's tap target reaches past its dot on each side.
+$dot-inset: calc(($kf-tap - $dot) / 2);
+
+// iOS moves a range input only from its thumb: a full tap target, of
+// which the transparent border leaves a solid dot to see, in the text's
+// color, so it shows on the fill and on the empty track alike.
+@mixin thumb {
+  box-sizing: border-box;
+  width: $kf-tap;
+  height: $kf-tap;
+  border: $dot-inset solid transparent;
+  border-radius: 50%;
+  background-color: $kf-text;
+  background-clip: padding-box;
+  appearance: none;
+}
+
+// The slider: a track filled with the accent up to the value, which
+// --kf-fill gives as a percent, and a solid thumb. Drawn here in full:
+// iOS's own thumb is glass unless the input and its thumb both have
+// appearance: none.
+//
+// The track is drawn behind the input, from the dot's left edge at the
+// lowest value to its right edge at the highest, so the edge of the fill
+// is always under the dot. The input's own track is clear: it reaches
+// further, as far as the tap target travels.
+.track {
+  position: relative;
+  display: flex;
+  min-width: 0;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: calc(50% - $track / 2);
+    right: $dot-inset;
+    left: $dot-inset;
+    height: $track;
+    border-radius: $kf-radius;
+    background: linear-gradient(
+      to right,
+      $kf-accent var(--kf-fill),
+      $kf-track var(--kf-fill)
+    );
+  }
 
   input {
+    // Over the track.
+    position: relative;
+    flex: 1;
     min-width: 0;
     height: $kf-tap;
     margin: 0;
@@ -99,36 +152,34 @@
     cursor: pointer;
 
     &::-webkit-slider-runnable-track {
-      height: 4px;
-      border-radius: 2px;
-      background-color: $kf-border;
+      height: $track;
+      background: none;
     }
 
     &::-moz-range-track {
-      height: 4px;
-      border-radius: 2px;
-      background-color: $kf-border;
+      height: $track;
+      background: none;
     }
 
-    // iOS moves a range input only from its thumb: a full tap target, of
-    // which the transparent border leaves a 24px dot to see.
     &::-webkit-slider-thumb {
-      width: $kf-tap;
-      height: $kf-tap;
-      margin-top: calc((4px - #{$kf-tap}) / 2);
-      border: 10px solid transparent;
-      border-radius: 50%;
-      background-color: $kf-accent;
-      background-clip: padding-box;
-      appearance: none;
+      @include thumb;
+      // Centered on the track.
+      margin-top: calc(($track - $kf-tap) / 2);
     }
 
     &::-moz-range-thumb {
-      width: 24px;
-      height: 24px;
-      border: none;
-      border-radius: 50%;
-      background-color: $kf-accent;
+      @include thumb;
+    }
+
+    // The dot a step larger while held.
+    @include kf-pressed {
+      &::-webkit-slider-thumb {
+        border-width: calc($dot-inset - 2px);
+      }
+
+      &::-moz-range-thumb {
+        border-width: calc($dot-inset - 2px);
+      }
     }
 
     @include kf-focus-visible;

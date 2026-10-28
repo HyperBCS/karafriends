@@ -13,6 +13,7 @@ import {
   displayCall,
   expect,
   NICKNAME,
+  sliderFill,
   test,
 } from "./fixtures";
 
@@ -1753,11 +1754,14 @@ test.describe("the guide melody slider", () => {
     await expect(slider).toBeEnabled();
     await expect(slider).toHaveValue("0");
     expect((await slider.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    // Its track is filled with the accent up to the level: none at 0.
+    expect(await sliderFill(slider)).toBe(0);
     await slider.fill("0.7");
     await expect
       .poll(async () => (await liveState(remoconUrl)).guideMelodyLevel)
       .toBe(0.7);
     await expect(slider).toHaveValue("0.7");
+    expect(await sliderFill(slider)).toBeCloseTo(70);
     // Its label shows the level in percent.
     await expect(remote.getByText("Guide melody 70%")).toBeVisible();
 
@@ -1776,6 +1780,9 @@ test.describe("the guide melody slider", () => {
     await remote.mouse.move(box.x + box.width * 0.3, y, { steps: 10 });
     await expect(slider).not.toHaveValue("0.7");
     expect(sent).toEqual([]);
+    // Held, its track fills to where the thumb is.
+    const held = Number(await slider.inputValue());
+    await expect.poll(() => sliderFill(slider)).toBeCloseTo(held * 100);
     await remote.mouse.up();
     const level = Number(await slider.inputValue());
     expect(level).toBeLessThan(0.6);
@@ -1832,6 +1839,7 @@ test.describe("the song volume and mic sliders", () => {
       .toBe(40);
     await expect(volume).toHaveValue("40");
     await expect(remote.getByText("Song volume 40%")).toBeVisible();
+    expect(await sliderFill(volume)).toBe(40);
   });
 
   test("a slider dragged back to where it started follows the live level again", async ({
@@ -1920,6 +1928,9 @@ test.describe("the song volume and mic sliders", () => {
     // The labels show the levels, as the display's do.
     await expect(remote.getByText("Gain 123%")).toBeVisible();
     await expect(remote.getByText("Echo 40%")).toBeVisible();
+    // The tracks fill to them: gain out of 200 %, echo out of 100 %.
+    expect(await sliderFill(slider(mics[1], "Gain"))).toBeCloseTo(61.5);
+    expect(await sliderFill(slider(mics[1], "Echo"))).toBe(0);
 
     await slider(mics[1], "Echo").fill("63");
     await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
@@ -1927,6 +1938,7 @@ test.describe("the song volume and mic sliders", () => {
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
       .toEqual([mics[0], { ...mics[1], echo: 63 }]);
     await expect(slider(mics[1], "Echo")).toHaveValue("63");
+    expect(await sliderFill(slider(mics[1], "Echo"))).toBe(63);
   });
 });
 

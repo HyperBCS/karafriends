@@ -10,7 +10,13 @@ import path from "path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { parse } from "yaml";
 
-import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  displayCall,
+  expect,
+  sliderFill,
+  test,
+} from "./fixtures";
 
 const MASK = "••••••";
 
@@ -596,9 +602,15 @@ test.describe("the microphones", () => {
     );
     await expect(mic.getByLabel("Gain 100%")).toBeVisible();
     await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+    // Each slider's track is filled to its value: gain out of 200 %, echo
+    // out of 100 %.
+    expect(await sliderFill(mic.getByLabel("Gain 100%"))).toBe(50);
+    expect(await sliderFill(mic.getByLabel("Echo 40%"))).toBe(40);
     await mic.getByLabel("Gain 100%").fill("150");
     await mic.getByLabel("Echo 40%").fill("25");
     await expect(mic.getByLabel("Gain 150%")).toBeVisible();
+    expect(await sliderFill(mic.getByLabel("Gain 150%"))).toBe(75);
+    expect(await sliderFill(mic.getByLabel("Echo 25%"))).toBe(25);
     await expect.poll(phoneMics).toEqual([{ ...MIC, gain: 150, echo: 25 }]);
     expect(await fakeAudioCalls(display)).toEqual(
       expect.arrayContaining([

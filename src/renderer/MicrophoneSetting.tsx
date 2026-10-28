@@ -262,17 +262,20 @@ function LevelMeter(props: { mic: InputDevice }) {
   );
 }
 
+// A level from 0 to max. Its track fills to the value (ui.css).
 function LevelSlider(props: {
   label: string;
   value: number;
   max: number;
   onChange: (value: number) => void;
 }) {
+  const fill = { "--kf-fill": `${(props.value / props.max) * 100}%` };
   return (
     <label className="kfLabel">
       {`${props.label} ${props.value}%`}
       <input
         className="kfSlider"
+        style={fill as React.CSSProperties}
         type="range"
         min={0}
         max={props.max}

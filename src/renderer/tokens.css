@@ -21,6 +21,9 @@
   --kf-border: #3a3a3a;
   /* The edge of a field or an outlined button (3.9:1). */
   --kf-border-strong: #6b6b6b;
+  /* A slider's track past its value: 3.5:1 on the surface, and the accent
+     filling the rest is 2.3:1 against it. */
+  --kf-track: #6b6b6b;
   /* Text, 19.3:1. */
   --kf-text: #f5f5f5;
   /* Secondary text: artists, singers, ETAs. 8.3:1 (7.3:1 on the surface). */
