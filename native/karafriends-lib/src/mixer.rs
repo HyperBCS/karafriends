@@ -2,13 +2,14 @@
 
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, TryLockError};
+use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
     _output_devices, _output_name, describe, error_callback, find_output, lock, system_host,
-    DeviceType, RateLimit, Result, Stream,
+    DeviceType, RateLimit, Result, Stall, Stream,
 };
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
@@ -169,8 +170,11 @@ pub(crate) struct Mixer {
     // never waits; the JS thread holds it just to add or remove a mic.
     sources: Arc<Mutex<Vec<Source>>>,
     next_id: u64,
-    // Frames per output callback, as the output asks for them.
+    // Frames per output callback, as the output asks for them, and a count
+    // of the callbacks, to see that they keep coming (see Stall).
     frames: Arc<AtomicU32>,
+    callbacks: Arc<AtomicU32>,
+    stall: Option<Stall>,
     // How many times the stream was opened, for the tests.
     #[cfg(test)]
     pub(crate) opens: usize,
@@ -224,6 +228,7 @@ impl Mixer {
             Ok((stream, rate, note)) => {
                 self.output = Some((stream, rate));
                 self.note = note;
+                self.stall = Some(Stall::new(Instant::now()));
                 // A mic resampling to another rate would play at the wrong
                 // pitch: its status has the display reopen it.
                 for source in lock(&self.sources).iter().filter(|s| s.rate != rate) {
@@ -309,6 +314,7 @@ impl Mixer {
                 channels,
                 config.sample_rate,
                 self.frames.clone(),
+                self.callbacks.clone(),
             );
             Ok(device.build_output_stream(
                 config,
@@ -329,11 +335,23 @@ impl Mixer {
         Ok((Stream::new(stream, device_type), config.sample_rate))
     }
 
-    // "ok", the note, or why the output stopped.
-    pub fn status(&self) -> String {
-        if let Some(error) = lock(&self.output_error).clone() {
+    // "ok", the note, or why the output stopped: an error, or its
+    // callbacks stopping, which has the mics reopen it.
+    pub fn status(&mut self) -> String {
+        let mut error = lock(&self.output_error);
+        if let Some(error) = error.clone() {
             return error;
         }
+        let callbacks = self.callbacks.load(Relaxed);
+        let open = self.output.is_some();
+        if let Some(stall) = self.stall.as_mut().filter(|_| open) {
+            if stall.stalled(callbacks, Instant::now()) {
+                let stalled = "The mic output stopped playing (nothing for 2 seconds)";
+                eprintln!("{stalled}");
+                return error.insert(stalled.to_string()).clone();
+            }
+        }
+        drop(error);
         self.note.clone().unwrap_or_else(|| "ok".to_string())
     }
 
@@ -543,12 +561,14 @@ fn mix_into(sources: &mut [Source], mix: &mut [f32], rate: cpal::SampleRate) -> 
 const FULL_SCALE: f32 = 1.0 - f32::EPSILON;
 
 // The output callback: sums the mics, mono to every channel. Notes in
-// `frames` how many each callback asks for.
+// `frames` how many each callback asks for, and counts itself in
+// `callbacks`.
 fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
     sources: Arc<Mutex<Vec<Source>>>,
     channels: usize,
     rate: cpal::SampleRate,
     frames: Arc<AtomicU32>,
+    callbacks: Arc<AtomicU32>,
 ) -> impl FnMut(&mut [Sample]) + Send + 'static {
     let mut mix: Vec<f32> = Vec::with_capacity(rate as usize / 10);
     let mut dry_prints = RateLimit::default();
@@ -557,6 +577,7 @@ fn output_data_callback<Sample: cpal::Sample + cpal::FromSample<f32>>(
         mix.clear();
         mix.resize(samples.len() / channels, 0.0);
         frames.store(mix.len() as u32, Relaxed);
+        callbacks.fetch_add(1, Relaxed);
         let sources = match sources.try_lock() {
             Ok(sources) => Some(sources),
             Err(TryLockError::Poisoned(e)) => Some(e.into_inner()),
@@ -866,7 +887,8 @@ mod tests {
         let a = source(1, &first, 64);
         let b = source(2, &[0.5; START], 64);
         let sources = Arc::new(Mutex::new(vec![a, b]));
-        let mut callback = output_data_callback::<f32>(sources, 2, RATE, Arc::default());
+        let mut callback =
+            output_data_callback::<f32>(sources, 2, RATE, Arc::default(), Arc::default());
         let mut out = [9.0; 8];
         callback(&mut out);
         let expected = [0.6, 0.6, 0.7, 0.7, 0.8, 0.8, 0.9, 0.9];
@@ -898,7 +920,8 @@ mod tests {
         let mut stale = source(1, &[0.5; START], 64);
         stale.rate = RATE * 2;
         let sources = Arc::new(Mutex::new(vec![stale, source(2, &[0.25; START], 64)]));
-        let mut callback = output_data_callback::<f32>(sources, 1, RATE, Arc::default());
+        let mut callback =
+            output_data_callback::<f32>(sources, 1, RATE, Arc::default(), Arc::default());
         let mut out = [9.0; 4];
         callback(&mut out);
         assert_eq!(out, [0.25; 4]);
@@ -911,14 +934,16 @@ mod tests {
             source(1, &[], 64),
             source(2, &[0.5; START - 1], 64),
         ]));
-        let mut callback = output_data_callback::<f32>(sources, 1, RATE, Arc::default());
+        let mut callback =
+            output_data_callback::<f32>(sources, 1, RATE, Arc::default(), Arc::default());
         let mut out = [9.0; 4];
         callback(&mut out);
         assert_eq!(out, [0.0; 4]);
 
         // Playing, then running dry mid-callback: the rest is silence.
         let sources = Arc::new(Mutex::new(vec![source(1, &[0.5; START + 2], 64)]));
-        let mut callback = output_data_callback::<f32>(sources, 1, RATE, Arc::default());
+        let mut callback =
+            output_data_callback::<f32>(sources, 1, RATE, Arc::default(), Arc::default());
         let mut out = [9.0; 4];
         for _ in 0..START / 4 {
             callback(&mut out);
@@ -933,8 +958,13 @@ mod tests {
 
     #[test]
     fn test_output_with_no_mics_is_silence() {
-        let mut callback =
-            output_data_callback::<i16>(Arc::new(Mutex::new(vec![])), 2, RATE, Arc::default());
+        let mut callback = output_data_callback::<i16>(
+            Arc::new(Mutex::new(vec![])),
+            2,
+            RATE,
+            Arc::default(),
+            Arc::default(),
+        );
         let mut out = [7_i16; 8];
         callback(&mut out);
         assert_eq!(out, [0; 8]);
@@ -946,7 +976,8 @@ mod tests {
         let mut samples = [1.5, -1.5].repeat(START / 2);
         samples.resize(START, 0.0);
         let sources = Arc::new(Mutex::new(vec![source(1, &samples, 64)]));
-        let mut callback = output_data_callback::<T>(sources, 1, RATE, Arc::default());
+        let mut callback =
+            output_data_callback::<T>(sources, 1, RATE, Arc::default(), Arc::default());
         let mut out = [T::EQUILIBRIUM; 4];
         callback(&mut out);
         (out[0], out[1])
@@ -1010,6 +1041,23 @@ mod tests {
             opened,
             [Some("Speakers"), Some("TV"), Some("Speakers"), None]
         );
+    }
+
+    // The output callback counts itself for the stall check.
+    #[test]
+    fn test_the_output_callback_counts_its_calls() {
+        let callbacks = Arc::new(AtomicU32::new(0));
+        let mut callback = output_data_callback::<f32>(
+            Arc::new(Mutex::new(vec![])),
+            2,
+            RATE,
+            Arc::default(),
+            callbacks.clone(),
+        );
+        for _ in 0..3 {
+            callback(&mut [0.0; 8]);
+        }
+        assert_eq!(callbacks.load(Relaxed), 3);
     }
 
     #[test]

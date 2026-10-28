@@ -8,7 +8,6 @@
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use windows::core::{w, Error, Interface, GUID, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{
@@ -39,10 +38,10 @@ type Outcome<T> = std::result::Result<T, String>;
 
 // Rates tried after the one asked for.
 const FALLBACK_RATES: [u32; 3] = [48000, 44100, 96000];
-// How often the thread looks at its stop flag when the mic is quiet.
+// How often the thread looks at its stop flag when the mic is quiet. (A
+// mic that stops sending altogether is caught by InputDevice::status, as on
+// every host.)
 const WAIT_MS: u32 = 100;
-// A mic that sends nothing for this long has stopped.
-const STALL: Duration = Duration::from_secs(2);
 
 const NOT_ALLOWED: &str =
     "Windows doesn't allow exclusive use of this mic: in Sound settings, open \
@@ -295,38 +294,28 @@ impl Capture {
         let _mmcss = Mmcss::join();
         let period = self.format.frames as usize * self.format.channels as usize;
         let mut samples = Vec::with_capacity(period);
-        let mut heard = Instant::now();
         while !stop.load(Relaxed) {
             let waited = unsafe { WaitForSingleObject(self.event.0, WAIT_MS) };
             if waited == WAIT_OBJECT_0 {
-                match self.drain(&mut samples, period, on_data) {
-                    Ok(true) => heard = Instant::now(),
-                    Ok(false) => {}
-                    Err(e) => return Some(e),
+                if let Err(e) = self.drain(&mut samples, period, on_data) {
+                    return Some(e);
                 }
             } else if waited != WAIT_TIMEOUT {
                 return Some(failed("WaitForSingleObject", &Error::from_thread()));
-            }
-            if heard.elapsed() > STALL {
-                return Some(format!(
-                    "The mic stopped sending sound (nothing for {} seconds)",
-                    STALL.as_secs()
-                ));
             }
         }
         None
     }
 
-    // Hands on every packet waiting, at most a period per call; true if
-    // there were any. (GetNextPacketSize is for shared mode only, so this
-    // reads until GetBuffer has nothing.)
+    // Hands on every packet waiting, at most a period per call.
+    // (GetNextPacketSize is for shared mode only, so this reads until
+    // GetBuffer has nothing.)
     fn drain(
         &self,
         samples: &mut Vec<f32>,
         period: usize,
         on_data: &mut impl FnMut(&[f32]),
-    ) -> Outcome<bool> {
-        let mut any = false;
+    ) -> Outcome<()> {
         loop {
             let (mut data, mut frames, mut flags) = (std::ptr::null_mut(), 0, 0);
             let got = unsafe {
@@ -335,10 +324,10 @@ impl Capture {
             };
             match got {
                 // In exclusive mode: no packet yet, so wait for the next event.
-                Err(e) if e.code() == AUDCLNT_E_BUFFER_ERROR => return Ok(any),
+                Err(e) if e.code() == AUDCLNT_E_BUFFER_ERROR => return Ok(()),
                 Err(e) => return Err(failed("IAudioCaptureClient::GetBuffer", &e)),
                 // AUDCLNT_S_BUFFER_EMPTY: all read.
-                Ok(()) if frames == 0 => return Ok(any),
+                Ok(()) if frames == 0 => return Ok(()),
                 Ok(()) => {}
             }
             let bytes = if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 || data.is_null() {
@@ -351,7 +340,6 @@ impl Capture {
             convert(self.sample, bytes, count, samples);
             unsafe { self.capture.ReleaseBuffer(frames) }
                 .map_err(|e| failed("IAudioCaptureClient::ReleaseBuffer", &e))?;
-            any = true;
             for chunk in samples.chunks(period.max(1)) {
                 on_data(chunk);
             }
@@ -639,6 +627,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::sync::Mutex;
+    use std::time::{Duration, Instant};
     use windows::Win32::Media::Audio::{eRender, EDataFlow, DEVICE_STATE_ACTIVE};
 
     fn converted(sample: SampleFormat, bytes: &[u8]) -> Vec<f32> {

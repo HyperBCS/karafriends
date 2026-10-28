@@ -367,11 +367,49 @@ fn error_callback(
 
 // What a mic's callback notes for Settings: the frames per callback, and
 // the loudest sample since Settings last asked, before the gain (f32 bits:
-// for floats of one sign the bits order as the values do).
+// for floats of one sign the bits order as the values do). And for its
+// status, a count of its callbacks (see Stall).
 #[derive(Default)]
 struct Meters {
     frames: AtomicU32,
     peak: AtomicU32,
+    callbacks: AtomicU32,
+}
+
+// A stream that stops calling back without saying so (an ASIO driver that
+// stops calling bufferSwitch, a WASAPI client that stops getting events, a
+// PulseAudio source that went away) is as good as stopped: its status says
+// so, and the display reopens it. A stream gets STALL_START to call back the
+// first time (a Bluetooth headset can take a moment to switch its mic on),
+// then STALL between callbacks. The display asks every 2 seconds.
+const STALL: Duration = Duration::from_millis(1900);
+const STALL_START: Duration = Duration::from_secs(5);
+
+// Whether a stream's callback count has moved, as its status is asked.
+struct Stall {
+    count: u32,
+    // When the count was last seen to move (or the stream opened).
+    since: Instant,
+}
+
+impl Stall {
+    fn new(now: Instant) -> Self {
+        Stall {
+            count: 0,
+            since: now,
+        }
+    }
+
+    // True once `count` has stood still too long.
+    fn stalled(&mut self, count: u32, now: Instant) -> bool {
+        if count != self.count {
+            self.count = count;
+            self.since = now;
+            return false;
+        }
+        let limit = if count == 0 { STALL_START } else { STALL };
+        now.saturating_duration_since(self.since) >= limit
+    }
 }
 
 // A mic's levels, set from JS and read once per callback, as f32 bits.
@@ -406,6 +444,8 @@ pub struct InputDevice {
     status: Arc<Mutex<Option<String>>>,
     // Why its thread isn't real-time, if the system refused.
     realtime: Arc<Mutex<Option<String>>>,
+    // Whether its callbacks stopped (see Stall).
+    stall: Mutex<Stall>,
     pitch_rx: ringbuf::HeapCons<f32>,
     pitch_sample_count: usize,
     pitch_detector: pitch_detector::PitchDetector,
@@ -629,6 +669,7 @@ impl InputDevice {
             levels,
             status,
             realtime,
+            stall: Mutex::new(Stall::new(Instant::now())),
             pitch_rx,
             pitch_sample_count,
             pitch_detector,
@@ -737,6 +778,12 @@ impl InputDevice {
         if let Some(error) = lock(&self.status).clone() {
             return error;
         }
+        let callbacks = self.meters.callbacks.load(Relaxed);
+        if lock(&self.stall).stalled(callbacks, Instant::now()) {
+            let stalled = "The mic stopped sending sound (nothing for 2 seconds)".to_string();
+            eprintln!("{stalled}");
+            return lock(&self.status).get_or_insert(stalled).clone();
+        }
         lock(&mixer::MIXER).status()
     }
 
@@ -826,6 +873,7 @@ impl InputDevice {
             meters
                 .frames
                 .store((samples.len() / input_channels) as u32, Relaxed);
+            meters.callbacks.fetch_add(1, Relaxed);
             mono.clear();
             mono.extend(samples.chunks(input_channels).map(|frame| {
                 frame
@@ -1488,6 +1536,54 @@ mod tests {
             let output: Vec<f32> = output_rx.pop_iter().collect();
             assert_eq!(output, [0.5, -1.0], "{format}");
         }
+        Ok(())
+    }
+
+    // A stream stalls once its count stands still for STALL (STALL_START
+    // before its first callback), however often it is asked.
+    #[test]
+    fn test_a_stream_that_stops_calling_back_stalls() {
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        let mut stall = Stall::new(start);
+        assert!(!stall.stalled(0, at(2000)));
+        assert!(!stall.stalled(0, at(4999)));
+        assert!(stall.stalled(0, at(5000)));
+
+        let mut stall = Stall::new(start);
+        assert!(!stall.stalled(5, at(10)));
+        assert!(!stall.stalled(9, at(2000)));
+        assert!(!stall.stalled(9, at(3000)));
+        assert!(!stall.stalled(9, at(3899)));
+        assert!(stall.stalled(9, at(3900)));
+        // It calls back again: not stalled, and counted from there.
+        assert!(!stall.stalled(10, at(4000)));
+        assert!(!stall.stalled(10, at(5000)));
+        // A count that wraps round still moves.
+        let mut stall = Stall::new(start);
+        assert!(!stall.stalled(u32::MAX, at(10)));
+        assert!(!stall.stalled(0, at(2000)));
+    }
+
+    // The input callback counts itself for the stall check.
+    #[test]
+    fn test_the_input_callback_counts_its_calls() -> Result<()> {
+        let (pitch_tx, _pitch_rx) = ringbuf::HeapRb::new(16).split();
+        let (output_tx, _output_rx) = ringbuf::HeapRb::new(16).split();
+        let meters = Arc::new(Meters::default());
+        let mut callback = InputDevice::input_data_callback::<f32>(
+            &config(48000),
+            48000,
+            0,
+            Arc::new(Levels::new(1.0, 0.0)),
+            meters.clone(),
+            pitch_tx,
+            output_tx,
+        )?;
+        for _ in 0..3 {
+            callback(&[0.0; 4]);
+        }
+        assert_eq!(meters.callbacks.load(Relaxed), 3);
         Ok(())
     }
 
