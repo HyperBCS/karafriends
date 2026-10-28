@@ -10,6 +10,16 @@
   box-sizing: border-box;
 }
 
+// The page itself never scrolls or bounces: on iOS a bounce drags the top
+// bar and the now-playing sheet along. The app is a fixed column whose
+// screen is the only scroller (App.module.scss).
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   background-color: $kf-bg;
   color: $kf-text;

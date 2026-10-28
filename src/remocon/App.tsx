@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import {
   HashRouter,
   Link,
@@ -42,9 +42,14 @@ const App = () => (
         <Route
           path="/dev/ui"
           element={
-            <Suspense fallback={null}>
-              <DevUiPage />
-            </Suspense>
+            // The page doesn't scroll (index.scss), so this does.
+            <div className={styles.app}>
+              <div className={styles.main}>
+                <Suspense fallback={null}>
+                  <DevUiPage />
+                </Suspense>
+              </div>
+            </div>
           }
         />
       )}
@@ -108,6 +113,14 @@ const Screen = ({
 const Shell = () => {
   const { nickname } = useUserIdentity();
   const { pathname } = useLocation();
+
+  // iOS scrolls the page to show a field above the keyboard, and can leave
+  // it scrolled once the keyboard closes, with the top bar cut off.
+  useEffect(() => {
+    const unscroll = () => window.scrollTo(0, 0);
+    window.addEventListener("focusout", unscroll);
+    return () => window.removeEventListener("focusout", unscroll);
+  }, []);
 
   if (!nickname) {
     if (pathname !== "/profile") return <Navigate replace to="/profile" />;

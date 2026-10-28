@@ -38,12 +38,21 @@
   font-weight: 600;
 }
 
-// Below the queue, kept in view while the queue scrolls. One row down to
-// 320px wide (tighter under 360px); narrower than that, it wraps.
+// The queue: its own scroller, as tall as the sheet lets it be. Its
+// scrolling stops at its ends instead of moving the screen behind it.
+.queue {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+// Below the queue, always in view. One row down to 320px wide (tighter
+// under 360px); narrower than that, it wraps.
 .controls {
-  position: sticky;
-  bottom: 0;
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
