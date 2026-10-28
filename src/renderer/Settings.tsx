@@ -12,6 +12,7 @@ import "./global";
 import HostnameSetting from "./HostnameSetting";
 import MicrophoneSetting from "./MicrophoneSetting";
 import { InputDevice } from "./nativeAudio";
+import { AV_OFFSETS, UI_SCALES } from "./playback";
 import "./Settings.css";
 
 type Loaded = ApiOutput<"getSettings">;
@@ -148,6 +149,11 @@ export default function Settings(props: {
   mics: InputDevice[];
   onChangeMic: (index: number, mic: InputDevice) => void;
   onClearMics: () => void;
+  avOffsetMs: number;
+  onAvOffsetChange: (offsetMs: number) => void;
+  uiScale: number;
+  onUiScaleChange: (scale: number) => void;
+  audioLatencyMs: number;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadProblem, setLoadProblem] = useState<string | null>(null);
@@ -487,6 +493,51 @@ export default function Settings(props: {
             hostname={props.hostname}
             onChange={props.onHostnameChange}
           />
+        </SettingsSection>
+
+        <SettingsSection title="Display">
+          <div className="settingsFields">
+            <label className="kfLabel">
+              Audio/video offset
+              <select
+                className="kfField"
+                value={props.avOffsetMs}
+                onChange={(event) =>
+                  props.onAvOffsetChange(Number(event.target.value))
+                }
+              >
+                {AV_OFFSETS.map((ms) => (
+                  <option key={ms} value={ms}>
+                    {ms > 0 ? `+${ms}` : ms} ms
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="kfLabel">
+              UI scale
+              <select
+                className="kfField"
+                value={props.uiScale}
+                onChange={(event) =>
+                  props.onUiScaleChange(Number(event.target.value))
+                }
+              >
+                {UI_SCALES.map((percent) => (
+                  <option key={percent} value={percent}>
+                    {percent}%
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="settingsNote">
+            A plus offset delays the sound, a minus one the lyrics and the piano
+            roll. DAM's own lyrics are in the video, so a minus offset can't
+            move them.
+          </p>
+          <p className="settingsNote">
+            Measured audio output latency: {props.audioLatencyMs} ms
+          </p>
         </SettingsSection>
 
         <SettingsSection title="Microphones">

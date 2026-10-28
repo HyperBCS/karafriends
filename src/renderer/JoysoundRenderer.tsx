@@ -12,6 +12,7 @@ import parseJoysoundData, {
 } from "../common/joysoundParser";
 
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
+import { drawTime } from "./playback";
 
 // XXX: These should be in their own file
 
@@ -823,6 +824,8 @@ export default function JoysoundRenderer(props: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   kuroshiro: KuroshiroSingleton;
   lyricsMode: LyricsMode;
+  // The display's audio/video offset (see drawTime).
+  avOffsetMs: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -919,7 +922,9 @@ export default function JoysoundRenderer(props: {
         invariant(props.videoRef.current);
 
         const refreshTime =
-          props.videoRef.current.currentTime * 1000 + TIMING_OFFSET;
+          drawTime(props.videoRef.current.currentTime, props.avOffsetMs) *
+            1000 +
+          TIMING_OFFSET;
         invariant(refreshTime);
 
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
@@ -998,7 +1003,7 @@ export default function JoysoundRenderer(props: {
       window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(animationFrameRequestRef.current);
     };
-  }, [props.telop, props.lyricsMode]);
+  }, [props.telop, props.lyricsMode, props.avOffsetMs]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;
 }

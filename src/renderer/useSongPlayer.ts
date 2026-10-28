@@ -12,6 +12,8 @@ import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
+import { lowBitrateFallback } from "./playback";
+import type { ShownSong } from "./UpNext";
 import type KarafriendsAudio from "./webAudio";
 
 const POLL_INTERVAL_MS = 5 * 1000;
@@ -28,11 +30,12 @@ export type Overlay =
   | { kind: "nico" }
   | null;
 
-// A line for the corner overlay: a song starting, or one that can't play.
+// A card for the corner overlay: a song starting, queued, or one that can't
+// play, with what happened under it, if anything.
 export interface Announcement {
   label: string;
-  title: string;
-  detail: string;
+  song: ShownSong;
+  detail?: string;
   // The current song in the accent, a problem in red, anything else grey.
   tone?: "current" | "problem";
 }
@@ -102,7 +105,7 @@ export default function useSongPlayer({
     hlsRef.current = null;
     announce({
       label: "Couldn't play",
-      title: song.name,
+      song,
       detail: "Skipping to the next song",
       tone: "problem",
     });
@@ -115,8 +118,9 @@ export default function useSongPlayer({
     video.play();
   };
 
-  // Streams a DAM song from DAM. False if it can't, and has moved on to the
-  // next song.
+  // Streams a DAM song from DAM, at the bitrate popSong says, and on its
+  // third buffer stall moves to the low bitrate from where it is, for the
+  // rest of the song. False if it can't, and has moved on to the next song.
   const streamDam = (video: HTMLVideoElement, song: PoppedDamSong): boolean => {
     const streamingUrl =
       song.streamingUrls[song.streamingUrlIdx]?.[
@@ -127,16 +131,33 @@ export default function useSongPlayer({
       skipBroken(song);
       return false;
     }
-    const hls = new Hls({ maxBufferLength: 90 /* seconds */ });
-    hlsRef.current = hls;
-    // hls.js retries the others itself.
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      if (!data.fatal) return;
-      console.error(`DAM stream failed (${data.details}), skipping the song`);
-      skipBroken(song);
-    });
-    hls.attachMedia(video);
-    hls.loadSource(streamingUrl);
+    let stalls = 0;
+    // From startPosition seconds in (-1: the start).
+    const load = (url: string, startPosition: number) => {
+      hlsRef.current?.destroy();
+      const hls = new Hls({ maxBufferLength: 90 /* seconds */, startPosition });
+      hlsRef.current = hls;
+      // hls.js retries the others itself.
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (songRef.current !== song) return;
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          const lowUrl = lowBitrateFallback(song, ++stalls);
+          if (lowUrl !== null) {
+            const playing = !video.paused;
+            load(lowUrl, video.currentTime);
+            if (playing) video.play();
+            announce({ label: "Switched to low bitrate", song });
+            return;
+          }
+        }
+        if (!data.fatal) return;
+        console.error(`DAM stream failed (${data.details}), skipping the song`);
+        skipBroken(song);
+      });
+      hls.attachMedia(video);
+      hls.loadSource(url);
+    };
+    load(streamingUrl, -1);
     return true;
   };
 
@@ -244,8 +265,7 @@ export default function useSongPlayer({
     announce({
       label: "Now playing",
       tone: "current",
-      title: song.name,
-      detail: [song.artistName, song.user.nickname].filter(Boolean).join(" · "),
+      song,
     });
     switch (song.kind) {
       case "dam":

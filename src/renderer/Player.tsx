@@ -15,6 +15,7 @@ function Player(props: {
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
   announce: (announcement: Announcement) => void;
+  avOffsetMs: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
@@ -33,6 +34,7 @@ function Player(props: {
           lyricsMode={overlay.lyricsMode}
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
+          avOffsetMs={props.avOffsetMs}
         />
       ) : null}
       {overlay?.kind === "dam" ? (
@@ -41,6 +43,7 @@ function Player(props: {
           videoRef={videoRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
+          avOffsetMs={props.avOffsetMs}
         />
       ) : null}
       <video

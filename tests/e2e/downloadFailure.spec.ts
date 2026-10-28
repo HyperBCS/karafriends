@@ -124,7 +124,9 @@ test.describe("for a removed video", () => {
         await expect(
           display
             .getByText(
-              `Couldn't download ${VIDEO_INFO.title} for ${NICKNAME}: Video unavailable`,
+              new RegExp(
+                `Couldn't download ${VIDEO_INFO.title} .*${NICKNAME} Video unavailable`,
+              ),
             )
             .first(),
         ).toBeVisible();

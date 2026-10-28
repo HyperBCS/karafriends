@@ -104,7 +104,9 @@ test("a song queued while the display waits starts within 2 seconds", async ({
   // The corner says so, and the idle screen made way for the video.
   const corner = display.getByRole("status").filter({ hasText: "Now playing" });
   await expect(corner).toContainText("E2E player song");
-  await expect(corner).toContainText("E2E artist · e2e");
+  const artist = corner.getByText("E2E artist", { exact: true }).first();
+  await expect(artist).toBeVisible();
+  await expect(corner.getByText("e2e", { exact: true }).first()).toBeVisible();
   await expect(
     display.getByRole("img", { name: "QR code for the remote" }),
   ).toHaveCount(0);

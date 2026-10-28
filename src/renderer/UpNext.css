@@ -1,3 +1,45 @@
+/* A song's lines (SongLines), here and in the corner: the title, the artist
+   in grey, and the singer as an initial in a circle and the nickname in
+   grey. */
+.songTitle,
+.songArtist,
+.songNickname {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.songTitle {
+  font-weight: 600;
+}
+
+.songArtist,
+.songNickname {
+  color: var(--kf-muted);
+}
+
+.songSinger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+}
+
+.songInitial {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border: 1px solid var(--kf-border-strong);
+  border-radius: 50%;
+  background-color: var(--kf-surface-pressed);
+  color: var(--kf-text);
+  font-weight: 600;
+  line-height: 1;
+}
+
 .upNextList {
   margin: 0;
   padding: 0;
@@ -9,22 +51,14 @@
   font-weight: 600;
 }
 
-.upNextTitle,
-.upNextArtist,
-.upNextMeta {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.upNextArtist,
-.upNextMeta,
+.upNextWait,
 .upNextEmpty {
   color: var(--kf-muted);
+  white-space: nowrap;
 }
 
-/* The idle screen: a row per song, title over artist over singer and ETA,
-   beside the QR code. */
+/* The idle screen: a row per song beside the QR code, the title over the
+   artist, and the singer over the wait on the right. */
 .upNext-rows {
   flex: 1;
   min-width: 0;
@@ -37,69 +71,94 @@
 }
 
 .upNext-rows .upNextItem {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--kf-space-2) var(--kf-space-6);
   padding: var(--kf-space-4) 0;
   border-top: 1px solid var(--kf-border);
-}
-
-.upNext-rows .upNextTitle {
-  font-size: var(--kf-text-body);
-  font-weight: 600;
-}
-
-.upNext-rows .upNextArtist,
-.upNext-rows .upNextMeta {
   font-size: var(--kf-text-label);
 }
 
-/* While a song plays: one line along the bottom, as many songs as fit. */
+.upNext-rows .songTitle {
+  grid-area: 1 / 1;
+  font-size: var(--kf-text-body);
+}
+
+.upNext-rows .songArtist {
+  grid-area: 2 / 1;
+}
+
+.upNext-rows .songSinger {
+  grid-area: 1 / 2;
+  justify-self: end;
+}
+
+.upNext-rows .upNextWait {
+  grid-area: 2 / 2;
+  justify-self: end;
+}
+
+/* While a song plays: one line along the bottom, "Up next" in its own cell,
+   then as many songs as fit, each title, artist, singer and wait, with a
+   line between songs. */
 .upNext-strip {
   display: flex;
   flex: none;
-  align-items: baseline;
-  gap: var(--kf-space-6);
-  padding: var(--kf-space-3) var(--kf-space-6);
+  align-items: stretch;
   overflow: hidden;
-  border-top: 1px solid var(--kf-border);
+  border-top: 1px solid var(--kf-border-strong);
   background-color: var(--kf-bg);
   font-size: var(--kf-text-label);
   white-space: nowrap;
 }
 
 .upNext-strip .upNextHeading {
+  display: flex;
   flex: none;
+  align-items: center;
+  padding: 0 var(--kf-space-6);
+  border-right: 1px solid var(--kf-border-strong);
+  background-color: var(--kf-surface);
   color: var(--kf-muted);
   font-size: inherit;
 }
 
 .upNext-strip .upNextEmpty {
+  align-self: center;
   margin: 0;
+  padding: 0 var(--kf-space-6);
 }
 
 .upNext-strip .upNextList {
   display: flex;
-  gap: var(--kf-space-6);
   min-width: 0;
 }
 
 .upNext-strip .upNextItem {
   display: flex;
   flex: none;
-  gap: var(--kf-space-3);
+  align-items: center;
+  gap: var(--kf-space-4);
   max-width: 56.25rem;
+  padding: var(--kf-space-3) var(--kf-space-6);
 }
 
 .upNext-strip .upNextItem + .upNextItem {
-  padding-left: var(--kf-space-6);
-  border-left: 1px solid var(--kf-border);
+  border-left: 1px solid var(--kf-border-strong);
 }
 
-.upNext-strip .upNextTitle {
+/* A long title or artist ends in an ellipsis; the singer and wait don't. */
+.upNext-strip .songTitle,
+.upNext-strip .songArtist {
   min-width: 0;
 }
 
-.upNext-strip .upNextArtist,
-.upNext-strip .upNextMeta {
+.upNext-strip .songSinger,
+.upNext-strip .upNextWait {
   flex: none;
+}
+
+.upNext-strip .upNextWait {
+  margin-left: var(--kf-space-3);
 }
