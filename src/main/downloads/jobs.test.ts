@@ -96,13 +96,18 @@ test("a YouTube download reports its progress and leaves its video", async () =>
   assert.deepEqual(files(), ["yt-jNQXAC9IVRw.log", "yt-jNQXAC9IVRw.mp4"]);
 });
 
-test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", async () => {
+test("two yt-dlp downloads run at once; a third waits at 0% for one to finish", async (t) => {
   assert.equal(YTDLP_SLOTS, 2);
   const queue: DownloadQueueItem[] = [];
   const started: string[] = [];
   // Each job runs until finish(name).
   const finishers = new Map<string, () => void>();
   const finish = (name: string) => finishers.get(name)?.();
+  // The slots are the module's: a failed assertion mustn't keep them taken,
+  // or every later yt-dlp download in this file would wait for ever.
+  t.after(() => {
+    for (const resolve of finishers.values()) resolve();
+  });
   const job = (name: string) => (item: DownloadQueueItem) => {
     started.push(name);
     item.progress = 0.5;
