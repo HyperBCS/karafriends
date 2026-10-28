@@ -40,11 +40,11 @@ Merge each branch as it is reviewed. Then: place U1's progress line in U3's shee
 
 ## Follow-ups (same day)
 
-| Step                          | State   | Branch / commit | Notes                                                                                      |
-| ----------------------------- | ------- | --------------- | ------------------------------------------------------------------------------------------ |
-| J1: pitch bars for Joysound   | running |                 |                                                                                            |
-| S1: sliders that read as such | running |                 |                                                                                            |
-| C1: a darker color scheme     | running |                 | Graphite picked from the palette page (https://claude.ai/artifact/FhMAb9yoV7mRsF1cXnF7GN). |
+| Step                          | State   | Branch / commit | Notes                                                                                                                                                                                                                                                                |
+| ----------------------------- | ------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J1: pitch bars for Joysound   | running |                 |                                                                                                                                                                                                                                                                      |
+| S1: sliders that read as such | merged  | `75a39ea`       | One `--kf-track` token on both sides, `--kf-fill` set from the value; a solid thumb in the text color. The phone draws its track behind the input so the 44px touch target stays and the dot sits flush at 0 % and 100 %. Check on the real TV and an iOS 26 iPhone. |
+| C1: a darker color scheme     | running |                 | Graphite picked from the palette page (https://claude.ai/artifact/FhMAb9yoV7mRsF1cXnF7GN).                                                                                                                                                                           |
 
 - **Joysound readings: no.** Checked with the login on this PC (Osaka IP): Joysound's song search gives `selSongNo`, `songName`, `artistName`, `serviceTypeList`, `outsideUrlInfo` (iTunes/Amazon links) and `artistId_digi`, and `getFME` gives only `telop` and `ogg`: no readings and no melody notes. Guessed readings (kuroshiro) were offered and declined.
 - **J1: pitch bars for Joysound.** DAM sends the melody's notes (its scoring data); Joysound doesn't, but its ogg's third channel is a synthesized guide melody ([M8](M8-guide-vocal-spike.md)). The display reads the notes from that channel and draws the same pitch bars, the mics' pitch over them. The Pitch bars switch covers both.
