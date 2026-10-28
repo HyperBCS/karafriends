@@ -76,15 +76,75 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 // callbacks are; the remainder waits for the next callback.
 const RESAMPLER_CHUNK: usize = 1024;
 
-#[cfg(feature = "asio")]
-static CPAL_ASIO_HOST: LazyLock<std::result::Result<cpal::Host, cpal::Error>> =
-    LazyLock::new(|| cpal::host_from_id(cpal::HostId::Asio));
+// The ASIO host, and what Settings says about ASIO (see asio_status).
+#[cfg(all(windows, feature = "asio"))]
+struct Asio {
+    // None when it didn't start; the status says why.
+    host: Option<cpal::Host>,
+    status: String,
+}
+
+// Made the first time anything lists or opens a device, before any ASIO
+// driver is open.
+#[cfg(all(windows, feature = "asio"))]
+static ASIO: LazyLock<Asio> = LazyLock::new(|| {
+    // The host first: it sets up COM on this thread, which loading a driver
+    // needs.
+    match cpal::host_from_id(cpal::HostId::Asio) {
+        Ok(host) => Asio {
+            host: Some(host),
+            status: asio_drivers(),
+        },
+        Err(e) => {
+            eprintln!("The ASIO host didn't start: {e}");
+            let status = if asio_sys::Asio::new().driver_names().is_empty() {
+                "No ASIO drivers are installed".to_string()
+            } else {
+                format!("ASIO didn't start: {e}")
+            };
+            Asio { host: None, status }
+        }
+    }
+});
+
+// Every registered ASIO driver, each loaded once to see that it works: an
+// interface's own driver and a wrapper (ASIO4ALL, FlexASIO) alike. This
+// handle is our own, used before cpal's loads anything: ASIO holds one
+// driver at a time.
+#[cfg(all(windows, feature = "asio"))]
+fn asio_drivers() -> String {
+    let asio = asio_sys::Asio::new();
+    let names = asio.driver_names();
+    if names.is_empty() {
+        return "No ASIO drivers are installed".to_string();
+    }
+    let drivers: Vec<String> = names
+        .into_iter()
+        .map(|name| match asio.load_driver(&name) {
+            Ok(_) => name,
+            Err(asio_sys::LoadDriverError::LoadDriverFailed) => {
+                format!("{name} (won't load: the driver didn't start; is its device connected?)")
+            }
+            Err(e) => format!("{name} (won't load: {e})"),
+        })
+        .collect();
+    format!("ASIO: {}", drivers.join(", "))
+}
+
+// One line for Settings: "ASIO: <drivers>", "No ASIO drivers are
+// installed", or that this build has no ASIO.
+pub fn asio_status() -> String {
+    #[cfg(all(windows, feature = "asio"))]
+    return ASIO.status.clone();
+    #[cfg(not(all(windows, feature = "asio")))]
+    "ASIO isn't in this build".to_string()
+}
 
 static INPUT_DEVICES: LazyLock<Mutex<HashMap<String, cpal::Device>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 enum DeviceType {
-    #[cfg(feature = "asio")]
+    #[cfg(all(windows, feature = "asio"))]
     Asio,
     // The platform's default host (WASAPI, CoreAudio, ALSA).
     DefaultHost,
@@ -185,7 +245,9 @@ impl Drop for InputDevice {
 }
 
 impl InputDevice {
-    pub fn collect_devices<Collector: FromIterator<(String, cpal::StreamConfig)>>(
+    // Each input's id (its key, as saved), its label (what Settings shows)
+    // and its best config.
+    pub fn collect_devices<Collector: FromIterator<(String, String, cpal::StreamConfig)>>(
     ) -> Result<Collector> {
         _input_devices()?
             .map(|(input_device, device_type)| {
@@ -196,7 +258,11 @@ impl InputDevice {
                     .last()
                     .ok_or("No supported input configs")?;
                 let input_config = supported_config_to_config(best_supported_input_config, None);
-                Ok((_device_name(&input_device, &device_type), input_config))
+                Ok((
+                    _device_name(&input_device, &device_type),
+                    _device_label(&input_device, &device_type),
+                    input_config,
+                ))
             })
             .collect::<Result<Collector>>()
     }
@@ -518,59 +584,69 @@ fn supported_config_to_config(
 }
 
 fn _input_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
-    let default_devices = cpal::default_host()
+    let devices = cpal::default_host()
         .input_devices()?
         .map(|device| (device, DeviceType::DefaultHost));
-    #[cfg(feature = "asio")]
-    {
-        Ok(default_devices.chain(
-            CPAL_ASIO_HOST
-                .as_ref()
-                .map_err(|_| "ASIO cpal host unavailable!")?
-                .input_devices()?
-                .map(|device| (device, DeviceType::Asio)),
-        ))
-    }
-    #[cfg(not(feature = "asio"))]
-    Ok(default_devices)
+    #[cfg(all(windows, feature = "asio"))]
+    let devices = devices.chain(asio_devices(|host| host.input_devices()));
+    Ok(devices)
 }
 
 fn _output_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
-    let default_devices = cpal::default_host()
+    let devices = cpal::default_host()
         .output_devices()?
         .map(|device| (device, DeviceType::DefaultHost));
-    #[cfg(feature = "asio")]
-    {
-        Ok(default_devices.chain(
-            CPAL_ASIO_HOST
-                .as_ref()
-                .map_err(|_| "ASIO cpal host unavailable!")?
-                .output_devices()?
-                .map(|device| (device, DeviceType::Asio)),
-        ))
-    }
-    #[cfg(not(feature = "asio"))]
-    Ok(default_devices)
+    #[cfg(all(windows, feature = "asio"))]
+    let devices = devices.chain(asio_devices(|host| host.output_devices()));
+    Ok(devices)
 }
 
-// An input's name: its id and "(USB)" for the default host, the form saved
+// The ASIO host's devices; none when it didn't start (the ASIO status says
+// why) or can't list them, so the platform's devices always list.
+#[cfg(all(windows, feature = "asio"))]
+fn asio_devices<Devices: Iterator<Item = cpal::Device>>(
+    list: impl FnOnce(&cpal::Host) -> std::result::Result<Devices, cpal::Error>,
+) -> impl Iterator<Item = (cpal::Device, DeviceType)> {
+    ASIO.host
+        .as_ref()
+        .and_then(|host| {
+            list(host)
+                .inspect_err(|e| eprintln!("The ASIO devices are left out: {e}"))
+                .ok()
+        })
+        .into_iter()
+        .flatten()
+        .map(|device| (device, DeviceType::Asio))
+}
+
+// What an input's id and label end with.
+fn input_host(device_type: &DeviceType) -> &'static str {
+    match device_type {
+        #[cfg(all(windows, feature = "asio"))]
+        DeviceType::Asio => "ASIO",
+        DeviceType::DefaultHost => "USB",
+    }
+}
+
+// An input's key: its id and "(USB)" for the default host, the form saved
 // mics have.
 fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> String {
-    format!(
-        "{} ({})",
-        device.id().unwrap(),
-        match device_type {
-            #[cfg(feature = "asio")]
-            DeviceType::Asio => "ASIO",
-            DeviceType::DefaultHost => "USB",
-        }
-    )
+    format!("{} ({})", device.id().unwrap(), input_host(device_type))
+}
+
+// An input's label: what the system calls it ("Yeti Stereo Microphone
+// (USB)"), or its id if the system won't say.
+fn _device_label(device: &cpal::Device, device_type: &DeviceType) -> String {
+    match device.description() {
+        Ok(description) => format!("{} ({})", description.name(), input_host(device_type)),
+        Err(_) => _device_name(device, device_type),
+    }
 }
 
 // An output's name: what the system calls it, and the host.
 fn _output_name(device: &cpal::Device, device_type: &DeviceType) -> Result<String> {
     let host = match device_type {
-        #[cfg(feature = "asio")]
+        #[cfg(all(windows, feature = "asio"))]
         DeviceType::Asio => "ASIO",
         DeviceType::DefaultHost if cfg!(windows) => "Windows",
         DeviceType::DefaultHost if cfg!(target_os = "macos") => "Mac",
@@ -807,6 +883,39 @@ mod tests {
                     name
                 );
             }
+        }
+    }
+
+    // Lists the inputs without opening any: each has its key and a label,
+    // with the same host.
+    #[test]
+    fn test_input_device_ids_and_labels() {
+        if let Ok(devices) = InputDevice::collect_devices::<Vec<_>>() {
+            for (id, label, _) in &devices {
+                let host = if id.ends_with(" (ASIO)") {
+                    " (ASIO)"
+                } else {
+                    " (USB)"
+                };
+                assert!(id.ends_with(host), "{}", id);
+                assert!(label.ends_with(host), "{}: {}", id, label);
+            }
+        }
+    }
+
+    #[test]
+    fn test_asio_status() {
+        let status = asio_status();
+        if cfg!(all(windows, feature = "asio")) {
+            assert!(
+                status == "No ASIO drivers are installed"
+                    || status.starts_with("ASIO: ")
+                    || status.starts_with("ASIO didn't start: "),
+                "{}",
+                status
+            );
+        } else {
+            assert_eq!(status, "ASIO isn't in this build");
         }
     }
 }

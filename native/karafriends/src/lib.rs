@@ -24,15 +24,21 @@ fn input_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
         Err(e) => return cx.throw_error(e.to_string()),
     };
     let js_array = JsArray::new(&mut cx, input_devices.len());
-    for (i, (name, config)) in input_devices.iter().enumerate() {
-        let js_name = cx.string(name);
+    for (i, (id, label, config)) in input_devices.iter().enumerate() {
+        let js_id = cx.string(id);
+        let js_label = cx.string(label);
         let js_channel_count = cx.number(config.channels);
-        let inner_array = JsArray::new(&mut cx, 2);
-        inner_array.set(&mut cx, 0, js_name)?;
-        inner_array.set(&mut cx, 1, js_channel_count)?;
+        let inner_array = JsArray::new(&mut cx, 3);
+        inner_array.set(&mut cx, 0, js_id)?;
+        inner_array.set(&mut cx, 1, js_label)?;
+        inner_array.set(&mut cx, 2, js_channel_count)?;
         js_array.set(&mut cx, i as u32, inner_array)?;
     }
     Ok(js_array)
+}
+
+fn asio_status(mut cx: FunctionContext) -> JsResult<JsString> {
+    Ok(cx.string(karafriends_lib::asio_status()))
 }
 
 fn output_devices(mut cx: FunctionContext) -> JsResult<JsArray> {
@@ -124,6 +130,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("allocConsole", alloc_console)?;
     cx.export_function("inputDevices", input_devices)?;
     cx.export_function("outputDevices", output_devices)?;
+    cx.export_function("asioStatus", asio_status)?;
     cx.export_function("setOutputDevice", set_output_device)?;
     cx.export_function("inputDevice_new", input_device__new)?;
     cx.export_function("inputDevice_setGain", input_device__set_gain)?;

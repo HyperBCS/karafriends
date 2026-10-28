@@ -15,10 +15,17 @@ realfft = "3.5.0"
 ringbuf = "0.5.1"
 rubato = "4.0.0"
 
+[target.'cfg(windows)'.dependencies]
+# cpal's own ASIO bindings, for the ASIO status line (lib.rs).
+asio-sys = { version = "0.4.0", optional = true }
+
 [dev-dependencies]
 wavegen = "0.4.1"
 
 [features]
-asio = ["cpal/asio"]
+# ASIO on Windows (needs LLVM to build; see the README). cpal ignores it on
+# other systems, and so does our code.
+default = ["asio"]
+asio = ["cpal/asio", "dep:asio-sys"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

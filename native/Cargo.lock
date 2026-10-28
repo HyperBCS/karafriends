@@ -412,6 +412,7 @@ dependencies = [
 name = "karafriends-lib"
 version = "0.1.0"
 dependencies = [
+ "asio-sys",
  "cpal",
  "neon",
  "realfft",
