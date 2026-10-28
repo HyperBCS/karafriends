@@ -124,6 +124,20 @@ export default function useSongPlayer({
     pollQueue();
   };
 
+  // Lets go of the song before: its stream, its overlay (the lyrics' and
+  // pitch bars' draw loops and mic polls) and the video's media. Then
+  // nothing draws or holds buffers behind the idle screen, and a PLAYING
+  // before the next song loads can't restart the ended video.
+  const release = (video: HTMLVideoElement) => {
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+    setOverlay(null);
+    if (video.hasAttribute("src")) {
+      video.removeAttribute("src");
+      video.load();
+    }
+  };
+
   // Streams a DAM song from DAM, at the bitrate popSong says, and on its
   // third buffer stall moves to the low bitrate from where it is, for the
   // rest of the song. False if it can't, and has moved on to the next song.
@@ -275,6 +289,7 @@ export default function useSongPlayer({
   const startSong = useEffectEvent((song: PoppedSong | null) => {
     const video = videoRef.current;
     if (!video) return;
+    release(video);
     if (!song) {
       setPlaybackState("WAITING");
       schedulePoll();
@@ -290,8 +305,6 @@ export default function useSongPlayer({
     setPitchShiftSemis(0);
     audio.setJoysoundMode(song.kind === "joysound");
     audio.gain(songGain(song));
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
     songRef.current = song;
 
     navigator.mediaSession.metadata = new MediaMetadata({
