@@ -110,6 +110,21 @@ const PITCH_BARS_KEY = "pitchBars";
 // Settings' open tab, to open on it the next time.
 const SETTINGS_TAB_KEY = "settingsTab";
 
+// The name or address the QR code sends phones to, without the port; not
+// set for karafriends.local.
+const HOSTNAME_KEY = "hostname";
+
+// The saved one, if this computer still has it (a new network gives a new
+// address); karafriends.local if not. With the port phones use.
+function savedHostname(): string {
+  const saved = localStorage.getItem(HOSTNAME_KEY);
+  const name =
+    saved !== null && window.karafriends.ipAddresses().includes(saved)
+      ? saved
+      : HOSTNAME;
+  return `${name}:${window.karafriends.remoconPort()}`;
+}
+
 function savedSettingsTab(): SettingsTab {
   const saved = localStorage.getItem(SETTINGS_TAB_KEY);
   return SETTINGS_TABS.find((tab) => tab === saved) ?? "accounts";
@@ -205,9 +220,7 @@ function App(props: { audio: KarafriendsAudio }) {
   const [uiScale, setUiScale] = useState(() =>
     savedChoice(localStorage.getItem(UI_SCALE_KEY), UI_SCALES, 100),
   );
-  const [hostname, setHostname] = useState(
-    `${HOSTNAME}:${window.karafriends.remoconPort()}`,
-  );
+  const [hostname, setHostname] = useState(savedHostname);
   const [pitchBars, setPitchBars] = useState(
     () => localStorage.getItem(PITCH_BARS_KEY) !== "off",
   );
@@ -381,6 +394,13 @@ function App(props: { audio: KarafriendsAudio }) {
     setPitchBars(on);
   };
 
+  // "name:port": the name is kept, for the next launch to use with its port.
+  const changeHostname = (picked: string) => {
+    const name = picked.slice(0, picked.lastIndexOf(":"));
+    save(HOSTNAME_KEY, name === HOSTNAME ? null : name);
+    setHostname(picked);
+  };
+
   const changeSettingsTab = (tab: SettingsTab) => {
     localStorage.setItem(SETTINGS_TAB_KEY, tab);
     setSettingsTab(tab);
@@ -500,7 +520,7 @@ function App(props: { audio: KarafriendsAudio }) {
             onTabChange={changeSettingsTab}
             onClose={() => setSettingsOpen(false)}
             hostname={hostname}
-            onHostnameChange={setHostname}
+            onHostnameChange={changeHostname}
             mics={mics}
             micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}

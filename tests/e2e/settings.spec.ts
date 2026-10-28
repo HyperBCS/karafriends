@@ -384,6 +384,42 @@ test("the display's offset and UI scale save on the display, and the scale sizes
   await expect(offset).toHaveValue("-40");
 });
 
+test("the Address pick is kept on the display; one this computer no longer has goes back to karafriends.local", async ({
+  display,
+}) => {
+  const address = display
+    .getByRole("dialog", { name: "Settings" })
+    .getByRole("region", { name: "Phones", exact: true })
+    .getByLabel("Address");
+  const port = await display.evaluate(() =>
+    (
+      window as unknown as { karafriends: { remoconPort(): number } }
+    ).karafriends.remoconPort(),
+  );
+  await openTab(display, "Party");
+  await expect(address).toHaveValue(`karafriends.local:${port}`);
+
+  // This computer's LAN addresses, if it has one here.
+  const names = await address.locator("option").allTextContents();
+  if (names.length > 1) {
+    await address.selectOption(names[1]);
+    await display.reload();
+    await openTab(display, "Party");
+    await expect(address).toHaveValue(`${names[1]}:${port}`);
+    await address.selectOption("karafriends.local");
+    expect(
+      await display.evaluate(() => localStorage.getItem("hostname")),
+    ).toBeNull();
+  }
+
+  // An address from another network.
+  await display.evaluate(() => localStorage.setItem("hostname", "203.0.113.9"));
+  await display.reload();
+  await openTab(display, "Party");
+  await expect(address).toHaveValue(`karafriends.local:${port}`);
+  await expect(address.locator("option")).toHaveText(names);
+});
+
 test("Settings is in tabs: the arrows, Home and End move through them, the panel follows, and the last one opens again", async ({
   display,
 }) => {
