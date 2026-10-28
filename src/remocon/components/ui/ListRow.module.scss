@@ -107,11 +107,12 @@ a.main {
 }
 
 // The same small label for every source: one row style for DAM, Joysound,
-// YouTube and Niconico.
+// YouTube and Niconico. Its border is its text's color, so it keeps 3:1 on
+// a pressed or held row too.
 .source {
   flex: none;
   padding: 0 $kf-space-1;
-  border: 1px solid $kf-border-strong;
+  border: 1px solid currentColor;
   border-radius: $kf-radius;
   color: $kf-muted;
   font-size: $kf-text-label;

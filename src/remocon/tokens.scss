@@ -45,20 +45,22 @@ $kf-shadow-sheet: var(--kf-shadow-sheet);
 @mixin dark-colors {
   // Three greys, each a step lighter. The page is near-black, not pure
   // black, so the surface reads against it. The surface is 1.5:1 against
-  // the page so a list reads as one block in a dim room. The panel is as
-  // light as it can be with secondary text still at 4.5:1 on it, which
-  // leaves it 1.1:1 above the surface; its top border and shadow set it
-  // apart the rest of the way.
+  // the page so a list reads as one block in a dim room. The panel is
+  // 1.1:1 above the surface; its top border and shadow set it apart the
+  // rest of the way. Pressed is as light as it can be with secondary text
+  // still at 4.5:1 on it (a held or pressed row).
   --kf-bg: #121212;
   --kf-surface: #343434; // 1.5:1
   --kf-panel: #3a3a3a; // 1.65:1 (1.1:1 against the surface)
-  --kf-surface-pressed: #4a4a4a; // 2.1:1
+  // 1.9:1 (1.28:1 against the surface, 1.17:1 against the panel)
+  --kf-surface-pressed: #444444;
   // 3.2:1, the 3:1 a component's boundary needs (2.1:1 on the surface, 1.9:1
   // on the panel).
   --kf-border: #646464;
   --kf-border-strong: #6b6b6b; // 3.5:1 (2.3:1 on the surface)
   --kf-text: #f5f5f5; // 17.2:1 (11.4:1 on the surface, 10.4:1 on the panel)
-  --kf-muted: #a3a3a3; // 7.4:1 (4.9:1 on the surface, 4.5:1 on the panel)
+  // 8.9:1 (5.9:1 on the surface, 5.4:1 on the panel, 4.65:1 pressed)
+  --kf-muted: #b3b3b3;
   // The fill of the app icon's circle (icon.png), sampled as its most common
   // opaque pixel, #1cb3ff. 8.0:1 as text on the page, 5.3:1 on the surface,
   // 4.8:1 on the panel. White text on it is only 2.4:1, so text on the
@@ -88,7 +90,8 @@ $kf-shadow-sheet: var(--kf-shadow-sheet);
   --kf-border: #858585;
   --kf-border-strong: #7a7a7a; // 3.9:1 (4.3:1 on the surface, 3.6:1 panel)
   --kf-text: #1a1a1a; // 16.0:1 (17.4:1 on the surface, 14.6:1 on the panel)
-  --kf-muted: #666666; // 5.3:1 (5.7:1 on the surface, 4.8:1 on the panel)
+  // 5.7:1 (6.2:1 on the surface, 5.2:1 on the panel, 4.7:1 pressed)
+  --kf-muted: #616161;
   // The icon's #1cb3ff is only 2.2:1 on the page, too faint for text, an
   // icon or the focus ring, so those take the same blue a step darker:
   // 5.0:1 (5.5:1 on the surface, 4.6:1 on the panel, 4.1:1 pressed). The
