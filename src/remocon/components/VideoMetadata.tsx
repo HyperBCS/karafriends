@@ -1,9 +1,9 @@
 import formatDuration from "format-duration";
 import React from "react";
 
-import type { VideoInfo } from "../../../common/api";
-import { countKey, t, useLanguage } from "../../i18n";
-import * as styles from "../../pages/SongPage.module.scss";
+import type { VideoInfo } from "../../common/api";
+import { countKey, t, useLanguage } from "../i18n";
+import * as styles from "../pages/SongPage.module.scss";
 
 interface Props {
   videoSource: "youtube" | "niconico";

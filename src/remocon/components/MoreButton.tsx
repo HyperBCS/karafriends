@@ -1,8 +1,8 @@
 import React from "react";
 
-import { t } from "../../i18n";
-import Loader from "../Loader";
-import { Button, InlineError } from "../ui";
+import { t } from "../i18n";
+import Loader from "./Loader";
+import { Button, InlineError } from "./ui";
 import * as styles from "./MoreButton.module.scss";
 
 interface Props {

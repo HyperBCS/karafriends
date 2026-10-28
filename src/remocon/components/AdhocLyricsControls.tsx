@@ -1,11 +1,11 @@
 import React, { useRef, useState } from "react";
 import { Navigate } from "react-router";
 
-import { useLiveState } from "../../../common/apiClient";
-import { useApiMutation, useApiQuery } from "../../../common/apiQueries";
-import { t } from "../../i18n";
-import { isYouTubeVideoWithLyricsPlaying } from "../../pages/YouTubePage";
-import { withLoader } from "../Loader";
+import { useLiveState } from "../../common/apiClient";
+import { useApiMutation, useApiQuery } from "../../common/apiQueries";
+import { t } from "../i18n";
+import { isYouTubeVideoWithLyricsPlaying } from "../pages/YouTubePage";
+import { withLoader } from "./Loader";
 import * as styles from "./AdhocLyricsControls.module.scss";
 import LyricsPicker from "./LyricsPicker";
 

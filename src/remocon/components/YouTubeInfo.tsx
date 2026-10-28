@@ -1,14 +1,14 @@
 import React, { useState } from "react";
 
-import { useApiQuery } from "../../../common/apiQueries";
-import { t } from "../../i18n";
-import { reasonText } from "../../i18n/reasons";
-import * as styles from "../../pages/SongPage.module.scss";
-import { withLoader } from "../Loader";
-import { QueueButton } from "../QueueButtons";
-import { InlineError } from "../ui";
-import VideoMetadata from "../VideoMetadata";
-import YouTubeEmbed from "../YouTubeEmbed";
+import { useApiQuery } from "../../common/apiQueries";
+import { t } from "../i18n";
+import { reasonText } from "../i18n/reasons";
+import * as styles from "../pages/SongPage.module.scss";
+import { withLoader } from "./Loader";
+import { QueueButton } from "./QueueButtons";
+import { InlineError } from "./ui";
+import VideoMetadata from "./VideoMetadata";
+import YouTubeEmbed from "./YouTubeEmbed";
 
 interface Props {
   videoId: string;
