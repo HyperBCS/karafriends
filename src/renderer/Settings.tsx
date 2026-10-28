@@ -173,6 +173,8 @@ export default function Settings(props: {
   const [adminDraft, setAdminDraft] = useState("");
   const [tools, setTools] = useState<ToolsStatus | null>(null);
   const [updatingTools, setUpdatingTools] = useState(false);
+  // Listed each time Settings opens.
+  const [outputs] = useState(outputDevices);
   // Saves, tests and imports run one after another, so a Test login
   // clicked right after typing tests what was just saved.
   const chain = useRef<Promise<void>>(Promise.resolve());
@@ -562,7 +564,7 @@ export default function Settings(props: {
                 }
               >
                 <option value="">System default</option>
-                {outputDevices().map((name) => (
+                {outputs.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>

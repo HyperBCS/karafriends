@@ -348,6 +348,17 @@ test.describe("the microphones", () => {
       "setOutputDevice",
       "E2E Interface (ASIO)",
     ]);
+    // The outputs are listed again each time Settings opens.
+    const listings = async () =>
+      (await fakeAudioCalls(display)).filter(
+        ([name]) => name === "outputDevices",
+      ).length;
+    const listed = await listings();
+    await display.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    await display.keyboard.press("s");
+    await expect(settings).toBeVisible();
+    expect(await listings()).toBe(listed + 1);
 
     // An admin's phone changes the mic's levels.
     const login = await fetch(

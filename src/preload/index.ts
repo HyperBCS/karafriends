@@ -151,7 +151,9 @@ contextBridge.exposeInMainWorld("karafriends", {
         // breakages, like the default output device being released. Let's avoid
         // that.
         inputDevices: once(nativeAudio.inputDevices),
-        outputDevices: once(nativeAudio.outputDevices),
+        // Outputs are listed again each time Settings opens, so an interface
+        // switched on after launch can be picked.
+        outputDevices: nativeAudio.outputDevices,
         setOutputDevice(name: string | null) {
           return nativeAudio.setOutputDevice(name);
         },
