@@ -219,6 +219,32 @@ test("History in the top bar opens the history", async ({ remote }) => {
   ).toBeVisible();
 });
 
+test("a phone with site storage blocked still gets in, until it reloads", async ({
+  karafriends,
+  page,
+}) => {
+  // As Chrome with site data blocked: reading localStorage throws.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    });
+  });
+  const errors: Error[] = [];
+  page.on("pageerror", (err) => errors.push(err));
+  await page.goto(karafriends.remoconUrl);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page.getByLabel("Nickname").fill("ken");
+  await page.getByRole("button", { name: "Start" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find a song" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Show queue" }).click();
+  await expect(page.getByRole("region", { name: "Queue" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("a new phone picks a nickname before anything else", async ({
   karafriends,
   page,
