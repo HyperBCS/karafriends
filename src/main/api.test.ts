@@ -7,7 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { hashAdminPassword } from "../common/adminPassword";
-import type { QueueItem } from "../common/api";
+import type { PlaybackState, QueueItem } from "../common/api";
 import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { ApiError, type ApiDeps, type Caller, createApi } from "./api";
 import type { HubMessage } from "./live";
@@ -352,6 +352,79 @@ describe("admin checks", () => {
     assert.equal(store.getState().currentSong?.songId, "sm1");
     assert.deepEqual(store.getState().songHistory, [{ song: song(1, alice) }]);
     assert.equal(await api.popSong({}, display), null);
+  });
+
+  describe("the current song's timing", () => {
+    let clock: number;
+    const timing = () => {
+      const state = store.getState();
+      return [
+        state.currentSongStartedAt,
+        state.currentSongPausedMs,
+        state.currentSongPausedSince,
+      ];
+    };
+    const api = () => makeApi({}, { now: () => clock });
+    const play = (playbackState: PlaybackState) =>
+      api().setPlaybackState({ playbackState }, display);
+
+    beforeEach(async () => {
+      clock = 1000;
+      store.update((state) => state.songQueue.push(song(1, alice)));
+      await api().popSong({}, display);
+    });
+
+    test("starts when popSong starts a song", async () => {
+      assert.deepEqual(timing(), [1000, 0, null]);
+      await play("PLAYING");
+      assert.deepEqual(timing(), [1000, 0, null]);
+    });
+
+    test("adds each pause once it resumes", async () => {
+      clock = 5000;
+      await play("PAUSED");
+      assert.deepEqual(timing(), [1000, 0, 5000]);
+      // A second pause keeps the first's start.
+      clock = 6000;
+      await play("PAUSED");
+      clock = 8000;
+      await play("PLAYING");
+      assert.deepEqual(timing(), [1000, 3000, null]);
+      clock = 9000;
+      await play("PAUSED");
+      clock = 9500;
+      await play("PLAYING");
+      assert.deepEqual(timing(), [1000, 3500, null]);
+    });
+
+    test("starts over on a restart, paused or not", async () => {
+      clock = 5000;
+      await play("PAUSED");
+      clock = 7000;
+      await play("RESTARTING");
+      assert.deepEqual(timing(), [7000, 0, null]);
+      await play("PLAYING");
+      assert.deepEqual(timing(), [7000, 0, null]);
+    });
+
+    test("a skip leaves it, and the next popSong starts over", async () => {
+      clock = 5000;
+      await play("PAUSED");
+      await play("SKIPPING");
+      assert.deepEqual(timing(), [1000, 0, 5000]);
+      store.update((state) => state.songQueue.push(song(2, alice)));
+      clock = 6000;
+      await api().popSong({}, display);
+      assert.deepEqual(timing(), [6000, 0, null]);
+    });
+
+    test("is empty while no song plays", async () => {
+      await api().popSong({}, display);
+      assert.deepEqual(timing(), [null, 0, null]);
+      await play("PAUSED");
+      await play("PLAYING");
+      assert.deepEqual(timing(), [null, 0, null]);
+    });
   });
 
   describe("popSong with a DAM song", () => {

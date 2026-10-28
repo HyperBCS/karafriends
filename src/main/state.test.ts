@@ -107,6 +107,9 @@ describe("createStateStore", () => {
         suffix: null,
       });
       state.toolsProblem = { message: "Update the tools", since: 1 };
+      state.currentSongStartedAt = 1000;
+      state.currentSongPausedMs = 200;
+      state.currentSongPausedSince = 1500;
     });
 
     const file_ = saved();
@@ -117,6 +120,13 @@ describe("createStateStore", () => {
     assert.deepEqual(file_.downloadQueue, []);
     assert.equal("toolsProblem" in file_, false);
     assert.equal(createStateStore(file).getState().toolsProblem, null);
+    for (const key of [
+      "currentSongStartedAt",
+      "currentSongPausedMs",
+      "currentSongPausedSince",
+    ]) {
+      assert.equal(key in file_, false, key);
+    }
   });
 
   test("keeps the guide melody level across a restart", () => {
