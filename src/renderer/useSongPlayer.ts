@@ -10,6 +10,7 @@ import {
 
 import type { PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
+import useGuideMelodyLevel from "../common/hooks/useGuideMelodyLevel";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import type KarafriendsAudio from "./webAudio";
@@ -40,8 +41,8 @@ export interface Announcement {
 // Plays the queue in the display's <video>: while nothing plays it asks for
 // the next song (popSong, which only the display may call) every 5 seconds,
 // and at once when the live queue stops being empty; it loads each song by
-// kind, follows the live playback state (pause, restart, skip) and the key,
-// and asks again when a song ends.
+// kind, follows the live playback state (pause, restart, skip), the key and
+// the guide melody level, and asks again when a song ends.
 export default function useSongPlayer({
   videoRef,
   trackRef,
@@ -56,6 +57,7 @@ export default function useSongPlayer({
   const [overlay, setOverlay] = useState<Overlay>(null);
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
+  const { guideMelodyLevel } = useGuideMelodyLevel();
   const hasQueue = useLiveState((state) => (state?.queue.length ?? 0) > 0);
   // Set while waiting for the next poll; null while one is in flight or a
   // song plays.
@@ -225,6 +227,7 @@ export default function useSongPlayer({
       trackRef.current.src = "";
     }
     setPitchShiftSemis(0);
+    audio.setJoysoundMode(song.kind === "joysound");
     hlsRef.current?.destroy();
     hlsRef.current = null;
     songRef.current = song;
@@ -322,9 +325,13 @@ export default function useSongPlayer({
     audio.pitchShift(pitchShiftSemis);
   }, [audio, pitchShiftSemis]);
 
-  // The video's sound goes through the audio graph (gain, key change). A
-  // media element gives an audio context one source, ever, so it's made once
-  // per context.
+  useEffect(() => {
+    audio.guideMelodyLevel(guideMelodyLevel);
+  }, [audio, guideMelodyLevel]);
+
+  // The video's sound goes through the audio graph (guide melody, gain, key
+  // change). A media element gives an audio context one source, ever, so
+  // it's made once per context.
   const audioCtx = useRef<AudioContext | null>(null);
   const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
   useEffect(() => {
@@ -333,7 +340,7 @@ export default function useSongPlayer({
     videoAudioSrc.current?.disconnect();
     audioCtx.current = audio.audioContext;
     videoAudioSrc.current = audio.audioContext.createMediaElementSource(video);
-    videoAudioSrc.current.connect(audio.sink());
+    videoAudioSrc.current.connect(audio.input);
   }, [audio, videoRef]);
 
   return { overlay, pitchShiftSemis };
