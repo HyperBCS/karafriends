@@ -146,10 +146,11 @@ export interface ApiDeps {
 }
 
 // popSong has already started the song when it asks DAM for the song's
-// streaming URLs and scoring data, and the display waits for the answer. DAM
-// retries a failing request for up to about 17 minutes, so give up after this
-// long, and start the song without them: a downloaded song plays from its
-// file, and a song without scoring data still plays.
+// streaming URLs and scoring data, and the display waits for the answer. A
+// failing request is tried for a few seconds more (QUICK_RETRIES), and a
+// silent server can take 30 seconds a try, so give up after this long, and
+// start the song without them: a downloaded song plays from its file, and a
+// song without scoring data still plays.
 const DAM_POP_TIMEOUT_MS = 10_000;
 
 // promise's outcome, or a rejection after ms. (promise carries on, but its

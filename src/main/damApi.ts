@@ -1,6 +1,13 @@
-import promiseRetry from "promise-retry";
-
-import { formBody, http, httpFetch, HttpStatusError } from "./http";
+import {
+  formBody,
+  http,
+  httpFetch,
+  HttpStatusError,
+  QUICK_RETRIES,
+  type RetryPolicy,
+  type Session,
+  withSession,
+} from "./http";
 import { DAM_PAGE_SIZE, damPageWindow } from "./paging";
 
 const BASE_MINSEI_REQUEST = {
@@ -26,10 +33,35 @@ const MINSEI_HEADERS = {
   "win10-access-key": "mbAmgk3GuCOKAgL8dCQR",
 };
 
-export type MinseiCredentialsProvider = () => Promise<{
+// The shared login (credentials.dam): forget drops a token DAM has stopped
+// taking.
+export type MinseiCredentialsProvider = Session<{
   userCode: string;
   authToken: string;
 }>;
+
+// DAM's own status code, from an answer that isn't "0000".
+export class MinseiStatusError extends Error {
+  constructor(
+    readonly statusCode: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "MinseiStatusError";
+  }
+}
+
+// Whether a failure of a call made with the token may mean DAM no longer
+// takes it. Which status codes mean that isn't known, so any of DAM's own
+// codes, or a 401 or 403, counts: one more login and one more try cost
+// little. (A 403 from outside Japan then fails that login at once.)
+function tokenRefused(err: unknown): boolean {
+  return (
+    err instanceof MinseiStatusError ||
+    (err instanceof HttpStatusError &&
+      (err.status === 401 || err.status === 403))
+  );
+}
 
 interface MinseiResponse {
   message: string;
@@ -59,6 +91,7 @@ interface MinseiStreamingUrls extends MinseiResponse {
 export class MinseiAPI {
   baseURL = "https://win10.clubdam.com";
   credsProvider: MinseiCredentialsProvider;
+  retryPolicy: RetryPolicy = QUICK_RETRIES;
 
   constructor(credsProvider: MinseiCredentialsProvider) {
     this.credsProvider = credsProvider;
@@ -80,7 +113,10 @@ export class MinseiAPI {
   static checkError<T extends MinseiResponse>(data: T) {
     // statusCode 1005 seems to mean pagination continues
     if (data.statusCode !== "0000" && data.statusCode !== "1005") {
-      throw new Error(`${data.status} ${data.statusCode}: ${data.message}`);
+      throw new MinseiStatusError(
+        data.statusCode,
+        `${data.status} ${data.statusCode}: ${data.message}`,
+      );
     }
     return data;
   }
@@ -107,46 +143,47 @@ export class MinseiAPI {
     return MinseiAPI.checkError(data);
   }
 
+  // These endpoints have been flaky, so a transient failure is tried again
+  // (retryPolicy), and a refused token gets one new login.
   getMusicStreamingUrls(requestNo: string) {
-    // This endpoint seems to be flaky
-    return promiseRetry((retry) =>
-      this.credsProvider()
-        .then((creds) =>
-          this.post<MinseiStreamingUrls>(
+    return withSession(
+      this.credsProvider,
+      async (creds) =>
+        MinseiAPI.checkError(
+          await this.post<MinseiStreamingUrls>(
             "/cwa/win/minsei/music/playLog/GetMusicStreamingURL.api",
             { requestNo, ...creds },
           ),
-        )
-        .then(MinseiAPI.checkError)
-        .catch((err) => {
-          console.error(err);
-          return retry(err);
-        }),
+        ),
+      {
+        policy: this.retryPolicy,
+        sessionLost: tokenRefused,
+        label: `DAM streaming URLs ${requestNo}`,
+      },
     );
   }
 
   getScoringData(requestNo: string) {
-    // This endpoint seems to be flaky
-    return promiseRetry((retry) =>
-      this.credsProvider()
-        .then((creds) =>
-          this.post<object | ArrayBuffer>(
-            "/cwa/win/minsei/scoring/GetScoringReferenceData.api",
-            { requestNo, ...creds },
-          ),
-        )
-        .then((body) => {
-          if (!(body instanceof ArrayBuffer)) {
-            return Promise.reject(
-              "Scoring data was not returned in binary format",
-            );
-          }
-          return body;
-        })
-        .catch((err) => {
-          console.error(err);
-          return retry(err);
-        }),
+    return withSession(
+      this.credsProvider,
+      async (creds) => {
+        const body = await this.post<Partial<MinseiResponse> | ArrayBuffer>(
+          "/cwa/win/minsei/scoring/GetScoringReferenceData.api",
+          { requestNo, ...creds },
+        );
+        if (body instanceof ArrayBuffer) return body;
+        // DAM's answer instead of the data: an error code, or none for a
+        // song without scoring data, which no retry changes.
+        if (typeof body.statusCode === "string") {
+          MinseiAPI.checkError(body as MinseiResponse);
+        }
+        throw new Error(`DAM has no scoring data for ${requestNo}`);
+      },
+      {
+        policy: this.retryPolicy,
+        sessionLost: tokenRefused,
+        label: `DAM scoring data ${requestNo}`,
+      },
     );
   }
 }

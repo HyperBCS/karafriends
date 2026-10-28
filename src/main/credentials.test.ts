@@ -7,7 +7,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { createConfigStore, type ConfigStore } from "../common/configStore";
-import { createCredentialProviders, memoizeSuccess } from "./credentials";
+import {
+  createCredentialProviders,
+  memoizeSuccess,
+  NoLoginError,
+} from "./credentials";
 
 describe("memoizeSuccess", () => {
   test("keeps a success, retries after a failure, and forgets on request", async () => {
@@ -43,6 +47,24 @@ describe("memoizeSuccess", () => {
     // Still the second login's answer, not a third login.
     assert.equal(await login(), 2);
     assert.equal(calls, 2);
+  });
+
+  test("forget(stale) drops only the session it names", async () => {
+    let calls = 0;
+    const login = memoizeSuccess(async () => ++calls);
+    const first = await login();
+    login.forget(first);
+    assert.equal(await login(), 2);
+    // A second request that failed on the first session: 2 stays.
+    login.forget(first);
+    assert.equal(await login(), 2);
+    // Nor does a stale one drop a login that is under way.
+    login.forget();
+    const third = login();
+    login.forget(2);
+    assert.equal(await third, 3);
+    assert.equal(await login(), 3);
+    assert.equal(calls, 3);
   });
 });
 
@@ -96,5 +118,25 @@ describe("createCredentialProviders", () => {
       "joy@example.com:joy-pw",
       "other@example.com:joy-pw",
     ]);
+  });
+
+  test("a login that isn't filled in fails without logging in", async () => {
+    let logins = 0;
+    const providers = createCredentialProviders({
+      store,
+      damLogin: async () => ++logins,
+      joysoundLogin: async () => ++logins,
+    });
+    store.update({ damPassword: "", joysoundEmail: "" });
+    const noLogin = (service: string) => (err: unknown) =>
+      err instanceof NoLoginError &&
+      err.status === 409 &&
+      err.message.includes(service);
+    await assert.rejects(providers.dam(), noLogin("DAM"));
+    await assert.rejects(providers.joysound(), noLogin("Joysound"));
+    assert.equal(logins, 0);
+    // Filled in, it logs in.
+    store.update({ damPassword: "dam-pw" });
+    assert.equal(await providers.dam(), 1);
   });
 });
