@@ -9,10 +9,10 @@ name = "karafriends_lib"
 crate-type = ["lib"]
 
 [dependencies]
-cpal = { version = "0.18.1" }
-neon = { version = "1.0.0", default-features = false, features = ["napi-8"] }
-realfft = "3.5.0"
-ringbuf = "0.5.1"
+cpal = { version = "0.18.2" }
+neon = { version = "1.1.2", default-features = false, features = ["napi-8"] }
+realfft = "3.5.1"
+ringbuf = "0.5.3"
 rubato = "4.0.0"
 
 [target.'cfg(windows)'.dependencies]
@@ -20,7 +20,7 @@ rubato = "4.0.0"
 asio-sys = { version = "0.4.0", optional = true }
 # WASAPI exclusive mode for the mics (exclusive.rs). cpal already builds this
 # version, with these features among its own.
-windows = { version = "0.62", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Media_Audio",
     "Win32_Media_KernelStreaming",
@@ -38,10 +38,10 @@ windows = { version = "0.62", features = [
 # to build). Only here: on Windows, cpal's realtime feature would change how
 # the WASAPI threads run.
 [target.'cfg(target_os = "linux")'.dependencies]
-cpal = { version = "0.18.1", features = ["pulseaudio", "realtime-dbus"] }
+cpal = { version = "0.18.2", features = ["pulseaudio", "realtime-dbus"] }
 # PipeWire's own API, to tell mics from other programs' streams (linux.rs).
 # cpal already builds this version.
-pipewire = { version = "0.10", optional = true }
+pipewire = { version = "0.10.1", optional = true }
 
 [dev-dependencies]
 wavegen = "0.4.1"
