@@ -334,6 +334,49 @@ test("a Joysound download with a YouTube background pads it and leaves only the 
   assertFilesOf({ kind: "joysound", songId: "123456", suffix: "bgVideo0001" });
 });
 
+test("a Joysound download is marked started until its padding is done", async () => {
+  // Every ffmpeg step adds what the folder holds to listing.txt. A song
+  // within 10 s of the background's 2 s gets padded.
+  paths.ffmpeg = fake("ffmpeg-lists-folder");
+  const shortSong = async () => ({
+    telop: scrambled(telop(5)),
+    ogg: scrambled(ogg(5_000)),
+  });
+  const outcome = await download(
+    [],
+    { kind: "joysound", songId: "123456", suffix: "bgVideo0001" },
+    (item) =>
+      joysoundJob(
+        paths,
+        item,
+        joysoundApi(shortSong),
+        joysoundItem("bgVideo0001"),
+      ),
+  );
+  assert.ok(outcome.ok);
+
+  const listing = path.join(folder, "listing.txt");
+  // One per step: "--- <output>", then the names.
+  const steps = fs
+    .readFileSync(listing, "utf8")
+    .split("--- ")
+    .slice(1)
+    .map((step) => step.split(/\r?\n/));
+  fs.rmSync(listing);
+  // Composing, then the five padding steps. Had the app stopped during
+  // any of them, the marker would say the video is half-made.
+  assert.equal(steps.length, 6);
+  for (const [output, ...names] of steps) {
+    assert.ok(
+      names.includes("joysound-123456-bgVideo0001.mp4.tmp"),
+      `no marker while ffmpeg made ${output}`,
+    );
+  }
+  // And once it's done, it goes.
+  assertFilesOf({ kind: "joysound", songId: "123456", suffix: "bgVideo0001" });
+  assert.ok(!files().includes("joysound-123456-bgVideo0001.mp4.tmp"));
+});
+
 test("a Joysound download that fails putting the video together leaves only its logs", async () => {
   paths.ffmpeg = fake("ffmpeg-fails");
   const queue: DownloadQueueItem[] = [];

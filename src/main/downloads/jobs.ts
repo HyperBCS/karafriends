@@ -269,7 +269,7 @@ function downloadJoysoundVideoPromise(
   songId: string,
   videoUrl: string,
   downloadQueueItem: DownloadQueueItem,
-  tempFilename: string,
+  sourceFilename: string,
   ffmpegLogFilename: string,
   signal: AbortSignal,
 ): Promise<void> {
@@ -285,7 +285,7 @@ function downloadJoysoundVideoPromise(
     "-f",
     "mp4",
     "-y",
-    tempFilename,
+    sourceFilename,
   ];
 
   const onStderr = (line: string) => {
@@ -310,7 +310,7 @@ async function downloadJoysoundYoutubeVideoPromise(
   songId: string,
   youtubeVideoId: string,
   downloadQueueItem: DownloadQueueItem,
-  tempFilename: string,
+  sourceFilename: string,
   ytdlpLogFilename: string,
   signal: AbortSignal,
 ): Promise<void> {
@@ -331,7 +331,7 @@ async function downloadJoysoundYoutubeVideoPromise(
           "--ffmpeg-location",
           paths.ffmpeg,
           "-o",
-          tempFilename + ".mp4",
+          sourceFilename,
           "--",
           youtubeVideoId,
         ],
@@ -343,8 +343,6 @@ async function downloadJoysoundYoutubeVideoPromise(
       }),
     signal,
   );
-  safeUnlink(tempFilename);
-  safeRename(tempFilename + ".mp4", tempFilename);
 }
 
 async function composeJoysoundVideoPromise(
@@ -352,7 +350,7 @@ async function composeJoysoundVideoPromise(
   songId: string,
   telopBuffer: Buffer,
   oggBuffer: Buffer,
-  tempFilename: string,
+  sourceFilename: string,
   videoFilename: string,
   ffmpegLogFilename: string,
 ): Promise<JoysoundVideoData> {
@@ -362,7 +360,7 @@ async function composeJoysoundVideoPromise(
     "-stream_loop",
     "-1",
     "-i",
-    tempFilename,
+    sourceFilename,
     "-i",
     "-",
     "-c",
@@ -389,7 +387,7 @@ async function composeJoysoundVideoPromise(
       stdin: oggBuffer,
     });
   } finally {
-    safeUnlink(tempFilename);
+    safeUnlink(sourceFilename);
   }
 
   return {
@@ -519,8 +517,9 @@ async function padJoysoundVideoPromise(
 }
 
 // A Joysound song's files in folder (songFileNames), and what the download
-// names the rest: joysound-<songId>-<background or "default">.mp4.tmp, the
-// marker that it has started.
+// names the rest, after its video, <base>.mp4: <base>.mp4.tmp, which marks
+// it started until the video is whole, and <base>.source.mp4, the video
+// (Joysound's or the background) before the song's sound is put in.
 function joysoundFiles(
   folder: string,
   queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
@@ -530,15 +529,17 @@ function joysoundFiles(
     songId: queueItem.songId,
     suffix: queueItem.youtubeVideoId,
   });
+  const videoBaseName = names.video.slice(0, -".mp4".length);
   const videoFilename = path.join(folder, names.video);
   return {
     filenamePrefix: `joysound-${queueItem.songId}`,
-    videoBaseName: names.video.slice(0, -".mp4".length),
+    videoBaseName,
     telopFilename: path.join(folder, names.telop ?? ""),
     videoFilename,
     ffmpegLogFilename: path.join(folder, names.log),
     ytdlpLogFilename: path.join(folder, names.backgroundLog ?? names.log),
     tempFilename: `${videoFilename}.tmp`,
+    sourceFilename: path.join(folder, `${videoBaseName}.source.mp4`),
   };
 }
 
@@ -615,6 +616,7 @@ export async function joysoundJob(
     ffmpegLogFilename,
     ytdlpLogFilename,
     tempFilename,
+    sourceFilename,
   } = joysoundFiles(paths.folder, queueItem);
 
   prepareTempFile(paths.folder, tempFilename, () =>
@@ -636,7 +638,7 @@ export async function joysoundJob(
         songId,
         queueItem.youtubeVideoId,
         downloadQueueItem,
-        tempFilename,
+        sourceFilename,
         ytdlpLogFilename,
         stopVideo.signal,
       ))
@@ -649,7 +651,7 @@ export async function joysoundJob(
             songId,
             data.movie.mov1,
             downloadQueueItem,
-            tempFilename,
+            sourceFilename,
             ffmpegLogFilename,
             stopVideo.signal,
           );
@@ -694,7 +696,7 @@ export async function joysoundJob(
     songId,
     telopBuffer,
     oggBuffer,
-    tempFilename,
+    sourceFilename,
     videoFilename,
     ffmpegLogFilename,
   );
@@ -717,6 +719,8 @@ export async function joysoundJob(
       `ffmpeg left no ${videoFilename}`,
     );
   }
+  // Done: the video is whole.
+  safeUnlink(tempFilename);
 
   return { ...queueItem, playtime: Math.floor(data.songPlaytime / 1000) };
 }

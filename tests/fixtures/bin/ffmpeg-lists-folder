@@ -1,0 +1,8 @@
+#!/bin/sh
+# Like ffmpeg-ok, but first it adds its output's name and what its folder
+# holds to listing.txt there, so src/main/downloads/jobs.test.ts can see
+# what a download leaves at each step.
+for last; do :; done
+folder=$(dirname "$last")
+{ echo "--- $last"; ls "$folder"; } >> "$folder/listing.txt"
+exec "$(dirname "$0")/ffmpeg-ok" "$@"
