@@ -49,25 +49,38 @@ const SearchPage = () => {
     setParams(next, { replace: true });
   };
 
+  const search = () => {
+    if (text.trim() !== query) update({ q: text.trim() });
+  };
+
+  // A video link or ID opens its page; anything else is searched for.
   const commit = () => {
     const link = videoLink(text);
     if (link) {
       navigate(songLink({ kind: link.kind, songId: link.videoId }));
-    } else if (text.trim() !== query) {
-      update({ q: text.trim() });
+    } else {
+      search();
     }
   };
 
+  // While typing, a pasted link opens at once. A bare ID ("sm1", on its
+  // way to "sm12345") opens only on Enter or on leaving the field; until
+  // then it's searched for like any text.
   useEffect(() => {
-    const timer = setTimeout(commit, DEBOUNCE_MS);
+    const timer = setTimeout(/[./]/.test(text) ? commit : search, DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [text]);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Puts the keyboard away, to show the results.
-    (document.activeElement as HTMLElement | null)?.blur();
-    commit();
+    const field = document.activeElement;
+    // Leaving the field commits (onBlur). It also puts the keyboard away,
+    // to show the results.
+    if (field instanceof HTMLElement && e.currentTarget.contains(field)) {
+      field.blur();
+    } else {
+      commit();
+    }
   };
 
   return (
@@ -83,6 +96,7 @@ const SearchPage = () => {
             placeholder={t("search.placeholder")}
             value={text}
             onValueChange={setText}
+            onBlur={commit}
             clearable
           />
         </form>

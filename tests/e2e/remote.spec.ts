@@ -239,11 +239,25 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
     "Couldn't get this video: E2E offline",
   );
 
+  // A bare ID could be half typed ("sm1" of "sm12345"): the pause in typing
+  // searches for it, and Enter or leaving the field opens it.
+  for (const method of ["damSearchSongs", "joysoundSearchSongs"]) {
+    await remote.route(`**/api/${method}`, (route) =>
+      route.fulfill({ json: { items: [], nextOffset: null } }),
+    );
+  }
   await remote.getByRole("button", { name: "Back" }).click();
   await search.fill("sm9");
+  await expect(remote).toHaveURL(/q=sm9/);
   await search.press("Enter");
   await expect(remote).toHaveURL(/#\/search\/niconico\/sm9$/);
   await expect(remote.getByRole("heading", { name: "Niconico" })).toBeVisible();
+
+  await remote.getByRole("button", { name: "Back" }).click();
+  await search.fill("jNQXAC9IVRw");
+  await expect(remote).toHaveURL(/q=jNQXAC9IVRw/);
+  await search.blur();
+  await expect(remote).toHaveURL(/#\/search\/youtube\/jNQXAC9IVRw$/);
 });
 
 test("the playback controls fit on a narrow phone", async ({ remote }) => {

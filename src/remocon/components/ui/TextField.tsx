@@ -67,6 +67,9 @@ export const TextField = ({
           <IconButton
             label={t("common.clear")}
             icon={<MdClose />}
+            // Keeps the focus (and the keyboard) in the field: clearing it
+            // isn't leaving it.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               onValueChange("");
               input.current?.focus();
