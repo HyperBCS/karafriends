@@ -17,7 +17,7 @@ import { Button, InlineError, Tabs, TextField } from "../components/ui";
 import useReadings, { saveReadings } from "../hooks/useReadings";
 import useUserIdentity, { saveNickname } from "../hooks/useUserIdentity";
 import { LANGUAGES, t, useLanguage, type Language } from "../i18n";
-import { READINGS, type Readings } from "../../common/readings";
+import { READINGS_MODES, type ReadingsMode } from "../../common/api";
 import { currentTheme, saveTheme, THEMES, type Theme } from "../theme";
 import * as styles from "./ProfilePage.module.scss";
 
@@ -94,9 +94,9 @@ const ReadingsPicker = () => {
   return (
     <div className={styles.section}>
       <h2 className={styles.heading}>{t("readings.label")}</h2>
-      <Tabs<Readings>
+      <Tabs<ReadingsMode>
         label={t("readings.label")}
-        tabs={READINGS.map((id) => ({ id, label: t(`readings.${id}`) }))}
+        tabs={READINGS_MODES.map((id) => ({ id, label: t(`readings.${id}`) }))}
         selected={readings}
         onSelect={saveReadings}
       />
