@@ -220,7 +220,9 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       config: { supervisedMode: false, everyoneIsAdmin: false },
       toolsProblem: null,
     },
+    sentAt: expect.any(Number),
   });
+  expect(Math.abs(Date.now() - event.sentAt)).toBeLessThan(5_000);
 });
 
 test.describe("supervised mode", () => {

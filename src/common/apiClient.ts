@@ -223,6 +223,24 @@ export function mergeLiveState(
   return changed ? merged : prev;
 }
 
+// How far this device's clock is ahead of the server's, in ms: the least
+// arrival time less sentAt of the state events so far, since a late one only
+// adds to it. Null until the first.
+let clockOffset: number | null = null;
+
+// Takes in a state event sent at sentAt (by the server's clock) that arrived
+// at arrivedAt (by this device's).
+export function noteStateSentAt(sentAt: number, arrivedAt: number) {
+  const offset = arrivedAt - sentAt;
+  if (clockOffset === null || offset < clockOffset) clockOffset = offset;
+}
+
+// Now by the server's clock (ms since the epoch), for the countdowns, which
+// count from the server's times: right even on a phone whose clock is off.
+export function serverNow(): number {
+  return Date.now() - (clockOffset ?? 0);
+}
+
 type Listener = (event: LiveEvent) => void;
 
 interface LiveEvents {
@@ -364,6 +382,7 @@ export function LiveStateProvider({
       },
       (event) => {
         if (event.type === "state") {
+          noteStateSentAt(event.sentAt, Date.now());
           const before = store.get()?.config.everyoneIsAdmin;
           store.set(mergeLiveState(store.get(), event.state));
           // The host turned everyone-admin mode on or off. (On connect,

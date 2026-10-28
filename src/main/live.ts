@@ -59,6 +59,8 @@ export function shareQueueItem(
 }
 
 // The live state as deviceId's phone sees it (null: as the display does).
+// The current song's playtime is its video's length once the display has
+// reported it.
 export function toLiveState(
   state: Readonly<State>,
   config: LiveState["config"],
@@ -66,7 +68,10 @@ export function toLiveState(
 ): LiveState {
   return {
     currentSong: state.currentSong
-      ? shareQueueItem(state.currentSong, deviceId)
+      ? {
+          ...shareQueueItem(state.currentSong, deviceId),
+          playtime: state.currentSongLength ?? state.currentSong.playtime,
+        }
       : null,
     currentSongStartedAt: state.currentSongStartedAt,
     currentSongPausedMs: state.currentSongPausedMs,
@@ -115,7 +120,8 @@ function stateEvents(
   config: LiveState["config"],
   shared: LiveState = toLiveState(state, config),
 ) {
-  const sharedEvent: LiveEvent = { type: "state", state: shared };
+  const sentAt = Date.now();
+  const sharedEvent: LiveEvent = { type: "state", state: shared, sentAt };
   const byDevice = new Map<string, LiveEvent>();
   return (viewer: Viewer): LiveEvent => {
     const { deviceId } = viewer;
@@ -123,7 +129,11 @@ function stateEvents(
     let event = byDevice.get(deviceId);
     if (!event) {
       event = ownsAny(state, deviceId)
-        ? { type: "state", state: toLiveState(state, config, deviceId) }
+        ? {
+            type: "state",
+            state: toLiveState(state, config, deviceId),
+            sentAt,
+          }
         : sharedEvent;
       byDevice.set(deviceId, event);
     }

@@ -475,6 +475,133 @@ describe("admin checks", () => {
       await play("PLAYING");
       assert.deepEqual(timing(), [null, 0, null]);
     });
+
+    describe("from the display's reports", () => {
+      // Where song 1's video is: position seconds in, moving or not.
+      const report = (
+        position: number,
+        playing = true,
+        length: number | null = null,
+        timestamp = "1",
+      ) =>
+        api().reportSongPosition(
+          { songId: "sm1", timestamp, position, length, playing },
+          display,
+        );
+      // Seconds played at the clock, as the phones work it out.
+      const played = () => {
+        const [startedAt, pausedMs, pausedSince] = timing() as [
+          number,
+          number,
+          number | null,
+        ];
+        return ((pausedSince ?? clock) - startedAt - pausedMs) / 1000;
+      };
+
+      test("follows a seek, paused or not", async () => {
+        clock = 11_000;
+        assert.equal(played(), 10);
+        // Sought forward to 40 s.
+        assert.equal(await report(40), true);
+        assert.deepEqual(timing(), [11_000 - 40_000, 0, null]);
+        clock = 13_000;
+        assert.equal(played(), 42);
+        // Back to 5 s while paused: it stays there.
+        await play("PAUSED");
+        await report(5, false);
+        clock = 60_000;
+        assert.equal(played(), 5);
+        await play("PLAYING");
+        clock = 61_000;
+        assert.equal(played(), 6);
+      });
+
+      test("stops during a stall or the video's own pause, and goes on after", async () => {
+        clock = 11_000;
+        await report(10, false);
+        clock = 20_000;
+        assert.equal(played(), 10);
+        assert.equal(store.getState().playbackState, "PLAYING");
+        await report(10.5, true);
+        clock = 21_000;
+        assert.equal(played(), 11.5);
+      });
+
+      test("a report in step with the clock changes nothing", async () => {
+        let changes = 0;
+        store.onChange(() => changes++);
+        clock = 11_000;
+        await report(10.3);
+        await report(9.7);
+        assert.deepEqual(timing(), [1000, 0, null]);
+        assert.equal(changes, 0);
+        // A second off is a change.
+        await report(11);
+        assert.equal(changes, 1);
+      });
+
+      test("starts the clock if the display's PLAYING hasn't", async () => {
+        store.update((state) => state.songQueue.push(song(2, alice)));
+        await api().popSong({}, display);
+        clock = 2000;
+        assert.equal(
+          await api().reportSongPosition(
+            {
+              songId: "sm2",
+              timestamp: "2",
+              position: 0,
+              length: 99.6,
+              playing: false,
+            },
+            display,
+          ),
+          true,
+        );
+        assert.deepEqual(timing(), [2000, 0, 2000]);
+        assert.equal(store.getState().currentSongLength, 100);
+      });
+
+      test("keeps the video's length, in whole seconds, until the next song", async () => {
+        clock = 11_000;
+        await report(10, true, 59.6);
+        assert.equal(store.getState().currentSongLength, 60);
+        // Not known: as it was.
+        await report(10, true, null);
+        assert.equal(store.getState().currentSongLength, 60);
+        // Queued now, it waits for the 50 s left of the 60, not of the 100
+        // the song was queued with.
+        assert.deepEqual(
+          await api().queueSong(
+            { kind: "nico", songId: "sm9", name: "", artistName: "" },
+            bob,
+          ),
+          { ok: true, eta: 50 },
+        );
+        await api().popSong({}, display);
+        assert.equal(store.getState().currentSongLength, null);
+      });
+
+      test("ignores the song before's, and anyone but the display", async () => {
+        clock = 11_000;
+        assert.equal(await report(40, true, 60, "0"), false);
+        assert.deepEqual(timing(), [1000, 0, null]);
+        assert.equal(store.getState().currentSongLength, null);
+        await rejectsWith(
+          api().reportSongPosition(
+            {
+              songId: "sm1",
+              timestamp: "1",
+              position: 40,
+              length: null,
+              playing: true,
+            },
+            admin(ADMIN_NICK),
+          ),
+          403,
+        );
+        assert.deepEqual(timing(), [1000, 0, null]);
+      });
+    });
   });
 
   describe("popSong with a DAM song", () => {
@@ -1837,6 +1964,25 @@ describe("validators", () => {
     invalid("setMics", { mics: [{ ...mic, echo: 40.5 }] });
     invalid("setMics", { mics: [{ ...mic, label: undefined }] });
     invalid("setMics", { mics: [{ ...mic, extra: 1 }] });
+    const position = {
+      songId: "sm1",
+      timestamp: "1",
+      position: 12.25,
+      length: 245.5,
+      playing: true,
+    };
+    assert.deepEqual(validators.reportSongPosition(position), position);
+    assert.deepEqual(
+      validators.reportSongPosition({ ...position, length: null }),
+      { ...position, length: null },
+    );
+    invalid("reportSongPosition", { ...position, length: undefined });
+    invalid("reportSongPosition", { ...position, position: -1 });
+    invalid("reportSongPosition", { ...position, position: Infinity });
+    invalid("reportSongPosition", { ...position, length: 25 * 60 * 60 });
+    invalid("reportSongPosition", { ...position, playing: "yes" });
+    invalid("reportSongPosition", { ...position, timestamp: 1 });
+    invalid("reportSongPosition", { ...position, paused: false });
     assert.deepEqual(validators.damSearchSongs({ query: "a", limit: 30 }), {
       query: "a",
       offset: undefined,

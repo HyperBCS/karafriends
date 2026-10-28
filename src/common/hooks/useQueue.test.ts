@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import type { SharedQueueItem } from "../api";
-import { withETAs } from "./useQueue";
+import { secondsPlayed, withETAs } from "./useQueue";
 
 const song = (n: number, playtime: number | null = 60): SharedQueueItem => ({
   kind: "nico",
@@ -68,5 +68,30 @@ describe("withETAs", () => {
       withETAs(song(0, 100), [song(1)], timing(1000)).map(([, eta]) => eta),
       [100],
     );
+  });
+});
+
+describe("secondsPlayed", () => {
+  const timing = (
+    currentSongStartedAt: number | null,
+    currentSongPausedSince: number | null = null,
+  ) => ({
+    currentSongStartedAt,
+    currentSongPausedMs: 0,
+    currentSongPausedSince,
+  });
+
+  test("is 0 until the song starts, then follows the clock in whole seconds", () => {
+    assert.equal(secondsPlayed(245, timing(null), 99_000), 0);
+    assert.equal(secondsPlayed(245, timing(1000), 1000), 0);
+    assert.equal(secondsPlayed(245, timing(1000), 73_400), 72);
+    // After the display reports a seek to 2:00 at 80 s.
+    assert.equal(secondsPlayed(245, timing(80_000 - 120_000), 81_000), 121);
+  });
+
+  test("stands still while paused, and stops at the end", () => {
+    assert.equal(secondsPlayed(245, timing(1000, 31_000), 31_000), 30);
+    assert.equal(secondsPlayed(245, timing(1000, 31_000), 99_000), 30);
+    assert.equal(secondsPlayed(245, timing(1000), 999_000), 245);
   });
 });

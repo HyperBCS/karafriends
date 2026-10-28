@@ -147,11 +147,16 @@ export interface State {
   // When currentSong started (ms since the epoch; null while none plays or
   // until the display starts it), how long it has been paused before, and
   // since when it is paused now (null while it isn't), so a phone can tell
-  // how far into it the party is. Set by popSong and setPlaybackState; not
-  // saved, since after a restart the song plays again from the start.
+  // how far into it the party is. Set by popSong, setPlaybackState and the
+  // display's reportSongPosition; not saved, since after a restart the song
+  // plays again from the start.
   currentSongStartedAt: number | null;
   currentSongPausedMs: number;
   currentSongPausedSince: number | null;
+  // The current song's video's length, in whole seconds, once the display
+  // reports it (null until then). The countdowns use it in place of the
+  // playtime the song was queued with. Not saved either.
+  currentSongLength: number | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   // The lines of each queued (or current) YouTube song with adhoc lyrics, by
   // adhocLyricsKey. Nothing else: they go when the song does.
@@ -194,10 +199,11 @@ export function adhocLyricsKey(item: {
   return `${item.songId}@${item.timestamp}`;
 }
 
-// Seconds left of the current song at now (ms since the epoch): its playtime
-// less the time it has played, never below 0, rounded as the phones' queue
-// rounds it (withETAs in src/common/hooks/useQueue.ts). Before the song has
-// started (currentSongStartedAt null), all of it.
+// Seconds left of the current song at now (ms since the epoch): its length
+// (the video's, else the playtime it was queued with) less the time it has
+// played, never below 0, rounded as the phones' queue rounds it (withETAs in
+// src/common/hooks/useQueue.ts). Before the song has started
+// (currentSongStartedAt null), all of it.
 export function currentSongSecondsLeft(
   state: Pick<
     State,
@@ -205,10 +211,13 @@ export function currentSongSecondsLeft(
     | "currentSongStartedAt"
     | "currentSongPausedMs"
     | "currentSongPausedSince"
+    | "currentSongLength"
   >,
   now: number,
 ): number {
-  const playtime = state.currentSong?.playtime || 0;
+  const playtime = state.currentSong
+    ? (state.currentSongLength ?? state.currentSong.playtime) || 0
+    : 0;
   if (state.currentSongStartedAt === null) return playtime;
   const until = state.currentSongPausedSince ?? now;
   const playedMs =
@@ -222,6 +231,7 @@ export function emptyState(): State {
     currentSongStartedAt: null,
     currentSongPausedMs: 0,
     currentSongPausedSince: null,
+    currentSongLength: null,
     currentSongAdhocLyrics: [],
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,
@@ -287,8 +297,8 @@ export function createStateStore(filePath: string): StateStore {
 
 // What goes in queue.json. The current song is saved at the head of the queue,
 // so after a restart it plays again from the start; downloads, pitch, the
-// pushed adhoc lyrics, the song's timing, the song volume, the mics and the
-// tools problem start over. The guide melody level is kept.
+// pushed adhoc lyrics, the song's timing and length, the song volume, the
+// mics and the tools problem start over. The guide melody level is kept.
 export function serializeState(state: Readonly<State>): string {
   const {
     toolsProblem: _,
@@ -297,6 +307,7 @@ export function serializeState(state: Readonly<State>): string {
     currentSongStartedAt: _startedAt,
     currentSongPausedMs: _pausedMs,
     currentSongPausedSince: _pausedSince,
+    currentSongLength: _length,
     ...saved
   } = state;
   return JSON.stringify({

@@ -111,6 +111,7 @@ describe("createStateStore", () => {
       state.currentSongStartedAt = 1000;
       state.currentSongPausedMs = 200;
       state.currentSongPausedSince = 1500;
+      state.currentSongLength = 245;
     });
 
     const file_ = saved();
@@ -125,6 +126,7 @@ describe("createStateStore", () => {
       "currentSongStartedAt",
       "currentSongPausedMs",
       "currentSongPausedSince",
+      "currentSongLength",
     ]) {
       assert.equal(key in file_, false, key);
     }
@@ -198,6 +200,7 @@ describe("currentSongSecondsLeft", () => {
     currentSongStartedAt,
     currentSongPausedMs,
     currentSongPausedSince,
+    currentSongLength: null,
   });
 
   test("is all of it before the song starts, and 0 with none", () => {
@@ -205,6 +208,15 @@ describe("currentSongSecondsLeft", () => {
     assert.equal(
       currentSongSecondsLeft({ ...timing(null), currentSong: null }, 99_000),
       0,
+    );
+  });
+
+  test("counts from the video's length once the display knows it", () => {
+    const known = { ...timing(1000), currentSongLength: 75 };
+    assert.equal(currentSongSecondsLeft(known, 21_000), 55);
+    assert.equal(
+      currentSongSecondsLeft({ ...known, currentSongStartedAt: null }, 0),
+      75,
     );
   });
 
