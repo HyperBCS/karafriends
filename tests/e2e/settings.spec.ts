@@ -10,7 +10,7 @@ import path from "path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { parse } from "yaml";
 
-import { expect, test } from "./fixtures";
+import { adminPasswordConfig, expect, test } from "./fixtures";
 
 const MASK = "••••••";
 
@@ -259,6 +259,172 @@ test("the display's offset and UI scale save on the display, and the scale sizes
   await expect(offset).toHaveValue("-40");
   await expect(scale).toHaveValue("150");
   await expect.poll(rootFontSize).toBeCloseTo(unscaled * 1.5, 1);
+});
+
+// The fixture's fake mics and outputs (KARAFRIENDS_FAKE_AUDIO in
+// src/preload/index.ts): what the display asked of them so far.
+function fakeAudioCalls(display: Page): Promise<unknown[][]> {
+  return display.evaluate(() =>
+    (
+      window as unknown as {
+        karafriendsFakeAudio: { calls(): unknown[][] };
+      }
+    ).karafriendsFakeAudio.calls(),
+  );
+}
+
+test.describe("the microphones", () => {
+  const ADMIN_PASSWORD = "e2e mics";
+  test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
+
+  const MIC = {
+    id: "E2E Mic (Windows)#0",
+    label: "E2E Mic (Windows), channel 1",
+  };
+  const INTERFACE = {
+    id: "E2E Interface (Windows)#1",
+    label: "E2E Interface (Windows), channel 2",
+  };
+
+  test("the phones see the mics and their levels; one is removed; the output and an admin's levels reach the device", async ({
+    karafriends,
+    display,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    const section = settings.getByRole("region", { name: "Microphones" });
+    const phoneMics = async () =>
+      (await phoneLiveState(karafriends.remoconUrl)).mics;
+    await expect(
+      section.getByRole("button", { name: "Clear mics" }),
+    ).toHaveCount(0);
+    expect(await phoneMics()).toEqual([]);
+
+    // Add the first, and turn it up.
+    const add = section.getByLabel("Add a microphone");
+    await add.selectOption(MIC.label);
+    const mic = section.getByRole("group", { name: MIC.label });
+    await expect(mic.getByLabel("Gain 100%")).toBeVisible();
+    await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+    await mic.getByLabel("Gain 100%").fill("150");
+    await mic.getByLabel("Echo 40%").fill("25");
+    await expect(mic.getByLabel("Gain 150%")).toBeVisible();
+    await expect.poll(phoneMics).toEqual([{ ...MIC, gain: 150, echo: 25 }]);
+    expect(await fakeAudioCalls(display)).toEqual(
+      expect.arrayContaining([
+        ["inputDevice_new", "E2E Mic (Windows)", 0],
+        ["inputDevice_setGain", 0, 1.5],
+        ["inputDevice_setEcho", 0, 0.25],
+      ]),
+    );
+
+    // A second, then the first goes and the second stays.
+    await add.selectOption(INTERFACE.label);
+    await expect.poll(phoneMics).toEqual([
+      { ...MIC, gain: 150, echo: 25 },
+      { ...INTERFACE, gain: 100, echo: 40 },
+    ]);
+    await mic.getByRole("button", { name: "Remove" }).click();
+    await expect(mic).toHaveCount(0);
+    const second = section.getByRole("group", { name: INTERFACE.label });
+    await expect(second).toBeVisible();
+    await expect
+      .poll(phoneMics)
+      .toEqual([{ ...INTERFACE, gain: 100, echo: 40 }]);
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "inputDevice_stop",
+      0,
+    ]);
+
+    // The mic output.
+    const output = section.getByLabel("Mic output");
+    await expect(output).toHaveValue("");
+    await expect(output.locator("option")).toHaveText([
+      "System default",
+      "E2E Speakers (Windows)",
+      "E2E Interface (ASIO)",
+    ]);
+    await output.selectOption("E2E Interface (ASIO)");
+    expect(await fakeAudioCalls(display)).toContainEqual([
+      "setOutputDevice",
+      "E2E Interface (ASIO)",
+    ]);
+
+    // An admin's phone changes the mic's levels.
+    const login = await fetch(
+      new URL("api/adminLogin", karafriends.remoconUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PASSWORD }),
+      },
+    );
+    const { token } = await login.json();
+    const set = await fetch(
+      new URL("api/setMicLevels", karafriends.remoconUrl),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Karafriends-Admin-Token": token,
+        },
+        body: JSON.stringify({ id: INTERFACE.id, gain: 50, echo: 10 }),
+      },
+    );
+    expect(await set.json()).toBe(true);
+    await expect(second.getByLabel("Gain 50%")).toBeVisible();
+    await expect(second.getByLabel("Echo 10%")).toBeVisible();
+    expect(await fakeAudioCalls(display)).toEqual(
+      expect.arrayContaining([
+        ["inputDevice_setGain", 1, 0.5],
+        ["inputDevice_setEcho", 1, 0.1],
+      ]),
+    );
+    // And it stays so: the display's own list coming back changes nothing.
+    await display.waitForTimeout(1_000);
+    expect(await phoneMics()).toEqual([{ ...INTERFACE, gain: 50, echo: 10 }]);
+
+    // All of it is kept on the display: a reload opens the mic at its
+    // levels, on the output picked.
+    expect(
+      await display.evaluate(() => [
+        JSON.parse(localStorage.getItem("mics")!),
+        localStorage.getItem("micOutput"),
+      ]),
+    ).toEqual([
+      [{ name: "E2E Interface (Windows)", channel: 1, gain: 50, echo: 10 }],
+      "E2E Interface (ASIO)",
+    ]);
+    await display.reload();
+    await expect(second.getByLabel("Gain 50%")).toBeVisible();
+    await expect(output).toHaveValue("E2E Interface (ASIO)");
+    const calls = await fakeAudioCalls(display);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ["setOutputDevice", "E2E Interface (ASIO)"],
+        ["inputDevice_new", "E2E Interface (Windows)", 1],
+        ["inputDevice_setGain", 0, 0.5],
+      ]),
+    );
+    // The output before the mic, so the mic opens on it.
+    expect(
+      calls.findIndex(([name]) => name === "setOutputDevice"),
+    ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
+  });
+
+  test("old saved mics get the default levels", async ({ display }) => {
+    await display.evaluate(() =>
+      localStorage.setItem(
+        "mics",
+        JSON.stringify([{ name: "E2E Mic (Windows)", channel: 0 }]),
+      ),
+    );
+    await display.reload();
+    const mic = display
+      .getByRole("region", { name: "Microphones" })
+      .getByRole("group", { name: MIC.label });
+    await expect(mic.getByLabel("Gain 100%")).toBeVisible();
+    await expect(mic.getByLabel("Echo 40%")).toBeVisible();
+  });
 });
 
 test("a phone gets 403 for getSettings, even signed in as nobody special", async ({

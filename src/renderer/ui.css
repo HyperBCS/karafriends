@@ -71,6 +71,7 @@ select {
 .kfButton:focus-visible,
 .kfIconButton:focus-visible,
 .kfField:focus-visible,
+.kfSlider:focus-visible,
 .kfCheckbox input:focus-visible {
   outline: 0.1875rem solid var(--kf-accent);
   outline-offset: 0.1875rem;
@@ -120,6 +121,15 @@ select.kfField > option {
   gap: var(--kf-space-4);
   min-height: 4rem;
   font-size: var(--kf-text-body);
+  cursor: pointer;
+}
+
+/* A level, as tall as a field. */
+.kfSlider {
+  width: 100%;
+  height: 4.5rem;
+  margin: 0;
+  accent-color: var(--kf-accent);
   cursor: pointer;
 }
 

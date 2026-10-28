@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
+import type { MicInfo } from "../common/api";
 import { call, useLiveEvent, useLiveState } from "../common/apiClient";
 import { HOSTNAME } from "../common/constants";
 import { KuroshiroSingleton } from "../common/joysoundParser";
@@ -8,7 +9,8 @@ import "./App.css";
 import Announcements from "./Announcements";
 import Effects from "./Effects";
 import IdleScreen from "./IdleScreen";
-import { InputDevice } from "./nativeAudio";
+import type { MicLevels } from "./MicrophoneSetting";
+import { InputDevice, setOutputDevice } from "./nativeAudio";
 import NoticeBar from "./NoticeBar";
 import {
   AV_OFFSET_KEY,
@@ -18,6 +20,7 @@ import {
   UI_SCALES,
 } from "./playback";
 import Player from "./Player";
+import QRCode from "./QRCode";
 import Settings from "./Settings";
 import UpNext from "./UpNext";
 import type { Announcement } from "./useSongPlayer";
@@ -28,18 +31,55 @@ const ANNOUNCE_MS = 4000;
 // The most announcements shown at once; older ones go first.
 const MAX_ANNOUNCEMENTS = 3;
 
-interface SavedMic {
-  name: string;
-  channel: number;
+const DEFAULT_LEVELS: MicLevels = { gain: 100, echo: 40 };
+
+// localStorage's "mics": each device's name, its channel and its levels.
+// Entries saved before the levels existed get the defaults.
+type SavedMic = { name: string; channel: number } & MicLevels;
+
+// The output device the mics play through; not set for the system default.
+const MIC_OUTPUT_KEY = "micOutput";
+
+// How the phones tell the mics apart (MicInfo.id).
+function micId(name: string, channel: number): string {
+  return `${name}#${channel}`;
 }
 
-// The microphones picked last time, those still plugged in.
-function savedMics(): InputDevice[] {
+function readSavedMics(): SavedMic[] {
   const saved: SavedMic[] = JSON.parse(localStorage.getItem("mics") || "[]");
+  return saved.map((mic) => ({ ...DEFAULT_LEVELS, ...mic }));
+}
+
+function openMic(name: string, channel: number, levels: MicLevels) {
+  const mic = new InputDevice(name, channel);
+  mic.setGain(levels.gain / 100);
+  mic.setEcho(levels.echo / 100);
+  return mic;
+}
+
+// The mic output and the microphones picked last time, those still plugged
+// in. The output first, so the mics open on it.
+function savedMics(): InputDevice[] {
+  setOutputDevice(localStorage.getItem(MIC_OUTPUT_KEY));
   const channelCounts = new Map(window.karafriends.nativeAudio.inputDevices());
-  return saved
+  return readSavedMics()
     .filter(({ name, channel }) => channel < (channelCounts.get(name) ?? 0))
-    .map(({ name, channel }) => new InputDevice(name, channel));
+    .map((mic) => openMic(mic.name, mic.channel, mic));
+}
+
+function savedLevels(): Record<string, MicLevels> {
+  return Object.fromEntries(
+    readSavedMics().map(({ name, channel, gain, echo }) => [
+      micId(name, channel),
+      { gain, echo },
+    ]),
+  );
+}
+
+// A mic list's levels as one string, to tell this display's own setMics
+// lists in the live state from an admin's setMicLevels.
+function levelsKey(mics: MicInfo[]): string {
+  return mics.map(({ id, gain, echo }) => `${id}:${gain}:${echo}`).join("|");
 }
 
 function App(props: {
@@ -47,6 +87,16 @@ function App(props: {
   audio: KarafriendsAudio;
 }) {
   const [mics, _setMics] = useState(savedMics);
+  // Apart from the devices, so the piano roll keeps its mics (and what they
+  // sang) while a level changes. By micId.
+  const [levels, setLevels] = useState(savedLevels);
+  const [micOutput, setMicOutput] = useState(() =>
+    localStorage.getItem(MIC_OUTPUT_KEY),
+  );
+  // The mic lists this display sent with setMics lately, as levelsKey.
+  const sentMics = useRef<string[]>([]);
+  const seenLiveMics = useRef<MicInfo[] | undefined>(undefined);
+  const liveMics = useLiveState((state) => state?.mics);
   const [avOffsetMs, setAvOffsetMs] = useState(() =>
     savedChoice(localStorage.getItem(AV_OFFSET_KEY), AV_OFFSETS, 0),
   );
@@ -75,13 +125,81 @@ function App(props: {
     );
   }, []);
 
-  const setMics = (newMics: InputDevice[]) => {
+  const idOf = (mic: InputDevice) => micId(mic.name, mic.channelSelection);
+  const levelsOf = (id: string) => levels[id] ?? DEFAULT_LEVELS;
+
+  const saveMics = (
+    newMics: InputDevice[],
+    newLevels: Record<string, MicLevels>,
+  ) => {
     const micsToSave: SavedMic[] = newMics.map((mic) => ({
       name: mic.name,
       channel: mic.channelSelection,
+      ...(newLevels[idOf(mic)] ?? DEFAULT_LEVELS),
     }));
     localStorage.setItem("mics", JSON.stringify(micsToSave));
+  };
+
+  const setMics = (newMics: InputDevice[]) => {
+    saveMics(newMics, levels);
     _setMics(newMics);
+  };
+
+  // One mic's new levels, on its device (and any other row on the same
+  // channel), and saved.
+  const changeLevels = (id: string, newLevels: MicLevels) => {
+    const allLevels = { ...levels, [id]: newLevels };
+    for (const mic of mics.filter((m) => idOf(m) === id)) {
+      mic.setGain(newLevels.gain / 100);
+      mic.setEcho(newLevels.echo / 100);
+    }
+    saveMics(mics, allLevels);
+    setLevels(allLevels);
+  };
+
+  // The phones' list, whenever a mic or its levels change here.
+  useEffect(() => {
+    const list: MicInfo[] = mics.map((mic) => ({
+      id: micId(mic.name, mic.channelSelection),
+      label: `${mic.name}, channel ${mic.channelSelection + 1}`,
+      ...(levels[micId(mic.name, mic.channelSelection)] ?? DEFAULT_LEVELS),
+    }));
+    sentMics.current = [...sentMics.current, levelsKey(list)].slice(-10);
+    call("setMics", { mics: list }).catch((err) =>
+      console.error("Couldn't list the mics for the phones:", err),
+    );
+  }, [mics, levels]);
+
+  // An admin's setMicLevels: levels in the live state that differ from this
+  // display's own, in a list it didn't send. A list it did send (even one a
+  // later one overtook) is its own coming back, and is left alone, or two
+  // quick changes here would undo each other.
+  useEffect(() => {
+    if (!liveMics || liveMics === seenLiveMics.current) return;
+    seenLiveMics.current = liveMics;
+    const sent = sentMics.current.indexOf(levelsKey(liveMics));
+    if (sent >= 0) {
+      sentMics.current = sentMics.current.slice(sent);
+      return;
+    }
+    for (const { id, gain, echo } of liveMics) {
+      if (!mics.some((mic) => idOf(mic) === id)) continue;
+      const own = levelsOf(id);
+      if (own.gain !== gain || own.echo !== echo) {
+        changeLevels(id, { gain, echo });
+      }
+    }
+  });
+
+  const changeMicOutput = (name: string | null) => {
+    try {
+      setOutputDevice(name);
+    } catch (err) {
+      console.error(`Couldn't switch the mic output to ${name}:`, err);
+    }
+    if (name === null) localStorage.removeItem(MIC_OUTPUT_KEY);
+    else localStorage.setItem(MIC_OUTPUT_KEY, name);
+    setMicOutput(name);
   };
 
   const changeAvOffset = (offsetMs: number) => {
@@ -104,16 +222,19 @@ function App(props: {
     );
   }, [uiScale]);
 
-  const onChangeMic = (index: number, newMic: InputDevice) => {
+  // A row's new device, or a new row at index mics.length, at the levels it
+  // had last.
+  const onChangeMic = (index: number, name: string, channel: number) => {
+    const newMic = openMic(name, channel, levelsOf(micId(name, channel)));
     const updatedMics = [...mics];
     const oldMic = updatedMics.splice(index, 1, newMic)[0];
     if (oldMic) oldMic.stop();
     setMics(updatedMics);
   };
 
-  const clearMics = () => {
-    mics.forEach((mic) => mic.stop());
-    setMics([]);
+  const removeMic = (index: number) => {
+    mics[index].stop();
+    setMics(mics.filter((_, i) => i !== index));
   };
 
   // Q shows or hides the up-next strip, S opens Settings, Escape closes it.
@@ -171,6 +292,9 @@ function App(props: {
             announce={announce}
             avOffsetMs={avOffsetMs}
           />
+          {!idle && !settingsOpen ? (
+            <QRCode hostname={hostname} corner />
+          ) : null}
         </div>
         {!idle && upNextVisible ? <UpNext layout="strip" /> : null}
         {idle ? (
@@ -187,8 +311,14 @@ function App(props: {
             hostname={hostname}
             onHostnameChange={setHostname}
             mics={mics}
+            micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}
-            onClearMics={clearMics}
+            onChangeLevels={(mic, newLevels) =>
+              changeLevels(idOf(mic), newLevels)
+            }
+            onRemoveMic={removeMic}
+            micOutput={micOutput}
+            onMicOutputChange={changeMicOutput}
             avOffsetMs={avOffsetMs}
             onAvOffsetChange={changeAvOffset}
             uiScale={uiScale}
