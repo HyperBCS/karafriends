@@ -107,7 +107,7 @@ const QueueRow = memo(function QueueRow({
   return (
     <ListRow
       leading={<Initial nickname={nickname} />}
-      title={<WithReading text={item.name} yomi={item.nameYomi} under />}
+      title={<WithReading text={item.name} yomi={item.nameYomi} />}
       subtitle={
         expanded ? (
           queuedBy
@@ -190,7 +190,6 @@ const QueueList = () => {
                 <WithReading
                   text={currentSong.name}
                   yomi={currentSong.nameYomi}
-                  under
                 />
               }
               subtitle={

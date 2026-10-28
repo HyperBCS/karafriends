@@ -465,7 +465,8 @@ test.describe("phase M3", () => {
   });
 });
 
-// Phase M7: search results with the Readings setting on "Both".
+// Phase M7: search results with the Readings setting on "Romaji" (the
+// polish round made the reading replace the text).
 test.describe("phase M7", () => {
   test.use({
     seedQueue: {
@@ -484,7 +485,7 @@ test.describe("phase M7", () => {
     await remote.getByRole("link", { name: "Profile" }).click();
     await remote
       .getByRole("tablist", { name: "Readings" })
-      .getByRole("tab", { name: "Both", exact: true })
+      .getByRole("tab", { name: "Romaji", exact: true })
       .click();
     await remote.getByRole("button", { name: "Back" }).click();
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
@@ -494,7 +495,9 @@ test.describe("phase M7", () => {
     const search = remote.getByRole("searchbox", { name: "Search" });
     await search.fill("恋");
     await search.blur();
-    await expect(remote.getByText("こい · koi").first()).toBeVisible();
+    await expect(
+      remote.getByText("koi", { exact: true }).first(),
+    ).toBeVisible();
     await shoot(remote, `m-readings-${browserName}`);
   });
 });

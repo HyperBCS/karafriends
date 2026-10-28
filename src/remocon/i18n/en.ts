@@ -159,5 +159,4 @@ export const en = {
   "readings.written": "Written",
   "readings.kana": "Kana",
   "readings.romaji": "Romaji",
-  "readings.both": "Both",
 } as const;

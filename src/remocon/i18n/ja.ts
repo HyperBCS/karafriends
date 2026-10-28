@@ -142,5 +142,4 @@ export const ja: Messages = {
   "readings.written": "そのまま",
   "readings.kana": "かな",
   "readings.romaji": "ローマ字",
-  "readings.both": "両方",
 };

@@ -4,6 +4,7 @@ import { useLiveState } from "../../../common/apiClient";
 import { t } from "../../i18n";
 import { BsMusicPlayerFill, FaSmile } from "../../icons";
 import { IconButton, Sheet } from "../ui";
+import WithReading from "../WithReading";
 import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
@@ -34,8 +35,15 @@ const NowPlaying = () => {
   return (
     <>
       <span className={styles.now}>
-        <span className={styles.nowTitle}>{currentSong.name}</span>
-        <span className={styles.nowSubtitle}>{currentSong.artistName}</span>
+        <span className={styles.nowTitle}>
+          <WithReading text={currentSong.name} yomi={currentSong.nameYomi} />
+        </span>
+        <span className={styles.nowSubtitle}>
+          <WithReading
+            text={currentSong.artistName}
+            yomi={currentSong.artistNameYomi}
+          />
+        </span>
       </span>
       <SingerBadge nickname={nicknameOf(currentSong)} />
     </>

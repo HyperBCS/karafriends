@@ -85,8 +85,9 @@ const LanguagePicker = () => {
   );
 };
 
-// How this phone shows song titles and artists: as written, or with their
-// kana reading, in romaji, or both (where DAM gives a reading).
+// How this phone shows song titles and artists: as written, or in their
+// kana reading or in romaji instead (where DAM gives a reading). Songs it
+// queues show that way on the TV too.
 const ReadingsPicker = () => {
   const readings = useReadings();
   return (
