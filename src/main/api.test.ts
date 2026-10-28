@@ -212,6 +212,17 @@ function makeApi(
   return createApi(deps as unknown as ApiDeps);
 }
 
+// fn's outcome, with console.error and console.warn silenced meanwhile.
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const { error, warn } = console;
+  console.error = console.warn = () => {};
+  try {
+    return await fn();
+  } finally {
+    Object.assign(console, { error, warn });
+  }
+}
+
 const rejectsWith = (promise: Promise<unknown>, status: number) =>
   assert.rejects(
     promise,
@@ -2567,9 +2578,75 @@ describe("lookups", () => {
     });
   });
 
-  test("a failed Niconico lookup is a result, not an error", async () => {
-    const api = makeApi();
-    const result = await api.nicoInfo({ videoId: "sm9" }, alice);
-    assert.equal(result.ok, false);
+  describe("a failed Niconico lookup", () => {
+    // nicoInfo with getNicoVideoInfo failing with err.
+    const lookUp = (videoId: string, err: unknown) =>
+      quietly(() =>
+        makeApi(
+          {},
+          {
+            getNicoVideoInfo: async () => {
+              throw err;
+            },
+          },
+        ).nicoInfo({ videoId }, alice),
+      );
+    // How yt-dlp's exit shows: execFile's error, with its output.
+    const ytdlpExit = (stderr: string) =>
+      Object.assign(new Error(`Command failed: yt-dlp\n${stderr}`), {
+        code: 1,
+        killed: false,
+        stderr,
+      });
+
+    test("is a result when it's about the video", async () => {
+      assert.deepEqual(await lookUp("watch?v=1", new Error("never asked")), {
+        ok: false,
+        reason: "Failed getting video info. Maybe an invalid VideoID?",
+      });
+      assert.deepEqual(
+        await lookUp(
+          "sm9",
+          ytdlpExit("ERROR: [niconico] sm9: HTTP Error 404: Not Found"),
+        ),
+        { ok: false, reason: REASONS.unavailable },
+      );
+      assert.deepEqual(
+        await lookUp(
+          "sm9",
+          ytdlpExit(
+            "ERROR: [niconico] sm9: This video is not available in your country",
+          ),
+        ),
+        { ok: false, reason: REASONS.geoBlocked },
+      );
+    });
+
+    test("is an error, with its cause, when it isn't: the phone tries again", async () => {
+      const busy = new Error("Too many lookups at once; try again");
+      await assert.rejects(lookUp("sm9", busy), (err: Error) => {
+        assert.match(err.message, /Too many lookups at once; try again/);
+        assert.equal(err.cause, busy);
+        return true;
+      });
+      const timedOut = Object.assign(new Error("Command failed"), {
+        killed: true,
+        signal: "SIGTERM",
+        stderr: "",
+      });
+      await assert.rejects(lookUp("sm9", timedOut), (err: Error) => {
+        assert.match(err.message, /took too long/);
+        assert.equal(err.cause, timedOut);
+        return true;
+      });
+      const broken = ytdlpExit(
+        "ERROR: [niconico] sm9: Unable to extract data; please report this issue",
+      );
+      await assert.rejects(lookUp("sm9", broken), (err: Error) => {
+        assert.match(err.message, /Update tools/);
+        assert.equal(err.cause, broken);
+        return true;
+      });
+    });
   });
 });

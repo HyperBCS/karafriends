@@ -1315,6 +1315,50 @@ test("a video's line says 1 view, and leaves out a count it doesn't have", async
   ).toBeEnabled();
 });
 
+test("a video lookup that failed isn't kept: the page asks again when it opens again", async ({
+  karafriends,
+  remote,
+}) => {
+  const answers = [
+    { ok: false, reason: "Video unavailable" },
+    {
+      ok: true,
+      info: {
+        title: "千本桜",
+        author: "黒うさP",
+        channelId: "4",
+        lengthSeconds: 320,
+        description: "",
+        viewCount: 1,
+        thumbnailUrl: "data:,",
+      },
+    },
+  ];
+  let asked = 0;
+  await remote.route("**/api/nicoInfo", (route) =>
+    route.fulfill({ json: answers[Math.min(asked++, 1)] }),
+  );
+  const open = (hash: string) =>
+    remote.goto(new URL(hash, karafriends.remoconUrl).href);
+  await open("#/search/niconico/sm9");
+  await expect(remote.getByRole("alert")).toContainText("Video unavailable");
+  // Elsewhere, then back a moment later: asked again, not the failure
+  // kept. (Suspense keeps any answer for a second.)
+  await open("#/");
+  await expect(remote.getByRole("searchbox", { name: "Search" })).toBeVisible();
+  await remote.waitForTimeout(1_100);
+  await open("#/search/niconico/sm9");
+  await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
+  expect(asked).toBe(2);
+  // A good answer is kept.
+  await open("#/");
+  await expect(remote.getByRole("searchbox", { name: "Search" })).toBeVisible();
+  await remote.waitForTimeout(1_100);
+  await open("#/search/niconico/sm9");
+  await expect(remote.getByRole("heading", { name: "千本桜" })).toBeVisible();
+  expect(asked).toBe(2);
+});
+
 test("a song already queued says why it wasn't queued again", async ({
   karafriends,
   remote,

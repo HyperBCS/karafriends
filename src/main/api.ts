@@ -24,7 +24,12 @@ import type {
   YoutubeVideoInfo,
 } from "../common/api";
 import { isAdminPassword } from "../common/adminPassword";
-import { isToolProblem, TOOLS_PROBLEM } from "../common/downloadFailure";
+import {
+  isToolProblem,
+  TOOLS_PROBLEM,
+  ytdlpFailureReason,
+} from "../common/downloadFailure";
+import { isNicoVideoId } from "../common/nicoVideoInfo";
 import type { KarafriendsConfig } from "../common/config";
 import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
@@ -184,6 +189,10 @@ const POSITION_SLACK_MS = 500;
 
 // Song and video IDs end up in file names and yt-dlp arguments.
 const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// nicoInfo's answer for an ID that isn't a Niconico video's. The remote
+// says it in the phone's language (src/remocon/i18n/reasons.ts).
+const NICO_INFO_FAILED = "Failed getting video info. Maybe an invalid VideoID?";
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
@@ -653,15 +662,37 @@ export function createApi(
       };
     },
 
+    // ok: false only when the answer is about the video (no such ID, or
+    // yt-dlp says it's gone, private or blocked here): the phone keeps that
+    // answer for a while. Anything else (yt-dlp broken or slow, too many
+    // lookups at once) is an error, which the phone offers to try again.
     async nicoInfo({ videoId }) {
+      if (!isNicoVideoId(videoId)) {
+        return { ok: false, reason: NICO_INFO_FAILED };
+      }
       try {
         return { ok: true, info: await deps.getNicoVideoInfo(videoId) };
-      } catch (e) {
-        console.error(`Failed getting Niconico info for ${videoId}:`, e);
-        return {
-          ok: false,
-          reason: "Failed getting video info. Maybe an invalid VideoID?",
-        };
+      } catch (err) {
+        console.error(`Failed getting Niconico info for ${videoId}:`, err);
+        const failure = err as { stderr?: unknown; killed?: boolean } | null;
+        if (failure?.killed) {
+          throw new Error(
+            "Couldn't get the video's details: Niconico took too long. Try again.",
+            { cause: err },
+          );
+        }
+        if (typeof failure?.stderr === "string") {
+          const reason = ytdlpFailureReason(failure.stderr);
+          if (!isToolProblem(reason)) return { ok: false, reason };
+          throw new Error(
+            "Couldn't get the video's details: the downloader failed. Try again, or Update tools in the TV's Settings.",
+            { cause: err },
+          );
+        }
+        throw new Error(
+          `Couldn't get the video's details: ${(err as Error)?.message ?? err}`,
+          { cause: err },
+        );
       }
     },
 
