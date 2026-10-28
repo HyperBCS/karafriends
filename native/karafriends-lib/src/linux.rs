@@ -518,19 +518,13 @@ fn alsa_label(name: &str, node: &str) -> String {
 // `rate` when it takes that (else at its own), in buffers of `frames`.
 pub(crate) fn stream_config(
     default: &cpal::SupportedStreamConfig,
-    mut ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
-    rate: Option<cpal::SampleRate>,
+    ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    rate: cpal::SampleRate,
     frames: u32,
 ) -> cpal::StreamConfig {
     let mut config = default.config();
-    if let Some(rate) = rate {
-        if ranges.any(|range| {
-            range.channels() == config.channels
-                && range.sample_format() == default.sample_format()
-                && range.contains_rate(rate)
-        }) {
-            config.sample_rate = rate;
-        }
+    if crate::takes_rate(default, ranges, rate) {
+        config.sample_rate = rate;
     }
     config.buffer_size = buffer_size(default.buffer_size(), frames);
     config
@@ -822,12 +816,12 @@ mod tests {
         };
         let default = range(48000).with_sample_rate(48000);
         let ranges = [range(44100), range(48000)];
-        let config = stream_config(&default, ranges.iter().cloned(), Some(44100), 128);
+        let config = stream_config(&default, ranges.iter().cloned(), 44100, 128);
         assert_eq!(config.channels, 2);
         assert_eq!(config.sample_rate, 44100);
         assert_eq!(config.buffer_size, cpal::BufferSize::Fixed(128));
         // A rate it doesn't take: its own.
-        let config = stream_config(&default, ranges.iter().cloned(), Some(96000), 128);
+        let config = stream_config(&default, ranges.iter().cloned(), 96000, 128);
         assert_eq!(config.sample_rate, 48000);
     }
 }

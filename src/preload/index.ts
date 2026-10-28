@@ -1,5 +1,5 @@
 // The native module is copied next to the bundle and loaded with require().
-import nativeAudio from "../../native/index.node";
+import nativeAudio, { type Mic } from "../../native/index.node";
 
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -11,9 +11,12 @@ import {
   type DisplayFiles,
 } from "../common/ipc";
 import ipAddresses from "../common/ipAddresses";
+import type { NativeAudio } from "../renderer/global";
 
+// The open mics, by the number the display knows each by: a native mic
+// can't cross to the page.
 let inputDeviceCount = 0;
-const inputDevices: { [deviceId: number]: any } = {};
+const inputDevices: { [deviceId: number]: Mic } = {};
 
 // The inputs as last listed (see inputDevices below).
 let inputList: [string, string, number][] | null = null;
@@ -85,23 +88,29 @@ ipcRenderer
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
 // is ever opened, or even listed. Two fake inputs (ids like Windows'
 // endpoint ids, and labels) and two fake outputs, and every call is kept,
-// for the tests to read with window.karafriendsFakeAudio.calls().
+// for the tests to read with window.karafriendsFakeAudio.calls(). The
+// tests can have devices fail (failOpen, stopMics below).
 // KARAFRIENDS_FAKE_AUDIO=linux: the same, as on Linux with PipeWire.
 type FakeAudioCall = [string, ...unknown[]];
 const fakeAudio = process.env.KARAFRIENDS_FAKE_AUDIO;
 const fakeAudioCalls: FakeAudioCall[] | null =
   fakeAudio === "1" || fakeAudio === "linux" ? [] : null;
 
-function fakeNativeAudio(calls: FakeAudioCall[]) {
+function fakeNativeAudio(calls: FakeAudioCall[]): NativeAudio {
   return fakeAudio === "linux"
     ? fakeLinuxAudio(calls)
     : fakeWindowsAudio(calls);
 }
 
 // Inputs and outputs that won't open, by id, for the tests to set with
-// window.karafriendsFakeAudio.failOpen(). Kept in sessionStorage, so a
-// reload (the next launch, to the display) finds them too.
+// window.karafriendsFakeAudio.failOpen(): as if unplugged, so a mic of one
+// that is open stops too. Kept in sessionStorage, so a reload (the next
+// launch, to the display) finds them too.
 const FAIL_OPEN_KEY = "karafriendsFakeAudioFailOpen";
+
+// The open fake mics, by number: the input each is of, and why it stopped
+// (window.karafriendsFakeAudio.stopMics()), if it did.
+const fakeMics = new Map<number, { name: string; stopped: string | null }>();
 
 function failsToOpen(name: string | null): boolean {
   const failing: string[] = JSON.parse(
@@ -119,7 +128,7 @@ function faker(calls: FakeAudioCall[]) {
     };
 }
 
-function fakeWindowsAudio(calls: FakeAudioCall[]) {
+function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
   let nextDeviceId = 0;
   let exclusive = false;
   const fake = faker(calls);
@@ -144,7 +153,11 @@ function fakeWindowsAudio(calls: FakeAudioCall[]) {
         ? { rates: [44100, 48000, 96000], bufferSizes: [64, 128, 256, 512] }
         : null,
     ),
-    outputFormat: fake("outputFormat", () => "48 kHz, 256 samples (5.3 ms)"),
+    outputFormat: fake("outputFormat", () =>
+      fakeMics.size > 0 ? "48 kHz, 256 samples (5.3 ms)" : undefined,
+    ),
+    // Not kept with the calls, as inputDevice_level.
+    outputStatus: () => (fakeMics.size > 0 ? "ok" : undefined),
     setMicMode: fake("setMicMode", (on: boolean) => {
       exclusive = on;
     }),
@@ -158,12 +171,20 @@ function fakeWindowsAudio(calls: FakeAudioCall[]) {
     ),
     inputDevice_new: fake("inputDevice_new", (name: string) => {
       if (failsToOpen(name)) throw new Error("The device is busy (fake)");
+      fakeMics.set(nextDeviceId, { name, stopped: null });
       return nextDeviceId++;
     }),
-    inputDevice_delete: fake("inputDevice_delete", () => undefined),
+    inputDevice_delete: fake("inputDevice_delete", (deviceId: number) => {
+      fakeMics.delete(deviceId);
+    }),
     inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
     inputDevice_setEcho: fake("inputDevice_setEcho", () => undefined),
-    inputDevice_status: fake("inputDevice_status", () => "ok"),
+    inputDevice_status: fake("inputDevice_status", (deviceId: number) => {
+      const mic = fakeMics.get(deviceId);
+      if (!mic) return "stopped";
+      if (failsToOpen(mic.name)) return "The device was unplugged (fake)";
+      return mic.stopped ?? "ok";
+    }),
     inputDevice_getPitch: fake("inputDevice_getPitch", () => ({
       midiNumber: 0,
       confidence: 0,
@@ -187,9 +208,8 @@ const LINUX_USB_MIC: FakeInput = [
   1,
 ];
 
-function fakeLinuxAudio(calls: FakeAudioCall[]) {
+function fakeLinuxAudio(calls: FakeAudioCall[]): NativeAudio {
   const fake = faker(calls);
-  let nextDeviceId = 0;
   let bufferSize: number | null = null;
   let listings = 0;
   const windows = fakeWindowsAudio(calls);
@@ -204,9 +224,8 @@ function fakeLinuxAudio(calls: FakeAudioCall[]) {
     outputDevices: fake("outputDevices", () => ["E2E Speakers (Linux)"]),
     asioStatus: fake("asioStatus", () => "ASIO isn't in this build"),
     outputOptions: fake("outputOptions", () => null),
-    outputFormat: fake(
-      "outputFormat",
-      () => `48 kHz, ${bufferSize ?? 128} samples`,
+    outputFormat: fake("outputFormat", () =>
+      fakeMics.size > 0 ? `48 kHz, ${bufferSize ?? 128} samples` : undefined,
     ),
     setMicMode: fake("setMicMode", (_: boolean, size: number | null) => {
       bufferSize = size;
@@ -217,7 +236,6 @@ function fakeLinuxAudio(calls: FakeAudioCall[]) {
       bufferSizes: [64, 128, 256, 512, 1024],
       defaultBufferSize: 128,
     })),
-    inputDevice_new: fake("inputDevice_new", () => nextDeviceId++),
     inputDevice_format: fake(
       "inputDevice_format",
       () => `PipeWire, 48 kHz, ${bufferSize ?? 128} samples`,
@@ -230,6 +248,15 @@ if (fakeAudioCalls) {
     calls: (): FakeAudioCall[] => fakeAudioCalls,
     failOpen: (names: string[]) =>
       sessionStorage.setItem(FAIL_OPEN_KEY, JSON.stringify(names)),
+    // The open mics of these inputs stop, as a stream that stops calling
+    // back does; they open again as usual.
+    stopMics: (names: string[]) => {
+      for (const mic of fakeMics.values()) {
+        if (names.includes(mic.name)) {
+          mic.stopped = "The mic stopped sending sound (fake)";
+        }
+      }
+    },
   });
 }
 
@@ -247,71 +274,67 @@ contextBridge.exposeInMainWorld("karafriends", {
   },
   api,
   ...files,
-  nativeAudio: fakeAudioCalls
-    ? fakeNativeAudio(fakeAudioCalls)
-    : {
-        // Repeatedly asking CPAL for input devices seems to cause unexpected
-        // breakages, like the default output device being released. Let's avoid
-        // that: they're listed once. Except on Linux, where Settings lists
-        // them again as it opens, for a mic plugged in since (PipeWire and
-        // PulseAudio list them without opening any).
-        inputDevices: () => (inputList ??= nativeAudio.inputDevices()),
-        refreshInputDevices() {
-          if (process.platform === "linux") inputList = null;
-        },
-        // Outputs are listed again each time Settings opens, so an interface
-        // switched on after launch can be picked.
-        outputDevices: nativeAudio.outputDevices,
-        // Found once, as the first device is listed.
-        asioStatus: nativeAudio.asioStatus,
-        setOutputDevice(
-          name: string | null,
-          rate: number | null,
-          bufferSize: number | null,
-        ) {
-          return nativeAudio.setOutputDevice(name, rate, bufferSize);
-        },
-        outputOptions: nativeAudio.outputOptions,
-        outputFormat: nativeAudio.outputFormat,
-        setMicMode(exclusive: boolean, bufferSize: number | null) {
-          return nativeAudio.setMicMode(exclusive, bufferSize);
-        },
-        exclusiveAvailable: nativeAudio.exclusiveAvailable,
-        linuxAudio: nativeAudio.linuxAudio,
-        inputDevice_new(name: string, channelSelection: number) {
-          console.debug(
-            `preload: creating input device ${inputDeviceCount}: ${name}`,
-          );
-          inputDevices[inputDeviceCount++] = nativeAudio.inputDevice_new(
-            name,
-            channelSelection,
-          );
-          return inputDeviceCount - 1;
-        },
-        inputDevice_delete(deviceId: number) {
-          console.debug(`preload: deleting input device ${deviceId}`);
-          delete inputDevices[deviceId];
-        },
-        inputDevice_setGain(deviceId: number, gain: number) {
-          return nativeAudio.inputDevice_setGain(inputDevices[deviceId], gain);
-        },
-        inputDevice_setEcho(deviceId: number, echo: number) {
-          return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
-        },
-        inputDevice_status(deviceId: number) {
-          return nativeAudio.inputDevice_status(inputDevices[deviceId]);
-        },
-        inputDevice_format(deviceId: number) {
-          return nativeAudio.inputDevice_format(inputDevices[deviceId]);
-        },
-        inputDevice_level(deviceId: number) {
-          return nativeAudio.inputDevice_level(inputDevices[deviceId]);
-        },
-        inputDevice_getPitch(deviceId: number) {
-          return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
-        },
-        inputDevice_stop(deviceId: number) {
-          return nativeAudio.inputDevice_stop(inputDevices[deviceId]);
-        },
-      },
+  nativeAudio: fakeAudioCalls ? fakeNativeAudio(fakeAudioCalls) : realAudio(),
 });
+
+// The native module, each mic as a number (see inputDevices above).
+function realAudio(): NativeAudio {
+  return {
+    // Repeatedly asking CPAL for input devices seems to cause unexpected
+    // breakages, like the default output device being released. Let's avoid
+    // that: they're listed once. Except on Linux, where Settings lists them
+    // again as it opens, for a mic plugged in since (PipeWire and PulseAudio
+    // list them without opening any).
+    inputDevices: () => (inputList ??= nativeAudio.inputDevices()),
+    refreshInputDevices() {
+      if (process.platform === "linux") inputList = null;
+    },
+    // Outputs are listed again each time Settings opens, so an interface
+    // switched on after launch can be picked.
+    outputDevices: nativeAudio.outputDevices,
+    // Found once, as the first device is listed.
+    asioStatus: nativeAudio.asioStatus,
+    setOutputDevice: nativeAudio.setOutputDevice,
+    outputOptions: nativeAudio.outputOptions,
+    outputFormat: nativeAudio.outputFormat,
+    outputStatus: nativeAudio.outputStatus,
+    setMicMode: nativeAudio.setMicMode,
+    exclusiveAvailable: () => process.platform === "win32",
+    linuxAudio: nativeAudio.linuxAudio,
+    inputDevice_new(name: string, channelSelection: number) {
+      console.debug(
+        `preload: creating input device ${inputDeviceCount}: ${name}`,
+      );
+      inputDevices[inputDeviceCount++] = nativeAudio.inputDevice_new(
+        name,
+        channelSelection,
+      );
+      return inputDeviceCount - 1;
+    },
+    inputDevice_delete(deviceId: number) {
+      console.debug(`preload: deleting input device ${deviceId}`);
+      delete inputDevices[deviceId];
+    },
+    inputDevice_setGain(deviceId: number, gain: number) {
+      return nativeAudio.inputDevice_setGain(inputDevices[deviceId], gain);
+    },
+    inputDevice_setEcho(deviceId: number, echo: number) {
+      return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
+    },
+    inputDevice_status(deviceId: number) {
+      return nativeAudio.inputDevice_status(inputDevices[deviceId]);
+    },
+    inputDevice_format(deviceId: number) {
+      return nativeAudio.inputDevice_format(inputDevices[deviceId]);
+    },
+    inputDevice_level(deviceId: number) {
+      return nativeAudio.inputDevice_level(inputDevices[deviceId]);
+    },
+    inputDevice_getPitch(deviceId: number) {
+      return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
+    },
+    inputDevice_stop(deviceId: number) {
+      return nativeAudio.inputDevice_stop(inputDevices[deviceId]);
+    },
+  };
+}

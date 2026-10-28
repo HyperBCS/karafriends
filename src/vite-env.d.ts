@@ -24,11 +24,46 @@ declare module "*.png" {
   export default url;
 }
 
-// A native module: copied next to the main or preload bundle and loaded with
-// require().
-declare module "*.node" {
-  const native: any;
+// The native module (native/karafriends/src/lib.rs): copied next to the main
+// or preload bundle and loaded with require(). Its functions are those the
+// display gets through the preload (NativeAudio), with each mic an opaque
+// handle the preload keeps (it can't cross to the page), and a console
+// window for the main process. src/preload/native.test.ts checks the names
+// against the built module.
+declare module "*/native/index.node" {
+  type NativeAudio = import("./renderer/global").NativeAudio;
+  // A mic: a box only the native module opens.
+  const mic: unique symbol;
+  type Mic = { readonly [mic]: true };
+  // A mic function, taking the mic itself rather than its number.
+  type OnMic<F> = F extends (deviceId: number, ...args: infer A) => infer R
+    ? (mic: Mic, ...args: A) => R
+    : never;
+  const native: Pick<
+    NativeAudio,
+    | "inputDevices"
+    | "outputDevices"
+    | "asioStatus"
+    | "setOutputDevice"
+    | "outputOptions"
+    | "outputFormat"
+    | "outputStatus"
+    | "setMicMode"
+    | "linuxAudio"
+  > & {
+    // Throws "Access is denied (os error 5)" when the process has one.
+    allocConsole: () => void;
+    inputDevice_new: (name: string, channelSelection: number) => Mic;
+    inputDevice_setGain: OnMic<NativeAudio["inputDevice_setGain"]>;
+    inputDevice_setEcho: OnMic<NativeAudio["inputDevice_setEcho"]>;
+    inputDevice_status: OnMic<NativeAudio["inputDevice_status"]>;
+    inputDevice_format: OnMic<NativeAudio["inputDevice_format"]>;
+    inputDevice_level: OnMic<NativeAudio["inputDevice_level"]>;
+    inputDevice_getPitch: OnMic<NativeAudio["inputDevice_getPitch"]>;
+    inputDevice_stop: OnMic<NativeAudio["inputDevice_stop"]>;
+  };
   export default native;
+  export type { Mic };
 }
 
 // The values Vite puts in import.meta.env (only the ones used).

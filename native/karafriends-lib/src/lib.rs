@@ -67,10 +67,8 @@ mod mixer;
 mod pitch_detector;
 mod reverb_module;
 
-#[cfg(not(target_os = "linux"))]
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::iter::{FromIterator, Iterator};
+use std::iter::Iterator;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, TryLockError, Weak};
 use std::time::{Duration, Instant};
@@ -79,7 +77,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use neon::prelude::Finalize;
-use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::traits::{Producer, Split};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::Resampler;
 
@@ -152,11 +150,26 @@ fn system_host() -> Result<std::rc::Rc<cpal::Host>> {
     Ok(std::rc::Rc::new(cpal::default_host()))
 }
 
-pub fn exclusive_available() -> bool {
-    cfg!(windows)
-}
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+// A console window for the module's prints, on Windows. A process that has
+// one (started from a terminal) is refused with "Access is denied (os
+// error 5)", which the main process lets pass.
+pub fn alloc_console() -> Result<()> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Console::{AllocConsole, SetConsoleTitleW};
+        // As the system's own code ("os error 5"): a failed call's HRESULT
+        // holds it in its low 16 bits.
+        let os_error =
+            |e: windows::core::Error| std::io::Error::from_raw_os_error(e.code().0 & 0xFFFF);
+        unsafe {
+            AllocConsole().map_err(os_error)?;
+            SetConsoleTitleW(windows::core::w!("karafriends native console")).map_err(os_error)?;
+        }
+    }
+    Ok(())
+}
 
 // Rubato is fed whole chunks of this many frames, whatever size the mic's
 // callbacks are; the remainder waits for the next callback. Small, since a
@@ -680,9 +693,7 @@ pub struct InputDevice {
     lost: Arc<AtomicU32>,
     // Whether its callbacks stopped (see Stall).
     stall: Mutex<Stall>,
-    pitch_rx: ringbuf::HeapCons<f32>,
-    pitch_sample_count: usize,
-    pitch_detector: pitch_detector::PitchDetector,
+    pitch: pitch_detector::PitchWindow,
 }
 
 impl Finalize for InputDevice {}
@@ -696,15 +707,16 @@ impl Drop for InputDevice {
 
 impl InputDevice {
     // Each input's id (its key, as saved), its label (what Settings shows)
-    // and the config it would open with (its channels are what Settings
-    // offers). An input that won't say is left out, not the whole list.
-    pub fn collect_devices<Collector: FromIterator<(String, String, cpal::StreamConfig)>>(
-    ) -> Result<Collector> {
+    // and the channels Settings offers. An input that won't say is left
+    // out, not the whole list.
+    pub fn collect_devices() -> Result<Vec<(String, String, u16)>> {
         Ok(_input_devices()?
             .filter_map(|(input_device, device_type)| {
                 let name = _device_name(&input_device, &device_type);
-                match listed_config(&input_device) {
-                    Ok(config) => Some((name, _device_label(&input_device, &device_type), config)),
+                match listed_channels(&input_device) {
+                    Ok(channels) => {
+                        Some((name, _device_label(&input_device, &device_type), channels))
+                    }
                     Err(e) => {
                         eprintln!("The input {name} is left out: {e}");
                         None
@@ -895,12 +907,9 @@ impl InputDevice {
         Sample: cpal::Sample + Copy + 'static,
         f32: cpal::FromSample<Sample>,
     {
-        let pitch_sample_count = input_config.sample_rate.div_ceil(40) as usize;
-        let (pitch_tx, pitch_rx) = ringbuf::HeapRb::new(pitch_sample_count).split();
+        let (pitch_tx, pitch) = pitch_detector::PitchWindow::new(input_config.sample_rate);
         let (output_tx, output_rx) =
             ringbuf::HeapRb::new(mixer::ring_capacity(output_rate)).split();
-        let pitch_detector =
-            pitch_detector::PitchDetector::new(input_config.sample_rate as f32, pitch_sample_count);
         let levels = Arc::new(Levels::new(1.0, 0.4));
         let meters = Arc::new(Meters::default());
 
@@ -935,9 +944,7 @@ impl InputDevice {
             realtime,
             lost: Arc::default(),
             stall: Mutex::new(Stall::new(Instant::now())),
-            pitch_rx,
-            pitch_sample_count,
-            pitch_detector,
+            pitch,
         })
     }
 
@@ -1008,10 +1015,10 @@ impl InputDevice {
         Err("exclusive mode is for Windows only".into())
     }
 
-    pub fn get_pitch(&mut self) -> Result<(f32, f32)> {
-        let mut samples = vec![0.0; self.pitch_sample_count];
-        self.pitch_rx.pop_slice(&mut samples);
-        Ok(self.pitch_detector.detect(samples))
+    // The pitch of its newest 1/40 s, as a MIDI number, and how sure that
+    // is (0 to 1); see PitchWindow.
+    pub fn get_pitch(&mut self) -> (f32, f32) {
+        self.pitch.pitch()
     }
 
     // Linear, 0 to 2: multiplies the dry signal before the reverb.
@@ -1107,13 +1114,9 @@ impl InputDevice {
         let input_rate = input_config.sample_rate;
         let input_channels = input_config.channels as usize;
 
-        let mut reverbs = [
-            reverb_module::ReverbModule::new(input_rate, 0.09920, 0.750)?,
-            reverb_module::ReverbModule::new(input_rate, 0.06930, 0.720)?,
-            reverb_module::ReverbModule::new(input_rate, 0.04836, 0.691)?,
-            reverb_module::ReverbModule::new(input_rate, 0.03570, 0.649)?,
-            reverb_module::ReverbModule::new(input_rate, 0.02196, 0.662)?,
-        ];
+        let mut reverbs = reverb_module::REVERB_TAPS.map(|(delay, amplitude)| {
+            reverb_module::ReverbModule::new(input_rate, delay, amplitude)
+        });
 
         let mut resampler = if input_rate == output_rate {
             None
@@ -1135,7 +1138,9 @@ impl InputDevice {
         // them once at startup so the output stays aligned with the input.
         let mut resampler_delay = resampler.as_ref().map_or(0, |r| r.output_delay());
 
+        // The chosen channel, and its reverb: sized by the first callback.
         let mut mono: Vec<f32> = Vec::new();
+        let mut wet: Vec<f32> = Vec::new();
         let mut full_prints = RateLimit::default();
         let mut error_prints = RateLimit::default();
 
@@ -1158,13 +1163,12 @@ impl InputDevice {
             let gain = f32::from_bits(levels.gain.load(Relaxed));
             let echo = f32::from_bits(levels.echo.load(Relaxed));
             mono.iter_mut().for_each(|sample| *sample *= gain);
-            let mut reverb_samples: Vec<_> = mono.iter().map(|s| s * 0.5 * echo).collect();
+            wet.clear();
+            wet.extend(mono.iter().map(|s| s * 0.5 * echo));
             for reverb in &mut reverbs {
-                reverb_samples = reverb.process(reverb_samples.as_slice());
+                reverb.process(&mut wet);
             }
-            mono.iter_mut()
-                .zip(reverb_samples)
-                .for_each(|(dry, wet)| *dry += wet);
+            mono.iter_mut().zip(&wet).for_each(|(dry, wet)| *dry += wet);
 
             let mut dropped = 0;
             match &mut resampler {
@@ -1212,31 +1216,19 @@ fn resample_chunk(
     Ok(produced)
 }
 
-// The config an input is listed with: on Linux the one it opens with, in
-// its own channels (ALSA's plugins take up to 64, which Settings would offer
-// one by one); elsewhere its best one.
+// The channels an input is listed with (what Settings offers): on Linux
+// those it opens with, its own (ALSA's plugins take up to 64, which Settings
+// would offer one by one); elsewhere its best config's.
 #[cfg(target_os = "linux")]
-fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
-    let default = input_device.default_input_config()?;
-    Ok(linux::stream_config(
-        &default,
-        std::iter::empty(),
-        None,
-        linux_buffer(),
-    ))
+fn listed_channels(input_device: &cpal::Device) -> Result<u16> {
+    Ok(input_device.default_input_config()?.channels())
 }
 
 #[cfg(not(target_os = "linux"))]
-fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
-    let mut supported_input_configs: Vec<_> = input_device.supported_input_configs()?.collect();
-    supported_input_configs.sort_by(|a, b| compare_configs(a, b, None));
-    let best_supported_input_config = supported_input_configs
-        .last()
+fn listed_channels(input_device: &cpal::Device) -> Result<u16> {
+    let best = best_config(input_device.supported_input_configs()?, None)
         .ok_or("No supported input configs")?;
-    Ok(supported_config_to_config(
-        best_supported_input_config,
-        None,
-    ))
+    Ok(best.channels())
 }
 
 // What a mic takes with the chosen channel, asked before the mic output
@@ -1288,7 +1280,7 @@ fn input_stream_config(
     let config = linux::stream_config(
         &configs.default,
         configs.ranges.into_iter(),
-        Some(output_rate),
+        output_rate,
         linux_buffer(),
     );
     (config, configs.default.sample_format())
@@ -1300,72 +1292,60 @@ fn input_stream_config(
     configs: InputConfigs,
     output_rate: cpal::SampleRate,
 ) -> (cpal::StreamConfig, cpal::SampleFormat) {
-    let mut supported_input_configs = configs.0;
-    supported_input_configs.sort_by(|a, b| compare_configs(a, b, Some(output_rate)));
-    let best_supported_input_config = supported_input_configs
-        .last()
+    let best = best_config(configs.0.into_iter(), Some(output_rate))
         .expect("InputConfigs::probe keeps one at least");
     (
-        supported_config_to_config(best_supported_input_config, Some(output_rate)),
-        best_supported_input_config.sample_format(),
+        supported_config_to_config(&best, Some(output_rate)),
+        best.sample_format(),
     )
 }
 
-#[cfg(not(target_os = "linux"))]
-fn compare_configs(
-    a: &cpal::SupportedStreamConfigRange,
-    b: &cpal::SupportedStreamConfigRange,
-    desired_sample_rate: Option<cpal::SampleRate>,
-) -> Ordering {
-    // Our priorities in order are the desired sample rate (being in range is
-    // good enough), buffer size (lower is better), sample rate (higher is
-    // better), and channel count (higher is better).
-    if let Some(sample_rate) = desired_sample_rate {
-        let a_in_range = sample_rate >= a.min_sample_rate() && sample_rate <= a.max_sample_rate();
-        let b_in_range = sample_rate >= b.min_sample_rate() && sample_rate <= b.max_sample_rate();
-        if !a_in_range && b_in_range {
-            return Ordering::Less;
-        }
-        if a_in_range && !b_in_range {
-            return Ordering::Greater;
-        }
-    }
-    if a.buffer_size() == &cpal::SupportedBufferSize::Unknown
-        && b.buffer_size() != &cpal::SupportedBufferSize::Unknown
-    {
-        return Ordering::Less;
-    }
-    if a.buffer_size() != &cpal::SupportedBufferSize::Unknown
-        && b.buffer_size() == &cpal::SupportedBufferSize::Unknown
-    {
-        return Ordering::Greater;
-    }
-    if let cpal::SupportedBufferSize::Range { min, max: _ } = a.buffer_size() {
-        let a_min = min;
-        if let cpal::SupportedBufferSize::Range { min, max: _ } = b.buffer_size() {
-            let b_min = min;
-            let buffer_size_cmp = a_min.cmp(b_min);
-            if buffer_size_cmp != Ordering::Equal {
-                return buffer_size_cmp.reverse();
-            }
-        }
-    }
-
-    let sample_rate_cmp = a.max_sample_rate().cmp(&b.max_sample_rate());
-    if sample_rate_cmp != Ordering::Equal {
-        return sample_rate_cmp;
-    }
-
-    let channels_cmp = a.channels().cmp(&b.channels());
-    if channels_cmp != Ordering::Equal {
-        return channels_cmp;
-    }
-
-    a.cmp_default_heuristics(b)
+// Whether one of a device's `ranges` takes its own channels and sample
+// format (`default`'s) at `rate`.
+fn takes_rate(
+    default: &cpal::SupportedStreamConfig,
+    mut ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    rate: cpal::SampleRate,
+) -> bool {
+    ranges.any(|range| {
+        range.channels() == default.channels()
+            && range.sample_format() == default.sample_format()
+            && range.contains_rate(rate)
+    })
 }
 
+// The best of a mic's configs on Windows and macOS: one with `rate` (the
+// output's) first, then the highest rate, then the most channels, then
+// cpal's order (F32 first, then 48 kHz); the last of equals. The buffer
+// sizes can't choose: CoreAudio and ASIO give every config the same, and
+// Windows sets its own.
+#[cfg(any(test, not(target_os = "linux")))]
+fn best_config(
+    configs: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    rate: Option<cpal::SampleRate>,
+) -> Option<cpal::SupportedStreamConfigRange> {
+    let key = |config: &cpal::SupportedStreamConfigRange| {
+        (
+            rate.is_some_and(|rate| config.contains_rate(rate)),
+            config.max_sample_rate(),
+            config.channels(),
+        )
+    };
+    configs.max_by(|a, b| {
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| a.cmp_default_heuristics(b))
+    })
+}
+
+// The buffer size a macOS mic asks for, within what the device takes. Its
+// smallest (CoreAudio's can be 15 frames) would call back thousands of
+// times a second, for little less delay: the mic output keeps its own.
+#[cfg(all(not(windows), any(test, not(target_os = "linux"))))]
+const MIC_BUFFER: u32 = 128;
+
 // The desired sample rate when the range has it, else its highest.
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(test, not(target_os = "linux")))]
 fn supported_config_to_config(
     config_range: &cpal::SupportedStreamConfigRange,
     desired_sample_rate: Option<cpal::SampleRate>,
@@ -1373,14 +1353,16 @@ fn supported_config_to_config(
     cpal::StreamConfig {
         channels: config_range.channels(),
         sample_rate: desired_sample_rate
-            .filter(|rate| {
-                (config_range.min_sample_rate()..=config_range.max_sample_rate()).contains(rate)
-            })
+            .filter(|rate| config_range.contains_rate(*rate))
             .unwrap_or(config_range.max_sample_rate()),
-        buffer_size: match config_range.buffer_size() {
-            // WASAPI lies about buffer size ranges and doesn't repect fixed size requests
+        buffer_size: match *config_range.buffer_size() {
+            // WASAPI lies about buffer size ranges and doesn't repect fixed
+            // size requests (and ASIO mics take the output's, see
+            // open_shared).
             #[cfg(not(windows))]
-            cpal::SupportedBufferSize::Range { min, max: _ } => cpal::BufferSize::Fixed(*min),
+            cpal::SupportedBufferSize::Range { min, max } if min <= max && max > 0 => {
+                cpal::BufferSize::Fixed(MIC_BUFFER.clamp(min, max))
+            }
             _ => cpal::BufferSize::Default,
         },
     }
@@ -1559,6 +1541,7 @@ fn _output_name(device: &cpal::Device, device_type: &DeviceType) -> Result<Strin
 mod tests {
     use super::*;
     use pitch_detector::{freq2midi, PitchDetector};
+    use ringbuf::traits::Consumer;
     use wavegen::{sine, wf};
 
     fn config(sample_rate: cpal::SampleRate) -> cpal::StreamConfig {
@@ -1694,18 +1677,13 @@ mod tests {
             run_input_callback(rate, rate, Levels::new(1.0, 0.4), &samples, &[256])?;
         assert_eq!(pitch, samples);
 
-        let mut reverbs = [
-            reverb_module::ReverbModule::new(rate, 0.09920, 0.750)?,
-            reverb_module::ReverbModule::new(rate, 0.06930, 0.720)?,
-            reverb_module::ReverbModule::new(rate, 0.04836, 0.691)?,
-            reverb_module::ReverbModule::new(rate, 0.03570, 0.649)?,
-            reverb_module::ReverbModule::new(rate, 0.02196, 0.662)?,
-        ];
+        let mut reverbs = reverb_module::REVERB_TAPS
+            .map(|(delay, amplitude)| reverb_module::ReverbModule::new(rate, delay, amplitude));
         let mut expected = Vec::new();
         for chunk in samples.chunks(256) {
             let mut wet: Vec<f32> = chunk.iter().map(|s| s * 0.2).collect();
             for reverb in &mut reverbs {
-                wet = reverb.process(&wet);
+                reverb.process(&mut wet);
             }
             expected.extend(chunk.iter().zip(wet).map(|(dry, wet)| dry + wet));
         }
@@ -1741,7 +1719,7 @@ mod tests {
         .unwrap();
         let pitch_sample_count = output_rate.div_ceil(40) as usize;
         let pd = PitchDetector::new(output_rate as f32, pitch_sample_count);
-        let (midi_number, confidence) = pd.detect(output[..pitch_sample_count].to_vec());
+        let (midi_number, confidence) = pd.detect(&output[..pitch_sample_count]);
         assert!((midi_number - freq2midi(185.0)).abs() < 0.001);
         assert!(confidence > 0.999);
         assert_eq!(pitch, samples);
@@ -1755,6 +1733,66 @@ mod tests {
     #[test]
     fn test_input_callback_downsampling() {
         assert_resampled_pitch(96000, 44100);
+    }
+
+    // The pitch is found in the newest 1/40 s of the mic, however its
+    // callbacks and the polls fall (PianoRoll asks every 25 ms; WASAPI calls
+    // back every 10 ms): never in a window part empty, or in an old one when
+    // a poll comes late.
+    #[test]
+    fn test_the_pitch_is_the_newest_window() -> Result<()> {
+        let rate = 48000;
+        const LOW: f32 = 95.0;
+        let (pitch_tx, mut pitch) = pitch_detector::PitchWindow::new(rate);
+        let (output_tx, _output_rx) = ringbuf::HeapRb::new(rate as usize).split();
+        let mut callback = InputDevice::input_data_callback::<f32>(
+            &config(rate),
+            rate,
+            0,
+            Arc::new(Levels::new(1.0, 0.4)),
+            Arc::default(),
+            pitch_tx,
+            output_tx,
+        )?;
+        let tone = |freq: f32, ms: usize| -> Vec<f32> {
+            wf!(f32, rate as f32, sine!(freq, 1.0_f32, 0.0_f32))
+                .iter()
+                .take(rate as usize * ms / 1000)
+                .collect()
+        };
+        let low = tone(LOW, 500);
+        let mut rest = &low[..];
+        // 20 ms: not a whole window yet, so no pitch.
+        let (first, next) = rest.split_at(960);
+        callback(first);
+        assert_eq!(pitch.pitch(), (0.0, 0.0));
+        rest = next;
+        // Then 30 ms and 20 ms in turn, a poll after each.
+        for ms in [30, 20].iter().cycle().take(12) {
+            let (part, next) = rest.split_at(rate as usize * ms / 1000);
+            callback(part);
+            rest = next;
+            let (midi_number, confidence) = pitch.pitch();
+            assert!(
+                (midi_number - freq2midi(LOW)).abs() < 0.05,
+                "after {ms} ms: {midi_number}, not {}",
+                freq2midi(LOW)
+            );
+            assert!(confidence > 0.9);
+        }
+        // Nothing new since: no pitch.
+        assert_eq!(pitch.pitch(), (0.0, 0.0));
+        // A poll 50 ms late finds the newest 25 ms.
+        let mut late = tone(100.0, 25);
+        late.extend(tone(150.0, 25));
+        callback(&late);
+        let (midi_number, _) = pitch.pitch();
+        assert!(
+            (midi_number - freq2midi(150.0)).abs() < 0.05,
+            "{midi_number}, not {}",
+            freq2midi(150.0)
+        );
+        Ok(())
     }
 
     // The meter sees the mic before the gain, and starts over once read.
@@ -1833,6 +1871,146 @@ mod tests {
         let mut stall = Stall::new(start);
         assert!(!stall.stalled(u32::MAX, at(10)));
         assert!(!stall.stalled(0, at(2000)));
+    }
+
+    fn range(
+        channels: u16,
+        rates: std::ops::RangeInclusive<u32>,
+        format: cpal::SampleFormat,
+    ) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            *rates.start(),
+            *rates.end(),
+            cpal::SupportedBufferSize::Range { min: 14, max: 4096 },
+            format,
+        )
+    }
+
+    // A Windows or macOS mic opens at the output's rate when a config has
+    // it, else at the highest rate; then with the most channels, then in
+    // floats rather than integers; the last of equals.
+    #[test]
+    fn test_the_best_config() {
+        use cpal::SampleFormat::{F32, I16};
+        let best = |configs: &[cpal::SupportedStreamConfigRange], rate| {
+            best_config(configs.iter().cloned(), rate).unwrap()
+        };
+        let configs = [range(2, 44100..=44100, F32), range(2, 96000..=96000, F32)];
+        assert_eq!(best(&configs, Some(44100)), configs[0]);
+        assert_eq!(best(&configs, Some(48000)), configs[1]);
+        assert_eq!(best(&configs, None), configs[1]);
+        // In range is good enough.
+        let configs = [range(2, 8000..=192000, F32), range(2, 96000..=96000, F32)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        let configs = [range(4, 48000..=48000, F32), range(2, 48000..=48000, F32)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        let configs = [range(2, 48000..=48000, F32), range(2, 48000..=48000, I16)];
+        assert_eq!(best(&configs, Some(48000)), configs[0]);
+        assert_eq!(best_config(std::iter::empty(), None), None);
+    }
+
+    // The config it opens with: the output's rate if the range has it, else
+    // its highest; on macOS 128 frames, within what the device takes, not
+    // its smallest. (Windows sets its own.)
+    #[test]
+    fn test_a_config_range_to_open() {
+        let config = supported_config_to_config(
+            &range(2, 8000..=96000, cpal::SampleFormat::F32),
+            Some(44100),
+        );
+        assert_eq!((config.channels, config.sample_rate), (2, 44100));
+        let config = supported_config_to_config(
+            &range(1, 44100..=48000, cpal::SampleFormat::F32),
+            Some(96000),
+        );
+        assert_eq!(config.sample_rate, 48000);
+        #[cfg(not(windows))]
+        {
+            assert_eq!(config.buffer_size, cpal::BufferSize::Fixed(MIC_BUFFER));
+            let buffers = |min, max| {
+                let range = cpal::SupportedStreamConfigRange::new(
+                    1,
+                    48000,
+                    48000,
+                    cpal::SupportedBufferSize::Range { min, max },
+                    cpal::SampleFormat::F32,
+                );
+                supported_config_to_config(&range, None).buffer_size
+            };
+            assert_eq!(buffers(256, 4096), cpal::BufferSize::Fixed(256));
+            assert_eq!(buffers(14, 64), cpal::BufferSize::Fixed(64));
+            assert_eq!(buffers(0, 0), cpal::BufferSize::Default);
+        }
+        #[cfg(windows)]
+        assert_eq!(config.buffer_size, cpal::BufferSize::Default);
+    }
+
+    // Counts each thread's allocations, for the test that the mic's callback
+    // makes none.
+    struct CountingAllocator;
+
+    thread_local! {
+        static ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    fn allocations() -> usize {
+        ALLOCATIONS.with(|count| count.get())
+    }
+
+    unsafe impl std::alloc::GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+            std::alloc::System.alloc(layout)
+        }
+
+        unsafe fn realloc(
+            &self,
+            ptr: *mut u8,
+            layout: std::alloc::Layout,
+            new_size: usize,
+        ) -> *mut u8 {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+            std::alloc::System.realloc(ptr, layout, new_size)
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+            std::alloc::System.dealloc(ptr, layout)
+        }
+    }
+
+    #[global_allocator]
+    static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+    // The mic's callback runs on the audio thread: once its first call has
+    // sized its buffers, it allocates nothing, resampling or not.
+    #[test]
+    fn test_the_input_callback_doesnt_allocate() -> Result<()> {
+        for (input_rate, output_rate) in [(48000, 48000), (44100, 48000)] {
+            let (pitch_tx, _pitch) = pitch_detector::PitchWindow::new(input_rate);
+            let (output_tx, _output_rx) = ringbuf::HeapRb::new(output_rate as usize).split();
+            let mut callback = InputDevice::input_data_callback::<f32>(
+                &config(input_rate),
+                output_rate,
+                0,
+                Arc::new(Levels::new(1.0, 0.4)),
+                Arc::default(),
+                pitch_tx,
+                output_tx,
+            )?;
+            let samples = sine_samples(input_rate, 128);
+            callback(&samples);
+            let before = allocations();
+            for _ in 0..100 {
+                callback(&samples);
+            }
+            let made = allocations() - before;
+            assert_eq!(
+                made, 0,
+                "{input_rate} -> {output_rate}: {made} in 100 callbacks"
+            );
+        }
+        Ok(())
     }
 
     // The input callback counts itself for the stall check.
@@ -2031,7 +2209,7 @@ mod tests {
     #[test]
     fn test_input_device_ids_and_labels() {
         let _devices = lock(&DEVICES);
-        if let Ok(devices) = InputDevice::collect_devices::<Vec<_>>() {
+        if let Ok(devices) = InputDevice::collect_devices() {
             for (id, label, _) in &devices {
                 let host = if id.ends_with(" (ASIO)") {
                     " (ASIO)"
