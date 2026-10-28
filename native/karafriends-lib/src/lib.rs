@@ -53,10 +53,13 @@ macro_rules! with_sample_type {
 
 #[cfg(windows)]
 mod exclusive;
+#[cfg(target_os = "linux")]
+mod linux;
 mod mixer;
 mod pitch_detector;
 mod reverb_module;
 
+#[cfg(not(target_os = "linux"))]
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::{FromIterator, Iterator};
@@ -64,7 +67,9 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+#[cfg(not(target_os = "linux"))]
+use cpal::traits::HostTrait;
+use cpal::traits::{DeviceTrait, StreamTrait};
 use neon::prelude::Finalize;
 use ringbuf::traits::{Consumer, Producer, Split};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
@@ -73,7 +78,9 @@ use rubato::Resampler;
 pub use mixer::{output_devices, output_format, output_options, set_output_device};
 
 // How the platform's mics open: exclusive (Windows only, see exclusive.rs)
-// with a buffer size in frames (None: the mic's smallest), or shared.
+// with a buffer size in frames (None: the mic's smallest), or shared. On
+// Linux the buffer size is for the mics and their output alike (None:
+// linux::DEFAULT_BUFFER).
 #[derive(Clone, Copy)]
 struct MicMode {
     exclusive: bool,
@@ -85,9 +92,56 @@ static MIC_MODE: Mutex<MicMode> = Mutex::new(MicMode {
     buffer: None,
 });
 
-// For the mics opened from now on.
+// For the mics opened from now on. On Linux the mic output, if open,
+// reopens at the new buffer size.
 pub fn set_mic_mode(exclusive: bool, buffer: Option<u32>) {
     *lock(&MIC_MODE) = MicMode { exclusive, buffer };
+    #[cfg(target_os = "linux")]
+    if let Err(e) = lock(&mixer::MIXER).reopen() {
+        eprintln!("The mic output didn't reopen: {e}");
+    }
+}
+
+// The buffer size in frames the mics and their output ask for on Linux.
+#[cfg(target_os = "linux")]
+fn linux_buffer() -> u32 {
+    lock(&MIC_MODE).buffer.unwrap_or(linux::DEFAULT_BUFFER)
+}
+
+// For Settings on Linux: the sound system ("Sound system: PipeWire 1.6.2"),
+// the buffer sizes it takes, and the one used until one is picked. None
+// elsewhere.
+pub struct LinuxAudio {
+    pub status: String,
+    pub buffer_sizes: Vec<u32>,
+    pub default_buffer: u32,
+}
+
+pub fn linux_audio() -> Option<LinuxAudio> {
+    #[cfg(target_os = "linux")]
+    return Some(match linux::system_host() {
+        Ok((host, why)) => LinuxAudio {
+            status: linux::status(&host, why),
+            buffer_sizes: linux::buffer_sizes(&host),
+            default_buffer: linux::DEFAULT_BUFFER,
+        },
+        Err(e) => LinuxAudio {
+            status: format!("No sound system: {e}"),
+            buffer_sizes: Vec::new(),
+            default_buffer: linux::DEFAULT_BUFFER,
+        },
+    });
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+// The platform's own host: WASAPI, CoreAudio, or on Linux the sound system
+// linux.rs picks (PipeWire, PulseAudio or ALSA).
+fn system_host() -> Result<cpal::Host> {
+    #[cfg(target_os = "linux")]
+    return Ok(linux::system_host()?.0);
+    #[cfg(not(target_os = "linux"))]
+    Ok(cpal::default_host())
 }
 
 pub fn exclusive_available() -> bool {
@@ -268,18 +322,26 @@ impl RateLimit {
 // A stream's error callback: keeps the first error for `status` and logs it.
 // An xrun (a WASAPI capture glitch, an ASIO overload), a default device that
 // changed under the stream, or a refused real-time priority leave the stream
-// running, so those are only logged.
+// running, so those are only logged; the first refusal is also kept for the
+// format line (`realtime`), as it makes a small buffer crackle.
 fn error_callback(
     status: Arc<Mutex<Option<String>>>,
+    realtime: Arc<Mutex<Option<String>>>,
     what: &'static str,
 ) -> impl FnMut(cpal::Error) + Send + 'static {
     let mut harmless_prints = RateLimit::default();
     move |e| {
+        if e.kind() == cpal::ErrorKind::RealtimeDenied {
+            let mut realtime = lock(&realtime);
+            if realtime.is_none() {
+                eprintln!("{what} isn't real-time: {e}");
+                *realtime = Some(e.to_string());
+            }
+            return;
+        }
         if matches!(
             e.kind(),
-            cpal::ErrorKind::Xrun
-                | cpal::ErrorKind::DeviceChanged
-                | cpal::ErrorKind::RealtimeDenied
+            cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged
         ) {
             if harmless_prints.ready() {
                 eprintln!("{what} keeps running after: {e}");
@@ -324,6 +386,8 @@ pub struct InputDevice {
     levels: Arc<Levels>,
     // Why the input stream stopped, or why the mixer wants it reopened.
     status: Arc<Mutex<Option<String>>>,
+    // Why its thread isn't real-time, if the system refused.
+    realtime: Arc<Mutex<Option<String>>>,
     pitch_rx: ringbuf::HeapCons<f32>,
     pitch_sample_count: usize,
     pitch_detector: pitch_detector::PitchDetector,
@@ -339,25 +403,22 @@ impl Drop for InputDevice {
 
 impl InputDevice {
     // Each input's id (its key, as saved), its label (what Settings shows)
-    // and its best config.
+    // and the config it would open with (its channels are what Settings
+    // offers). An input that won't say is left out, not the whole list.
     pub fn collect_devices<Collector: FromIterator<(String, String, cpal::StreamConfig)>>(
     ) -> Result<Collector> {
-        _input_devices()?
-            .map(|(input_device, device_type)| {
-                let mut supported_input_configs: Vec<_> =
-                    input_device.supported_input_configs()?.collect();
-                supported_input_configs.sort_by(|a, b| compare_configs(a, b, None));
-                let best_supported_input_config = supported_input_configs
-                    .last()
-                    .ok_or("No supported input configs")?;
-                let input_config = supported_config_to_config(best_supported_input_config, None);
-                Ok((
-                    _device_name(&input_device, &device_type),
-                    _device_label(&input_device, &device_type),
-                    input_config,
-                ))
+        Ok(_input_devices()?
+            .filter_map(|(input_device, device_type)| {
+                let name = _device_name(&input_device, &device_type);
+                match listed_config(&input_device) {
+                    Ok(config) => Some((name, _device_label(&input_device, &device_type), config)),
+                    Err(e) => {
+                        eprintln!("The input {name} is left out: {e}");
+                        None
+                    }
+                }
             })
-            .collect::<Result<Collector>>()
+            .collect())
     }
 
     pub fn new(name: &str, channel_selection: usize) -> Result<Self> {
@@ -377,6 +438,12 @@ impl InputDevice {
         mixer: &mut mixer::Mixer,
     ) -> Result<Self> {
         let mut input_devices = lock(&INPUT_DEVICES);
+        // On Linux the device is found afresh each time: a PipeWire mic
+        // plugged in again is a new node, and a stale one would quietly
+        // record the default mic instead.
+        if cfg!(target_os = "linux") {
+            input_devices.remove(name);
+        }
         let (input_device, device_type) = match input_devices.get(name) {
             Some(device) => device,
             None => {
@@ -411,39 +478,32 @@ impl InputDevice {
             }
         }
 
-        // Only configs that have the chosen channel, the output's rate first.
-        let mut supported_input_configs: Vec<_> = input_device
-            .supported_input_configs()?
-            .filter(|config| channel_selection < config.channels() as usize)
-            .collect();
-        supported_input_configs.sort_by(|a, b| compare_configs(a, b, Some(output_rate)));
-        let best_supported_input_config = supported_input_configs
-            .last()
-            .ok_or("No supported input configs")?;
-        let input_config =
-            supported_config_to_config(best_supported_input_config, Some(output_rate));
+        let (input_config, sample_format) =
+            input_stream_config(input_device, channel_selection, output_rate)?;
 
         println!(
             "Created input device {} with config {:#?}, sample format {:#?}",
             input_device.id()?,
             input_config,
-            best_supported_input_config.sample_format(),
+            sample_format,
         );
 
         let status = Arc::new(Mutex::new(None));
-        let mut device = with_sample_type!(best_supported_input_config.sample_format(), T => {
+        let realtime = Arc::new(Mutex::new(None));
+        let mut device = with_sample_type!(sample_format, T => {
             Self::assemble::<T, _>(
                 &input_config,
                 output_rate,
                 channel_selection,
                 mixer,
-                input_kind(device_type),
+                input_kind(input_device, device_type),
                 status.clone(),
+                realtime.clone(),
                 |mut callback| {
                     let stream = input_device.build_input_stream(
                         input_config,
                         move |samples: &[T], _: &_| callback(samples),
-                        error_callback(status.clone(), "Mic"),
+                        error_callback(status.clone(), realtime.clone(), "Mic"),
                         None,
                     )?;
                     stream.play()?;
@@ -457,7 +517,9 @@ impl InputDevice {
 
     // The mic around a stream that `start` opens, given the mic's callback:
     // the pitch and mixer buffers it feeds, its levels, and its place in the
-    // mixer. `status` is where the stream says why it stopped.
+    // mixer. `status` is where the stream says why it stopped, `realtime`
+    // why its thread isn't real-time.
+    #[allow(clippy::too_many_arguments)]
     fn assemble<Sample, S: Send + 'static>(
         input_config: &cpal::StreamConfig,
         output_rate: cpal::SampleRate,
@@ -465,6 +527,7 @@ impl InputDevice {
         mixer: &mut mixer::Mixer,
         kind: &'static str,
         status: Arc<Mutex<Option<String>>>,
+        realtime: Arc<Mutex<Option<String>>>,
         start: impl FnOnce(Box<dyn FnMut(&[Sample]) + Send>) -> Result<S>,
     ) -> Result<Self>
     where
@@ -501,6 +564,7 @@ impl InputDevice {
             source_id,
             levels,
             status,
+            realtime,
             pitch_rx,
             pitch_sample_count,
             pitch_detector,
@@ -564,6 +628,7 @@ impl InputDevice {
             mixer,
             "Exclusive",
             status,
+            Arc::default(),
             |callback| {
                 *lock(&slot) = Some(callback);
                 Ok(input)
@@ -614,19 +679,26 @@ impl InputDevice {
     // "Shared, 48 kHz, 480 samples (10.0 ms)": how the mic is open, and why
     // not as asked if it isn't.
     pub fn format(&self) -> String {
-        let format = format!(
+        let mut format = format!(
             "{}, {}",
             self.kind,
             describe(self.rate, self.frames.load(Relaxed))
         );
-        match &self.note {
-            Some(note) => format!("{format}. {note}"),
-            None => format,
+        if let Some(note) = &self.note {
+            format = format!("{format}. {note}");
         }
+        if let Some(why) = lock(&self.realtime).as_ref() {
+            format = format!("{format}. Not real-time: {why}");
+        }
+        format
     }
 
     pub fn stop(&mut self) {
         lock(&mixer::MIXER).deregister(self.source_id);
+        // A stream closing can say its device went (PipeWire's do): that
+        // isn't news, so it goes unsaid (the error callback keeps only the
+        // first error).
+        lock(&self.status).get_or_insert_with(|| "stopped".to_string());
         self.input_stream = None;
     }
 
@@ -748,6 +820,78 @@ fn resample_chunk(
     Ok(produced)
 }
 
+// The config an input is listed with: on Linux the one it opens with, in
+// its own channels (ALSA's plugins take up to 64, which Settings would offer
+// one by one); elsewhere its best one.
+#[cfg(target_os = "linux")]
+fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
+    let default = input_device.default_input_config()?;
+    Ok(linux::stream_config(
+        &default,
+        std::iter::empty(),
+        None,
+        linux_buffer(),
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn listed_config(input_device: &cpal::Device) -> Result<cpal::StreamConfig> {
+    let mut supported_input_configs: Vec<_> = input_device.supported_input_configs()?.collect();
+    supported_input_configs.sort_by(|a, b| compare_configs(a, b, None));
+    let best_supported_input_config = supported_input_configs
+        .last()
+        .ok_or("No supported input configs")?;
+    Ok(supported_config_to_config(
+        best_supported_input_config,
+        None,
+    ))
+}
+
+// How a mic opens, with the chosen channel, at the output's rate when it
+// takes it: its config and sample format. On Linux in its own channels and
+// format, in buffers of the size Settings picked.
+#[cfg(target_os = "linux")]
+fn input_stream_config(
+    input_device: &cpal::Device,
+    channel_selection: usize,
+    output_rate: cpal::SampleRate,
+) -> Result<(cpal::StreamConfig, cpal::SampleFormat)> {
+    let default = input_device.default_input_config()?;
+    let config = linux::stream_config(
+        &default,
+        input_device.supported_input_configs()?,
+        Some(output_rate),
+        linux_buffer(),
+    );
+    if channel_selection >= config.channels as usize {
+        return Err(format!("The mic has {} channels", config.channels).into());
+    }
+    Ok((config, default.sample_format()))
+}
+
+// Elsewhere only configs that have the chosen channel, the output's rate
+// first.
+#[cfg(not(target_os = "linux"))]
+fn input_stream_config(
+    input_device: &cpal::Device,
+    channel_selection: usize,
+    output_rate: cpal::SampleRate,
+) -> Result<(cpal::StreamConfig, cpal::SampleFormat)> {
+    let mut supported_input_configs: Vec<_> = input_device
+        .supported_input_configs()?
+        .filter(|config| channel_selection < config.channels() as usize)
+        .collect();
+    supported_input_configs.sort_by(|a, b| compare_configs(a, b, Some(output_rate)));
+    let best_supported_input_config = supported_input_configs
+        .last()
+        .ok_or("No supported input configs")?;
+    Ok((
+        supported_config_to_config(best_supported_input_config, Some(output_rate)),
+        best_supported_input_config.sample_format(),
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
 fn compare_configs(
     a: &cpal::SupportedStreamConfigRange,
     b: &cpal::SupportedStreamConfigRange,
@@ -801,6 +945,7 @@ fn compare_configs(
 }
 
 // The desired sample rate when the range has it, else its highest.
+#[cfg(not(target_os = "linux"))]
 fn supported_config_to_config(
     config_range: &cpal::SupportedStreamConfigRange,
     desired_sample_rate: Option<cpal::SampleRate>,
@@ -821,19 +966,27 @@ fn supported_config_to_config(
     }
 }
 
+// The mics: the system host's (on Linux only its mics, see linux.rs), and
+// ASIO's.
 fn _input_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
-    let devices = cpal::default_host()
-        .input_devices()?
-        .map(|device| (device, DeviceType::DefaultHost));
+    let host = system_host()?;
+    #[cfg(target_os = "linux")]
+    let devices = linux::input_devices(&host)?.into_iter();
+    #[cfg(not(target_os = "linux"))]
+    let devices = host.input_devices()?;
+    let devices = devices.map(|device| (device, DeviceType::DefaultHost));
     #[cfg(all(windows, feature = "asio"))]
     let devices = devices.chain(asio_devices(DeviceTrait::supports_input));
     Ok(devices)
 }
 
 fn _output_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> {
-    let devices = cpal::default_host()
-        .output_devices()?
-        .map(|device| (device, DeviceType::DefaultHost));
+    let host = system_host()?;
+    #[cfg(target_os = "linux")]
+    let devices = linux::output_devices(&host)?.into_iter();
+    #[cfg(not(target_os = "linux"))]
+    let devices = host.output_devices()?;
+    let devices = devices.map(|device| (device, DeviceType::DefaultHost));
     #[cfg(all(windows, feature = "asio"))]
     let devices = devices.chain(asio_devices(DeviceTrait::supports_output));
     Ok(devices)
@@ -868,12 +1021,16 @@ fn asio_devices(
         .into_iter()
 }
 
-// How a mic is open, for its format line.
-fn input_kind(device_type: &DeviceType) -> &'static str {
+// How a mic is open, for its format line: on Linux the sound system
+// ("PipeWire").
+fn input_kind(device: &cpal::Device, device_type: &DeviceType) -> &'static str {
     match device_type {
         #[cfg(all(windows, feature = "asio"))]
         DeviceType::Asio => "ASIO",
         DeviceType::DefaultHost if cfg!(windows) => "Shared",
+        DeviceType::DefaultHost if cfg!(target_os = "linux") => {
+            device.id().map_or("System", |id| id.host().name())
+        }
         DeviceType::DefaultHost => "System",
     }
 }
@@ -883,12 +1040,13 @@ fn input_host(device_type: &DeviceType) -> &'static str {
     match device_type {
         #[cfg(all(windows, feature = "asio"))]
         DeviceType::Asio => "ASIO",
+        DeviceType::DefaultHost if cfg!(target_os = "linux") => "Linux",
         DeviceType::DefaultHost => "USB",
     }
 }
 
-// An input's key: its id and "(USB)" for the default host, the form saved
-// mics have.
+// An input's key: its id and "(USB)" for the default host ("(Linux)" on
+// Linux), the form saved mics have.
 fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> String {
     format!("{} ({})", device.id().unwrap(), input_host(device_type))
 }
@@ -896,6 +1054,10 @@ fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> String {
 // An input's label: what the system calls it ("Yeti Stereo Microphone
 // (USB)"), or its id if the system won't say.
 fn _device_label(device: &cpal::Device, device_type: &DeviceType) -> String {
+    #[cfg(target_os = "linux")]
+    if let Some(label) = linux::label(device) {
+        return format!("{label} ({})", input_host(device_type));
+    }
     match device.description() {
         Ok(description) => format!("{} ({})", description.name(), input_host(device_type)),
         Err(_) => _device_name(device, device_type),
@@ -911,6 +1073,10 @@ fn _output_name(device: &cpal::Device, device_type: &DeviceType) -> Result<Strin
         DeviceType::DefaultHost if cfg!(target_os = "macos") => "Mac",
         DeviceType::DefaultHost => "Linux",
     };
+    #[cfg(target_os = "linux")]
+    if let Some(label) = linux::label(device) {
+        return Ok(format!("{label} ({host})"));
+    }
     Ok(format!("{} ({host})", device.description()?.name()))
 }
 
@@ -1119,10 +1285,15 @@ mod tests {
     #[test]
     fn test_an_xrun_keeps_the_stream() {
         let status = Arc::new(Mutex::new(None));
-        let mut callback = error_callback(status.clone(), "Mic");
+        let realtime = Arc::new(Mutex::new(None));
+        let mut callback = error_callback(status.clone(), realtime.clone(), "Mic");
         callback(cpal::Error::new(cpal::ErrorKind::Xrun));
         callback(cpal::Error::new(cpal::ErrorKind::DeviceChanged));
         assert_eq!(*lock(&status), None);
+        // A refused real-time priority too; it is kept for the format line.
+        callback(cpal::Error::new(cpal::ErrorKind::RealtimeDenied));
+        assert_eq!(*lock(&status), None);
+        assert!(lock(&realtime).is_some());
         // Anything else stops it.
         callback(cpal::Error::new(cpal::ErrorKind::DeviceNotAvailable));
         assert!(lock(&status).is_some());
@@ -1160,6 +1331,8 @@ mod tests {
             for (id, label, _) in &devices {
                 let host = if id.ends_with(" (ASIO)") {
                     " (ASIO)"
+                } else if cfg!(target_os = "linux") {
+                    " (Linux)"
                 } else {
                     " (USB)"
                 };

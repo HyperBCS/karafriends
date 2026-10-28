@@ -7,8 +7,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::{Consumer, Observer};
 
 use crate::{
-    _output_devices, _output_name, describe, error_callback, lock, DeviceType, RateLimit, Result,
-    Stream,
+    _output_devices, _output_name, describe, error_callback, lock, system_host, DeviceType,
+    RateLimit, Result, Stream,
 };
 
 pub(crate) static MIXER: LazyLock<Mutex<Mixer>> = LazyLock::new(|| Mutex::new(Mixer::default()));
@@ -119,12 +119,18 @@ fn buffer_choices(min: u32, max: u32) -> Vec<u32> {
     choices
 }
 
-// What the mic output runs at: "48 kHz, 512 samples (10.7 ms)". None while
-// no mic is open.
+// What the mic output runs at: "48 kHz, 512 samples (10.7 ms)", and why
+// its thread isn't real-time if the system refused. None while no mic is
+// open.
 pub fn output_format() -> Option<String> {
     let mixer = lock(&MIXER);
     let (_, rate) = mixer.output.as_ref()?;
-    Some(describe(*rate, mixer.frames.load(Relaxed)))
+    let format = describe(*rate, mixer.frames.load(Relaxed));
+    let realtime = lock(&mixer.output_realtime).clone();
+    Some(match realtime {
+        Some(why) => format!("{format}. Not real-time: {why}"),
+        None => format,
+    })
 }
 
 // One mic's output buffer (mono, at the output rate), as the mixer reads it.
@@ -146,6 +152,8 @@ pub(crate) struct Mixer {
     output: Option<(Stream, cpal::SampleRate)>,
     // Why the stream stopped or couldn't open.
     output_error: Arc<Mutex<Option<String>>>,
+    // Why its thread isn't real-time, if the system refused.
+    output_realtime: Arc<Mutex<Option<String>>>,
     // Set when the chosen device is missing and the default plays instead.
     note: Option<String>,
     // The output callback only ever try_locks this, so the audio thread
@@ -165,9 +173,18 @@ impl Mixer {
         }
     }
 
+    // Opens the stream again, as set now, if it is open.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub fn reopen(&mut self) -> Result<()> {
+        if self.output.is_some() {
+            self.open()?;
+        }
+        Ok(())
+    }
+
     fn open(&mut self) -> Result<cpal::SampleRate> {
         // ASIO allows one stream per driver: close the old one first.
-        self.output = None;
+        self.close();
         let opened = self.build();
         match opened {
             Ok((stream, rate, note)) => {
@@ -212,7 +229,7 @@ impl Mixer {
                 }
             });
         }
-        let device = cpal::default_host()
+        let device = system_host()?
             .default_output_device()
             .ok_or("No default output device")?;
         let (stream, rate) = self.build_on(&device, &DeviceType::DefaultHost, None, None)?;
@@ -221,7 +238,7 @@ impl Mixer {
 
     // The device's own format, at the chosen rate (else the mics', so they
     // needn't reopen) if it has it, and for ASIO the chosen buffer size if
-    // the driver takes it.
+    // the driver takes it. On Linux, in buffers of the size the mics use.
     fn build_on(
         &mut self,
         device: &cpal::Device,
@@ -247,8 +264,14 @@ impl Mixer {
                 config.buffer_size = cpal::BufferSize::Fixed(frames);
             }
         }
+        #[cfg(target_os = "linux")]
+        {
+            config.buffer_size =
+                crate::linux::buffer_size(default_config.buffer_size(), crate::linux_buffer());
+        }
         let channels = config.channels as usize;
         let output_error = Arc::new(Mutex::new(None));
+        let output_realtime = Arc::new(Mutex::new(None));
         let stream = with_sample_type!(default_config.sample_format(), T => {
             let mut output_callback = output_data_callback::<T>(
                 self.sources.clone(),
@@ -259,7 +282,7 @@ impl Mixer {
             Ok(device.build_output_stream(
                 config,
                 move |samples: &mut [T], _: &_| output_callback(samples),
-                error_callback(output_error.clone(), "Mic output"),
+                error_callback(output_error.clone(), output_realtime.clone(), "Mic output"),
                 None,
             )?)
         })?;
@@ -271,6 +294,7 @@ impl Mixer {
             default_config.sample_format(),
         );
         self.output_error = output_error;
+        self.output_realtime = output_realtime;
         Ok((Stream::new(stream, device_type), config.sample_rate))
     }
 
@@ -307,8 +331,17 @@ impl Mixer {
     // No mics, no stream: nothing holds the device (or an ASIO driver).
     pub fn close_if_unused(&mut self) {
         if lock(&self.sources).is_empty() {
-            self.output = None;
+            self.close();
         }
+    }
+
+    // Closes the stream. Closing, it can say its device went (PipeWire's
+    // do), which isn't news: its error is set first, so that goes unsaid.
+    fn close(&mut self) {
+        if self.output.is_some() {
+            lock(&self.output_error).get_or_insert_with(|| "closed".to_string());
+        }
+        self.output = None;
     }
 }
 
