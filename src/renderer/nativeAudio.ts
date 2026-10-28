@@ -1,7 +1,5 @@
 const native = window.karafriends.nativeAudio;
 
-const registry = new FinalizationRegistry(native.inputDevice_delete);
-
 // How often the watchdog asks each mic, and tries again to reopen one that
 // is down.
 const WATCH_MS = 2000;
@@ -44,7 +42,6 @@ export class InputDevice {
 
   private create() {
     const deviceId = native.inputDevice_new(this.name, this.channelSelection);
-    registry.register(this, deviceId);
     native.inputDevice_setGain(deviceId, this.gain);
     native.inputDevice_setEcho(deviceId, this.echo);
     return deviceId;

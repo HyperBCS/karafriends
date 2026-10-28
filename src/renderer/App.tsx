@@ -57,9 +57,18 @@ function openMic(name: string, channel: number, levels: MicLevels) {
   return mic;
 }
 
+// Opened once per page: StrictMode calls App's initializer twice in
+// `yarn dev`, and a second set would play every mic twice.
+let openedSavedMics: InputDevice[] | null = null;
+
 // The mic output and the microphones picked last time, those still plugged
 // in and that open. The output first, so the mics open on it.
 function savedMics(): InputDevice[] {
+  openedSavedMics ??= openSavedMics();
+  return openedSavedMics;
+}
+
+function openSavedMics(): InputDevice[] {
   setOutputDevice(localStorage.getItem(MIC_OUTPUT_KEY));
   const channelCounts = new Map(window.karafriends.nativeAudio.inputDevices());
   return readSavedMics()
