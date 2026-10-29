@@ -109,6 +109,7 @@ describe("createCatalogs", () => {
   function setUp(
     options: {
       logins?: Partial<Record<LoginService, boolean>>;
+      enabled?: Partial<Record<LoginService, boolean>>;
       fake?: ReadonlySet<LoginService> | null;
     } = {},
   ) {
@@ -125,6 +126,7 @@ describe("createCatalogs", () => {
       if (next) await next();
     };
     const catalogs = createCatalogs({
+      enabled: (service) => options.enabled?.[service] ?? true,
       hasLogin: (service) => options.logins?.[service] ?? true,
       signIn: { dam: signIn("dam"), joysound: signIn("joysound") },
       forget: {
@@ -229,6 +231,32 @@ describe("createCatalogs", () => {
     refuse();
     await older;
     assert.deepEqual(catalogs.statuses().dam, { state: "on" });
+  });
+
+  test("turned off by the host: disabled, without signing in; tries again stop", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const enabled = { dam: true, joysound: true };
+    const { catalogs, outcomes, signIns } = setUp({ enabled });
+    outcomes.dam.push(async () => {
+      throw new HttpStatusError(403, "https://x");
+    });
+    assert.equal((await catalogs.check("dam")).state, "unreachable");
+    enabled.dam = false;
+    assert.deepEqual(await catalogs.check("dam"), { state: "disabled" });
+    assert.equal(catalogs.isOn("dam"), false);
+    t.mock.timers.tick(60_000);
+    await flush();
+    assert.deepEqual(signIns, ["dam"]);
+    assert.deepEqual(catalogs.statuses().dam, { state: "disabled" });
+  });
+
+  test("faked (the e2e tests), a catalog turned off is still off", async () => {
+    const { catalogs } = setUp({
+      enabled: { joysound: false },
+      fake: new Set(["dam", "joysound"]),
+    });
+    assert.deepEqual(await catalogs.check("joysound"), { state: "disabled" });
+    assert.deepEqual(await catalogs.check("dam"), { state: "on" });
   });
 
   test("faked (the e2e tests): on as named, with nothing signed in", async () => {

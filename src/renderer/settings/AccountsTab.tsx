@@ -19,6 +19,11 @@ export function catalogLine(
 ): { text: string; tone: "on" | "problem" | "" } {
   const name = SERVICE_NAMES[service];
   switch (status.state) {
+    case "disabled":
+      return {
+        text: `Turned off: guests don't see ${name} songs.`,
+        tone: "",
+      };
     case "off":
       return {
         text: `Off: guests can't find ${name} songs until a login is set.`,
@@ -54,8 +59,8 @@ export function CatalogStatusLine(props: { service: LoginService }) {
   );
 }
 
-// The DAM and Joysound logins, each with how its catalog stands and a Test
-// login button.
+// The DAM and Joysound logins, each with a switch for its catalog, how it
+// stands, and a Test login button.
 export default function AccountsTab(props: {
   loaded: Loaded;
   messages: Partial<Record<Section, Message | null>>;
@@ -71,10 +76,15 @@ export default function AccountsTab(props: {
   });
 
   const loginSection = (service: LoginService) => {
-    const [userKey, passKey, userLabel] =
+    const [enabledKey, userKey, passKey, userLabel] =
       service === "dam"
-        ? (["damUsername", "damPassword", "Username"] as const)
-        : (["joysoundEmail", "joysoundPassword", "Email"] as const);
+        ? (["damEnabled", "damUsername", "damPassword", "Username"] as const)
+        : ([
+            "joysoundEnabled",
+            "joysoundEmail",
+            "joysoundPassword",
+            "Email",
+          ] as const);
     const message = props.messages[service];
     const offersSwitch =
       service === "joysound" && (message?.offersSwitch || linkTaken);
@@ -83,6 +93,13 @@ export default function AccountsTab(props: {
         title={`${SERVICE_NAMES[service]} login`}
         message={message}
       >
+        {/* The host can turn a catalog off whatever its login: it isn't
+            signed in to, and phones don't show it. */}
+        <Checkbox
+          label={`Use ${SERVICE_NAMES[service]}`}
+          checked={settings[enabledKey]}
+          onChange={(checked) => save(service, { [enabledKey]: checked })}
+        />
         <CatalogStatusLine service={service} />
         <div className="settingsFields">
           <TextSetting

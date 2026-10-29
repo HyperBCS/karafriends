@@ -209,12 +209,12 @@ const NICO_INFO_FAILED = "Failed getting video info. Maybe an invalid VideoID?";
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
-// Why a phone can't have a catalog's songs: its login isn't set up, or
-// doesn't work (catalogs.ts). The remote says it in the phone's language
-// (src/remocon/i18n/reasons.ts).
+// Why a phone can't have a catalog's songs: the host turned it off, or
+// its login isn't set up or doesn't work (catalogs.ts). The remote says it
+// in the phone's language (src/remocon/i18n/reasons.ts).
 export const CATALOG_OFF: Record<LoginService, string> = {
-  dam: "DAM isn't set up on this karaoke PC",
-  joysound: "Joysound isn't set up on this karaoke PC",
+  dam: "DAM isn't available on this karaoke PC",
+  joysound: "Joysound isn't available on this karaoke PC",
 };
 
 // Every method but the settings ones (settings.ts).

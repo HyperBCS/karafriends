@@ -40,6 +40,8 @@ export const SECTION_TABS: Record<Section, SettingsTab> = {
 
 // The tab each setting is on, to mark the ones an import changed.
 export const SETTING_TABS: Record<keyof SavedSettings, SettingsTab> = {
+  damEnabled: "accounts",
+  joysoundEnabled: "accounts",
   damUsername: "accounts",
   damPassword: "accounts",
   useLowBitrateUrl: "accounts",

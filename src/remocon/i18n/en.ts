@@ -111,8 +111,8 @@ export const en = {
   "reason.diskFull": "The karaoke PC's disk is full",
   "reason.other": "Download failed",
   "reason.alreadyAdding": "Someone is already adding this song",
-  "reason.damOff": "DAM isn't set up on this karaoke PC",
-  "reason.joysoundOff": "Joysound isn't set up on this karaoke PC",
+  "reason.damOff": "DAM isn't available on this karaoke PC",
+  "reason.joysoundOff": "Joysound isn't available on this karaoke PC",
   "reason.nicoInfo": "Maybe the video ID is wrong.",
   "reason.tooManyLyrics":
     "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
@@ -149,14 +149,12 @@ export const en = {
   "emotes.edit": "Change emotes",
   "emotes.prompt": "Type the emoji to show here",
 
-  // A DAM or Joysound page, or search, while that catalog isn't on: its
-  // login isn't set up (or doesn't work), it's signing in, or it can't be
-  // reached.
-  "catalog.off": "{source} isn't set up on this karaoke PC.",
+  // A DAM or Joysound page while that catalog isn't on: the host turned it
+  // off or its login isn't set up (or doesn't work), it's signing in, or
+  // it can't be reached.
+  "catalog.off": "{source} isn't available on this karaoke PC.",
   "catalog.checking": "Connecting to {source}…",
   "catalog.unreachable": "{source} can't be reached right now.",
-  "catalog.noneOn":
-    "DAM and Joysound aren't set up on this karaoke PC. Paste a YouTube or Niconico link to sing one.",
   // History.
   "history.heading": "History",
   // Browse: Joysound's newest songs, genres and featured lists.
