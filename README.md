@@ -84,6 +84,38 @@ Dependencies
 
   Builds use `-C relro-level=partial` from `.cargo/config.toml`. A `RUSTFLAGS` variable replaces it, so include the flag there too. `scripts/checkLazyPipewire.sh` checks a built `native/index.node`.
 
+## Releasing
+
+Release zips come from the Release workflow, one per platform, and each zip is built on its own operating system: Windows and macOS zips can't be built elsewhere, and a Linux zip runs only where glibc is at least the building machine's (the workflow builds on Ubuntu 24.04, so its zip runs on 22.04 and newer; one built on a newer distribution wouldn't).
+
+### A release build on your own machine
+
+With the Building dependencies installed, from a clean checkout of the version to build:
+
+```sh
+yarn install --immutable
+yarn build-prod      # native module (release), main, preload, display and remote into build/prod
+yarn package-prod    # dist/karafriends-<platform>-<arch>/ and its .zip
+```
+
+The zip holds a `karafriends-<platform>-<arch>` folder; the app inside is what the Releases page ships. Per platform:
+
+- **Windows**: `yarn build-prod` downloads Steinberg's ASIO SDK the first time and needs LLVM (see Building). The zip is `dist\karafriends-win32-x64.zip`, unsigned, like the released one.
+- **macOS**: `CARGO_ARGS="--target aarch64-apple-darwin" yarn build-prod`, then `PACKAGER_ARCH=arm64 yarn package-prod` for Apple Silicon. For Intel Macs, on the same Apple Silicon machine: `rustup target add x86_64-apple-darwin`, then `CARGO_ARGS="--target x86_64-apple-darwin" yarn build-prod` and `PACKAGER_ARCH=x64 yarn package-prod`. The released zips are signed and notarized; a local one is left unsigned (it says so) unless `NOTARIZATION_KEY_PATH` points at the App Store Connect API key and the Developer ID certificate is in the keychain, as the workflow arranges. An unsigned build runs on the Mac that built it; Gatekeeper may refuse it on another Mac.
+- **Linux**: build on the oldest distribution the zip is for (Ubuntu 24.04 for the released one). After `yarn build-prod`, `scripts/checkLazyPipewire.sh native/index.node` checks the module will load with an older PipeWire; after `yarn package-prod`, `scripts/smokeLinuxPackage.sh dist/karafriends-linux-x64.zip` starts the packaged app hidden and checks it (CI runs it in an Ubuntu 22.04 container). If `RUSTFLAGS` is set in your shell, add `-C relro-level=partial` to it (see Building).
+
+`yarn build-prod` fetches nothing from the network except the ASIO SDK on Windows: ffmpeg and yt-dlp are downloaded by the app itself at its first launch.
+
+### Publishing a release
+
+1. Set the version in `package.json` and give the CHANGELOG's unreleased section that version and date. Commit and push.
+2. Try the workflow first: on GitHub, Actions → Release → Run workflow. It builds, signs and zips all four platforms and keeps each zip as a workflow artifact. Download one and start it.
+3. Publish a GitHub Release whose tag is `v` followed by `package.json`'s version (`v0.2.0`). The Release workflow runs on publishing, refuses a tag that doesn't match the version, and uploads the four zips to the release. If one platform fails, the others still upload; fix it and re-run that release's workflow run.
+
+The Build workflow runs on every push: typecheck, lint, the unit and Rust tests, a build on every platform, the smoke tests on Windows and Linux, and the packaged Linux zip on Ubuntu 22.04. A release should only be cut from a green master.
+
+macOS signing needs four repository secrets: `MACOS_SIGNING_CERT_BASE64` and `MACOS_SIGNING_CERT_PASSWORD` (the Developer ID Application certificate as a base64 `.p12` and its password), `MACOS_KEYCHAIN_PASSWORD` (any password for the temporary keychain), and `MACOS_NOTARIZATION_API_KEY_BASE64` (the App Store Connect API key `.p8`, base64; its key id and issuer are in `packager.js`).
+
 ## Running
 
 ```sh

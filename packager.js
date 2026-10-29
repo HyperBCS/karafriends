@@ -50,14 +50,24 @@ function bundleExtractor() {
     ...(process.platform === "darwin" && {
       appBundleId: "party.karafriends",
       icon: "appIcons/icon.icns",
-      osxNotarize: {
-        appleApiKey: process.env.NOTARIZATION_KEY_PATH,
-        appleApiKeyId: "Z744X6G756",
-        appleApiIssuer: "69a6de7c-6a99-47e3-e053-5b8c7c11a4d1",
-      },
-      osxSign: {
-        identity: "Developer ID Application: Brandon Smith (JH8AT59Q63)",
-      },
+      // Signed and notarized when the notarization key is given (the Release
+      // workflow always gives it); a local build without the Developer ID
+      // certificate is left unsigned, which runs on the building Mac.
+      ...(process.env.NOTARIZATION_KEY_PATH
+        ? {
+            osxNotarize: {
+              appleApiKey: process.env.NOTARIZATION_KEY_PATH,
+              appleApiKeyId: "Z744X6G756",
+              appleApiIssuer: "69a6de7c-6a99-47e3-e053-5b8c7c11a4d1",
+            },
+            osxSign: {
+              identity: "Developer ID Application: Brandon Smith (JH8AT59Q63)",
+            },
+          }
+        : (console.log(
+            "NOTARIZATION_KEY_PATH isn't set: the app is left unsigned.",
+          ),
+          {})),
     }),
     ...(process.platform === "win32" && {
       icon: "appIcons/icon.ico",
