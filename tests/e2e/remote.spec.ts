@@ -1196,19 +1196,17 @@ test.describe("in supervised mode", () => {
   });
 });
 
-test.describe("Joysound off (no working login)", () => {
+test.describe("Joysound off (turned off, or no working login)", () => {
   test.use({ catalogs: "dam" });
 
-  test("Browse isn't in the top bar, search says so, and a Joysound page says why", async ({
+  test("Browse isn't in the top bar, search leaves it out quietly, and a Joysound page says why", async ({
     remote,
   }) => {
     await expect(
       remote.getByRole("link", { name: "Settings" }).first(),
     ).toBeVisible();
     await expect(remote.getByRole("link", { name: "Browse" })).toHaveCount(0);
-    await expect(
-      remote.getByText("Joysound isn't set up on this karaoke PC."),
-    ).toBeVisible();
+    await expect(remote.getByText(/isn't available/)).toHaveCount(0);
     // Only DAM: no source to pick.
     await expect(remote.getByLabel("Source")).toHaveCount(0);
     const asked: string[] = [];
@@ -1228,11 +1226,14 @@ test.describe("Joysound off (no working login)", () => {
     await expect(remote.getByRole("link", { name: /DAM only/ })).toBeVisible();
     expect(asked).not.toContain("/api/joysoundSearchSongs");
 
+    // Nothing says Joysound is left out.
+    await expect(remote.getByText(/isn't available/)).toHaveCount(0);
+
     // An old link to a Joysound song.
-    await remote.goto(`${remote.url().split("#")[0]}#/joysound/425691`);
+    await remote.goto(`${remote.url().split("#")[0]}#/joysoundSong/425691`);
     await remote.reload();
     await expect(
-      remote.getByText("Joysound isn't set up on this karaoke PC."),
+      remote.getByText("Joysound isn't available on this karaoke PC."),
     ).toBeVisible();
   });
 });
@@ -1240,12 +1241,25 @@ test.describe("Joysound off (no working login)", () => {
 test.describe("DAM and Joysound both off", () => {
   test.use({ catalogs: "" });
 
-  test("search says to paste a video link", async ({ remote }) => {
-    await expect(
-      remote.getByText(
-        "DAM and Joysound aren't set up on this karaoke PC. Paste a YouTube or Niconico link to sing one.",
-      ),
-    ).toBeVisible();
+  test("search takes video links only: no Title or Artist, and no lookups", async ({
+    remote,
+  }) => {
+    const asked: string[] = [];
+    remote.on("request", (request) => {
+      if (isApiRequest(request.url()))
+        asked.push(new URL(request.url()).pathname);
+    });
+    const hint = remote.getByText(
+      "Paste a YouTube or Niconico link to queue the video.",
+    );
+    await expect(hint).toBeVisible();
+    await expect(remote.getByRole("radiogroup")).toHaveCount(0);
+    await remote.getByRole("searchbox", { name: "Search" }).fill("Lemon");
+    await remote.getByRole("searchbox", { name: "Search" }).press("Enter");
+    await expect(remote).toHaveURL(/q=Lemon/);
+    await expect(hint).toBeVisible();
+    await expect(remote.getByText(/isn't available|No results/)).toHaveCount(0);
+    expect(asked.filter((path) => /Search/.test(path))).toEqual([]);
   });
 });
 

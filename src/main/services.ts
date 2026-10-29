@@ -143,6 +143,10 @@ configStore.onChange(({ keys }) => {
 // launch, and again when it changes (after credentials.ts has dropped the
 // old session). The phones see it in the live state.
 const catalogs = createCatalogs({
+  enabled: (service) =>
+    service === "dam"
+      ? configStore.get().damEnabled
+      : configStore.get().joysoundEnabled,
   hasLogin: (service) => hasLogin(configStore.get(), service),
   signIn: {
     dam: async () => {
@@ -173,12 +177,10 @@ const catalogs = createCatalogs({
 });
 for (const service of CATALOGS) void catalogs.check(service);
 configStore.onChange(({ keys }) => {
-  if (keys.some((key) => (DAM_LOGIN_KEYS as readonly string[]).includes(key))) {
-    void catalogs.check("dam");
-  }
-  if (
-    keys.some((key) => (JOYSOUND_LOGIN_KEYS as readonly string[]).includes(key))
-  ) {
+  const changed = (watched: readonly string[]) =>
+    keys.some((key) => watched.includes(key));
+  if (changed([...DAM_LOGIN_KEYS, "damEnabled"])) void catalogs.check("dam");
+  if (changed([...JOYSOUND_LOGIN_KEYS, "joysoundEnabled"])) {
     void catalogs.check("joysound");
   }
 });

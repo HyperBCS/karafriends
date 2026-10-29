@@ -438,7 +438,9 @@ export type LoginService = "dam" | "joysound";
 // canSwitchLink: karafriends isn't the account's TV app (another may be),
 // and switchJoysoundLink can make it so.
 // How a catalog (DAM's songs, or Joysound's) stands on this karaoke PC:
-// off, no login is filled in; checking, signing in; on, signed in, so
+// disabled, the host turned it off in Settings (damEnabled,
+// joysoundEnabled); off, no login is filled in; checking, signing in; on,
+// signed in, so
 // guests can find and sing its songs. unreachable: the service couldn't be
 // reached (no connection, or no Japanese IP address: the VPN), and is tried
 // again by itself at retryAt. failed: the service refused the login (a
@@ -446,7 +448,7 @@ export type LoginService = "dam" | "joysound";
 // holding Joysound's link), until the host changes it. reason says why, in
 // a sentence for the host.
 export type CatalogStatus =
-  | { state: "off" | "checking" | "on" }
+  | { state: "disabled" | "off" | "checking" | "on" }
   | { state: "unreachable"; reason: string; retryAt: number }
   | { state: "failed"; reason: string; canSwitchLink?: boolean };
 

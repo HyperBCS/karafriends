@@ -298,6 +298,38 @@ test.describe("a first start (no config.yaml)", () => {
   });
 });
 
+test("Use Joysound turns its songs off for the phones, and on again", async ({
+  karafriends,
+  display,
+}) => {
+  await openTab(display, "Accounts");
+  const joysound = display
+    .getByRole("dialog", { name: "Settings" })
+    .getByRole("region", { name: "Joysound login" });
+  const use = joysound.getByLabel("Use Joysound");
+  // On, faked for the tests.
+  await expect(use).toBeChecked();
+  await expect(
+    joysound.getByText("On: guests can find and sing Joysound songs."),
+  ).toBeVisible();
+
+  await use.uncheck();
+  await expect(
+    joysound.getByText("Turned off: guests don't see Joysound songs."),
+  ).toBeVisible();
+  expect((await configOnDisk(karafriends.app)).joysoundEnabled).toBe(false);
+  expect((await phoneLiveState(karafriends.remoconUrl)).catalogs).toEqual({
+    dam: { state: "on" },
+    joysound: { state: "disabled" },
+  });
+
+  await use.check();
+  await expect(
+    joysound.getByText("On: guests can find and sing Joysound songs."),
+  ).toBeVisible();
+  expect((await configOnDisk(karafriends.app)).joysoundEnabled).toBe(true);
+});
+
 test("leaving Settings saves the field being edited: Escape keeps it, and Close stays open to say why one was refused", async ({
   display,
 }) => {

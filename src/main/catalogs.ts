@@ -1,7 +1,8 @@
 // Whether DAM's and Joysound's songs are on for this party: each catalog is
 // on once its login has signed in, checked at launch and whenever the login
 // changes. Guests' phones only show the catalogs that are on (the live
-// state's catalogs), and the API refuses the others.
+// state's catalogs), and the API refuses the others. The host can turn
+// either off in Settings: then it isn't signed in to at all.
 //
 // A service that can't be reached (no connection, or no Japanese IP address:
 // the VPN is off) is tried again by itself, sooner at first, then every
@@ -32,6 +33,7 @@ export const RETRY_MS: readonly number[] = [10_000, 30_000, 60_000];
 // the website, authorize a code, check it).
 const CHECK_TIMEOUT_MS = 45_000;
 
+const DISABLED: CatalogStatus = { state: "disabled" };
 const OFF: CatalogStatus = { state: "off" };
 const CHECKING: CatalogStatus = { state: "checking" };
 const ON: CatalogStatus = { state: "on" };
@@ -105,6 +107,9 @@ export function fakeCatalogs(
 }
 
 export interface CatalogsDeps {
+  // Whether the host has the catalog on (damEnabled, joysoundEnabled): one
+  // that's off isn't signed in to.
+  enabled(service: LoginService): boolean;
   // Whether the login is filled in.
   hasLogin(service: LoginService): boolean;
   // Signs in with the clients' shared login (credentials.ts), or uses the
@@ -163,6 +168,11 @@ export function createCatalogs(deps: CatalogsDeps): Catalogs {
     clearTimeout(timers[service]);
     delete timers[service];
     const run = ++runs[service];
+    if (!deps.enabled(service)) {
+      misses[service] = 0;
+      set(service, DISABLED);
+      return statuses[service];
+    }
     if (deps.fake) {
       set(service, deps.fake.has(service) ? ON : OFF);
       return statuses[service];

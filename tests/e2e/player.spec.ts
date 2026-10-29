@@ -126,11 +126,13 @@ test.describe("a download the display can't play", () => {
 });
 
 test.describe("a queued song whose files are missing", () => {
-  // The Joysound song's video and lyrics.
+  // The Joysound song's video and lyrics. The video may fail before the
+  // lyrics do, which skips the song all the same.
   test.use({
     allowDisplayErrors: anyOf(
       /^Failed to load resource: net::ERR_FILE_NOT_FOUND$/,
       /^Couldn't load the lyrics for e2e-missing: /,
+      /^The video failed: /,
     ),
   });
   const user = { deviceId: "e2e-player-device", nickname: "e2e" };

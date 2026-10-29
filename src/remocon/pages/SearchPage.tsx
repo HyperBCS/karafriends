@@ -44,17 +44,14 @@ const SearchPage = () => {
     sourceParam === "dam" || sourceParam === "joysound" ? sourceParam : "all";
 
   const [text, setText] = useState(query);
-  // Only the catalogs that are on are searched (before the first live
-  // state, both are tried). The source menu shows when both are.
-  const views = { dam: useCatalog("dam"), joysound: useCatalog("joysound") };
+  // Only the catalogs that are on are searched, quietly (before the first
+  // live state, both are tried). The source menu shows when both are on;
+  // Title and Artist, when either is. With neither, the box takes video
+  // links.
   const isOn = (view: CatalogView | null) => view === null || view === "on";
-  const damOn = isOn(views.dam);
-  const joysoundOn = isOn(views.joysound);
-  const notes = (["dam", "joysound"] as const).flatMap((catalog) => {
-    const view = views[catalog];
-    return view === null || view === "on" ? [] : [{ catalog, view }];
-  });
-  const noneOn = views.dam === "off" && views.joysound === "off";
+  const damOn = isOn(useCatalog("dam"));
+  const joysoundOn = isOn(useCatalog("joysound"));
+  const anyOn = damOn || joysoundOn;
 
   // From the address as it is now: a render's params can be a change
   // behind (react-router renders navigations in a transition), and a choice
@@ -120,33 +117,26 @@ const SearchPage = () => {
             clearable
           />
         </form>
-        <div className={styles.options}>
-          <SegmentedControl<SearchBy>
-            label={t("search.byLabel")}
-            hideLabel
-            small
-            choices={[
-              { id: "title", label: t("search.title") },
-              { id: "artist", label: t("search.artist") },
-            ]}
-            selected={by}
-            onSelect={(id) => update({ by: id })}
-          />
-          {damOn && joysoundOn && (
-            <SourceMenu
-              source={source}
-              onSelect={(id) => update({ source: id })}
+        {anyOn && (
+          <div className={styles.options}>
+            <SegmentedControl<SearchBy>
+              label={t("search.byLabel")}
+              hideLabel
+              small
+              choices={[
+                { id: "title", label: t("search.title") },
+                { id: "artist", label: t("search.artist") },
+              ]}
+              selected={by}
+              onSelect={(id) => update({ by: id })}
             />
-          )}
-        </div>
-        {noneOn ? (
-          <p className={styles.catalogNote}>{t("catalog.noneOn")}</p>
-        ) : (
-          notes.map(({ catalog, view }) => (
-            <p key={catalog} className={styles.catalogNote}>
-              {t(`catalog.${view}`, { source: sourceName(catalog) })}
-            </p>
-          ))
+            {damOn && joysoundOn && (
+              <SourceMenu
+                source={source}
+                onSelect={(id) => update({ source: id })}
+              />
+            )}
+          </div>
         )}
       </div>
       {byId && (
@@ -159,7 +149,7 @@ const SearchPage = () => {
           />
         </List>
       )}
-      {query ? (
+      {query && anyOn ? (
         <SearchResults
           query={query}
           by={by}

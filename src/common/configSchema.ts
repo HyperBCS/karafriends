@@ -4,6 +4,10 @@
 // No Electron imports, so unit tests can load this file under plain Node.
 
 export interface KarafriendsConfig {
+  // Whether guests may find and sing DAM's songs, and Joysound's: the host
+  // can turn a catalog off whatever its login (catalogs.ts).
+  damEnabled: boolean;
+  joysoundEnabled: boolean;
   // Whether to use the low bitrate URLs for DAM songs
   useLowBitrateUrl: boolean;
   // How many songs each phone may have queued or downloading (0: no limit)
@@ -30,6 +34,8 @@ export interface KarafriendsConfig {
 }
 
 export const DEFAULT_CONFIG: Readonly<KarafriendsConfig> = {
+  damEnabled: true,
+  joysoundEnabled: true,
   useLowBitrateUrl: false,
   paxSongQueueLimit: 1,
   remoconPort: 8080,
@@ -198,6 +204,8 @@ const PORT = { type: "integer", min: 1, max: 65535 } as const;
 export const CONFIG_RULES: {
   readonly [K in keyof KarafriendsConfig]: FieldRule;
 } = {
+  damEnabled: { type: "boolean" },
+  joysoundEnabled: { type: "boolean" },
   useLowBitrateUrl: { type: "boolean" },
   paxSongQueueLimit: { type: "integer", min: 0, max: 1000 },
   remoconPort: PORT,
