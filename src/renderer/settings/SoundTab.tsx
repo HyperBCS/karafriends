@@ -311,7 +311,8 @@ function SongLevels() {
       </div>
       <Hint>
         For every song; an admin's phone has them too. The guide melody plays
-        with Joysound songs.
+        with Joysound songs; on one queued with guide vocal, the guide vocal
+        plays at this level instead.
       </Hint>
     </>
   );

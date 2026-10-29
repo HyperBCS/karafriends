@@ -55,8 +55,8 @@ export type Overlay =
   | { kind: "dam"; melody: Melody | null }
   // telop: the song's .joy_02 lyrics, once loaded. file: its video, whose
   // sound holds the guide melody the pitch bars come from. guideVocal: its
-  // guide-vocal version, whose guide channel is a sung vocal (heard in
-  // full; the pitch bars can't read it).
+  // guide-vocal version, whose guide channel is a sung vocal, which the
+  // pitch bars can't read.
   | {
       kind: "joysound";
       songId: string;
@@ -493,12 +493,11 @@ export default function useSongPlayer({
     audio.pitchShift(pitchShiftSemis);
   }, [audio, pitchShiftSemis]);
 
-  // A guide-vocal version's guide is what its singer asked for: heard in
-  // full, whatever the guide melody's level.
-  const guideVocal = overlay?.kind === "joysound" && overlay.guideVocal;
+  // The guide channel, a melody or a guide-vocal version's voice, at the
+  // guide's level.
   useEffect(() => {
-    audio.guideMelodyLevel(guideVocal ? 1 : guideMelodyLevel);
-  }, [audio, guideMelodyLevel, guideVocal]);
+    audio.guideMelodyLevel(guideMelodyLevel);
+  }, [audio, guideMelodyLevel]);
 
   useEffect(() => {
     audio.songVolume(songVolume / 100);

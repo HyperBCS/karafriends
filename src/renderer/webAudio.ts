@@ -193,7 +193,8 @@ export default class KarafriendsAudio {
     return this.output.place();
   }
 
-  // How loud the Joysound guide melody plays, 0 to 1.
+  // How loud the Joysound guide plays (its melody, or a guide-vocal
+  // version's voice), 0 to 1.
   guideMelodyLevel(level: number) {
     this.guideGain.gain.value = level * CENTRE_TO_SIDE;
   }
