@@ -57,6 +57,8 @@ const IN_USE: &str = "Another program is using this mic, so Windows won't give i
 pub(crate) struct ExclusiveInput {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    // Counted as open (see OPEN_STREAMS) until the thread has let it go.
+    _open: crate::StreamInUse,
 }
 
 // What the stream runs at.
@@ -105,6 +107,7 @@ impl ExclusiveInput {
         let input = ExclusiveInput {
             stop,
             thread: Some(thread),
+            _open: crate::StreamInUse::new(),
         };
         // On an error the thread has ended; dropping `input` joins it.
         match opened.recv() {
