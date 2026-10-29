@@ -294,11 +294,12 @@ function getFuriganaRomajiBlocks(
 
     const romajiPhrase = kanaReadingToRomaji(furiganaPhrase);
 
+    // Under the ruby as the renderer draws it: a kana every size + stroke
+    // (drawFuriganaTextToCanvas).
     furiganaRomajiBlocks.push({
       phrase: romajiPhrase,
       xPos: furiganaBlock.xPos,
-      sourceWidth:
-        furiganaPhrase.length * (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2),
+      sourceWidth: furiganaPhrase.length * (RUBY_FONT_SIZE + RUBY_FONT_STROKE),
     });
   }
 

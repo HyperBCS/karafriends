@@ -472,15 +472,30 @@ function createLyricsBlockTexture(
   return createTextureFromImage(gl, textCtx.canvas);
 }
 
+// Where text drawnWidth device pixels wide starts (x as drawTextToCanvas
+// takes it, which adds the stroke) to be centred on centre, in telop units.
+// Places stretch with the screen's width (EXPAND_RATE_X), but text keeps its
+// shape (EXPAND_RATE): on a screen wider than the telop's 3:2, text is
+// narrower than the space it was laid out for, so a centre is worked out in
+// device pixels. The stroke's outline is even on both sides.
+function centredX(centre: number, drawnWidth: number, stroke: number): number {
+  return centre - drawnWidth / (2 * EXPAND_RATE_X) - stroke;
+}
+
+// A main-line glyph's x in its slot of charWidth, measured at the line's
+// size (textCtx's font, unscaled). One that fits is centred in its slot, as
+// the ruby over it and the romaji under it are; one that doesn't hangs out
+// as its ink allows.
 function getTextOffset(
   textCtx: CanvasRenderingContext2D,
   text: string,
   charWidth: number,
+  stroke: number,
 ): number {
   const measure = textCtx.measureText(text);
 
   if (charWidth >= measure.width) {
-    return 0;
+    return centredX(charWidth / 2, measure.width * EXPAND_RATE, stroke);
   }
 
   if (
@@ -529,16 +544,6 @@ function getTextOffset(
   return (charWidth - boundingBoxWidth) / 2 + measure.actualBoundingBoxLeft;
 }
 
-function getRomajiTextOffset(
-  textCtx: CanvasRenderingContext2D,
-  text: string,
-  sourceWidth: number,
-): number {
-  const measure = textCtx.measureText(text);
-
-  return (sourceWidth - measure.width) / 2;
-}
-
 function drawTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   fontSize: number,
@@ -582,7 +587,8 @@ function drawMainTextToCanvas(
     textCtx.font = `${line.size}px ${getFontFace(glyphChar.font)}`;
     textCtx.lineWidth = line.stroke * 2;
 
-    const xPos = currX + getTextOffset(textCtx, text, glyphChar.width);
+    const xPos =
+      currX + getTextOffset(textCtx, text, glyphChar.width, line.stroke);
 
     drawTextToCanvas(
       textCtx,
@@ -631,21 +637,20 @@ function drawRomajiTextToCanvas(
   const sortedRomaji = lyricsBlock.romaji.sort((a, b) => a.xPos - b.xPos);
 
   for (const romajiBlock of sortedRomaji) {
-    textCtx.font = `${line.size}px ${getFontFace(0)}`;
-    textCtx.lineWidth = line.stroke * 2;
-
-    const xPos = romajiBlock.xPos;
-    const xOff = getRomajiTextOffset(
-      textCtx,
-      romajiBlock.phrase,
-      romajiBlock.sourceWidth,
-    );
+    // Measured as drawTextToCanvas draws it, and centred on what it reads
+    // (its kana, or the ruby over its kanji).
+    textCtx.font = `${line.size * EXPAND_RATE}px ${getFontFace(0)}`;
+    const drawnWidth = textCtx.measureText(romajiBlock.phrase).width;
 
     drawTextToCanvas(
       textCtx,
       line.size,
       line.stroke,
-      xPos + xOff,
+      centredX(
+        romajiBlock.xPos + romajiBlock.sourceWidth / 2,
+        drawnWidth,
+        line.stroke,
+      ),
       yPos,
       romajiBlock.phrase,
     );
