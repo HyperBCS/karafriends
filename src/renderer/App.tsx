@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import type { MicInfo } from "../common/api";
 import { call, useLiveEvent, useLiveState } from "../common/apiClient";
-import { HOSTNAME } from "../common/constants";
+import { GATE_OFF_DB, gateThreshold } from "../common/micGate";
 import "./ui.css";
 import "./App.css";
 import Announcements from "./Announcements";
@@ -37,7 +37,8 @@ const ANNOUNCE_MS = 4000;
 // The most announcements shown at once; older ones go first.
 const MAX_ANNOUNCEMENTS = 3;
 
-const DEFAULT_LEVELS: MicLevels = { gain: 100, echo: 40 };
+// The noise gate starts off.
+const DEFAULT_LEVELS: MicLevels = { gain: 100, echo: 40, gate: GATE_OFF_DB };
 
 // localStorage's "mics": each device's name, its channel and its levels.
 // Entries saved before the levels existed get the defaults.
@@ -110,18 +111,24 @@ const PITCH_BARS_KEY = "pitchBars";
 // Settings' open tab, to open on it the next time.
 const SETTINGS_TAB_KEY = "settingsTab";
 
-// The name or address the QR code sends phones to, without the port; not
-// set for karafriends.local.
+// The LAN address the QR code sends phones to, without the port, when the
+// host picked one; not set for the default, this computer's first.
 const HOSTNAME_KEY = "hostname";
 
-// The saved one, if this computer still has it (a new network gives a new
-// address); karafriends.local if not. With the port phones use.
+// How often the display looks again at this computer's addresses, so the QR
+// code follows a new network (or a new address from the router).
+const ADDRESSES_MS = 10_000;
+
+// The picked address, if this computer still has it (a new network gives a
+// new address); its first LAN address if not, or "localhost" with none (no
+// network: no phone could reach it anyway). With the port phones use.
 function savedHostname(): string {
   const saved = localStorage.getItem(HOSTNAME_KEY);
+  const addresses = window.karafriends.ipAddresses();
   const name =
-    saved !== null && window.karafriends.ipAddresses().includes(saved)
+    saved !== null && addresses.includes(saved)
       ? saved
-      : HOSTNAME;
+      : (addresses[0] ?? "localhost");
   return `${name}:${window.karafriends.remoconPort()}`;
 }
 
@@ -144,6 +151,7 @@ function openMic(name: string, channel: number, levels: MicLevels) {
   const mic = new InputDevice(name, channel);
   mic.setGain(levels.gain / 100);
   mic.setEcho(levels.echo / 100);
+  mic.setGate(gateThreshold(levels.gate));
   return mic;
 }
 
@@ -189,9 +197,9 @@ function openSavedMics(): InputDevice[] {
 
 function savedLevels(): Record<string, MicLevels> {
   return Object.fromEntries(
-    readSavedMics().map(({ name, channel, gain, echo }) => [
+    readSavedMics().map(({ name, channel, gain, echo, gate }) => [
       micId(name, channel),
-      { gain, echo },
+      { gain, echo, gate },
     ]),
   );
 }
@@ -271,6 +279,7 @@ function App(props: { audio: KarafriendsAudio }) {
       if (!newLevels) continue;
       mic.setGain(newLevels.gain / 100);
       mic.setEcho(newLevels.echo / 100);
+      mic.setGate(gateThreshold(newLevels.gate));
     }
     saveMics(mics, allLevels);
     setLevels(allLevels);
@@ -290,10 +299,16 @@ function App(props: { audio: KarafriendsAudio }) {
 
   // An admin's setMicLevels: just the levels it gave, so a change the host
   // is making to the other one here stands.
-  useLiveEvent("micLevels", ({ id, gain, echo }) => {
+  useLiveEvent("micLevels", ({ id, gain, echo, gate }) => {
     if (!mics.some((mic) => idOf(mic) === id)) return;
     const own = latestLevels.current[id] ?? DEFAULT_LEVELS;
-    changeLevels({ [id]: { gain: gain ?? own.gain, echo: echo ?? own.echo } });
+    changeLevels({
+      [id]: {
+        gain: gain ?? own.gain,
+        echo: echo ?? own.echo,
+        gate: gate ?? own.gate,
+      },
+    });
   });
 
   // Kept only once it opened (or fell back to the default), so a choice
@@ -369,12 +384,19 @@ function App(props: { audio: KarafriendsAudio }) {
     setPitchBars(on);
   };
 
-  // "name:port": the name is kept, for the next launch to use with its port.
+  // "address:port": the address is kept, for the next launch to use with
+  // its port.
   const changeHostname = (picked: string) => {
-    const name = picked.slice(0, picked.lastIndexOf(":"));
-    save(HOSTNAME_KEY, name === HOSTNAME ? null : name);
+    save(HOSTNAME_KEY, picked.slice(0, picked.lastIndexOf(":")));
     setHostname(picked);
   };
+
+  // A new network, or a new address on this one: the QR code moves to it
+  // (unless the address picked is still here).
+  useEffect(() => {
+    const timer = setInterval(() => setHostname(savedHostname()), ADDRESSES_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   const changeSettingsTab = (tab: SettingsTab) => {
     localStorage.setItem(SETTINGS_TAB_KEY, tab);
@@ -479,6 +501,7 @@ function App(props: { audio: KarafriendsAudio }) {
           {!idle && !settingsOpen ? (
             <QRCode hostname={hostname} corner />
           ) : null}
+          <Effects />
         </div>
         {!idle && upNextVisible ? <UpNext layout="strip" /> : null}
         {idle ? (
@@ -487,7 +510,6 @@ function App(props: { audio: KarafriendsAudio }) {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         ) : null}
-        <Effects />
         <Announcements items={announcements} />
         {settingsOpen ? (
           <Settings

@@ -254,8 +254,8 @@
   color: var(--kf-muted);
 }
 
-/* A mic: its device, its two levels and Remove on one line, its status
-   under them. */
+/* A mic: its device, its two levels, its noise gate and Remove on one
+   line, its status under them. */
 .settingsMic {
   display: flex;
   flex-direction: column;
@@ -264,7 +264,7 @@
 
 .settingsMicRow {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 12rem;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)) 12rem;
   align-items: end;
   gap: var(--kf-space-4) var(--kf-space-6);
 }
@@ -274,10 +274,10 @@
 }
 
 /* A panel too narrow for that (a big UI scale): the device on a line of
-   its own, the levels and Remove under it. */
-@container (max-width: 50rem) {
+   its own, the levels, the gate and Remove under it. */
+@container (max-width: 60rem) {
   .settingsMicRow {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   }
 
   .settingsMicRow > :first-child {
@@ -286,8 +286,10 @@
 }
 
 /* A mic's level: a bar filling from the left, red near the top, sunk
-   into the card as a slider's track is. */
+   into the card as a slider's track is. With the noise gate on, a mark
+   where it is, and the bar grey while the level is under it. */
 .settingsMeter {
+  position: relative;
   height: 0.75rem;
   border-radius: var(--kf-radius);
   background-color: var(--kf-field);
@@ -303,4 +305,17 @@
 
 .settingsMeterBar.hot {
   background-color: var(--kf-danger);
+}
+
+.settingsMeterBar.gated {
+  background-color: var(--kf-muted);
+}
+
+.settingsMeterGate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background-color: var(--kf-text);
 }

@@ -10,6 +10,7 @@ import {
   useLiveState,
 } from "../../common/apiClient";
 import useLiveSetter from "../../common/hooks/useLiveSetter";
+import { GATE_MAX_DB, GATE_OFF_DB } from "../../common/micGate";
 import {
   LyricsModeChoice,
   saveLyricsMode,
@@ -154,6 +155,8 @@ interface LevelSliderProps {
   name?: string;
   // What the value is multiplied by to show as a percent.
   scale?: number;
+  // The value as the label shows it, in place of a percent.
+  format?: (value: number) => string;
   min: number;
   max: number;
   step: number;
@@ -171,6 +174,7 @@ const LevelSlider = ({
   label,
   name = label,
   scale = 1,
+  format = (value) => `${Math.round(value * scale)}%`,
   min,
   max,
   step,
@@ -199,7 +203,7 @@ const LevelSlider = ({
 
   return (
     <label className={styles.slider}>
-      {`${label} ${Math.round(shown * scale)}%`}
+      {`${label} ${format(shown)}`}
       <input
         ref={input}
         aria-label={name}
@@ -262,13 +266,26 @@ const SongVolumeSlider = () => {
   );
 };
 
-// One of a mic's levels: gain (0 to 200 %) or echo (0 to 100 %).
+// The noise gate as its slider says it: "Off", or "−45 dB".
+const gateText = (db: number) =>
+  db <= GATE_OFF_DB ? t("mics.gateOff") : `−${Math.abs(db)} dB`;
+
+// The range of each of a mic's levels: gain and echo in percent, the noise
+// gate in dB.
+const MIC_LEVELS = {
+  gain: { min: 0, max: 200 },
+  echo: { min: 0, max: 100 },
+  gate: { min: GATE_OFF_DB, max: GATE_MAX_DB },
+} as const;
+
+// One of a mic's levels: gain (0 to 200 %), echo (0 to 100 %) or its noise
+// gate (Off, then −59 to −20 dB).
 const MicLevelSlider = ({
   mic,
   level,
 }: {
   mic: MicInfo;
-  level: "gain" | "echo";
+  level: keyof typeof MIC_LEVELS;
 }) => {
   const [value, setValue] = useLiveSetter(
     mic[level],
@@ -279,8 +296,9 @@ const MicLevelSlider = ({
     <LevelSlider
       label={t(`mics.${level}`)}
       name={`${mic.label}: ${t(`mics.${level}`)}`}
-      min={0}
-      max={level === "gain" ? 200 : 100}
+      format={level === "gate" ? gateText : undefined}
+      min={MIC_LEVELS[level].min}
+      max={MIC_LEVELS[level].max}
       step={1}
       value={value}
       onSend={setValue}
@@ -291,8 +309,9 @@ const MicLevelSlider = ({
 // One empty list, so the live state's selector gives the same one each time.
 const NO_MICS: MicInfo[] = [];
 
-// The display's mics, each with its gain and echo. The display can open
-// one device and channel twice, so a row's key is its id and place.
+// The display's mics, each with its gain, echo and noise gate. The display
+// can open one device and channel twice, so a row's key is its id and
+// place.
 const Mics = () => {
   const mics = useLiveState((state) => state?.mics ?? NO_MICS);
   return (
@@ -307,10 +326,12 @@ const Mics = () => {
               <span className={styles.text}>{mic.label}</span>
               <MicLevelSlider mic={mic} level="gain" />
               <MicLevelSlider mic={mic} level="echo" />
+              <MicLevelSlider mic={mic} level="gate" />
             </li>
           ))}
         </ul>
       )}
+      {mics.length > 0 && <p className={styles.help}>{t("mics.gateHelp")}</p>}
     </div>
   );
 };

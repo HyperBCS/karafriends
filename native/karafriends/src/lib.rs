@@ -168,6 +168,11 @@ fn input_device_set_echo(mic: Mic, echo: f64) {
     mic.borrow().set_echo(echo as f32);
 }
 
+#[neon::export(name = "inputDevice_setGate")]
+fn input_device_set_gate(mic: Mic, threshold: f64) {
+    mic.borrow().set_gate(threshold as f32);
+}
+
 #[neon::export(name = "inputDevice_status")]
 fn input_device_status(mic: Mic) -> String {
     mic.borrow().status()

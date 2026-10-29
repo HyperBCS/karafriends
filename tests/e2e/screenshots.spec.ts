@@ -16,7 +16,13 @@ import path from "path";
 
 import { devices, type Page } from "@playwright/test";
 
-import { adminPasswordConfig, displayCall, expect, test } from "./fixtures";
+import {
+  adminPasswordConfig,
+  displayCall,
+  expect,
+  showQueue,
+  test,
+} from "./fixtures";
 
 const OUT_DIR = path.resolve(
   __dirname,
@@ -87,7 +93,7 @@ test.describe("phase B", () => {
     karafriends,
   }) => {
     await shoot(remote, "b-home");
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     await expect(
       remote.getByRole("region", { name: "Queue" }).getByText("紅蓮華").first(),
     ).toBeVisible();
@@ -409,7 +415,7 @@ test.describe("phase M2", () => {
     await expect(remote.getByRole("link", { name: /恋愛裁判/ })).toBeVisible();
     await shoot(remote, `m-search-${browserName}`);
 
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     await expect(
       remote.getByRole("region", { name: "Queue" }).getByRole("listitem"),
     ).toHaveCount(6);
@@ -446,7 +452,7 @@ test.describe("phase M3", () => {
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
       timeout: 15_000,
     });
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const handles = remote
       .getByRole("region", { name: "Queue" })
       .getByRole("button", { name: "Drag to reorder" });
@@ -608,12 +614,14 @@ test.describe("phase R1", () => {
       label: "Yeti Stereo Microphone (USB), channel 1",
       gain: 100,
       echo: 40,
+      gate: -60,
     },
     {
       id: "Focusrite USB (USB)#2",
       label: "Focusrite USB (USB), channel 2",
       gain: 120,
       echo: 20,
+      gate: -45,
     },
   ];
 

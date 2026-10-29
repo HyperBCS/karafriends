@@ -65,7 +65,7 @@ Ask the host to set up before each group, do the steps, and record what they see
 
 ### Party basics (A, G, I, J, K)
 
-- Scan the QR code with an iPhone and an Android phone: `karafriends.local:8080` opens on both, with the Japan VPN off and on.
+- Scan the QR code with an iPhone and an Android phone: its address (the Mac's LAN IP, port 8080; there's no `karafriends.local` any more) opens on both, with the Japan VPN off and on.
 - Queue a bass-heavy song. Key +1 and +2: the bass moves with the chords (before, nothing under about 200 Hz moved). Key −5: no hiss. Tap 0 → +1 → 0 mid-song: no gap or click. Key 0 and a shifted key sound about as loud.
 - Two mics on a DAM song: each singer's trace draws in its own pale colour and follows the bars; a key change mid-song keeps the trace on screen and lined up.
 - Ten Joysound songs in a row (needs the VPN), skipping a few early, on the biggest display available: Activity Monitor's GPU memory for the app stays flat rather than climbing by hundreds of MB per song, and each song's lyrics appear without a stall.

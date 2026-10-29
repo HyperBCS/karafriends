@@ -13,6 +13,7 @@ import {
   displayCall,
   expect,
   firstLiveEvent,
+  showQueue,
   test,
 } from "./fixtures";
 
@@ -243,7 +244,7 @@ test.describe("supervised mode", () => {
     await expect(
       page.getByRole("heading", { name: "Find a song" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(page);
   }
 
   // The display starts song 1 at its first check, within 5 seconds.
@@ -792,6 +793,7 @@ test.describe("the song volume and the mics", () => {
     label: "E2E Mic (Windows), channel 1",
     gain: 100,
     echo: 40,
+    gate: -60,
   };
 
   test("an admin sets them, the display lists the mics, and other phones see it all", async ({
@@ -847,6 +849,12 @@ test.describe("the song volume and the mics", () => {
     expect(
       await call(remoconUrl, "setMicLevels", { id: MIC.id, gain: 150 }, admin),
     ).toEqual({ status: 200, body: true });
+    expect(
+      await call(remoconUrl, "setMicLevels", { id: MIC.id, gate: -45 }, admin),
+    ).toEqual({ status: 200, body: true });
+    expect(
+      await call(remoconUrl, "setMicLevels", { id: MIC.id, gate: -10 }, admin),
+    ).toMatchObject({ status: 400 });
     expect(
       await call(remoconUrl, "setMicLevels", { id: "gone#0", echo: 0 }, admin),
     ).toEqual({ status: 200, body: false });

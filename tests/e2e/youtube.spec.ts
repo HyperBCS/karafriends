@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, NICKNAME, test } from "./fixtures";
+import { expect, NICKNAME, showQueue, test } from "./fixtures";
 
 // "Me at the zoo": 19 seconds long and unlikely to ever go away. The app is
 // launched with --mute-audio, so playing it makes no sound.
@@ -25,7 +25,7 @@ test.describe("YouTube", { tag: "@net" }, () => {
     display,
   }) => {
     await queueVideo(remote);
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
 
     // Once downloaded, the video joins the queue, and the display starts it at
     // its next check (every 5 seconds). Either way both screens show it.
@@ -79,7 +79,7 @@ test.describe("YouTube", { tag: "@net" }, () => {
     display,
   }) => {
     await queueVideo(remote);
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
 
     await expect
       .poll(() => videoState(display), { timeout: 60_000 })

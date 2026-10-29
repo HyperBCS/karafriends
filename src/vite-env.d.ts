@@ -56,6 +56,7 @@ declare module "*/native/index.node" {
     inputDevice_new: (name: string, channelSelection: number) => Mic;
     inputDevice_setGain: OnMic<NativeAudio["inputDevice_setGain"]>;
     inputDevice_setEcho: OnMic<NativeAudio["inputDevice_setEcho"]>;
+    inputDevice_setGate: OnMic<NativeAudio["inputDevice_setGate"]>;
     inputDevice_status: OnMic<NativeAudio["inputDevice_status"]>;
     inputDevice_format: OnMic<NativeAudio["inputDevice_format"]>;
     inputDevice_level: OnMic<NativeAudio["inputDevice_level"]>;

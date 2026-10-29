@@ -189,7 +189,7 @@ describe("createStateStore", () => {
     store.update((state) => {
       state.songVolume = 30;
       state.mics = [
-        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0, gate: -40 },
       ];
     });
     assert.equal("songVolume" in saved(), false);

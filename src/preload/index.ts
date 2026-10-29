@@ -192,6 +192,7 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
     }),
     inputDevice_setGain: fake("inputDevice_setGain", () => undefined),
     inputDevice_setEcho: fake("inputDevice_setEcho", () => undefined),
+    inputDevice_setGate: fake("inputDevice_setGate", () => undefined),
     inputDevice_status: fake("inputDevice_status", (deviceId: number) => {
       const mic = fakeMics.get(deviceId);
       if (!mic) return "stopped";
@@ -331,6 +332,9 @@ function realAudio(): NativeAudio {
     },
     inputDevice_setEcho(deviceId: number, echo: number) {
       return nativeAudio.inputDevice_setEcho(inputDevices[deviceId], echo);
+    },
+    inputDevice_setGate(deviceId: number, threshold: number) {
+      return nativeAudio.inputDevice_setGate(inputDevices[deviceId], threshold);
     },
     inputDevice_status(deviceId: number) {
       return nativeAudio.inputDevice_status(inputDevices[deviceId]);

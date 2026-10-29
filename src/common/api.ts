@@ -218,6 +218,7 @@ export interface MicInfo {
   label: string; // "Blue Yeti (Windows), channel 1"
   gain: number; // 0..200, percent
   echo: number; // 0..100, percent of the full reverb
+  gate: number; // the noise gate, whole dB: GATE_OFF_DB (off)..GATE_MAX_DB
 }
 
 // A phone sees which songs and downloads are its own, but no device IDs: it
@@ -284,7 +285,13 @@ export type LiveEvent =
   | { type: "queueFailed"; item: SharedQueueItem; reason: string }
   // An admin's setMicLevels, with just the levels it gave. The display
   // applies them, and its setMics shows them to the phones.
-  | { type: "micLevels"; id: string; gain?: number; echo?: number };
+  | {
+      type: "micLevels";
+      id: string;
+      gain?: number;
+      echo?: number;
+      gate?: number;
+    };
 
 export type LiveEventType = LiveEvent["type"];
 
@@ -448,7 +455,11 @@ export interface Api {
   // A YouTube song's adhoc lyrics, null if it has none.
   adhocLyrics: { input: { songId: string }; output: string[] | null };
   // Newest first: the last 1,000 songs sung.
-  history: { input: PageInput; output: Page<PlayedSong> };
+  // Everyone's songs, or with mine, just the ones the calling phone queued.
+  history: {
+    input: PageInput & { mine?: boolean };
+    output: Page<PlayedSong>;
+  };
 
   // Commands. queueSong and sendEmote need the identity headers. In
   // supervised mode, removeSong is for the song's owner or an admin, and
@@ -492,11 +503,12 @@ export interface Api {
   setGuideMelodyLevel: { input: { level: number }; output: boolean };
   // For admins only. volume: 0 to 100, a whole number.
   setSongVolume: { input: { volume: number }; output: boolean };
-  // For admins only: one mic's levels (gain 0 to 200, echo 0 to 100, whole
-  // numbers; one left out stays as it is). The display applies them. False
-  // if the display has no such mic (any more).
+  // For admins only: one mic's levels (gain 0 to 200, echo 0 to 100, the
+  // noise gate GATE_OFF_DB to GATE_MAX_DB, whole numbers; one left out stays
+  // as it is). The display applies them. False if the display has no such
+  // mic (any more).
   setMicLevels: {
-    input: { id: string; gain?: number; echo?: number };
+    input: { id: string; gain?: number; echo?: number; gate?: number };
     output: boolean;
   };
   // Shows line lyricIndex of the current song's adhoc lyrics. In supervised

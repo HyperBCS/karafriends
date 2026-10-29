@@ -28,8 +28,6 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import type { Plugin } from "vite";
 
-import { HOSTNAME } from "./src/common/constants";
-
 // In dev, Express listens on this port and Vite proxies /api to it. Set here,
 // so the Electron app electron-vite starts (it inherits this process's
 // environment) listens where the proxy points, whatever config.yaml says.
@@ -220,9 +218,9 @@ export default defineConfig(({ command, mode }) => {
         rolldownOptions: { input: PAGES },
       },
       server: {
+        // Phones open it at this computer's LAN address, which Vite allows
+        // as it allows any IP address.
         host: localOnly ? "127.0.0.1" : true,
-        // Phones may use the app's mDNS name; IP addresses are allowed anyway.
-        allowedHosts: [HOSTNAME],
         port: Number(process.env.KARAFRIENDS_DEV_PORT) || 5173,
         proxy: {
           // The live stream (/api/events) too: the proxy streams responses.

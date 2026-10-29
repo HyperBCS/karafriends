@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 
 import type { PlayedSong } from "../../common/api";
 import { usePagedApiQuery } from "../../common/apiQueries";
+import { getItem, setItem } from "../../common/storage";
 import { withLoader } from "../components/Loader";
 import MoreButton from "../components/MoreButton";
-import { EmptyState, List, ListRow } from "../components/ui";
+import { EmptyState, List, ListRow, SegmentedControl } from "../components/ui";
 import WithReading from "../components/WithReading";
 import { t, useLanguage } from "../i18n";
 import songLink, { sourceName } from "../songLink";
@@ -43,16 +44,24 @@ const When = ({ song, language }: { song: PlayedSong; language: string }) => {
   );
 };
 
-const HistoryPage = () => {
+// The history the host keeps: everyone's songs, or with mine, the ones
+// this phone queued.
+const HistoryList = withLoader(({ mine }: { mine: boolean }) => {
   const { language } = useLanguage();
   // The history grows as songs play, so coming back shows what was here at
   // once and then asks for the latest.
-  const paged = usePagedApiQuery("history", {}, (page) => page, historyKey, {
-    staleTime: 0,
-  });
+  const paged = usePagedApiQuery(
+    "history",
+    mine ? { mine } : {},
+    (page) => page,
+    historyKey,
+    { staleTime: 0 },
+  );
 
   if (paged.items.length === 0) {
-    return <EmptyState>{t("history.empty")}</EmptyState>;
+    return (
+      <EmptyState>{t(mine ? "history.emptyMine" : "history.empty")}</EmptyState>
+    );
   }
   return (
     <>
@@ -81,6 +90,39 @@ const HistoryPage = () => {
       <MoreButton paged={paged} />
     </>
   );
+});
+
+type Whose = "all" | "mine";
+
+// Which history the phone showed last, kept on it.
+const WHOSE_KEY = "historyWhose";
+
+// The history, with a choice above it of everyone's songs or this phone's.
+const HistoryPage = () => {
+  const [whose, setWhose] = useState<Whose>(() =>
+    getItem(WHOSE_KEY) === "mine" ? "mine" : "all",
+  );
+  return (
+    <>
+      <div className={styles.whose}>
+        <SegmentedControl<Whose>
+          label={t("history.whose")}
+          hideLabel
+          small
+          choices={[
+            { id: "all", label: t("history.all") },
+            { id: "mine", label: t("history.mine") },
+          ]}
+          selected={whose}
+          onSelect={(id) => {
+            setItem(WHOSE_KEY, id);
+            setWhose(id);
+          }}
+        />
+      </div>
+      <HistoryList mine={whose === "mine"} />
+    </>
+  );
 };
 
-export default withLoader(HistoryPage);
+export default HistoryPage;

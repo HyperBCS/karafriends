@@ -15,9 +15,21 @@ import { reading } from "../../../common/readings";
 import useReadings from "../../hooks/useReadings";
 import { t } from "../../i18n";
 import { reasonText } from "../../i18n/reasons";
-import { MdClose, MdDragIndicator, MdVerticalAlignTop } from "../../icons";
-import { sourceName } from "../../songLink";
-import { EmptyState, IconButton, InlineError, List, ListRow } from "../ui";
+import {
+  MdClose,
+  MdDragIndicator,
+  MdInfoOutline,
+  MdVerticalAlignTop,
+} from "../../icons";
+import songLink, { sourceName } from "../../songLink";
+import {
+  EmptyState,
+  IconButton,
+  IconLink,
+  InlineError,
+  List,
+  ListRow,
+} from "../ui";
 import WithReading from "../WithReading";
 import * as styles from "./NowPlayingSheet.module.scss";
 import useDragReorder from "./useDragReorder";
@@ -61,20 +73,24 @@ interface RowProps {
   index: number;
   isAdmin: boolean;
   onMove: (from: number, to: number) => void;
+  // Following the link to the song's page, which folds the sheet.
+  onOpenSong: () => void;
   // The drag handle's props for a row (useDragReorder), shown to an admin.
   handleProps: ReturnType<typeof useDragReorder>;
 }
 
-// A queued song. Tapping it shows who queued it and what this phone may do
-// with it: remove it (its singer, or an admin; anyone outside supervised
-// mode), and for an admin, move it to the top. An admin also drags it by
-// its handle. It renders again only when its props change.
+// A queued song. Tapping it shows who queued it, in place of the artist and
+// the source, and what this phone may do with it: open the song's page (to
+// queue it again, say), remove it (its singer, or an admin; anyone outside
+// supervised mode), and for an admin, move it to the top. An admin also
+// drags it by its handle. It renders again only when its props change.
 const QueueRow = memo(function QueueRow({
   item,
   eta,
   index,
   isAdmin,
   onMove,
+  onOpenSong,
   handleProps,
 }: RowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -94,6 +110,13 @@ const QueueRow = memo(function QueueRow({
 
   const actions = (
     <>
+      <IconLink
+        label={t("queue.openSong")}
+        icon={<MdInfoOutline />}
+        to={songLink(item)}
+        state={{ artistNameYomi: item.artistNameYomi }}
+        onClick={onOpenSong}
+      />
       {isAdmin && (
         <IconButton
           label={t("queue.moveToTop")}
@@ -124,7 +147,7 @@ const QueueRow = memo(function QueueRow({
           <WithReading text={item.artistName} yomi={item.artistNameYomi} />
         )
       }
-      source={sourceOf(item)}
+      source={expanded ? undefined : sourceOf(item)}
       onPress={() => setExpanded(!expanded)}
       expanded={expanded}
       // The title as the row shows it, so "Tap koi" finds it.
@@ -151,7 +174,7 @@ const QueueRow = memo(function QueueRow({
 // live state has them (or the server says why not, and the queue goes
 // back). The order comes from useQueue(false), which changes only with the
 // queue, not every second.
-const QueueList = () => {
+const QueueList = ({ onOpenSong }: { onOpenSong: () => void }) => {
   const currentSong = useLiveState((state) => state?.currentSong ?? null);
   const [moveError, setMoveError] = useState<string | null>(null);
   // The queue as moved; each move goes in turn. Gone from the queue
@@ -206,6 +229,7 @@ const QueueList = () => {
               index={index}
               isAdmin={isAdmin}
               onMove={move}
+              onOpenSong={onOpenSong}
               handleProps={handleProps}
             />
           ))}

@@ -3,11 +3,6 @@ import { networkInterfaces, type NetworkInterfaceInfo } from "os";
 // os.networkInterfaces(): each interface's name and its addresses.
 export type Interfaces = NodeJS.Dict<NetworkInterfaceInfo[]>;
 
-export interface LanAddress {
-  address: string;
-  netmask: string;
-}
-
 // Adapters that aren't the room's network: VMs and containers, mesh VPNs,
 // tunnels, Apple's peer-to-peer links. Phones on the Wi-Fi can't reach them.
 const VIRTUAL =
@@ -26,13 +21,13 @@ const isTunnel = (iface: NetworkInterfaceInfo) =>
   iface.mac === "00:00:00:00:00:00" || iface.netmask === "255.255.255.255";
 
 // This computer's IPv4 addresses on the room's network: what phones can
-// open the remote at, and what mDNS answers karafriends.local with. Not
-// IPv6 (an A record can't carry it, and a URL needs it bracketed), loopback,
+// open the remote at, for the QR code and the display's Address picker,
+// the first one by default. Not IPv6 (a URL needs it bracketed), loopback,
 // self-assigned, VPN or virtual adapters. If that leaves nothing (an adapter
 // this doesn't know), every non-loopback IPv4 address is better than none.
-export function lanAddresses(
+export default function ipAddresses(
   interfaces: Interfaces = networkInterfaces(),
-): LanAddress[] {
+): string[] {
   const ipv4 = Object.entries(interfaces).flatMap(([name, addresses]) =>
     (addresses ?? [])
       .filter(
@@ -45,32 +40,7 @@ export function lanAddresses(
     ({ name, iface }) => !VIRTUAL.test(name) && !isTunnel(iface),
   );
   // One entry per address, though two adapters can share one.
-  const byAddress = new Map<string, LanAddress>();
-  for (const { iface } of lan.length ? lan : ipv4) {
-    if (!byAddress.has(iface.address)) {
-      byAddress.set(iface.address, {
-        address: iface.address,
-        netmask: iface.netmask,
-      });
-    }
-  }
-  return [...byAddress.values()];
-}
-
-// The addresses alone, for the display's Address picker.
-export default function ipAddresses(
-  interfaces: Interfaces = networkInterfaces(),
-): string[] {
-  return lanAddresses(interfaces).map(({ address }) => address);
-}
-
-const toNumber = (address: string) =>
-  address
-    .split(".")
-    .reduce((n, octet) => ((n << 8) | (Number(octet) & 255)) >>> 0, 0);
-
-// Whether address is on the same subnet as the local address.
-export function onSubnet(local: LanAddress, address: string) {
-  const mask = toNumber(local.netmask);
-  return (toNumber(local.address) & mask) === (toNumber(address) & mask);
+  return [
+    ...new Set((lan.length ? lan : ipv4).map(({ iface }) => iface.address)),
+  ];
 }

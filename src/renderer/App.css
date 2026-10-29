@@ -18,7 +18,7 @@
 }
 
 /* The video as large as fits, centered (Player.css sizes it from this
-   box), and the QR code's corner over it. */
+   box), with the QR code's corner and the emotes (Effects) over it. */
 .appStage {
   display: flex;
   flex: 1;

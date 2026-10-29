@@ -4,10 +4,11 @@ import {
   currentSongKey,
   displayCall,
   expect,
-  type Karafriends,
   liveState,
   NICKNAME,
+  showQueue,
   test,
+  type Karafriends,
 } from "./fixtures";
 
 // DAM and Joysound only answer Japanese IPs and need the logins from the
@@ -147,7 +148,7 @@ test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
         remote.getByRole("main").getByText(/^Queued, up in /),
       ).toBeVisible();
 
-      await remote.getByRole("button", { name: "Show queue" }).click();
+      await showQueue(remote);
       await expect(
         remote.getByRole("region", { name: "Queue" }).getByText(title).first(),
       ).toBeVisible();
@@ -182,7 +183,7 @@ test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
             .getByRole("button", { name: /^Downloading/ }),
         ).toBeVisible();
 
-        await remote.getByRole("button", { name: "Show queue" }).click();
+        await showQueue(remote);
         await expect(
           remote
             .getByRole("region", { name: "Queue" })

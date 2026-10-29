@@ -52,7 +52,6 @@ import { stopAllTools, DOWNLOADS_FOLDER } from "./downloads";
 import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
-import setupMdns from "./mdns";
 import { createCrashReloads } from "./rendererRecovery";
 import { apiRouter, shouldCompress } from "./server";
 import { api, hub, reportRemoconProblem, resumeDownloads } from "./services";
@@ -74,8 +73,6 @@ if (!HIDE_WINDOW) {
     if (!String(e).includes("os error 5")) console.error(e);
   }
 }
-
-if (!LOCAL_ONLY) setupMdns();
 
 protocol.registerSchemesAsPrivileged([
   {
