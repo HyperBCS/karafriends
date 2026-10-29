@@ -20,9 +20,11 @@ interface Props {
 // How far a finger moves on the bar before it drags the sheet rather than
 // tapping it.
 const DRAG_SLOP_PX = 8;
-// A flick faster than this (px per ms) opens or folds the sheet the way it
-// went, however little it moved.
+// A flick opens or folds the sheet the way it went, however little it
+// moved: a drag let go while moving faster than this (px per ms), or one
+// over within FLICK_MS.
 const FLICK_SPEED = 0.5;
+const FLICK_MS = 250;
 // How long the sheet takes to open or fold, from closed to open; one
 // dragged part of the way takes the rest of that time.
 const MOTION_MS = 280;
@@ -42,7 +44,9 @@ interface Drag {
   // The body's height when the drag started, and when open.
   startHeight: number;
   openHeight: number;
-  // For the flick: the last move, and the speed up the screen (px per ms).
+  // For the flick: when the finger went down, the last move, and the speed
+  // up the screen (px per ms).
+  downTime: number;
   lastY: number;
   lastTime: number;
   speed: number;
@@ -80,9 +84,9 @@ export const Sheet = ({
   const content = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const motion = useRef<Motion | null>(null);
-  // The click that ends a drag, which mustn't also toggle the sheet or
-  // follow a link.
-  const swallowClick = useRef(false);
+  // Until when the click that ends a drag (if one comes: a finger's drag
+  // ends in none) mustn't also toggle the sheet or follow a link.
+  const swallowClickUntil = useRef(0);
   // The body's hidden attribute is the sheet's own once it mounts (a fold
   // keeps the body shown until it's done), so React sets it only at first.
   const hiddenAtFirst = useRef(!expanded).current;
@@ -190,7 +194,7 @@ export const Sheet = ({
   useLayoutEffect(() => () => motion.current?.stop(), []);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    swallowClick.current = false;
+    swallowClickUntil.current = 0;
     if (!e.isPrimary || e.button !== 0) return;
     // Every move of this pointer comes to what it pressed (and up to the
     // bar), wherever it goes, as a finger's do anyway: a mouse moved fast
@@ -207,6 +211,7 @@ export const Sheet = ({
       active: false,
       startHeight: 0,
       openHeight: 0,
+      downTime: e.timeStamp,
       lastY: e.clientY,
       lastTime: e.timeStamp,
       speed: 0,
@@ -243,9 +248,13 @@ export const Sheet = ({
     if (!d || e.pointerId !== d.pointerId) return;
     drag.current = null;
     if (!d.active) return;
-    swallowClick.current = true;
-    // A pause before letting go is no flick.
-    const speed = e.timeStamp - d.lastTime > 100 ? 0 : d.speed;
+    swallowClickUntil.current = performance.now() + 400;
+    // A pause before letting go is no flick; a quick swipe is, whatever
+    // the speed of its last move said.
+    let speed = e.timeStamp - d.lastTime > 100 ? 0 : d.speed;
+    if (e.timeStamp - d.downTime < FLICK_MS) {
+      speed = d.startY > e.clientY ? Infinity : -Infinity;
+    }
     let open = shownHeight() > d.openHeight / 2;
     if (!cancelled && speed > FLICK_SPEED) open = true;
     if (!cancelled && speed < -FLICK_SPEED) open = false;
@@ -262,8 +271,8 @@ export const Sheet = ({
         onPointerUp={(e) => endDrag(e, false)}
         onPointerCancel={(e) => endDrag(e, true)}
         onClickCapture={(e) => {
-          if (!swallowClick.current) return;
-          swallowClick.current = false;
+          if (performance.now() > swallowClickUntil.current) return;
+          swallowClickUntil.current = 0;
           e.preventDefault();
           e.stopPropagation();
         }}
