@@ -132,7 +132,7 @@ pub fn linux_audio() -> Option<LinuxAudio> {
             default_buffer: linux::default_buffer(),
         },
         Err(e) => LinuxAudio {
-            status: format!("No sound system: {e}"),
+            status: linux::status_without_host(&e.to_string()),
             buffer_sizes: Vec::new(),
             default_buffer: linux::default_buffer(),
         },
