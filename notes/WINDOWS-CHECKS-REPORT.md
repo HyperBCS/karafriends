@@ -1,0 +1,39 @@
+# Windows checks report (2026-10-28)
+
+The checks in [`WINDOWS-CHECKS.md`](WINDOWS-CHECKS.md), run on Brandon-Main-PC (Windows 11 Pro 26300; Topping USB DAC with its ASIO driver, Realtek ASIO also registered, Yeti Classic USB mic) by a Claude Code session, with the host for the manual ones.
+
+Code: `origin/master` at `fefa3c3`, which has the review round's "Merge R" (`76a334b`) and the dependency upgrade. The automated steps ran on that commit, untouched. Toolchain: Node 26.12.1, Yarn 4.18.1, rustc 1.99.1 (stable; `rustup update` skipped, it is past 1.88), Visual Studio Build Tools 2026 and Community 2022, LLVM 23.1.4 (cargo found libclang without `LIBCLANG_PATH`). `yarn install` and `yarn get-external-resources` had nothing to do (the ASIO SDK was in `buildResources/asio`). The Japan VPN (ProtonVPN) was on throughout (`ipinfo.io/country` = JP).
+
+## 1. Automated checks
+
+| #   | Step                                            | Result | Notes                                                                                                                                                                                                                                                                                                          |
+| --- | ----------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `cargo fmt --all --check`                       | pass   | clean                                                                                                                                                                                                                                                                                                          |
+| 2   | `cargo clippy --all-targets`                    | pass   | No warnings, with ASIO compiled (asio-sys 0.4.0, cpal 0.18.2): the phase F device lookup builds on Windows.                                                                                                                                                                                                    |
+| 3   | `cargo test`                                    | pass   | 63 passed, 2 ignored (the hardware ones). The `exclusive.rs` and shared-stream tests ran and passed, their first run anywhere.                                                                                                                                                                                 |
+| 4   | `yarn typecheck`                                | pass   | clean                                                                                                                                                                                                                                                                                                          |
+| 5   | `yarn lint`                                     | pass   | clean                                                                                                                                                                                                                                                                                                          |
+| 6   | `yarn test:unit`                                | pass   | 635 passed, 0 skipped; `src/preload/native.test.ts` also passes on its own after step 7 (1 test).                                                                                                                                                                                                              |
+| 7   | `yarn build-prod`                               | pass   | 23 s, with the release native module (ASIO in).                                                                                                                                                                                                                                                                |
+| 8   | `yarn test:e2e:ci`                              | pass   | 123 passed, 20 skipped (the screenshot specs), none flaky, 46 s. See "Seen later" for one display error in a later run.                                                                                                                                                                                        |
+| 9   | `yarn package-prod`                             | pass   | `dist/karafriends-win32-x64.zip`, 183,221,435 bytes (175 MiB); 103 files, 415 MB unzipped.                                                                                                                                                                                                                     |
+| 10  | Unzipped `karafriends.exe`, hidden, new profile | pass   | Logs "Server is now running on http://localhost:8080", nothing on stderr. yt-dlp 2026.10.26 arrived within the 20 s; ffmpeg (gyan.dev's 9.0.2 full build, a 170 MB 7z) took 340 s over the VPN, so a longer run waited for it. Both were version-checked before they were kept (`versions.json` records them). |
+
+### Seen later
+
+Found while this session worked on master after the checks (the noise gate, the phone sheet, the custom URL, and the macOS and Linux branches merged):
+
+- **Listing the devices stopped the open mics (Windows, with ASIO drivers installed).** Listing the ASIO devices loads every ASIO driver, and Windows answered by invalidating every open WASAPI mic (`AUDCLNT_E_DEVICE_INVALIDATED`). Opening Settings › Sound lists the outputs, so it dropped the mics until the watchdog reopened them about 2 s later. Measured on this PC with the Yeti open: WASAPI's own listing (each mic's configs too) is harmless at 20 ms; ASIO's stopped the mic every time. **Fixed in `0bd7565`**: the ASIO list is read again only while no stream of any host is open.
+- **`play()` interrupted by `pause()`:** `AbortError: The play() request was interrupted by a call to pause()` failed the supervised-mode tests that pause as the song starts, about one full e2e run in four after the merges (each passed alone). `src/renderer/useSongPlayer.ts` called `video.play()` without catching its promise in six places. **Fixed in `f85143c`**: an `AbortError` is dropped, anything else is logged as before.
+- **The pre-commit hook failed on any Rust change** (lint-staged's plain `rustfmt` took the 2015 edition). Fixed three times over: `c05ca84` here, `772c55e` on macos-checks, `e88f8b8` (`native/rustfmt.toml`) on the Linux branch; all three are merged and agree.
+- **Once, after the Linux branch merged:** `player.spec.ts` "a queued song whose files are missing › is skipped once, and each song after it starts once" failed on a display error, `The video failed: MEDIA_ELEMENT_ERROR: Format error`: the missing Joysound song's video was loaded and failed before the missing file was noticed. Not seen in about 15 earlier runs, nor in the 6 after; the Joysound Opus change (`d3782d7`) touched how Joysound's files are found.
+- **Once:** an app copy in the e2e harness never listened on its port within 30 s ("in use?"); the test passed in the next run.
+- **`yarn dev` keeps its own profile:** Electron is started on the main script, not the package, so `app.name` is "Electron" and dev runs use `%APPDATA%\Electron` (config, logins, queue, tools), apart from the packaged app's `%APPDATA%\karafriends`, which the README names. **Fixed in `f0d9c44`**: every unpackaged run without `--user-data-dir` uses the app's own folder.
+
+## 2. Manual checks
+
+PENDING
+
+## 3. Fixes needed
+
+PENDING
