@@ -14,6 +14,7 @@ import { DEFAULT_CONFIG } from "../common/configSchema";
 import { createConfigStore } from "../common/configStore";
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { ApiError, type Caller } from "./api";
+import { type LoginNote, LoginWarning } from "./credentials";
 import { HttpStatusError } from "./http";
 import { createSettingsHandlers, loginFailureReason } from "./settings";
 import { validators } from "./validate";
@@ -47,11 +48,15 @@ const TOOLS_STATUS = {
   problemSince: null,
 };
 
-type LoginFake = (username: string, password: string) => Promise<unknown>;
+type LoginFake = (
+  username: string,
+  password: string,
+) => Promise<LoginNote | void>;
 
 function setup(
   options: {
     logins?: Partial<Record<LoginService, LoginFake>>;
+    switchLink?: (email: string, password: string) => Promise<string>;
     name?: string;
     updateTools?: () => Promise<void>;
   } = {},
@@ -69,6 +74,10 @@ function setup(
   const api = createSettingsHandlers({
     store,
     logins: { dam: recording("dam"), joysound: recording("joysound") },
+    switchJoysoundLink: async (email, password) => {
+      tried.push(`switch ${email}:${password}`);
+      return (options.switchLink ?? (async () => "Switched."))(email, password);
+    },
     restart: () => restarts.push(Date.now()),
     tools: {
       status: () => TOOLS_STATUS,
@@ -350,6 +359,97 @@ describe("testLogin", () => {
       loginFailureReason("dam", new HttpStatusError(500, "u")),
       "Couldn't sign in to DAM: 500 from u",
     );
+  });
+
+  test("passes on a note on the Joysound link, and a warning as it is", async () => {
+    let answer: () => Promise<LoginNote | void> = async () => ({
+      note: "karafriends is linked to this account, a paid member.",
+    });
+    const { api, store } = setup({ logins: { joysound: () => answer() } });
+    store.update(LOGINS);
+    assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+      ok: true,
+      note: "karafriends is linked to this account, a paid member.",
+    });
+    // Not linked yet: the display can offer Switch.
+    answer = async () => ({ note: "Not linked yet.", canSwitchLink: true });
+    assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+      ok: true,
+      note: "Not linked yet.",
+      canSwitchLink: true,
+    });
+
+    answer = async () => {
+      throw new LoginWarning("Signed in, but the account isn't a paid member.");
+    };
+    const { warn } = console;
+    console.warn = () => {};
+    try {
+      assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+        ok: false,
+        reason: "Signed in, but the account isn't a paid member.",
+      });
+
+      // Another TV app holds the link: the display can offer Switch.
+      answer = async () => {
+        throw new LoginWarning("Another TV app is linked.", {
+          canSwitchLink: true,
+        });
+      };
+      assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+        ok: false,
+        reason: "Another TV app is linked.",
+        canSwitchLink: true,
+      });
+    } finally {
+      console.warn = warn;
+    }
+  });
+});
+
+describe("switchJoysoundLink", () => {
+  test("switches with the saved login, on the display only", async () => {
+    const { api, store, tried } = setup({
+      switchLink: async () => "karafriends is linked to this account.",
+    });
+    store.update(LOGINS);
+    await rejectsWith(api.switchJoysoundLink({}, phone), 403);
+    assert.deepEqual(tried, []);
+    assert.deepEqual(await api.switchJoysoundLink({}, display), {
+      ok: true,
+      note: "karafriends is linked to this account.",
+    });
+    assert.deepEqual(tried, ["switch joy@example.com:joy-pw"]);
+  });
+
+  test("says when no login is set, without asking", async () => {
+    const { api, tried } = setup();
+    assert.deepEqual(await api.switchJoysoundLink({}, display), {
+      ok: false,
+      reason: "No Joysound login is set: enter the email and password first.",
+    });
+    assert.deepEqual(tried, []);
+  });
+
+  test("says why a switch failed", async () => {
+    const { api, store } = setup({
+      switchLink: async () => {
+        throw new HttpStatusError(403, "https://www.sound-cafe.jp/login");
+      },
+    });
+    store.update(LOGINS);
+    const { warn } = console;
+    console.warn = () => {};
+    try {
+      assert.deepEqual(await api.switchJoysoundLink({}, display), {
+        ok: false,
+        reason:
+          "Joysound answered 403: this usually means no Japanese IP address. " +
+          "Connect through a VPN to Japan.",
+      });
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 

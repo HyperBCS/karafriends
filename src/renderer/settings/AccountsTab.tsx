@@ -20,7 +20,7 @@ export default function AccountsTab(props: {
   actions: SettingsActions;
 }) {
   const { settings } = props.loaded;
-  const { save, testLogin } = props.actions;
+  const { save, testLogin, switchJoysoundLink } = props.actions;
 
   const loginSection = (service: LoginService) => {
     const [userKey, passKey, userLabel] =
@@ -63,6 +63,17 @@ export default function AccountsTab(props: {
           >
             Test login
           </button>
+          {service === "joysound" && message?.offersSwitch ? (
+            // Joysound links one TV app to an account at a time: this
+            // unlinks the other one, so only when the host asks.
+            <button
+              type="button"
+              className="kfButton"
+              onClick={() => switchJoysoundLink()}
+            >
+              Switch the TV link to karafriends
+            </button>
+          ) : null}
         </div>
       </SettingsSection>
     );

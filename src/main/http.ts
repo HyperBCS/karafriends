@@ -18,8 +18,8 @@ import nodeFetch, {
 // asked) indefinitely. Aborting surfaces it as a NoAnswerError, which
 // withSession tries again. The limit is on silence, not on the whole request: the
 // headers must arrive within it, and then the body may take as long as it
-// needs (Joysound's getFME sends a song's audio, several MB, which can take
-// minutes over a slow VPN) as long as no gap between chunks reaches it.
+// needs (a Joysound song's audio is several MB, which can take minutes over
+// a slow VPN) as long as no gap between chunks reaches it.
 const TIMEOUT_MS = 30000;
 
 // An error status without the service's own answer. From DAM or Joysound,
@@ -182,9 +182,31 @@ function parseBody(resp: Response): Promise<unknown> {
   return resp.text();
 }
 
-// An answer that says the session has ended, or may have: sound-cafe's login
-// page, or a 401 or 403, where data was expected. withSession logs in again
-// once.
+// run's failure, with url replaced by shownAs in its message: for a URL that
+// holds a secret (a link code, a signed media URL), which node-fetch's
+// errors and httpFetch's timeouts would otherwise name. The error keeps its
+// type, so isTransient still knows it.
+export async function withUrlHidden<T>(
+  url: string,
+  shownAs: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = err.message.split(url).join(shownAs);
+      if (typeof err.stack === "string") {
+        err.stack = err.stack.split(url).join(shownAs);
+      }
+    }
+    throw err;
+  }
+}
+
+// An answer that says the session has ended, or may have: DAM refusing its
+// token, or Joysound sending a preview where a paid member's song was asked
+// for. withSession logs in (or links) again once.
 export class SessionLostError extends Error {
   constructor(message: string) {
     super(message);

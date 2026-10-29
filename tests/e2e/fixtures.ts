@@ -468,6 +468,32 @@ function prepareMediaTools(userDataDir: string, mode: MediaTools) {
   fs.cpSync(source, dest, { recursive: true });
 }
 
+// With real logins, the tests use the installed app's link to the Joysound
+// account (src/main/joysoundLink.ts), as a copy in their own profile:
+// Joysound links one TV app to an account at a time, so a link of their own
+// would take it from the app, and the app from them. "Local State" holds the
+// key safeStorage encrypts the link with (on Windows), so it comes along.
+// The app's files are never written.
+const JOYSOUND_LINK_FILES = ["Local State", "joysoundLink.bin"];
+
+function borrowJoysoundLink(userDataDir: string) {
+  const source = installedAppDataDir();
+  if (!fs.existsSync(path.join(source, "joysoundLink.bin"))) {
+    throw new Error(
+      `The @jp tests use the app's link to Joysound, and ${source} has none. ` +
+        "Start karafriends (`yarn run-dev`) and search Joysound once, or, if " +
+        "another TV app holds the account's link, press Test login and then " +
+        "Switch under Settings › Accounts › Joysound.",
+    );
+  }
+  for (const name of JOYSOUND_LINK_FILES) {
+    const file = path.join(source, name);
+    if (fs.existsSync(file)) {
+      fs.copyFileSync(file, path.join(userDataDir, name));
+    }
+  }
+}
+
 const CREDENTIAL_KEYS = [
   "damUsername",
   "damPassword",
@@ -655,6 +681,7 @@ async function launchKarafriends(
       }),
     );
     prepareMediaTools(userDataDir, options.mediaTools);
+    if (options.realCredentials) borrowJoysoundLink(userDataDir);
     if (options.seedQueue) {
       const [queueDir, videosDir] = options.seedQueueInTempFolder
         ? [
@@ -688,7 +715,7 @@ async function launchKarafriends(
       displayRequests.push(request.url());
     });
 
-    // The main process logs DAM tokens and Joysound cookies once logged in,
+    // The main process logs DAM tokens once logged in,
     // so its output is only kept when the test runs without real logins.
     if (!options.realCredentials) {
       app.process().stdout?.on("data", (chunk) => mainLog.push(String(chunk)));

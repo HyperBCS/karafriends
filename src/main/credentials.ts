@@ -1,6 +1,8 @@
 // The DAM and Joysound logins the clients share: each logs in on first use
 // and keeps the session, until the login fails, a client finds the session
-// has ended (withSession in http.ts), or the settings change it.
+// has ended (withSession in http.ts), or the settings change it. Joysound's
+// "login" is karafriends' link to the account (joysoundLink.ts), made with
+// the saved email and password and kept between launches.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import {
@@ -59,6 +61,28 @@ export class NoLoginError extends Error {
   constructor(service: "DAM" | "Joysound") {
     super(`The host hasn't set up a ${service} login`);
     this.name = "NoLoginError";
+  }
+}
+
+// What a login test that worked says beyond "Signed in": how karafriends'
+// link to the Joysound account stands, and whether Settings can switch the
+// account's TV link to karafriends.
+export interface LoginNote {
+  note: string;
+  canSwitchLink?: boolean;
+}
+
+// A login that worked, but with a problem the host should know about (the
+// Joysound account isn't a paid member, say). Test login shows its message
+// as it is, in place of "Couldn't sign in" (settings.ts). canSwitchLink:
+// another TV app holds the Joysound account's link, which Settings can
+// switch to karafriends.
+export class LoginWarning extends Error {
+  readonly canSwitchLink: boolean;
+  constructor(message: string, { canSwitchLink = false } = {}) {
+    super(message);
+    this.name = "LoginWarning";
+    this.canSwitchLink = canSwitchLink;
   }
 }
 

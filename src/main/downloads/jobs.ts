@@ -17,7 +17,7 @@ import {
 import { getSongDuration } from "../../common/joysoundParser";
 import { nicoWatchUrl } from "../../common/nicoVideoInfo";
 import { songFileNames } from "../../common/songFiles";
-import type { JoysoundAPI } from "../joysoundApi";
+import { backgroundVideoUrl, type JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
 import { withDamSlot, withYtdlpSlot } from "./queue";
 import { parseDuration, probeDuration, runTool, type ToolRun } from "./run";
@@ -576,7 +576,7 @@ export function deleteJoysoundTempFiles(
 export async function joysoundJob(
   paths: JobPaths,
   downloadQueueItem: DownloadQueueItem,
-  joysoundApi: Pick<JoysoundAPI, "getSongRawData" | "getMovieUrls">,
+  joysoundApi: Pick<JoysoundAPI, "getSongData" | "getMovieUrls">,
   queueItem: JoysoundQueueItem,
 ): Promise<JoysoundQueueItem> {
   const songId = queueItem.songId;
@@ -599,8 +599,9 @@ export async function joysoundJob(
   const stopVideo = new AbortController();
   // That tool, once it has started.
   let videoTool: Promise<void> = Promise.resolve();
+  // The lyrics data and the audio, in memory: nothing to clean up.
   const songDataPromise = joysoundApi
-    .getSongRawData(songId)
+    .getSongData(songId)
     .catch(joysoundFailure);
   const videoDataPromise = queueItem.youtubeVideoId
     ? (videoTool = downloadJoysoundYoutubeVideoPromise(
@@ -616,10 +617,17 @@ export async function joysoundJob(
         .getMovieUrls(songId)
         .catch(joysoundFailure)
         .then((data) => {
+          const videoUrl = backgroundVideoUrl(data);
+          if (videoUrl === null) {
+            throw new DownloadFailure(
+              REASONS.joysound,
+              `Joysound sent no background video for ${songId}`,
+            );
+          }
           videoTool = downloadJoysoundVideoPromise(
             paths,
             songId,
-            data.movie.mov1,
+            videoUrl,
             downloadQueueItem,
             sourceFilename,
             ffmpegLogFilename,
@@ -628,12 +636,9 @@ export async function joysoundJob(
           return videoTool;
         });
 
-  let joysoundSongRawData;
+  let songData;
   try {
-    [, joysoundSongRawData] = await Promise.all([
-      videoDataPromise,
-      songDataPromise,
-    ]);
+    [, songData] = await Promise.all([videoDataPromise, songDataPromise]);
   } catch (err) {
     // One step failed. The video step's tool stops (or never starts, if
     // Joysound's video URL comes later) and, once it has exited, the
@@ -644,18 +649,7 @@ export async function joysoundJob(
     throw err;
   }
 
-  const telopBase64 = joysoundSongRawData.telop;
-  const oggBase64 = joysoundSongRawData.ogg;
-
-  const telopBuffer = Buffer.from(
-    telopBase64.slice(30) + telopBase64.slice(0, 30),
-    "base64",
-  );
-
-  const oggBuffer = Buffer.from(
-    oggBase64.slice(30) + oggBase64.slice(0, 30),
-    "base64",
-  );
+  const { telop: telopBuffer, ogg: oggBuffer } = songData;
 
   if (!fs.existsSync(telopFilename)) {
     fs.writeFileSync(telopFilename, telopBuffer);
@@ -692,7 +686,12 @@ export async function joysoundJob(
   // Done: the video is whole.
   safeUnlink(tempFilename);
 
-  return { ...queueItem, playtime: Math.floor(data.songPlaytime / 1000) };
+  // The ogg's playtime, or the lyrics' length (as for a song downloaded
+  // before) if the ogg doesn't say.
+  const playtimeMs = Number.isFinite(data.songPlaytime)
+    ? data.songPlaytime
+    : data.songDuration;
+  return { ...queueItem, playtime: Math.floor(playtimeMs / 1000) };
 }
 
 // Downloads a YouTube or Niconico video (item's kind and songId) with

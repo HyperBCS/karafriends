@@ -60,6 +60,10 @@ export interface Message {
   // The setting a refusal is about: its field saves again even unchanged,
   // so the saved value put back clears it.
   refused?: keyof SettingsChanges;
+  // karafriends isn't the Joysound account's TV app (another may hold the
+  // link): the section offers to switch it to karafriends
+  // (switchJoysoundLink).
+  offersSwitch?: boolean;
 }
 
 export const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
@@ -199,9 +203,14 @@ export function createSettingsActions(deps: SettingsDeps) {
       if (unsaved.has(service)) return undefined;
       say(service, { text: "Signing in…", tone: "busy" });
       const result = await call("testLogin", { service });
-      return result.ok
-        ? { text: `Signed in to ${SERVICE_NAMES[service]}.` }
-        : { text: result.reason, tone: "problem" };
+      if (!result.ok) {
+        return result.canSwitchLink
+          ? { text: result.reason, tone: "problem", offersSwitch: true }
+          : { text: result.reason, tone: "problem" };
+      }
+      const signedIn = `Signed in to ${SERVICE_NAMES[service]}.`;
+      const text = result.note ? `${signedIn} ${result.note}` : signedIn;
+      return result.canSwitchLink ? { text, offersSwitch: true } : { text };
     });
 
   // How many saves were asked for so far, to give failedSince.
@@ -225,6 +234,22 @@ export function createSettingsActions(deps: SettingsDeps) {
         text: password
           ? "Saved. Phones signed in as admins must sign in again."
           : "Cleared. No phone can be an admin now.",
+      };
+    });
+
+  // Links karafriends to the Joysound account, unlinking the other TV app.
+  // After the saves before it, as Test login.
+  const switchJoysoundLink = () =>
+    act("joysound", async () => {
+      if (unsaved.has("joysound")) return undefined;
+      say("joysound", {
+        text: "Switching Joysound's TV link to karafriends…",
+        tone: "busy",
+      });
+      const result = await call("switchJoysoundLink", {});
+      if (!result.ok) return { text: result.reason, tone: "problem" };
+      return {
+        text: result.note ? `Switched. ${result.note}` : "Switched.",
       };
     });
 
@@ -279,6 +304,7 @@ export function createSettingsActions(deps: SettingsDeps) {
     save,
     saveNumber,
     testLogin,
+    switchJoysoundLink,
     saveCount,
     failedSince,
     setAdminPassword,

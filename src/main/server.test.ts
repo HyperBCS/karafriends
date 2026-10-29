@@ -118,6 +118,7 @@ describe("POST /api/<method>", () => {
       "setAdminPassword",
       "setMics",
       "setSettings",
+      "switchJoysoundLink",
       "testLogin",
       "updateTools",
     ]);
