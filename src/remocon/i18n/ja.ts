@@ -26,6 +26,7 @@ export const ja: Messages = {
   "language.ja": "日本語",
 
   "nav.home": "ホーム",
+  "nav.browse": "見つける",
   "nav.history": "履歴",
   "nav.settings": "設定",
 
@@ -132,6 +133,12 @@ export const ja: Messages = {
   "emotes.prompt": "表示する絵文字を入力してください",
 
   "history.heading": "履歴",
+  "browse.heading": "見つける",
+  "browse.newSongs": "新曲",
+  "browse.newSongsRow": "JOYSOUNDの新着曲",
+  "browse.newSongsNote": "新しい順",
+  "browse.genres": "ジャンル別の人気曲",
+  "browse.featured": "特集",
   "history.empty": "履歴はありません",
   "history.emptyMine": "この端末で歌った曲はまだありません",
   "history.whose": "表示する曲",

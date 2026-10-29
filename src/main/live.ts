@@ -85,9 +85,16 @@ function liveDownloads(
 // The live state as deviceId's phone sees it (null: as the display does).
 // The current song's playtime is its video's length once the display has
 // reported it.
+// What the live state's config comes from: the running config, or (in
+// tests) just its two queue rules.
+export type LiveConfig = Omit<LiveState["config"], "joysoundLogin"> & {
+  joysoundEmail?: string;
+  joysoundPassword?: string;
+};
+
 export function toLiveState(
   state: Readonly<State>,
-  config: LiveState["config"],
+  config: LiveConfig,
   deviceId: string | null = null,
 ): LiveState {
   return {
@@ -110,6 +117,7 @@ export function toLiveState(
     config: {
       supervisedMode: config.supervisedMode,
       everyoneIsAdmin: config.everyoneIsAdmin,
+      joysoundLogin: Boolean(config.joysoundEmail && config.joysoundPassword),
     },
     toolsProblem: state.toolsProblem?.message ?? null,
     remoconProblem: state.remoconProblem,
@@ -133,7 +141,7 @@ function ownsAny(state: Readonly<State>, deviceId: string): boolean {
 // owns nothing, and one per device that owns something.
 function stateEvents(
   state: Readonly<State>,
-  config: LiveState["config"],
+  config: LiveConfig,
   shared: LiveState = toLiveState(state, config),
 ) {
   const sentAt = Date.now();
@@ -207,7 +215,7 @@ function messageEvent(message: HubMessage): LiveEvent {
 
 export function createLiveHub(
   store: StateStore,
-  config: LiveState["config"],
+  config: LiveConfig,
   // At most one state or downloads event per interval: about 4 a second
   // while downloads report progress.
   intervalMs = 250,

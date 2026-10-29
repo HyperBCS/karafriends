@@ -11,20 +11,22 @@ import {
   useParams,
 } from "react-router";
 
+import { useLiveState } from "../common/apiClient";
 import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
-import { MdHistory, MdHome, MdSettings } from "./icons";
+import { MdExplore, MdHistory, MdHome, MdSettings } from "./icons";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
+import BrowsePage, { BrowseFeature, BrowseSongList } from "./pages/BrowsePage";
 import HistoryPage from "./pages/HistoryPage";
 import NiconicoPage from "./pages/NiconicoPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SongPage from "./pages/SongPage";
 import YouTubePage from "./pages/YouTubePage";
-import { ARTIST_PAGES, SONG_PAGES, sourceName } from "./songLink";
+import { ARTIST_PAGES, BROWSE_PAGES, SONG_PAGES, sourceName } from "./songLink";
 
 import * as styles from "./App.module.scss";
 
@@ -61,11 +63,18 @@ const App = () => (
   </HashRouter>
 );
 
-type Place = "home" | "history" | "settings";
+type Place = "browse" | "home" | "history" | "settings";
 
-// The top bar's three places, in the same order on every screen: Home at
-// the far right.
+// The top bar's places, in the same order on every screen: Home at the far
+// right. Browse only while the host has a Joysound login (its lists are
+// Joysound's).
 const PLACES = [
+  {
+    place: "browse",
+    to: BROWSE_PAGES.browse,
+    label: "nav.browse",
+    icon: <MdExplore />,
+  },
   {
     place: "history",
     to: "/history",
@@ -146,6 +155,8 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   if (current !== "home" && !firstVisit) {
     back = canGoBack ? () => navigate(-1) : "/";
   }
+  const browse = useLiveState((state) => state?.config.joysoundLogin ?? false);
+  const places = PLACES.filter(({ place }) => place !== "browse" || browse);
 
   return (
     <>
@@ -153,7 +164,7 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
         <TopBar
           title={title}
           back={back}
-          trailing={PLACES.map(({ place, to, label, icon }) => {
+          trailing={places.map(({ place, to, label, icon }) => {
             const here = place === current ? ("page" as const) : undefined;
             // A link can't be disabled: without an address, it's one in
             // name only (role), out of the tab order.
@@ -314,6 +325,44 @@ const Shell = () => {
             <Screen title={t("lyrics.heading")}>
               <PerId page="adhocLyrics" param="id">
                 <AdhocLyricsPage />
+              </PerId>
+            </Screen>
+          }
+        />
+        <Route
+          path={BROWSE_PAGES.browse}
+          element={
+            <Screen title={t("browse.heading")} current="browse">
+              <BrowsePage />
+            </Screen>
+          }
+        />
+        <Route
+          path={BROWSE_PAGES.newSongs}
+          element={
+            <Screen title={t("browse.newSongs")}>
+              <PerId page="browseNewSongs" param="id">
+                <BrowseSongList which="newSongs" />
+              </PerId>
+            </Screen>
+          }
+        />
+        <Route
+          path={`${BROWSE_PAGES.genre}/:id`}
+          element={
+            <Screen title={t("browse.heading")}>
+              <PerId page="browseGenre" param="id">
+                <BrowseSongList which="genre" />
+              </PerId>
+            </Screen>
+          }
+        />
+        <Route
+          path={`${BROWSE_PAGES.feature}/:id`}
+          element={
+            <Screen title={t("browse.featured")}>
+              <PerId page="browseFeature" param="id">
+                <BrowseFeature />
               </PerId>
             </Screen>
           }

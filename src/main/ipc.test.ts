@@ -26,7 +26,11 @@ const liveState: LiveState = {
   mics: [],
   adhocLyrics: [],
   downloads: [],
-  config: { supervisedMode: false, everyoneIsAdmin: false },
+  config: {
+    supervisedMode: false,
+    everyoneIsAdmin: false,
+    joysoundLogin: false,
+  },
   toolsProblem: null,
   remoconProblem: null,
   adminSignOuts: 0,

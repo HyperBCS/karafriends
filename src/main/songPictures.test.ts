@@ -68,6 +68,8 @@ describe("isAllowedPictureUrl", () => {
       "https://m.media-amazon.com/images/I/61w3XEkVjBL._SL500_.jpg",
       "https://images-fe.ssl-images-amazon.com/images/I/x.jpg",
       "https://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg",
+      // A Joysound featured list's.
+      "https://d24lvzvt5ynxi0.cloudfront.net/static/image/feature/thumbnail/t.png",
     ]) {
       assert.ok(isAllowedPictureUrl(url), url);
     }
@@ -78,6 +80,8 @@ describe("isAllowedPictureUrl", () => {
       "http://m.media-amazon.com/images/I/x.jpg",
       "https://example.com/x.png",
       "https://evilmzstatic.com/x.png",
+      // Another CloudFront distribution than sound-cafe's.
+      "https://d111111abcdef8.cloudfront.net/x.png",
       "https://mzstatic.com.example.com/x.png",
       "https://127.0.0.1/x.png",
       "not a url",

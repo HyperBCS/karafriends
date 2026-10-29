@@ -277,6 +277,11 @@ export const validators: {
   joysoundSearchArtists: search,
   joysoundArtistSongs: idPage,
   joysoundSong: id,
+  joysoundGenres: nothing,
+  joysoundGenreSongs: idPage,
+  joysoundNewSongs: (raw) => page(fields(raw, PAGE_KEYS)),
+  joysoundFeatures: nothing,
+  joysoundFeature: id,
   youtubeInfo: videoId,
   nicoInfo: videoId,
   adhocLyrics: (raw) => ({

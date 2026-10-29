@@ -16,6 +16,15 @@ export const ARTIST_PAGES = {
   joysound: "/joysoundArtist",
 } as const;
 
+// Browse (Joysound's): the page, a genre's songs (+ "/<id>"), its newest
+// songs, and a featured list (+ "/<id>").
+export const BROWSE_PAGES = {
+  browse: "/browse",
+  genre: "/browse/genre",
+  newSongs: "/browse/new",
+  feature: "/browse/feature",
+} as const;
+
 const SOURCE_NAMES = {
   dam: "source.dam",
   joysound: "source.joysound",

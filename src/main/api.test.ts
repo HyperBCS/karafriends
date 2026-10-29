@@ -3005,6 +3005,59 @@ describe("lookups", () => {
     ]);
   });
 
+  test("Browse: Joysound's newest songs a page at a time, and its featured lists", async () => {
+    const row = (n: number) => ({
+      selSongNo: `${n}`,
+      songName: `Song ${n}`,
+      artistName: "Artist",
+    });
+    const remembered: unknown[] = [];
+    const feature = {
+      id: "63",
+      title: "バラードソング特集",
+      description: "しっとり",
+      songNumbers: ["3", "1"],
+      pictureUrl: "https://d24lvzvt5ynxi0.cloudfront.net/t.png",
+    };
+    const api = makeApi(
+      {},
+      {
+        joysound: upstream<ApiDeps["joysound"]>({
+          // 150 new songs.
+          getNewSongs: async () =>
+            Array.from({ length: 150 }, (_, i) => row(i + 1)),
+          getFeatures: async () => [feature],
+          getSongsByNumber: async (numbers: string[]) =>
+            numbers.map((n) => row(Number(n))),
+        }),
+        pictures: { remember: (...args) => remembered.push(args) },
+      },
+    );
+    const first = await api.joysoundNewSongs({ limit: 100 }, alice);
+    assert.equal(first.items.length, 100);
+    assert.equal(first.nextOffset, 100);
+    const rest = await api.joysoundNewSongs({ offset: 100, limit: 100 }, alice);
+    assert.equal(rest.items[0].id, "101");
+    assert.equal(rest.nextOffset, null);
+
+    assert.deepEqual(await api.joysoundFeatures({}, alice), [
+      { id: "63", title: "バラードソング特集", songCount: 2, picture: true },
+    ]);
+    const page = await api.joysoundFeature({ id: "63" }, alice);
+    assert.deepEqual(
+      page.songs.map((song) => song.id),
+      ["3", "1"],
+    );
+    assert.equal(page.description, "しっとり");
+    // The picture's URL, left for /api/songPicture.
+    assert.deepEqual(remembered[0], [
+      "joysoundFeature",
+      "63",
+      feature.pictureUrl,
+    ]);
+    await rejectsWith(api.joysoundFeature({ id: "64" }, alice), 404);
+  });
+
   test("a YouTube lookup that YouTube refuses is a result, not an error", async () => {
     const api = makeApi();
     assert.deepEqual(await api.youtubeInfo({ videoId: "x" }, alice), {

@@ -34,6 +34,13 @@ const serviceType = (guideVocal: boolean) =>
 
 const CONTENTS_LIST = "/api/v1/spc/contentsList";
 
+// Joysound's featured lists: the TV app's home screen's, a static file.
+const FEATURES_PATH = "/static/json/feature_tv.json";
+
+// How long Browse's genres and featured lists are kept: they change
+// rarely, and every phone opening Browse asks for them.
+const BROWSE_KEPT_MS = 60 * 60_000;
+
 // What the TV app's OkHttp client sends with each request, with karafriends
 // as the device. These values were accepted in the live tests.
 const TV_USER_AGENT = "okhttp/4.12.0";
@@ -132,6 +139,95 @@ interface GetFmeAnswer {
   streaming_wifi_url?: string | null;
 }
 
+// One of Joysound's genres (J-POP, 演歌, アニメ...).
+export interface JoysoundGenre {
+  id: string;
+  name: string;
+}
+
+// One of Joysound's featured lists ("バラードソング特集"): its songs' numbers,
+// in its order, and its picture (690×340), if any.
+export interface JoysoundFeature {
+  id: string;
+  title: string;
+  description: string;
+  songNumbers: string[];
+  pictureUrl: string | null;
+}
+
+interface GenreListAnswer {
+  genreList?: { genreId?: string; genreName?: string }[] | null;
+}
+
+// New songs, by the date they came: the newest group first.
+interface UpListAnswer {
+  hitCount?: string;
+  upList?: { contentsList?: JoysoundSongListItem[] | null }[] | null;
+}
+
+export interface FeatureFile {
+  feature?: {
+    id?: unknown;
+    title?: unknown;
+    description?: unknown;
+    song_number?: unknown;
+    thumbnail_img?: unknown;
+  }[];
+}
+
+// The featured lists from feature_tv.json: well-formed ones only, and the
+// first of two with one id (the file has had two "12"s).
+export function featuresOf(file: FeatureFile): JoysoundFeature[] {
+  const seen = new Set<string>();
+  const features: JoysoundFeature[] = [];
+  for (const entry of file.feature ?? []) {
+    const id = String(entry.id ?? "");
+    if (!/^\d+$/.test(id) || seen.has(id) || typeof entry.title !== "string") {
+      continue;
+    }
+    const songNumbers = (
+      Array.isArray(entry.song_number) ? entry.song_number : []
+    )
+      .map(String)
+      .filter((number) => /^\d+$/.test(number));
+    if (songNumbers.length === 0) continue;
+    seen.add(id);
+    features.push({
+      id,
+      title: entry.title,
+      // Lines cut for the TV's width, of one paragraph.
+      description: Array.isArray(entry.description)
+        ? entry.description.filter((line) => typeof line === "string").join("")
+        : typeof entry.description === "string"
+          ? entry.description
+          : "",
+      songNumbers,
+      pictureUrl:
+        typeof entry.thumbnail_img === "string" && entry.thumbnail_img !== ""
+          ? entry.thumbnail_img
+          : null,
+    });
+  }
+  return features;
+}
+
+// A value kept for keptMs once loaded: one load at a time, and a failure
+// isn't kept.
+export function keptFor<T>(keptMs: number, load: () => Promise<T>) {
+  let kept: { value: Promise<T>; at: number } | null = null;
+  return (now = Date.now()): Promise<T> => {
+    if (!kept || now - kept.at >= keptMs) {
+      const value = load();
+      const entry = { value, at: now };
+      kept = entry;
+      value.catch(() => {
+        if (kept === entry) kept = null;
+      });
+    }
+    return kept.value;
+  };
+}
+
 export interface JoysoundMovieList {
   slc: string;
   // Background videos, mov1 to mov5. Any may be missing.
@@ -162,7 +258,7 @@ export interface JoysoundSongData {
 
 // Joysound's song numbers and artist IDs are digits. Anything else (from a
 // phone) is refused before it goes into a request.
-function checkId(id: string, what: "song number" | "artist ID") {
+function checkId(id: string, what: "song number" | "artist ID" | "genre ID") {
   if (!/^\d+$/.test(id)) {
     throw new ApiError(400, `Not a Joysound ${what}: ${JSON.stringify(id)}`);
   }
@@ -199,11 +295,11 @@ export async function tvPost<T extends object>(
 // website (the TV app starts at 1, and 0 gives the same page).
 function contentsListRequest(
   param: {
-    kind: "song" | "artist" | "selArtist_digi";
+    kind: "song" | "artist" | "selArtist_digi" | "selGenre" | "selSongNo";
     word: string;
     match: "partial" | "exact";
   },
-  sort: "popular" | "name",
+  sort: "popular" | "name" | "songName",
   order: "asc" | "desc",
   format: "all" | "artist_digi",
   start: number,
@@ -285,17 +381,20 @@ export function songDetailOf(
   };
 }
 
-// The background video to use: mov1, as before, or else the first other
-// one there is. null if there's none.
-export function backgroundVideoUrl(list: JoysoundMovieList): string | null {
+// The background video to use: one of the song's (mov1 to mov5, stock
+// footage all of one quality), picked at random, so a song downloaded again
+// may look different. null if there's none.
+export function backgroundVideoUrl(
+  list: JoysoundMovieList,
+  random: () => number = Math.random,
+): string | null {
   const movies = list.movie ?? {};
-  const keys = Object.keys(movies)
-    .filter((key) => key !== "mov1")
-    .sort();
-  const url = ["mov1", ...keys]
+  const urls = Object.keys(movies)
+    .sort()
     .map((key) => movies[key])
-    .find((candidate) => typeof candidate === "string" && candidate !== "");
-  return url ?? null;
+    .filter((url): url is string => typeof url === "string" && url !== "");
+  if (urls.length === 0) return null;
+  return urls[Math.min(Math.floor(random() * urls.length), urls.length - 1)];
 }
 
 // getFME's lyrics: plain base64 of JOY-02 data. (The website's player moved
@@ -362,10 +461,45 @@ export class JoysoundAPI {
     this.link = link;
   }
 
+  // Browse's genres, kept for BROWSE_KEPT_MS.
+  private keptGenres = keptFor(BROWSE_KEPT_MS, async () =>
+    (
+      (await this.post<GenreListAnswer>("/api/v1/spc/genreList", undefined))
+        .genreList ?? []
+    ).flatMap((genre): JoysoundGenre[] =>
+      typeof genre.genreId === "string" &&
+      /^\d+$/.test(genre.genreId) &&
+      typeof genre.genreName === "string"
+        ? [{ id: genre.genreId, name: genre.genreName }]
+        : [],
+    ),
+  );
+
+  // Browse's featured lists, kept for BROWSE_KEPT_MS. A static file, not
+  // the TV API, but asked for only with a link, as the rest of Joysound:
+  // without a login, a NoLoginError.
+  private keptFeatures = keptFor(BROWSE_KEPT_MS, () =>
+    withSession(
+      this.link,
+      async () => {
+        const url = `${this.baseURL}${FEATURES_PATH}`;
+        const file = await readBody<FeatureFile | string>(
+          await httpFetch(url, { headers: { "User-Agent": TV_USER_AGENT } }),
+          url,
+        );
+        if (typeof file !== "object") {
+          throw new Error("Joysound's featured lists aren't data");
+        }
+        return featuresOf(file);
+      },
+      { label: "Joysound featured lists" },
+    ),
+  );
+
   // path with the shared link, and with policy's retries.
   private post<T extends object>(
     path: string,
-    body: object,
+    body: object | undefined,
     policy: RetryPolicy = NO_RETRIES,
   ): Promise<T> {
     return withSession(
@@ -426,6 +560,63 @@ export class JoysoundAPI {
     )
       .then((answer) => pageOf(answer, answer.contentsList))
       .catch(noResultsWithoutLogin<JoysoundSongListItem>);
+  }
+
+  // Joysound's genres, for Browse.
+  getGenres(): Promise<JoysoundGenre[]> {
+    return this.keptGenres();
+  }
+
+  // A genre's songs, most popular first.
+  async getSongListByGenre(genreId: string, start: number, count: number) {
+    checkId(genreId, "genre ID");
+    return this.post<ContentsListAnswer>(
+      CONTENTS_LIST,
+      contentsListRequest(
+        { kind: "selGenre", word: genreId, match: "exact" },
+        "popular",
+        "desc",
+        "all",
+        start,
+        count,
+      ),
+    ).then((answer) => pageOf(answer, answer.contentsList));
+  }
+
+  // Joysound's newest songs, newest first: one list (about 100).
+  async getNewSongs(): Promise<JoysoundSongListItem[]> {
+    const answer = await this.post<UpListAnswer>(
+      "/api/v1/spc/upList",
+      undefined,
+    );
+    return (answer.upList ?? []).flatMap((group) => group.contentsList ?? []);
+  }
+
+  // Joysound's featured lists, for Browse.
+  getFeatures(): Promise<JoysoundFeature[]> {
+    return this.keptFeatures();
+  }
+
+  // Songs by their numbers, in that order (a featured list's), in one
+  // request, as the TV app asks. Numbers Joysound doesn't know are left out.
+  async getSongsByNumber(numbers: string[]): Promise<JoysoundSongListItem[]> {
+    for (const number of numbers) checkId(number, "song number");
+    if (numbers.length === 0) return [];
+    const answer = await this.post<ContentsListAnswer>(
+      CONTENTS_LIST,
+      contentsListRequest(
+        { kind: "selSongNo", word: numbers.join(","), match: "exact" },
+        "songName",
+        "asc",
+        "all",
+        1,
+        numbers.length,
+      ),
+    );
+    const rows = new Map(
+      (answer.contentsList ?? []).map((row) => [row.selSongNo, row]),
+    );
+    return numbers.flatMap((number) => rows.get(number) ?? []);
   }
 
   async getSongDetail(id: string): Promise<JoysoundSongDetail> {

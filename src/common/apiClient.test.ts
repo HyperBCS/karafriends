@@ -57,7 +57,11 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   mics: [],
   adhocLyrics: [],
   downloads: [],
-  config: { supervisedMode: false, everyoneIsAdmin: false },
+  config: {
+    supervisedMode: false,
+    everyoneIsAdmin: false,
+    joysoundLogin: false,
+  },
   toolsProblem: null,
   remoconProblem: null,
   adminSignOuts: 0,
@@ -547,7 +551,11 @@ describe("adminCheck", () => {
     const before = state();
     const sameAgain = state();
     const everyone = state({
-      config: { supervisedMode: false, everyoneIsAdmin: true },
+      config: {
+        supervisedMode: false,
+        everyoneIsAdmin: true,
+        joysoundLogin: false,
+      },
     });
     const signedOut = state({ adminSignOuts: 1 });
     assert.equal(adminMayHaveChanged(null, before, true), false);

@@ -111,6 +111,11 @@ export interface ApiDeps {
     | "getArtistListByKeyword"
     | "getSongListByArtist"
     | "getSongDetail"
+    | "getGenres"
+    | "getSongListByGenre"
+    | "getNewSongs"
+    | "getFeatures"
+    | "getSongsByNumber"
   >;
   // The YouTube client, created on first use.
   youtube: () => Promise<{ getBasicInfo(videoId: string): Promise<unknown> }>;
@@ -649,6 +654,63 @@ export function createApi(
         tieUp: detail.tieUp,
         picture: detail.pictureUrl !== null,
         guideVocal: detail.guideVocal,
+      };
+    },
+
+    joysoundGenres: () => deps.joysound.getGenres(),
+
+    async joysoundGenreSongs({ id, offset, limit }) {
+      const { items, nextOffset } = await joysoundPage(
+        (start, count) => deps.joysound.getSongListByGenre(id, start, count),
+        toJoysoundSong,
+        offset,
+        limit,
+      );
+      return { items, nextOffset };
+    },
+
+    // All of them come at once (about 100): served a page at a time.
+    async joysoundNewSongs({ offset = 0, limit = DEFAULT_LIMIT.joysound }) {
+      const songs = await deps.joysound.getNewSongs();
+      return {
+        items: songs.slice(offset, offset + limit).map(toJoysoundSong),
+        nextOffset: nextOffset(offset, limit, songs.length),
+      };
+    },
+
+    // Each list's picture's URL is left for /api/songPicture.
+    async joysoundFeatures() {
+      const features = await deps.joysound.getFeatures();
+      for (const feature of features) {
+        deps.pictures?.remember(
+          "joysoundFeature",
+          feature.id,
+          feature.pictureUrl,
+        );
+      }
+      return features.map((feature) => ({
+        id: feature.id,
+        title: feature.title,
+        songCount: feature.songNumbers.length,
+        picture: feature.pictureUrl !== null,
+      }));
+    },
+
+    async joysoundFeature({ id }) {
+      const feature = (await deps.joysound.getFeatures()).find(
+        (candidate) => candidate.id === id,
+      );
+      if (!feature) {
+        throw new ApiError(404, `Joysound has no featured list ${id}`);
+      }
+      deps.pictures?.remember("joysoundFeature", id, feature.pictureUrl);
+      const songs = await deps.joysound.getSongsByNumber(feature.songNumbers);
+      return {
+        id,
+        title: feature.title,
+        description: feature.description,
+        picture: feature.pictureUrl !== null,
+        songs: songs.map(toJoysoundSong),
       };
     },
 
