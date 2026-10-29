@@ -199,7 +199,11 @@ jobs:
           path: playwright-report/
       # Clippy, then the native tests under cargo-careful (see the top).
       - run: cargo install cargo-careful --locked --version "$CAREFUL_VERSION"
+      # cargo-careful builds a sysroot from nightly's std, which has warnings;
+      # setup-rust-toolchain v2's `build.warnings = deny` must not apply there.
       - run: yarn test:native:careful
+        env:
+          CARGO_BUILD_WARNINGS: warn
   # The Linux zip on Ubuntu 22.04, the oldest Ubuntu it's for. The build runs
   # on 24.04, where a module that needs something newer (a libpipewire
   # function, a glibc symbol) still loads. scripts/smokeLinuxPackage.sh says
