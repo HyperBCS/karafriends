@@ -59,19 +59,28 @@ interface Props {
   query: string;
   by: SearchBy;
   source: SearchSource;
+  // Which catalogs are on (useCatalog): only those are searched.
+  damOn: boolean;
+  joysoundOn: boolean;
 }
 
 // DAM's and Joysound's answers to a search in one list, best match first
 // (see rank), ranked again as each page comes in. Each row says which
 // catalog it's from.
-const SearchResults = ({ query, by, source }: Props) => {
-  const searches = {
-    dam: useCatalogSearch("dam", by, query, source !== "joysound"),
-    joysound: useCatalogSearch("joysound", by, query, source !== "dam"),
-  };
+const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
+  const on = { dam: damOn, joysound: joysoundOn };
   const catalogs = (["dam", "joysound"] as const).filter(
-    (catalog) => source === "all" || source === catalog,
+    (catalog) => on[catalog] && (source === "all" || source === catalog),
   );
+  const searches = {
+    dam: useCatalogSearch("dam", by, query, catalogs.includes("dam")),
+    joysound: useCatalogSearch(
+      "joysound",
+      by,
+      query,
+      catalogs.includes("joysound"),
+    ),
+  };
   // Each catalog's loaded pages, without the repeats a shifting catalog
   // can put on a later page.
   // Ranked again only when a page comes in (or the query changes).
@@ -91,7 +100,7 @@ const SearchResults = ({ query, by, source }: Props) => {
         .map((item) => ({ ...item, catalog }));
     });
     return rank(query, found);
-  }, [query, source, damPages, joysoundPages]);
+  }, [query, source, damOn, joysoundOn, damPages, joysoundPages]);
   const rows = ranked.map((item) => (
     <ListRow
       key={`${item.catalog}_${item.id}`}
@@ -167,6 +176,6 @@ const SearchResults = ({ query, by, source }: Props) => {
   );
 };
 
-// Its props are three strings, so typing in the search box (before the
+// Its props are strings and booleans, so typing in the search box (before the
 // debounced query changes) doesn't render the results again.
 export default memo(SearchResults);

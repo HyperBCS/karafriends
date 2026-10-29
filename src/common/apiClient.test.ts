@@ -60,8 +60,9 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   config: {
     supervisedMode: false,
     everyoneIsAdmin: false,
-    joysoundLogin: false,
   },
+  catalogs: { dam: { state: "off" }, joysound: { state: "off" } },
+  toolsDownload: null,
   toolsProblem: null,
   remoconProblem: null,
   adminSignOuts: 0,
@@ -554,7 +555,6 @@ describe("adminCheck", () => {
       config: {
         supervisedMode: false,
         everyoneIsAdmin: true,
-        joysoundLogin: false,
       },
     });
     const signedOut = state({ adminSignOuts: 1 });

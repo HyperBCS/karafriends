@@ -64,6 +64,15 @@ export class NoLoginError extends Error {
   }
 }
 
+// The service said the login is wrong: its email or username, or its
+// password. Trying again won't help until the host changes it.
+export class LoginRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LoginRejectedError";
+  }
+}
+
 // What a login test that worked says beyond "Signed in": how karafriends'
 // link to the Joysound account stands, and whether Settings can switch the
 // account's TV link to karafriends.

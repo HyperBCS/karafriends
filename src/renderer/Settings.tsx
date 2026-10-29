@@ -3,22 +3,15 @@
 // settings/controls.tsx and what the fields do in settings/actions.ts.
 import React, { useEffect, useId, useRef, useState } from "react";
 
-import { call } from "../common/apiClient";
 import "./global";
 import AccountsTab from "./settings/AccountsTab";
-import {
-  createSettingsActions,
-  errorText,
-  type Loaded,
-  type Message,
-  type Section,
-  SECTION_TABS,
-} from "./settings/actions";
+import { type Section, SECTION_TABS } from "./settings/actions";
 import AdvancedTab, { useTools } from "./settings/AdvancedTab";
 import DisplayTab, { type DisplayProps } from "./settings/DisplayTab";
 import PartyTab from "./settings/PartyTab";
 import SoundTab, { type SoundProps } from "./settings/SoundTab";
 import { type SettingsTab, SettingsTabs } from "./settings/tabs";
+import { useSettings } from "./settings/useSettings";
 import "./Settings.css";
 
 export { SETTINGS_TABS, type SettingsTab } from "./settings/tabs";
@@ -37,52 +30,17 @@ export default function Settings(
   } & SoundProps &
     DisplayProps,
 ) {
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
-  // Why getSettings failed, if it did (loaded.loadProblem is why
-  // config.yaml didn't load, with the settings the app runs on).
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Whether it opened on a first run, from the first load: the save that
-  // completes a login keeps the banner until Settings closes, so nothing
-  // under it moves (the blur-save runs on the mouse down of a click on
-  // Test login, and would move the button from under the pointer).
-  const [firstRun, setFirstRun] = useState(false);
-  const [messages, setMessages] = useState<
-    Partial<Record<Section, Message | null>>
-  >({});
   // Tabs an import changed, until the host opens them.
   const [unseen, setUnseen] = useState<ReadonlySet<SettingsTab>>(new Set());
+  const { loaded, loadError, messages, say, report, actions } = useSettings(
+    (changed) => setUnseen((tabs) => new Set([...tabs, ...changed])),
+  );
   const tabIds = useId();
   const tabId = (tab: SettingsTab) => `${tabIds}-${tab}`;
   const panelId = `${tabIds}-panel`;
   const [adminDraft, setAdminDraft] = useState("");
 
-  const say = (section: Section, message: Message | null) =>
-    setMessages((previous) => ({ ...previous, [section]: message }));
-
-  // Why a device didn't open, under its section; null clears it.
-  const report = (section: Section, problem: string | null) =>
-    say(section, problem === null ? null : { text: problem, tone: "problem" });
-
-  const [actions] = useState(() => {
-    let firstLoad = true;
-    return createSettingsActions({
-      call,
-      files: window.karafriends,
-      say,
-      setLoaded: (next) => {
-        if (firstLoad) setFirstRun(next.isFirstRun);
-        firstLoad = false;
-        setLoaded(next);
-      },
-      onImported: (changed) =>
-        setUnseen((tabs) => new Set([...tabs, ...changed])),
-    });
-  });
   const tools = useTools(say);
-
-  useEffect(() => {
-    actions.reload().catch((err) => setLoadError(errorText(err)));
-  }, []);
 
   // Leaving Settings saves the field being edited, as leaving the field
   // does: Close and Escape wait for that save, and Settings stays open,
@@ -175,7 +133,6 @@ export default function Settings(
           {props.tab === "accounts" ? (
             <AccountsTab
               loaded={loaded}
-              firstRun={firstRun}
               messages={messages}
               actions={actions}
             />

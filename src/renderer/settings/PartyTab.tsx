@@ -2,6 +2,7 @@ import React, { useState } from "react";
 
 import "../global";
 import HostnameSetting, { CustomUrlSetting } from "../HostnameSetting";
+import AdminPasswordSection from "./AdminPasswordSection";
 import {
   LABELS,
   type Loaded,
@@ -38,8 +39,6 @@ export default function PartyTab(props: {
   const [customPicked, setCustomPicked] = useState(false);
   const custom = customPicked || props.customUrl !== null;
   const { settings } = loaded;
-  const setAdminPassword = (password: string) =>
-    actions.setAdminPassword(password, () => props.onAdminDraftChange(""));
   const devPort = devServerPort(settings.remoconPort);
 
   return (
@@ -122,47 +121,13 @@ export default function PartyTab(props: {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Admin password" message={messages.admin}>
-        <form
-          className="settingsInline"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (props.adminDraft) setAdminPassword(props.adminDraft);
-          }}
-        >
-          <label className="kfLabel">
-            {settings.adminPasswordSet ? "New password" : "Password"}
-            <input
-              className="kfField"
-              type="password"
-              autoComplete="new-password"
-              value={props.adminDraft}
-              onChange={(event) => props.onAdminDraftChange(event.target.value)}
-            />
-          </label>
-          <button
-            type="submit"
-            className="kfButton primary"
-            disabled={props.adminDraft === ""}
-          >
-            {settings.adminPasswordSet ? "Change password" : "Set password"}
-          </button>
-          {settings.adminPasswordSet ? (
-            <button
-              type="button"
-              className="kfButton"
-              onClick={() => setAdminPassword("")}
-            >
-              Clear
-            </button>
-          ) : null}
-        </form>
-        <Hint>
-          {settings.adminPasswordSet
-            ? "Admins can reorder, skip and remove any song."
-            : "Set one to let phones sign in as admins."}
-        </Hint>
-      </SettingsSection>
+      <AdminPasswordSection
+        loaded={loaded}
+        message={messages.admin}
+        actions={actions}
+        draft={props.adminDraft}
+        onDraftChange={props.onAdminDraftChange}
+      />
     </>
   );
 }

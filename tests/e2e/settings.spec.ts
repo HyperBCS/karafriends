@@ -41,7 +41,18 @@ async function configOnDisk(app: ElectronApplication) {
 }
 
 // Opens one of Settings' tabs, and waits for it.
+// Opens Settings (S) unless it's open. Again until it is: a display that
+// is still loading doesn't hear the key yet.
+async function openSettings(display: Page) {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  await expect(async () => {
+    if ((await settings.count()) === 0) await display.keyboard.press("s");
+    await expect(settings).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+}
+
 async function openTab(display: Page, name: string) {
+  await openSettings(display);
   const tab = display
     .getByRole("dialog", { name: "Settings" })
     .getByRole("tab", { name });
@@ -71,7 +82,7 @@ test.describe("on a profile with logins", () => {
   });
 
   test("getSettings masks the passwords", async ({ display }) => {
-    const { settings, isFirstRun, needsRestart } = await output(
+    const { settings, setup, needsRestart } = await output(
       display,
       "getSettings",
     );
@@ -86,7 +97,7 @@ test.describe("on a profile with logins", () => {
     expect(settings).not.toHaveProperty("adminPasswordHash");
     expect(settings).not.toHaveProperty("proxyPass");
     expect(JSON.stringify(settings)).not.toContain("e2e-dam-password");
-    expect(isFirstRun).toBe(false);
+    expect(setup).toBe(false);
     expect(needsRestart).toBe(false);
   });
 });
@@ -100,7 +111,7 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
     everyoneIsAdmin: false,
   });
   expect(await output(display, "getSettings")).toMatchObject({
-    isFirstRun: true,
+    setup: false,
   });
 
   expect(
@@ -134,19 +145,19 @@ test("setSettings changes supervisedMode, and the live state follows", async ({
   });
 });
 
-test("the settings screen opens on first launch, and saves as the host goes", async ({
+test("the settings screen saves as the host goes", async ({
   karafriends,
   display,
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
-  // On Accounts, with the banner.
+  // Not open by itself: S opens it, on Accounts.
+  await expect(display.getByText("Scan to join")).toBeVisible();
+  await expect(settings).toHaveCount(0);
+  await display.keyboard.press("s");
   await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await expect(
-    settings.getByText("Add your DAM or Joysound login", { exact: false }),
-  ).toBeVisible();
   // A fresh config.yaml has no logins: both fields are empty.
   const dam = settings.getByRole("region", { name: "DAM login" });
   await expect(dam.getByLabel("Username")).toHaveValue("");
@@ -202,39 +213,89 @@ test("the settings screen opens on first launch, and saves as the host goes", as
   await expect(settings).toHaveCount(0);
 });
 
-test("on first launch, the save that completes a login leaves the banner up, so Test login stays where it was", async ({
-  display,
-}) => {
-  const settings = display.getByRole("dialog", { name: "Settings" });
-  const banner = settings.getByText("Add your DAM or Joysound login", {
-    exact: false,
+test.describe("a first start (no config.yaml)", () => {
+  // Both catalogs off whatever is typed: nothing signs in.
+  test.use({ noConfigFile: true, catalogs: "" });
+
+  test("the setup screen: logins, then mics and speakers, then an admin password; then the idle screen, for good", async ({
+    display,
+  }) => {
+    const setup = display.getByRole("dialog", { name: "Setup" });
+    const steps = setup.getByRole("list", { name: "Steps" });
+    const step = (name: string) =>
+      steps.getByRole("listitem").filter({ hasText: name });
+    await expect(
+      setup.getByRole("heading", { name: "Welcome to karafriends" }),
+    ).toBeVisible();
+    await expect(steps.getByRole("listitem")).toHaveText([
+      "1Logins",
+      "2Mics and speakers",
+      "3Admin password",
+    ]);
+    await expect(step("Logins")).toHaveAttribute("aria-current", "step");
+
+    // 1: the logins, each saying how its catalog stands, and Import config.
+    const dam = setup.getByRole("region", { name: "DAM login" });
+    await expect(
+      dam.getByText("Off: guests can't find DAM songs until a login is set."),
+    ).toBeVisible();
+    await expect(
+      setup.getByRole("button", { name: "Import config" }),
+    ).toBeVisible();
+    await expect(setup.getByRole("button", { name: "Back" })).toHaveCount(0);
+    await dam.getByLabel("Username").fill("e2e-first-user");
+    // Next saves the field being edited.
+    await setup.getByRole("button", { name: "Next" }).click();
+    await expect(step("Mics and speakers")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+    expect((await output(display, "getSettings")).settings.damUsername).toBe(
+      "e2e-first-user",
+    );
+
+    // 2: the Sound tab's sections.
+    await expect(
+      setup.getByRole("region", { name: "Microphones" }),
+    ).toBeVisible();
+    await setup.getByRole("button", { name: "Next" }).click();
+
+    // 3: an admin password.
+    await expect(step("Admin password")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+    const admin = setup.getByRole("region", { name: "Admin password" });
+    await admin.getByLabel("Password").fill("e2e admin");
+    await admin.getByRole("button", { name: "Set password" }).click();
+    await expect(admin.getByRole("status")).toHaveText(
+      "Saved. Phones signed in as admins must sign in again.",
+    );
+    await setup.getByRole("button", { name: "Finish" }).click();
+
+    // Then the idle screen, and the setup screen doesn't open again, not
+    // even after a reload.
+    await expect(setup).toHaveCount(0);
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    expect((await output(display, "getSettings")).setup).toBe(false);
+    await display.reload();
+    await expect(display.getByText("Scan to join")).toBeVisible();
+    await expect(setup).toHaveCount(0);
   });
-  const dam = settings.getByRole("region", { name: "DAM login" });
-  const testLogin = dam.getByRole("button", { name: "Test login" });
-  await expect(banner).toBeVisible();
-  const before = await testLogin.boundingBox();
 
-  await dam.getByLabel("Username").fill("e2e-first-user");
-  await dam.getByLabel("Username").press("Enter");
-  await expect(dam.getByRole("status")).toHaveText("Saved.");
-  await dam.getByLabel("Password").fill("e2e-first-password");
-  await dam.getByLabel("Password").press("Enter");
-  // Saved, and loaded again: the password shows masked.
-  await expect
-    .poll(async () => (await output(display, "getSettings")).isFirstRun)
-    .toBe(false);
-  await openTab(display, "Party");
-  await openTab(display, "Accounts");
-  await expect(dam.getByLabel("Password")).toHaveValue(MASK);
-  await expect(banner).toBeVisible();
-  expect(await testLogin.boundingBox()).toEqual(before);
-
-  // Gone the next time Settings opens.
-  await display.keyboard.press("Escape");
-  await expect(settings).toHaveCount(0);
-  await display.keyboard.press("s");
-  await expect(dam.getByLabel("Username")).toHaveValue("e2e-first-user");
-  await expect(banner).toHaveCount(0);
+  test("Back goes a step back, and Skip setup leaves it", async ({
+    display,
+  }) => {
+    const setup = display.getByRole("dialog", { name: "Setup" });
+    await setup.getByRole("button", { name: "Next" }).click();
+    await setup.getByRole("button", { name: "Back" }).click();
+    await expect(
+      setup.getByRole("region", { name: "DAM login" }),
+    ).toBeVisible();
+    await setup.getByRole("button", { name: "Skip setup" }).click();
+    await expect(setup).toHaveCount(0);
+    expect((await output(display, "getSettings")).setup).toBe(false);
+  });
 });
 
 test("leaving Settings saves the field being edited: Escape keeps it, and Close stays open to say why one was refused", async ({
@@ -243,6 +304,7 @@ test("leaving Settings saves the field being edited: Escape keeps it, and Close 
   const settings = display.getByRole("dialog", { name: "Settings" });
   const close = settings.getByRole("button", { name: "Close" });
   const joysound = settings.getByRole("region", { name: "Joysound login" });
+  await openSettings(display);
   await joysound.getByLabel("Email").fill("e2e-escape@example.com");
   await display.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
@@ -470,6 +532,7 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
   display,
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
+  await openSettings(display);
   const tablist = settings.getByRole("tablist", { name: "Sections" });
   const tabs = tablist.getByRole("tab");
   const tab = (name: string) => tablist.getByRole("tab", { name });
@@ -483,7 +546,7 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
     "Advanced",
   ]);
 
-  // A first launch opens on Accounts, focused, so the keys work at once.
+  // It opens on Accounts at first, focused, so the keys work at once.
   // Only the open tab is in the Tab order.
   const tabStops = () =>
     tabs.evaluateAll((all) => all.map((t) => t.getAttribute("tabindex")));
@@ -531,12 +594,10 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
   await display.getByRole("button", { name: "Settings" }).click();
   await expect(tab("Display")).toHaveAttribute("aria-selected", "true");
 
-  // But a launch with no login opens on Accounts.
+  // A launch doesn't open it, even without a login.
   await display.reload();
-  await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
-  await expect(
-    settings.getByText("Add your DAM or Joysound login", { exact: false }),
-  ).toBeVisible();
+  await expect(display.getByText("Scan to join")).toBeVisible();
+  await expect(settings).toHaveCount(0);
 });
 
 test.describe("on a profile with a login", () => {
@@ -1129,8 +1190,7 @@ test.describe("the microphones", () => {
   const ADMIN_PASSWORD = "e2e mics";
   test.use({ appConfig: adminPasswordConfig(ADMIN_PASSWORD) });
 
-  // Settings opens on Accounts on a launch with no login; the mics are on
-  // Sound.
+  // The mics are on Sound.
   test.beforeEach(async ({ display }) => {
     await openTab(display, "Sound");
   });
@@ -1969,7 +2029,7 @@ test.describe("devices that won't open", () => {
 
     // A launch while the list won't read opens no mic, and keeps it saved.
     await display.reload();
-    await expect(settings).toBeVisible();
+    await openSettings(display);
     await expect(crashed).toHaveCount(0);
     expect(
       await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
@@ -2214,9 +2274,8 @@ test.describe("the downloads", () => {
     fs.writeFileSync(path.join(folder, "yt-e2evideo.mp4"), "x".repeat(1.5e6));
     fs.writeFileSync(path.join(folder, "yt-e2evideo.log"), "x".repeat(5e5));
 
-    // Settings opens on first launch; opened again, it counts the files.
+    // Opened, Settings counts the files.
     const settings = display.getByRole("dialog", { name: "Settings" });
-    await settings.getByRole("button", { name: "Close" }).click();
     await display.getByRole("button", { name: "Settings" }).click();
     await openTab(display, "Advanced");
     const section = settings.getByRole("region", { name: "Downloads" });
@@ -2272,8 +2331,6 @@ test.describe("a queue an older version saved in the temp folder", () => {
     karafriends,
     display,
   }) => {
-    const settings = display.getByRole("dialog", { name: "Settings" });
-    await settings.getByRole("button", { name: "Close" }).click();
     // Song 1 plays from its moved video, with song 2 up next.
     await expect(
       display.getByRole("region", { name: "Up next" }).getByRole("listitem"),

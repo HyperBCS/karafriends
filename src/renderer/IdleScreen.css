@@ -20,3 +20,13 @@
   width: 3rem;
   height: 3rem;
 }
+
+/* Along the bottom, centred. */
+.idleNotes {
+  position: absolute;
+  right: 0;
+  bottom: var(--kf-space-6);
+  left: 0;
+  display: flex;
+  justify-content: center;
+}

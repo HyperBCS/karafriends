@@ -177,6 +177,24 @@ export interface FeatureFile {
 
 // The featured lists from feature_tv.json: well-formed ones only, and the
 // first of two with one id (the file has had two "12"s).
+// A sentence, up to and with its end (。！？♪ and the like, and the
+// brackets that close after it), or what's left at the end.
+const SENTENCE = /[^。！!？?♪💖]*[。！!？?♪💖]+[）」』)]*|[^。！!？?♪💖]+$/gu;
+
+// The TV app's own pitch: its うたう button, its sign-up, its name, a QR
+// code on its screen. None of that is karafriends'.
+const TV_APP_PITCH = /「うたう」|会員登録|ジョイサウンドカフェ|QRコード/;
+
+// A featured list's description without the sentences written for the TV
+// app (see TV_APP_PITCH): "会員登録がまだの人も、「うたう」を押して無料カラオケ
+// 体験を♪" and the like.
+export function withoutTvAppPitch(text: string): string {
+  return (text.match(SENTENCE) ?? [])
+    .filter((sentence) => !TV_APP_PITCH.test(sentence))
+    .join("")
+    .trim();
+}
+
 export function featuresOf(file: FeatureFile): JoysoundFeature[] {
   const seen = new Set<string>();
   const features: JoysoundFeature[] = [];
@@ -196,11 +214,15 @@ export function featuresOf(file: FeatureFile): JoysoundFeature[] {
       id,
       title: entry.title,
       // Lines cut for the TV's width, of one paragraph.
-      description: Array.isArray(entry.description)
-        ? entry.description.filter((line) => typeof line === "string").join("")
-        : typeof entry.description === "string"
+      description: withoutTvAppPitch(
+        Array.isArray(entry.description)
           ? entry.description
-          : "",
+              .filter((line) => typeof line === "string")
+              .join("")
+          : typeof entry.description === "string"
+            ? entry.description
+            : "",
+      ),
       songNumbers,
       pictureUrl:
         typeof entry.thumbnail_img === "string" && entry.thumbnail_img !== ""

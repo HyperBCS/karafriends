@@ -14,6 +14,8 @@ import path from "path";
 
 import type {
   AdhocLyricsEntry,
+  CatalogStatus,
+  LoginService,
   LyricsMode,
   MicInfo,
   PlaybackState,
@@ -201,6 +203,12 @@ export interface State {
   // Why phones can't connect (the remote's server couldn't listen), as a
   // sentence for the display. Not saved.
   remoconProblem: string | null;
+  // How DAM's and Joysound's logins stand (catalogs.ts). Not saved: each
+  // launch checks them.
+  catalogs: Record<LoginService, CatalogStatus>;
+  // The first download of ffmpeg and yt-dlp, while it runs (see LiveState).
+  // Not saved.
+  toolsDownload: { percent: number | null } | null;
   // How many times this launch every admin phone was signed out (the admin
   // password changed). Not saved.
   adminSignOuts: number;
@@ -254,6 +262,8 @@ export function emptyState(): State {
     songHistory: [],
     toolsProblem: null,
     remoconProblem: null,
+    catalogs: { dam: { state: "off" }, joysound: { state: "off" } },
+    toolsDownload: null,
     adminSignOuts: 0,
   };
 }

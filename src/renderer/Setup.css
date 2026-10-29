@@ -1,0 +1,86 @@
+/* The setup screen: Settings' page (.settings), with the steps under the
+   title, one step's sections in a centred column, and Back and Next in a
+   bar along the bottom. Over Settings, if both were open. */
+.setup {
+  z-index: 25;
+}
+
+.setupTitle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kf-space-3);
+}
+
+.setupSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kf-space-3) var(--kf-space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+}
+
+.setupStep {
+  display: flex;
+  align-items: center;
+  gap: var(--kf-space-3);
+}
+
+.setupStepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border: 0.125rem solid var(--kf-border-strong);
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.setupStep[aria-current="step"] {
+  color: var(--kf-text);
+  font-weight: 600;
+}
+
+.setupStep[aria-current="step"] .setupStepNumber {
+  border-color: var(--kf-accent);
+  background-color: var(--kf-accent);
+  color: var(--kf-on-accent);
+}
+
+.setupPanel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--kf-space-6) var(--settings-edge);
+  container-type: inline-size;
+}
+
+.setupPanel > * {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.setupPanel > * + * {
+  margin-top: var(--kf-space-5);
+}
+
+.setupFooter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kf-space-6);
+  padding: var(--kf-space-4) var(--settings-edge);
+  background-color: var(--kf-bg);
+  box-shadow: var(--kf-shadow-up);
+}
+
+.setupNav {
+  display: flex;
+  gap: var(--kf-space-4);
+  margin-left: auto;
+}

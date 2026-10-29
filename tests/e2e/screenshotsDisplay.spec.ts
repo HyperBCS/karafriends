@@ -376,9 +376,13 @@ test.describe("U5, long titles", () => {
   });
 });
 
-test("the first-launch banner", async ({ display }) => {
-  await expect(
-    display.getByText("Add your DAM or Joysound login", { exact: false }),
-  ).toBeVisible();
-  await shoot(display, "first-launch");
+test.describe("a first start", () => {
+  test.use({ noConfigFile: true, catalogs: "" });
+
+  test("the setup screen", async ({ display }) => {
+    await expect(
+      display.getByRole("heading", { name: "Welcome to karafriends" }),
+    ).toBeVisible();
+    await shoot(display, "first-launch");
+  });
 });

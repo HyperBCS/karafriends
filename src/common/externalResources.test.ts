@@ -39,6 +39,9 @@ function response(answer: Exclude<Answer, Error>): AssetResponse {
   if ("headers" in answer) return answer;
   const headers = new Map<string, string>();
   if ("etag" in answer && answer.etag) headers.set("etag", answer.etag);
+  if (answer.status === 200) {
+    headers.set("content-length", String(Buffer.byteLength(answer.body)));
+  }
   return {
     status: answer.status,
     ok: answer.status === 200,
@@ -57,7 +60,11 @@ function setup(
     id: "ytdlp" | "ffmpeg",
     headers: Record<string, string>,
   ) => Answer | Promise<Answer>,
-  options: { env?: Record<string, string>; now?: () => number } = {},
+  options: {
+    env?: Record<string, string>;
+    now?: () => number;
+    onFirstDownload?: ToolsDeps["onFirstDownload"];
+  } = {},
 ) {
   const fetches: { id: "ytdlp" | "ffmpeg"; headers: Record<string, string> }[] =
     [];
@@ -94,6 +101,7 @@ function setup(
     now: options.now ?? Date.now,
     tmpDir: dir,
     retry: { retries: 2, minTimeout: 1, factor: 1 },
+    onFirstDownload: options.onFirstDownload,
   };
   const manager = createToolsManager(deps);
   const read = (id: "ytdlp" | "ffmpeg") =>
@@ -119,6 +127,33 @@ describe("createToolsManager", () => {
     const { fetches } = setup(fresh);
     assert.equal(fetches.length, 0);
     assert.equal(fs.existsSync(path.join(dir, "cache")), false);
+  });
+
+  test("a first download says how far along it is, then that it's done; a refresh doesn't", async () => {
+    const reports: ({ percent: number | null } | null)[] = [];
+    const { manager } = setup(fresh, {
+      onFirstDownload: (progress) => reports.push(progress),
+    });
+    await manager.ensure();
+    assert.equal(reports.at(-1), null);
+    const percents = reports.flatMap((report) =>
+      report === null ? [] : [report.percent],
+    );
+    assert.ok(percents.length > 0);
+    assert.ok(percents.includes(100), JSON.stringify(percents));
+    // Never backwards, and never past 100.
+    for (let i = 1; i < percents.length; i++) {
+      assert.ok((percents[i] ?? 0) >= (percents[i - 1] ?? 0), String(percents));
+      assert.ok((percents[i] ?? 0) <= 100);
+    }
+    // The tools are there now: a week on, a refresh says nothing.
+    reports.length = 0;
+    const later = setup(fresh, {
+      now: () => Date.now() + 2 * WEEK,
+      onFirstDownload: (progress) => reports.push(progress),
+    });
+    await later.manager.ensure();
+    assert.deepEqual(reports, []);
   });
 
   test("a first launch downloads both tools and records their versions", async () => {

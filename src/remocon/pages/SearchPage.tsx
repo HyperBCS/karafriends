@@ -6,6 +6,7 @@ import SearchResults, {
   type SearchSource,
 } from "../components/SearchResults";
 import SourceMenu from "../components/SourceMenu";
+import useCatalog, { type CatalogView } from "../hooks/useCatalog";
 import { List, ListRow, SegmentedControl, TextField } from "../components/ui";
 import { t } from "../i18n";
 import { MdSearch } from "../icons";
@@ -43,6 +44,17 @@ const SearchPage = () => {
     sourceParam === "dam" || sourceParam === "joysound" ? sourceParam : "all";
 
   const [text, setText] = useState(query);
+  // Only the catalogs that are on are searched (before the first live
+  // state, both are tried). The source menu shows when both are.
+  const views = { dam: useCatalog("dam"), joysound: useCatalog("joysound") };
+  const isOn = (view: CatalogView | null) => view === null || view === "on";
+  const damOn = isOn(views.dam);
+  const joysoundOn = isOn(views.joysound);
+  const notes = (["dam", "joysound"] as const).flatMap((catalog) => {
+    const view = views[catalog];
+    return view === null || view === "on" ? [] : [{ catalog, view }];
+  });
+  const noneOn = views.dam === "off" && views.joysound === "off";
 
   // From the address as it is now: a render's params can be a change
   // behind (react-router renders navigations in a transition), and a choice
@@ -120,11 +132,22 @@ const SearchPage = () => {
             selected={by}
             onSelect={(id) => update({ by: id })}
           />
-          <SourceMenu
-            source={source}
-            onSelect={(id) => update({ source: id })}
-          />
+          {damOn && joysoundOn && (
+            <SourceMenu
+              source={source}
+              onSelect={(id) => update({ source: id })}
+            />
+          )}
         </div>
+        {noneOn ? (
+          <p className={styles.catalogNote}>{t("catalog.noneOn")}</p>
+        ) : (
+          notes.map(({ catalog, view }) => (
+            <p key={catalog} className={styles.catalogNote}>
+              {t(`catalog.${view}`, { source: sourceName(catalog) })}
+            </p>
+          ))
+        )}
       </div>
       {byId && (
         <List label={t("search.videoById")}>
@@ -137,7 +160,19 @@ const SearchPage = () => {
         </List>
       )}
       {query ? (
-        <SearchResults query={query} by={by} source={source} />
+        <SearchResults
+          query={query}
+          by={by}
+          // A source that's off now (an old address): all that are on.
+          source={
+            (source === "dam" && !damOn) ||
+            (source === "joysound" && !joysoundOn)
+              ? "all"
+              : source
+          }
+          damOn={damOn}
+          joysoundOn={joysoundOn}
+        />
       ) : (
         <p className={styles.hint}>{t("search.linkHint")}</p>
       )}

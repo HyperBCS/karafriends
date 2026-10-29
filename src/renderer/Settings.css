@@ -237,6 +237,38 @@
   color: var(--kf-danger);
 }
 
+/* How a catalog stands, under its login's title: a dot in the accent when
+   it's on, the danger color for a problem, muted otherwise. */
+.settingsCatalog {
+  display: flex;
+  align-items: baseline;
+  gap: var(--kf-space-3);
+  margin: 0;
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+}
+
+.settingsCatalogDot {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background-color: currentColor;
+  transform: translateY(0.0625rem);
+}
+
+.settingsCatalog.on {
+  color: var(--kf-text);
+}
+
+.settingsCatalog.on .settingsCatalogDot {
+  background-color: var(--kf-accent);
+}
+
+.settingsCatalog.problem {
+  color: var(--kf-danger);
+}
+
 .settingsTools {
   display: grid;
   grid-template-columns: max-content 1fr;

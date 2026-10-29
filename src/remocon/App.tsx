@@ -11,9 +11,10 @@ import {
   useParams,
 } from "react-router";
 
-import { useLiveState } from "../common/apiClient";
+import CatalogGate from "./components/CatalogGate";
 import NowPlayingSheet from "./components/NowPlayingSheet/NowPlayingSheet";
 import { TopBar } from "./components/ui";
+import useCatalog from "./hooks/useCatalog";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
 import { MdExplore, MdHistory, MdHome, MdSettings } from "./icons";
@@ -155,7 +156,8 @@ const Screen = ({ title, current, firstVisit, children }: ScreenProps) => {
   if (current !== "home" && !firstVisit) {
     back = canGoBack ? () => navigate(-1) : "/";
   }
-  const browse = useLiveState((state) => state?.config.joysoundLogin ?? false);
+  // Browse is Joysound's: there while its songs are on.
+  const browse = useCatalog("joysound") === "on";
   const places = PLACES.filter(({ place }) => place !== "browse" || browse);
 
   return (
@@ -261,7 +263,9 @@ const Shell = () => {
           element={
             <Screen title={sourceName("dam")}>
               <PerId page="dam" param="id">
-                <SongPage kind="dam" />
+                <CatalogGate catalog="dam">
+                  <SongPage kind="dam" />
+                </CatalogGate>
               </PerId>
             </Screen>
           }
@@ -273,7 +277,9 @@ const Shell = () => {
             element={
               <Screen title={sourceName("joysound")}>
                 <PerId page="joysound" param="id">
-                  <SongPage kind="joysound" />
+                  <CatalogGate catalog="joysound">
+                    <SongPage kind="joysound" />
+                  </CatalogGate>
                 </PerId>
               </Screen>
             }
@@ -284,7 +290,9 @@ const Shell = () => {
           element={
             <Screen title={t("search.artist")}>
               <PerId page="damArtist" param="id">
-                <ArtistPage kind="dam" />
+                <CatalogGate catalog="dam">
+                  <ArtistPage kind="dam" />
+                </CatalogGate>
               </PerId>
             </Screen>
           }
@@ -294,7 +302,9 @@ const Shell = () => {
           element={
             <Screen title={t("search.artist")}>
               <PerId page="joysoundArtist" param="id">
-                <ArtistPage kind="joysound" />
+                <CatalogGate catalog="joysound">
+                  <ArtistPage kind="joysound" />
+                </CatalogGate>
               </PerId>
             </Screen>
           }
@@ -333,7 +343,9 @@ const Shell = () => {
           path={BROWSE_PAGES.browse}
           element={
             <Screen title={t("browse.heading")} current="browse">
-              <BrowsePage />
+              <CatalogGate catalog="joysound">
+                <BrowsePage />
+              </CatalogGate>
             </Screen>
           }
         />
@@ -342,7 +354,9 @@ const Shell = () => {
           element={
             <Screen title={t("browse.newSongs")}>
               <PerId page="browseNewSongs" param="id">
-                <BrowseSongList which="newSongs" />
+                <CatalogGate catalog="joysound">
+                  <BrowseSongList which="newSongs" />
+                </CatalogGate>
               </PerId>
             </Screen>
           }
@@ -352,7 +366,9 @@ const Shell = () => {
           element={
             <Screen title={t("browse.heading")}>
               <PerId page="browseGenre" param="id">
-                <BrowseSongList which="genre" />
+                <CatalogGate catalog="joysound">
+                  <BrowseSongList which="genre" />
+                </CatalogGate>
               </PerId>
             </Screen>
           }
@@ -362,7 +378,9 @@ const Shell = () => {
           element={
             <Screen title={t("browse.featured")}>
               <PerId page="browseFeature" param="id">
-                <BrowseFeature />
+                <CatalogGate catalog="joysound">
+                  <BrowseFeature />
+                </CatalogGate>
               </PerId>
             </Screen>
           }

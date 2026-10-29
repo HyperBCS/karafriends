@@ -75,6 +75,12 @@ describe("createConfigStore at launch", () => {
     assert.equal(open().loadProblem, null);
   });
 
+  test("says whether there was no config.yaml at launch (a first start)", () => {
+    assert.equal(open().createdAtLaunch, true);
+    // Written with the defaults: the next launch finds it.
+    assert.equal(open().createdAtLaunch, false);
+  });
+
   test("a duplicated key isn't fatal: the last one wins, with a warning", (t) => {
     const warned = t.mock.method(console, "warn", () => {});
     fs.writeFileSync(

@@ -86,6 +86,14 @@ type Options = {
   realCredentials: boolean;
   // More config.yaml settings, e.g. { supervisedMode: true }.
   appConfig: Record<string, unknown>;
+  // No config.yaml at launch: a first start, which opens the setup screen.
+  // (The port comes from the environment.)
+  noConfigFile: boolean;
+  // The catalogs that are on, as if their logins worked, without signing
+  // in to anything (KARAFRIENDS_FAKE_CATALOGS): both, by default, so phones
+  // show DAM's and Joysound's songs; null checks the logins for real. Not
+  // with realCredentials, which are checked.
+  catalogs: string | null;
   // Take the remote's port before the app starts, so its server can't
   // listen.
   occupyPort: boolean;
@@ -672,14 +680,16 @@ async function launchKarafriends(
   try {
     const port = await freePort();
     if (options.occupyPort) portHolder = await occupy(port);
-    fs.writeFileSync(
-      path.join(userDataDir, "config.yaml"),
-      stringify({
-        ...options.appConfig,
-        remoconPort: port,
-        ...(options.realCredentials ? readRealCredentials() : {}),
-      }),
-    );
+    if (!options.noConfigFile) {
+      fs.writeFileSync(
+        path.join(userDataDir, "config.yaml"),
+        stringify({
+          ...options.appConfig,
+          remoconPort: port,
+          ...(options.realCredentials ? readRealCredentials() : {}),
+        }),
+      );
+    }
     prepareMediaTools(userDataDir, options.mediaTools);
     if (options.realCredentials) borrowJoysoundLink(userDataDir);
     if (options.seedQueue) {
@@ -701,7 +711,12 @@ async function launchKarafriends(
       tempDir,
       userDataDir,
       port,
-      appEnv: options.appEnv,
+      appEnv: {
+        ...(options.catalogs !== null && !options.realCredentials
+          ? { KARAFRIENDS_FAKE_CATALOGS: options.catalogs }
+          : {}),
+        ...options.appEnv,
+      },
     });
     app = await electron.launch({
       args,
@@ -786,6 +801,8 @@ export const test = base.extend<Options & Fixtures>({
   mediaTools: ["stub", { option: true }],
   realCredentials: [false, { option: true }],
   appConfig: [{}, { option: true }],
+  noConfigFile: [false, { option: true }],
+  catalogs: ["dam,joysound", { option: true }],
   occupyPort: [false, { option: true }],
   appEnv: [{}, { option: true }],
   allowDisplayErrors: [null, { option: true }],
@@ -797,6 +814,8 @@ export const test = base.extend<Options & Fixtures>({
       mediaTools,
       realCredentials,
       appConfig,
+      noConfigFile,
+      catalogs,
       occupyPort,
       appEnv,
       allowDisplayErrors,
@@ -811,6 +830,8 @@ export const test = base.extend<Options & Fixtures>({
         mediaTools,
         realCredentials,
         appConfig,
+        noConfigFile,
+        catalogs,
         occupyPort,
         appEnv,
       },

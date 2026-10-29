@@ -2,9 +2,11 @@ import React from "react";
 
 import "./IdleScreen.css";
 import QRCode from "./QRCode";
+import ToolsDownloadNote from "./ToolsDownloadNote";
 import UpNext from "./UpNext";
 
-// While no song plays: the remote's QR code and address, and what's queued.
+// While no song plays: the remote's QR code and address, and what's queued;
+// on a first start, how YouTube's tools download goes.
 export default function IdleScreen(props: {
   // Where the QR code sends phones.
   url: string;
@@ -27,6 +29,9 @@ export default function IdleScreen(props: {
       </button>
       <QRCode url={props.url} />
       <UpNext layout="rows" />
+      <div className="idleNotes">
+        <ToolsDownloadNote />
+      </div>
     </div>
   );
 }

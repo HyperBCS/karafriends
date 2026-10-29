@@ -36,6 +36,8 @@ export const SERVER_REASONS: Record<string, ReasonKey> = {
   "Failed getting video info. Maybe an invalid VideoID?": "reason.nicoInfo",
   "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.":
     "reason.tooManyLyrics",
+  "DAM isn't set up on this karaoke PC": "reason.damOff",
+  "Joysound isn't set up on this karaoke PC": "reason.joysoundOff",
 };
 
 // queueSong's per-guest limit (config.yaml's paxSongQueueLimit).

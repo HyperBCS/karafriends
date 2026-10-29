@@ -14,6 +14,7 @@ import { createAdminSessions, type AdminSessions } from "./adminAuth";
 import { NoLoginError } from "./credentials";
 import {
   ApiError,
+  CATALOG_OFF,
   type ApiDeps,
   type ApiHandlers,
   type Caller,
@@ -1716,6 +1717,64 @@ describe("the history's length", () => {
     assert.equal(await api.popSong({}, display), null);
     assert.equal(await api.popSong({ resume: true }, display), null);
     assert.equal(changes, 0);
+  });
+});
+
+describe("catalogs that are off", () => {
+  // DAM off (no login, or one that doesn't work), Joysound on.
+  const joysoundOnly = () =>
+    makeApi({}, { catalogs: { isOn: (service) => service === "joysound" } });
+
+  test("a DAM lookup is refused, with why; Joysound's answer", async () => {
+    const api = joysoundOnly();
+    for (const lookup of [
+      () => api.damSearchSongs({ query: "x" }, alice),
+      () => api.damSearchArtists({ query: "x" }, alice),
+      () => api.damArtist({ id: "1" }, alice),
+      () => api.damSong({ id: "1234-56" }, alice),
+    ]) {
+      await assert.rejects(
+        lookup(),
+        (err: unknown) =>
+          err instanceof ApiError &&
+          err.status === 409 &&
+          err.message === CATALOG_OFF.dam,
+      );
+    }
+    assert.equal(
+      (await api.joysoundSearchSongs({ query: "x" }, alice)).items.length,
+      100,
+    );
+  });
+
+  test("a DAM song isn't queued", async () => {
+    const api = joysoundOnly();
+    const result = await api.queueSong(
+      {
+        kind: "dam",
+        songId: "1234-56",
+        name: "DAM song",
+        artistName: "Artist",
+        playtime: 200,
+        streamingUrlIdx: 0,
+      },
+      alice,
+    );
+    assert.deepEqual(result, { ok: false, reason: CATALOG_OFF.dam });
+    assert.deepEqual(store.getState().songQueue, []);
+    assert.deepEqual(published, []);
+  });
+
+  test("every Joysound lookup is refused while Joysound is off", async () => {
+    const api = makeApi({}, { catalogs: { isOn: () => false } });
+    for (const lookup of [
+      () => api.joysoundSearchSongs({ query: "x" }, alice),
+      () => api.joysoundGenres({}, alice),
+      () => api.joysoundFeatures({}, alice),
+      () => api.joysoundNewSongs({}, alice),
+    ]) {
+      await assert.rejects(lookup(), { message: CATALOG_OFF.joysound });
+    }
   });
 });
 

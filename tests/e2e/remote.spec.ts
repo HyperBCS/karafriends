@@ -9,6 +9,7 @@ import {
   displayCall,
   expect,
   fakeJoysoundDownload,
+  isApiRequest,
   liveState,
   MAIN_ENTRY,
   NICKNAME,
@@ -1195,21 +1196,60 @@ test.describe("in supervised mode", () => {
   });
 });
 
-test("Browse isn't in the top bar without a Joysound login", async ({
-  remote,
-}) => {
-  await expect(
-    remote.getByRole("link", { name: "Settings" }).first(),
-  ).toBeVisible();
-  await expect(remote.getByRole("link", { name: "Browse" })).toHaveCount(0);
+test.describe("Joysound off (no working login)", () => {
+  test.use({ catalogs: "dam" });
+
+  test("Browse isn't in the top bar, search says so, and a Joysound page says why", async ({
+    remote,
+  }) => {
+    await expect(
+      remote.getByRole("link", { name: "Settings" }).first(),
+    ).toBeVisible();
+    await expect(remote.getByRole("link", { name: "Browse" })).toHaveCount(0);
+    await expect(
+      remote.getByText("Joysound isn't set up on this karaoke PC."),
+    ).toBeVisible();
+    // Only DAM: no source to pick.
+    await expect(remote.getByLabel("Source")).toHaveCount(0);
+    const asked: string[] = [];
+    remote.on("request", (request) => {
+      if (isApiRequest(request.url()))
+        asked.push(new URL(request.url()).pathname);
+    });
+    await remote.route("**/api/damSearchSongs", (route) =>
+      route.fulfill({
+        json: {
+          items: [{ id: "1234-56", name: "DAM only", artistName: "A" }],
+          nextOffset: null,
+        },
+      }),
+    );
+    await remote.getByRole("searchbox", { name: "Search" }).fill("only");
+    await expect(remote.getByRole("link", { name: /DAM only/ })).toBeVisible();
+    expect(asked).not.toContain("/api/joysoundSearchSongs");
+
+    // An old link to a Joysound song.
+    await remote.goto(`${remote.url().split("#")[0]}#/joysound/425691`);
+    await remote.reload();
+    await expect(
+      remote.getByText("Joysound isn't set up on this karaoke PC."),
+    ).toBeVisible();
+  });
 });
 
-test.describe("Browse, with a Joysound login", () => {
-  // A login the app never uses here: the phone's answers are faked.
-  test.use({
-    appConfig: { joysoundEmail: "joy@example.com", joysoundPassword: "pw" },
-  });
+test.describe("DAM and Joysound both off", () => {
+  test.use({ catalogs: "" });
 
+  test("search says to paste a video link", async ({ remote }) => {
+    await expect(
+      remote.getByText(
+        "DAM and Joysound aren't set up on this karaoke PC. Paste a YouTube or Niconico link to sing one.",
+      ),
+    ).toBeVisible();
+  });
+});
+
+test.describe("Browse", () => {
   const song = (n: number) => ({
     id: `${n}`,
     name: `Browse song ${n}`,
@@ -2911,11 +2951,10 @@ test.describe("the song volume and mic sliders", () => {
         gate: -45,
       },
     ];
-    // As it starts, the display sends its own mics (none), then opens
-    // Settings on a first launch. Wait for that, or its list could replace
-    // this one.
+    // As it starts, the display sends its own mics (none). Wait for it to be
+    // up, or its list could replace this one.
     await expect(
-      display.getByRole("dialog", { name: "Settings" }),
+      display.getByRole("img", { name: "QR code for the remote" }),
     ).toBeVisible();
     expect(await displayCall(display, "setMics", { mics })).toMatchObject({
       ok: true,

@@ -98,6 +98,8 @@ export const ja: Messages = {
   "reason.diskFull": "カラオケPCのディスクがいっぱいです",
   "reason.other": "ダウンロードに失敗しました",
   "reason.alreadyAdding": "ほかの人がこの曲を予約しているところです",
+  "reason.damOff": "このカラオケPCではDAMが設定されていません",
+  "reason.joysoundOff": "このカラオケPCではJOYSOUNDが設定されていません",
   "reason.nicoInfo": "動画IDが正しくないかもしれません。",
   "reason.tooManyLyrics":
     "予約リストの歌詞が多すぎます。何曲か終わってから、または歌詞なしで予約してください。",
@@ -132,6 +134,11 @@ export const ja: Messages = {
   "emotes.edit": "リアクションを変更",
   "emotes.prompt": "表示する絵文字を入力してください",
 
+  "catalog.off": "このカラオケPCでは{source}が設定されていません。",
+  "catalog.checking": "{source}に接続しています…",
+  "catalog.unreachable": "いまは{source}に接続できません。",
+  "catalog.noneOn":
+    "このカラオケPCではDAMもJOYSOUNDも設定されていません。YouTubeかニコニコ動画のリンクを貼り付けると歌えます。",
   "history.heading": "履歴",
   "browse.heading": "見つける",
   "browse.newSongs": "新曲",

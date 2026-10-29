@@ -27,6 +27,9 @@ export interface ConfigStore {
   // Why config.yaml couldn't be read at launch, so the defaults are in use,
   // in a sentence for the host; null if it was read (or there was none).
   readonly loadProblem: string | null;
+  // Whether there was no config.yaml at launch (a first start, or a deleted
+  // file): the display then opens its setup screen.
+  readonly createdAtLaunch: boolean;
   // Changes some settings in config.yaml (written through a temp file) and
   // in the running config, then calls the listeners with the keys whose
   // value changed. Throws, changing nothing, if a value is the wrong type or
@@ -95,12 +98,14 @@ function readSettings(text: string): {
 function loadAtLaunch(filePath: string): {
   config: KarafriendsConfig;
   loadProblem: string | null;
+  created: boolean;
 } {
   console.log(`Checking ${filePath} for configs`);
   let config: KarafriendsConfig = { ...DEFAULT_CONFIG };
   let loadProblem: string | null = null;
   let text: string | null = null;
-  if (fs.existsSync(filePath)) {
+  const created = !fs.existsSync(filePath);
+  if (!created) {
     try {
       text = fs.readFileSync(filePath, { encoding: "utf8" });
     } catch (err) {
@@ -110,6 +115,7 @@ function loadAtLaunch(filePath: string): {
         loadProblem:
           `config.yaml couldn't be read (${(err as Error).message}), so ` +
           "karafriends started with the default settings.",
+        created,
       };
     }
   }
@@ -154,6 +160,7 @@ function loadAtLaunch(filePath: string): {
           `with the default settings. Your settings are still in ${copy}: ` +
           "fix that line in config.yaml and restart karafriends. Saving a " +
           "setting here writes a new config.yaml; the copy stays.",
+        created,
       };
     }
   }
@@ -168,7 +175,7 @@ function loadAtLaunch(filePath: string): {
       console.error(`Failed to write config to ${filePath}:`, err);
     }
   }
-  return { config, loadProblem };
+  return { config, loadProblem, created };
 }
 
 export function createConfigStore(
@@ -191,6 +198,7 @@ export function createConfigStore(
     saved: () => ({ ...saved }),
     atLaunch,
     loadProblem: launch.loadProblem,
+    createdAtLaunch: launch.created,
 
     update(values) {
       const problems = configProblems(values);

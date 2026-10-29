@@ -29,8 +29,9 @@ const liveState: LiveState = {
   config: {
     supervisedMode: false,
     everyoneIsAdmin: false,
-    joysoundLogin: false,
   },
+  catalogs: { dam: { state: "off" }, joysound: { state: "off" } },
+  toolsDownload: null,
   toolsProblem: null,
   remoconProblem: null,
   adminSignOuts: 0,

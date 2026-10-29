@@ -413,6 +413,7 @@ export const validators: {
     ] as const),
   }),
   switchJoysoundLink: nothing,
+  finishSetup: nothing,
   exportConfig: nothing,
   importConfig: (raw) => ({
     yaml: string(fields(raw, ["yaml"]), "yaml", 1_000_000),
