@@ -199,14 +199,17 @@ function makeApi(
         joysoundCalls.push([keyword, start, count]);
         // 150 results in all.
         const n = Math.max(Math.min(count, 151 - start), 0);
-        return Array.from({ length: n }, (_, i) => ({
-          selSongNo: `${start + i}`,
-          songName: `Song ${start + i}`,
-          artistName: "Artist",
-        }));
+        return {
+          items: Array.from({ length: n }, (_, i) => ({
+            selSongNo: `${start + i}`,
+            songName: `Song ${start + i}`,
+            artistName: "Artist",
+          })),
+          total: 150,
+        };
       },
-      getArtistListByKeyword: async () => [],
-      getSongListByArtist: async () => [],
+      getArtistListByKeyword: async () => ({ items: [], total: 0 }),
+      getSongListByArtist: async () => ({ items: [], total: 0 }),
       getSongDetail: async () => {
         throw new Error("not faked");
       },
@@ -1574,6 +1577,48 @@ describe("paging", () => {
     assert.equal(second.nextOffset, null);
   });
 
+  test("a Joysound artist's songs come with the count; the total ends the list", async () => {
+    let total: number | null = 30;
+    const row = (n: number) => ({
+      selSongNo: `${n}`,
+      songName: `Song ${n}`,
+      artistName: "Artist",
+    });
+    const api = makeApi(
+      {},
+      {
+        joysound: upstream<ApiDeps["joysound"]>({
+          // 30 songs in all.
+          getSongListByArtist: async (
+            _id: string,
+            start: number,
+            count: number,
+          ) => ({
+            items: Array.from(
+              { length: Math.max(Math.min(count, 31 - start), 0) },
+              (_, i) => row(start + i),
+            ),
+            total,
+          }),
+        }),
+      },
+    );
+    // A full page that is the whole list: no More.
+    const page = await api.joysoundArtistSongs({ id: "1", limit: 30 }, alice);
+    assert.equal(page.songCount, 30);
+    assert.equal(page.items.length, 30);
+    assert.equal(page.nextOffset, null);
+
+    // Without a total, a full page may have more after it.
+    total = null;
+    const unknown = await api.joysoundArtistSongs(
+      { id: "1", limit: 30 },
+      alice,
+    );
+    assert.equal(unknown.songCount, null);
+    assert.equal(unknown.nextOffset, 30);
+  });
+
   test("history pages through every song, newest first", async () => {
     const api = makeApi();
     store.update((state) => {
@@ -2824,6 +2869,110 @@ describe("validators", () => {
 });
 
 describe("lookups", () => {
+  // GetMusicDetailInfo's answer for Lemon (2026-10-29), as damSong reads
+  // it, with changes.
+  const damDetails = (changes: object = {}) => ({
+    data: {
+      artistCode: 87538,
+      artist: "米津玄師",
+      requestNo: "3246-51",
+      title: "Lemon",
+      titleYomi_Kana: "レモン",
+      firstLine: "夢ならばどれほどよかったでしょう",
+    },
+    list: [
+      {
+        mModelMusicInfoList: [
+          {
+            highlightTieUp: "TBS金曜ドラマ「アンナチュラル」主題歌",
+            thumbnailPath:
+              "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=&compAuthKey=&imageKey=c8bf",
+            guideVocal: "0,1",
+            playtime: "265",
+            ...changes,
+          },
+        ],
+      },
+    ],
+  });
+
+  test("a DAM song: its length and title card, and the picture's URL left for the route", async () => {
+    const remembered: unknown[] = [];
+    const api = makeApi(
+      {},
+      {
+        dkwebsys: upstream<ApiDeps["dkwebsys"]>({
+          getMusicDetailsInfo: async () => damDetails(),
+        }),
+        pictures: { remember: (...args) => remembered.push(args) },
+      },
+    );
+    const song = await api.damSong({ id: "3246-51" }, alice);
+    assert.equal(song.playtime, 265);
+    assert.equal(song.tieUp, "TBS金曜ドラマ「アンナチュラル」主題歌");
+    assert.equal(song.picture, true);
+    assert.deepEqual(remembered, [
+      [
+        "dam",
+        "3246-51",
+        "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=1&compAuthKey=2%2FQb9R%408s*&imageKey=c8bf",
+      ],
+    ]);
+  });
+
+  test("a DAM song without a tie-up or a title card has none, not 'undefined'", async () => {
+    const api = makeApi(
+      {},
+      {
+        dkwebsys: upstream<ApiDeps["dkwebsys"]>({
+          // ドライフラワー's, as DAM sends it.
+          getMusicDetailsInfo: async () =>
+            damDetails({ highlightTieUp: "undefined", thumbnailPath: "" }),
+        }),
+      },
+    );
+    const song = await api.damSong({ id: "6844-05" }, alice);
+    assert.equal(song.tieUp, null);
+    assert.equal(song.picture, false);
+  });
+
+  test("a Joysound song says whether it has album art", async () => {
+    const remembered: unknown[] = [];
+    const detail = {
+      name: "Lemon",
+      artistName: "米津玄師",
+      lyricsPreview: "",
+      tieUp: "",
+      pictureUrl: "https://m.media-amazon.com/images/I/x._SL500_.jpg",
+    };
+    const api = makeApi(
+      {},
+      {
+        joysound: upstream<ApiDeps["joysound"]>({
+          getSongDetail: async () => detail,
+        }),
+        pictures: { remember: (...args) => remembered.push(args) },
+      },
+    );
+    assert.equal(
+      (await api.joysoundSong({ id: "425691" }, alice)).picture,
+      true,
+    );
+    detail.pictureUrl = null as never;
+    assert.equal(
+      (await api.joysoundSong({ id: "425691" }, alice)).picture,
+      false,
+    );
+    assert.deepEqual(remembered, [
+      [
+        "joysound",
+        "425691",
+        "https://m.media-amazon.com/images/I/x._SL500_.jpg",
+      ],
+      ["joysound", "425691", null],
+    ]);
+  });
+
   test("a YouTube lookup that YouTube refuses is a result, not an error", async () => {
     const api = makeApi();
     assert.deepEqual(await api.youtubeInfo({ videoId: "x" }, alice), {

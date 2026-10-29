@@ -98,6 +98,14 @@ interface ContentsDetailAnswer {
         }[]
       | null;
     tieupList?: { tieupName?: string | null }[] | null;
+    // Album art, from Amazon (three sizes) and Apple: "" for none.
+    outsideUrlInfo?: {
+      amazonInfo?: {
+        songImageUrl?: string | null;
+        songImageUrlLarge?: string | null;
+      } | null;
+      itunesInfo?: { songImageUrl?: string | null } | null;
+    } | null;
   } | null;
 }
 
@@ -128,6 +136,9 @@ export interface JoysoundSongDetail {
   lyricsPreview: string;
   // Its tie-ups (a drama, a region...), " / " between them, or "".
   tieUp: string;
+  // Its album art: Amazon's largest (500 px), else Amazon's (160 px), else
+  // Apple's (100 px). null if none.
+  pictureUrl: string | null;
 }
 
 // A song as its download needs it.
@@ -198,11 +209,32 @@ function contentsListRequest(
   };
 }
 
+// A page of one of the lists, and how many the whole list has (its
+// hitCount), or null if Joysound didn't say.
+export interface JoysoundListPage<T> {
+  items: T[];
+  total: number | null;
+}
+
+function pageOf<T>(
+  answer: ContentsListAnswer,
+  rows: T[] | null | undefined,
+): JoysoundListPage<T> {
+  const hitCount = answer.hitCount;
+  return {
+    items: rows ?? [],
+    total:
+      typeof hitCount === "string" && /^\d+$/.test(hitCount)
+        ? Number(hitCount)
+        : null,
+  };
+}
+
 // A search's answer when no Joysound login is set: no results, without a
 // request, so a DAM-only host's phones search DAM without an error.
 // Any other failure rejects, and the phone shows it with a Retry button.
-function noResultsWithoutLogin<T>(err: unknown): T[] {
-  if (err instanceof NoLoginError) return [];
+function noResultsWithoutLogin<T>(err: unknown): JoysoundListPage<T> {
+  if (err instanceof NoLoginError) return { items: [], total: null };
   throw err;
 }
 
@@ -219,7 +251,16 @@ export function songDetailOf(
   const selection = (detail.aplList ?? [])
     .flatMap((apl) => apl.selectionList ?? [])
     .find((candidate) => candidate.selSongNo === id);
+  const art = detail.outsideUrlInfo;
+  const pictureUrl =
+    [
+      art?.amazonInfo?.songImageUrlLarge,
+      art?.amazonInfo?.songImageUrl,
+      art?.itunesInfo?.songImageUrl,
+    ].find((url): url is string => typeof url === "string" && url !== "") ??
+    null;
   return {
+    pictureUrl,
     name: detail.songName,
     artistName: detail.artistInfo?.artistName ?? "",
     lyricsPreview: selection?.lyricIntro ?? "",
@@ -334,7 +375,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.contentsList ?? [])
+      .then((answer) => pageOf(answer, answer.contentsList))
       .catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 
@@ -351,7 +392,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.artistList ?? [])
+      .then((answer) => pageOf(answer, answer.artistList))
       .catch(noResultsWithoutLogin<JoysoundArtistListItem>);
   }
 
@@ -369,7 +410,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.contentsList ?? [])
+      .then((answer) => pageOf(answer, answer.contentsList))
       .catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 

@@ -1,3 +1,4 @@
+import formatDuration from "format-duration";
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
@@ -49,6 +50,7 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
 
   return (
     <div className={styles.page}>
+      {song.picture && <SongPicture kind={kind} id={song.id} />}
       <div className={styles.about}>
         <h2 className={styles.title}>
           <Marquee>{title}</Marquee>
@@ -65,6 +67,7 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
         </Link>
         <p className={styles.source}>
           {sourceName(kind)}
+          {dam?.playtime ? ` · ${formatDuration(dam.playtime * 1000)}` : ""}
           {song.tieUp && ` · ${song.tieUp}`}
         </p>
       </div>
@@ -79,6 +82,29 @@ const SongPage = ({ kind }: { kind: "dam" | "joysound" }) => {
           initialVideoId={params.youtubeVideoId ?? ""}
         />
       )}
+    </div>
+  );
+};
+
+// The song's picture, through the karaoke PC: DAM's karaoke video title
+// card (16:9), or Joysound's album art (square). Decorative: the title is
+// under it. Gone if it doesn't load.
+const SongPicture = ({
+  kind,
+  id,
+}: {
+  kind: "dam" | "joysound";
+  id: string;
+}) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <div className={kind === "dam" ? styles.video : styles.cover}>
+      <img
+        src={`/api/songPicture/${kind}/${encodeURIComponent(id)}`}
+        alt=""
+        onError={() => setFailed(true)}
+      />
     </div>
   );
 };
