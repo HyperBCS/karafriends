@@ -29,6 +29,7 @@ import {
   InlineError,
   List,
   ListRow,
+  Marquee,
 } from "../ui";
 import WithReading from "../WithReading";
 import * as styles from "./NowPlayingSheet.module.scss";
@@ -46,22 +47,23 @@ export const nicknameOf = (item: SharedQueueItem) =>
 
 // Who sings the current song: the initial and the whole nickname, muted,
 // at the end of the now-playing bar. The title gives way before it does; a
-// very long nickname ends in an ellipsis.
+// very long nickname slides, as the title does.
 export const SingerBadge = ({ nickname }: { nickname: string }) => (
   <span className={styles.singer}>
     <Initial nickname={nickname} />
-    <span className={styles.singerName}>{nickname}</span>
+    <Marquee className={styles.singerName}>{nickname}</Marquee>
   </span>
 );
 
-// The small label: where the song comes from, and for Joysound, how its
-// lyrics show on the TV, and its guide-vocal version if it's that one.
+// The small label: where the song comes from, and for Joysound, its
+// guide-vocal version if it's that one (first, so a label cut short keeps
+// it), and how its lyrics show on the TV.
 export const sourceOf = (item: SharedQueueItem) =>
   item.kind === "joysound"
     ? [
         sourceName(item.kind),
-        t(`lyricsMode.${item.lyricsMode}`),
         ...(item.guideVocal ? [t("queue.guideVocal")] : []),
+        t(`lyricsMode.${item.lyricsMode}`),
       ].join(" · ")
     : sourceName(item.kind);
 

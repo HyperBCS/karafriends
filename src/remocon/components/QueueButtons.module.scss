@@ -5,3 +5,57 @@
   flex-direction: column;
   gap: $kf-space-2;
 }
+
+// A queue button holds its download's progress bar (DownloadBar).
+.queueButton {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+}
+
+.track,
+.fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background-color: currentColor;
+}
+
+.track {
+  right: 0;
+  opacity: 0.2;
+}
+
+.fill {
+  opacity: 0.7;
+  transition: width 0.3s ease-out;
+}
+
+// Not known yet: nothing, or, where motion is fine, a short sweep.
+.unknown {
+  width: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .unknown {
+    width: 30%;
+    animation: sweep 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}

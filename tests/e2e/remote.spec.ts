@@ -651,6 +651,74 @@ const damSongDetail = (n: number) => ({
   picture: false,
 });
 
+test("a queue button shows its download's progress as a bar", async ({
+  karafriends,
+  remote,
+}) => {
+  // The live state, with this song 42% downloaded: the server's own, with
+  // its downloads replaced.
+  const state = await liveState(karafriends.remoconUrl);
+  const downloading = {
+    ...state,
+    downloads: [
+      {
+        id: 1,
+        kind: "joysound",
+        songId: "428493",
+        suffix: null,
+        progress: 0.42,
+        status: "downloading",
+        reason: null,
+        isMine: true,
+      },
+    ],
+  };
+  await remote.route("**/api/events*", (route) =>
+    route.fulfill({
+      headers: { "Content-Type": "text/event-stream" },
+      body: `data: ${JSON.stringify({ type: "state", state: downloading, sentAt: Date.now() })}\n\n`,
+    }),
+  );
+  await remote.route("**/api/joysoundSong", (route) =>
+    route.fulfill({
+      json: {
+        id: "428493",
+        name: "SHYでもいいよ",
+        artistName: "AISHA",
+        lyricsPreview: null,
+        tieUp: null,
+        picture: false,
+        guideVocal: false,
+      },
+    }),
+  );
+  await remote.route("**/api/queueSong", (route) =>
+    route.fulfill({ json: { ok: true, eta: 120 } }),
+  );
+  await remote.goto(
+    new URL("#/joysoundSong/428493", karafriends.remoconUrl).href,
+  );
+  // The live state's stream starts again, faked.
+  await remote.reload();
+  const main = remote.getByRole("main");
+  await main.getByRole("button", { name: "Queue song", exact: true }).click();
+  const button = main.getByRole("button", { name: "Downloading 42.0%" });
+  await expect(button).toBeVisible();
+  // Filled to 42% (the screen reader has the label, not the bar).
+  await expect
+    .poll(() =>
+      button.evaluate((el) => {
+        const bar = el.querySelector('[aria-hidden="true"]')!;
+        const fill = bar.lastElementChild!;
+        return Math.round(
+          (100 * fill.getBoundingClientRect().width) /
+            bar.getBoundingClientRect().width,
+        );
+      }),
+    )
+    .toBe(42);
+});
+
 test("a Joysound song with a guide-vocal version can be queued as either", async ({
   karafriends,
   remote,
@@ -1317,8 +1385,8 @@ test.describe("the now-playing bar", () => {
     await expect(sheet.getByRole("link")).toHaveCount(0);
 
     // "Now playing" over the title, the title over the artist; the singer
-    // on the right, the nickname whole as far as the bar allows, cut after
-    // the title is.
+    // on the right, the nickname whole as far as the bar allows, sliding
+    // when it doesn't fit, as the title does.
     const label = sheet.getByText("Now playing", { exact: true });
     const artist = sheet.getByText("E2E artist", { exact: true });
     const nickname = sheet.getByText(NICKNAME_LONG);
@@ -1330,9 +1398,9 @@ test.describe("the now-playing bar", () => {
     expect(t.y).toBeGreaterThan(l.y);
     expect(a.y).toBeGreaterThan(t.y);
     expect(n.x).toBeGreaterThan(t.x + t.width);
-    // Too long for the bar, the title slides.
+    // Too long for the bar, the title slides, and so does the nickname.
     await expect(titleLine).toHaveAttribute("data-marquee");
-    await expect(nickname).toHaveCSS("text-overflow", "ellipsis");
+    await expect(nickname.locator("..")).toHaveAttribute("data-marquee");
     const muted = await remote.evaluate(() =>
       getComputedStyle(document.documentElement)
         .getPropertyValue("--kf-muted")

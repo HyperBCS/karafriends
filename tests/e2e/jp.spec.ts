@@ -225,7 +225,7 @@ test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
         await expect(
           remote
             .getByRole("region", { name: "Queue" })
-            .getByText("Joysound · Kana · Guide vocal"),
+            .getByText("Joysound · Guide vocal · Kana"),
         ).toBeVisible();
         const files = fs.readdirSync(await downloadsFolder(karafriends.app));
         expect(files).toContain("joysound-9630v-default-opus.mp4");

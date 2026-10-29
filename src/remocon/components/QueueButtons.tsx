@@ -1,3 +1,4 @@
+import classnames from "classnames";
 import React, { useEffect, useState } from "react";
 
 import {
@@ -77,11 +78,32 @@ export const QueueButton = ({
       full
       disabled={disabled || busy}
       onClick={onClick}
+      className={styles.queueButton}
     >
       {statusLabel(status, label)}
+      {status.is === "downloading" && (
+        <DownloadBar progress={status.progress} />
+      )}
     </Button>
   );
 };
+
+// A download's progress along the button's foot, in its text's color: filled
+// to the fraction, or a sweep while that isn't known yet. The label says
+// the percentage, so screen readers skip it.
+const DownloadBar = ({ progress }: { progress: number | null }) => (
+  <span className={styles.progress} aria-hidden="true">
+    <span className={styles.track} />
+    <span
+      className={classnames(styles.fill, progress === null && styles.unknown)}
+      style={
+        progress === null
+          ? undefined
+          : { width: `${Math.min(Math.max(progress, 0), 1) * 100}%` }
+      }
+    />
+  </span>
+);
 
 const VOCAL_LABELS: Record<VocalType, () => string> = {
   NORMAL: () => t("queueButton.song"),
