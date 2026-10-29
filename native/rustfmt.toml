@@ -1,0 +1,3 @@
+# rustfmt run on single files (lint-staged) reads the edition here, not
+# from Cargo.toml.
+edition = "2024"
