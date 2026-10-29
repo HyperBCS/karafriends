@@ -36,6 +36,7 @@ function DeviceSelect(props: {
   inputs: Input[];
   mic: InputDevice | null;
   onChange: (name: string, channel: number) => void;
+  onOpen?: () => void;
 }) {
   const { mic } = props;
   const listed = props.inputs.some(
@@ -47,6 +48,7 @@ function DeviceSelect(props: {
       {props.label}
       <select
         className="kfField"
+        onMouseDown={props.onOpen}
         value={mic ? `${mic.name}_${mic.channelSelection}` : ""}
         onChange={(e) => {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
@@ -356,11 +358,13 @@ function LevelMeter(props: { mic: InputDevice; gate: number }) {
   );
 }
 
-// A level from 0 to max. Its track fills to the value (ui.css).
-function LevelSlider(props: {
+// A level from 0 to max, in percent, in steps of step (1). Its track
+// fills to the value (ui.css).
+export function LevelSlider(props: {
   label: string;
   value: number;
   max: number;
+  step?: number;
   onChange: (value: number) => void;
 }) {
   const fill = { "--kf-fill": `${(props.value / props.max) * 100}%` };
@@ -373,7 +377,7 @@ function LevelSlider(props: {
         type="range"
         min={0}
         max={props.max}
-        step={1}
+        step={props.step ?? 1}
         value={props.value}
         onChange={(e) => props.onChange(Number(e.target.value))}
       />
@@ -467,10 +471,12 @@ export function MicrophoneSetting(props: {
   );
 }
 
-// The last row: a select that adds a mic.
+// The last row: a select that adds a mic. Pressing it opens its list, and
+// first has onOpen list the inputs again.
 export function AddMicrophone(props: {
   inputs: Input[];
   onAdd: (name: string, channel: number) => void;
+  onOpen: () => void;
 }) {
   return (
     <div className="settingsMicRow">
@@ -479,6 +485,7 @@ export function AddMicrophone(props: {
         inputs={props.inputs}
         mic={null}
         onChange={props.onAdd}
+        onOpen={props.onOpen}
       />
     </div>
   );

@@ -269,15 +269,26 @@ impl DeviceType {
     }
 }
 
-// The ASIO streams open now (see asio_devices).
-static ASIO_STREAMS: AtomicUsize = AtomicUsize::new(0);
+// The streams open now, of any host: the mics (shared, exclusive or ASIO)
+// and the mic output. Listing the ASIO devices loads every ASIO driver,
+// which stops the WASAPI mics that are open (Windows invalidates them,
+// AUDCLNT_E_DEVICE_INVALIDATED), so it waits until none is (see
+// asio_devices).
+static OPEN_STREAMS: AtomicUsize = AtomicUsize::new(0);
 
-// Counts one open ASIO stream until it is dropped.
-struct AsioInUse;
+// Counts one open stream until it is dropped.
+pub(crate) struct StreamInUse;
 
-impl Drop for AsioInUse {
+impl StreamInUse {
+    pub(crate) fn new() -> Self {
+        OPEN_STREAMS.fetch_add(1, Relaxed);
+        StreamInUse
+    }
+}
+
+impl Drop for StreamInUse {
     fn drop(&mut self) {
-        ASIO_STREAMS.fetch_sub(1, Relaxed);
+        OPEN_STREAMS.fetch_sub(1, Relaxed);
     }
 }
 
@@ -288,24 +299,22 @@ impl Drop for AsioInUse {
 struct Stream {
     // Held, not read: dropping it closes the stream.
     _stream: cpal::Stream,
-    // After the stream, so it counts until the stream has let its driver go.
-    _asio: Option<AsioInUse>,
+    // After the stream, so it counts until the stream has let its device go.
+    _open: StreamInUse,
+    asio: bool,
 }
 
 impl Stream {
     fn new(stream: cpal::Stream, device_type: &DeviceType) -> Self {
-        let asio = device_type.is_asio().then(|| {
-            ASIO_STREAMS.fetch_add(1, Relaxed);
-            AsioInUse
-        });
         Stream {
             _stream: stream,
-            _asio: asio,
+            _open: StreamInUse::new(),
+            asio: device_type.is_asio(),
         }
     }
 
     fn is_asio(&self) -> bool {
-        self._asio.is_some()
+        self.asio
     }
 }
 
@@ -1565,8 +1574,10 @@ fn asio_devices(
     let Some(host) = ASIO.host.as_ref() else {
         return Vec::new().into_iter();
     };
+    // As last listed while any stream is open: listing them again would
+    // stop the open WASAPI mics (see OPEN_STREAMS).
     let mut devices = lock(&ASIO.devices);
-    if ASIO_STREAMS.load(Relaxed) == 0 {
+    if OPEN_STREAMS.load(Relaxed) == 0 {
         match host.devices() {
             Ok(listed) => *devices = listed.collect(),
             Err(e) => eprintln!("The ASIO devices are left out: {e}"),

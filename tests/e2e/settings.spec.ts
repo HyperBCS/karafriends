@@ -1326,6 +1326,107 @@ test.describe("the microphones", () => {
     ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
   });
 
+  test("a mic plugged in while Sound is open can be added: listed as the system says so, or as Add a microphone opens; a slow listing says it's looking", async ({
+    display,
+  }) => {
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Microphones" });
+    const options = section.getByLabel("Add a microphone").locator("option");
+    const fake = (method: "plugIn" | "slowListing", arg: string | number) =>
+      display.evaluate(
+        ([method, arg]) =>
+          (
+            window as unknown as {
+              karafriendsFakeAudio: Record<string, (arg: unknown) => void>;
+            }
+          ).karafriendsFakeAudio[method](arg),
+        [method, arg] as const,
+      );
+    const deviceChange = () =>
+      display.evaluate(() =>
+        navigator.mediaDevices.dispatchEvent(new Event("devicechange")),
+      );
+    await expect(options).toHaveText([
+      "Select a microphone",
+      "E2E Mic (USB), channel 1",
+      "E2E Interface (USB), channel 1",
+      "E2E Interface (USB), channel 2",
+    ]);
+
+    // The system says a device came: listed at once.
+    await fake("plugIn", "E2E Headset");
+    await deviceChange();
+    await expect(options.last()).toHaveText("E2E Headset (USB), channel 1");
+
+    // One it says nothing of: pressing Add a microphone lists it first
+    // (not within a second of the last listing).
+    await display.waitForTimeout(1_100);
+    await fake("plugIn", "E2E Lavalier");
+    await section.getByLabel("Add a microphone").dispatchEvent("mousedown");
+    await expect(options.last()).toHaveText("E2E Lavalier (USB), channel 1");
+
+    // A listing that holds the page: the next one says it's looking first.
+    // (While it lists, the page answers no one, so a watcher notes it.)
+    await display.evaluate(() => {
+      const seen = window as unknown as { sawLooking: boolean };
+      seen.sawLooking = false;
+      new MutationObserver(() => {
+        if (document.body.textContent?.includes("Looking for microphones…")) {
+          seen.sawLooking = true;
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await fake("slowListing", 400);
+    await deviceChange();
+    await fake("plugIn", "E2E Wireless");
+    await deviceChange();
+    await expect(options.last()).toHaveText("E2E Wireless (USB), channel 1");
+    expect(
+      await display.evaluate(
+        () => (window as unknown as { sawLooking: boolean }).sawLooking,
+      ),
+    ).toBe(true);
+    await expect(section.getByText("Looking for microphones…")).toHaveCount(0);
+    await fake("slowListing", 0);
+  });
+
+  test("Sound sets the song volume and the guide melody for every song, as an admin's phone does", async ({
+    karafriends,
+    display,
+  }) => {
+    const sound = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Sound", exact: true });
+    const live = () => phoneLiveState(karafriends.remoconUrl);
+    await sound.getByLabel("Song volume 100%").fill("60");
+    await expect(sound.getByLabel("Song volume 60%")).toBeVisible();
+    await expect.poll(async () => (await live()).songVolume).toBe(60);
+    await sound.getByLabel("Guide melody 0%").fill("35");
+    await expect(sound.getByLabel("Guide melody 35%")).toBeVisible();
+    await expect.poll(async () => (await live()).guideMelodyLevel).toBe(0.35);
+
+    // An admin's phone's change shows here.
+    const login = await fetch(
+      new URL("api/adminLogin", karafriends.remoconUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PASSWORD }),
+      },
+    );
+    const { token } = await login.json();
+    await fetch(new URL("api/setSongVolume", karafriends.remoconUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Karafriends-Admin-Token": token,
+      },
+      body: JSON.stringify({ volume: 25 }),
+    });
+    await expect(sound.getByLabel("Song volume 25%")).toBeVisible();
+  });
+
   test("a mic's noise gate is off until raised, marks the meter, and reaches the device and the phones", async ({
     karafriends,
     display,
