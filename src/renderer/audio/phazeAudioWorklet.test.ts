@@ -245,6 +245,19 @@ function rms(x: Float32Array, start = 0, end = x.length): number {
   return Math.sqrt(sum / (end - start));
 }
 
+// How alike left and right are from `start` on: 1 the same, 0 unrelated.
+function correlation(left: Float32Array, right: Float32Array, start = 0) {
+  let lr = 0;
+  let ll = 0;
+  let rr = 0;
+  for (let n = start; n < left.length; n++) {
+    lr += left[n] * right[n];
+    ll += left[n] * left[n];
+    rr += right[n] * right[n];
+  }
+  return lr / Math.sqrt(ll * rr);
+}
+
 // Skipped before measuring: the window filling, and a little more.
 const SETTLE = 12000;
 
@@ -383,6 +396,34 @@ describe("the key change's vocoder", () => {
       semitonesFactor(2),
     );
     assert.ok(rms(right, SETTLE) < 1e-5, `right at ${rms(right, SETTLE)}`);
+  });
+
+  test("keeps a centred voice centred", (t) => {
+    // A melody in the middle (a singer, Joysound's guide melody) over a
+    // backing that differs between the sides, as reverb does. If the two
+    // sides of the melody drift out of phase with each other, it sounds
+    // smeared on headphones, as if underwater. Shifting each channel on its
+    // own took this from 0.90 to between -0.6 and 0.5.
+    const length = samples(1.5);
+    const voice = sawtooth(330, 6000, 1.5, 0.2);
+    const left = mix(voice, noise(length, 0.1, 1));
+    const right = mix(voice, noise(length, 0.1, 2));
+    const before = correlation(left, right, SETTLE);
+    const report: string[] = [];
+    const errors: string[] = [];
+    for (const shift of [-2, -1, 1, 2]) {
+      const [outLeft, outRight] = run(
+        newVocoder(),
+        left,
+        right,
+        semitonesFactor(shift),
+      );
+      const after = correlation(outLeft, outRight, SETTLE);
+      report.push(`${shift}: ${after.toFixed(3)}`);
+      if (after < before - 0.05) errors.push(`${shift}: ${after.toFixed(3)}`);
+    }
+    t.diagnostic(`in ${before.toFixed(3)}, out ${report.join(", ")}`);
+    assert.deepEqual(errors, []);
   });
 
   test("moving the key off 0 doesn't drop the song", () => {
