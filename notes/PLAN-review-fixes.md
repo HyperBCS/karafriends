@@ -168,7 +168,7 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 **macOS (Apple Silicon, no Rosetta)**
 
 - [ ] Joysound, YouTube and Niconico songs play; Settings shows ffmpeg 9.x. (B) 2026-10-28: Joysound, YouTube and ffmpeg 9.0.2 (arm64) pass; Niconico downloads with the app's tools but wasn't queued in the app ([report](MACOS-CHECKS-REPORT.md)).
-- [ ] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F) 2026-10-28: all but the USB replug pass (the built-in mic; no USB mic at hand).
+- [x] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F) 2026-10-28 and 29: the built-in mic and a Blue Yeti, which comes back when plugged in again ([report](MACOS-CHECKS-REPORT.md)).
 
 **Linux, Ubuntu 22.04 or Mint 21 (stock PipeWire 0.3.48)**
 

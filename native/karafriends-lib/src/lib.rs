@@ -1432,7 +1432,8 @@ fn find_input(name: &str) -> Result<(cpal::Device, DeviceType)> {
         true => asio_devices(DeviceTrait::supports_input).find(is_named),
         _ => system_inputs()?.find(is_named),
     }
-    .ok_or_else(|| format!("Could not find device: {name}"))?;
+    // Said under the mic's row while it's unplugged: its key is no news.
+    .ok_or("The mic isn't connected")?;
     if !cfg!(target_os = "linux") {
         input_devices.insert(name.to_string(), found.clone());
     }
