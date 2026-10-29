@@ -322,8 +322,8 @@ test("a Joysound download without a background leaves its video and lyrics", asy
   assert.ok(outcome.item.progress > 0);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), [
+    "joysound-123456-default-opus.mp4",
     "joysound-123456-default.log",
-    "joysound-123456-default.mp4",
     "joysound-123456.joy_02",
   ]);
   assertFilesOf({ kind: "joysound", songId: "123456", suffix: null });
@@ -351,8 +351,8 @@ test("a Joysound download with a YouTube background pads it and leaves only the 
   assert.equal(outcome.item.progress, 1);
   assert.deepEqual(queue, []);
   assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001-opus.mp4",
     "joysound-123456-bgVideo0001.log",
-    "joysound-123456-bgVideo0001.mp4",
     "joysound-123456-bgVideo0001.yt.log",
     "joysound-123456.joy_02",
   ]);
@@ -393,13 +393,13 @@ test("a Joysound download is marked started until its padding is done", async ()
   assert.equal(steps.length, 6);
   for (const [output, ...names] of steps) {
     assert.ok(
-      names.includes("joysound-123456-bgVideo0001.mp4.tmp"),
+      names.includes("joysound-123456-bgVideo0001-opus.mp4.tmp"),
       `no marker while ffmpeg made ${output}`,
     );
   }
   // And once it's done, it goes.
   assertFilesOf({ kind: "joysound", songId: "123456", suffix: "bgVideo0001" });
-  assert.ok(!files().includes("joysound-123456-bgVideo0001.mp4.tmp"));
+  assert.ok(!files().includes("joysound-123456-bgVideo0001-opus.mp4.tmp"));
 });
 
 test("a Joysound download that fails putting the video together leaves only its logs", async () => {
@@ -460,20 +460,20 @@ test("a failed Joysound background leaves the song's other backgrounds and lyric
   assert.deepEqual(files(), [
     "joysound-123456-bgVideo0001.log",
     "joysound-123456-bgVideo0001.yt.log",
+    "joysound-123456-default-opus.mp4",
     "joysound-123456-default.log",
-    "joysound-123456-default.mp4",
     "joysound-123456.joy_02",
   ]);
 });
 
 test("a Joysound background left half-done by a crash goes before it's downloaded again", async () => {
-  const other = path.join(folder, "joysound-123456-default.mp4");
+  const other = path.join(folder, "joysound-123456-default-opus.mp4");
   fs.writeFileSync(other, "another background's video");
   fs.writeFileSync(path.join(folder, "joysound-123456.joy_02"), "lyrics");
   for (const name of [
-    "joysound-123456-bgVideo0001.mp4",
-    "joysound-123456-bgVideo0001.mp4.tmp",
-    "joysound-123456-bgVideo0001-pad.mp4",
+    "joysound-123456-bgVideo0001-opus.mp4",
+    "joysound-123456-bgVideo0001-opus.mp4.tmp",
+    "joysound-123456-bgVideo0001-opus-pad.mp4",
   ]) {
     fs.writeFileSync(path.join(folder, name), "half-done");
   }
@@ -490,15 +490,15 @@ test("a Joysound background left half-done by a crash goes before it's downloade
   assert.ok(outcome.ok);
   assert.equal(fs.readFileSync(other, "utf8"), "another background's video");
   assert.deepEqual(files(), [
+    "joysound-123456-bgVideo0001-opus.mp4",
     "joysound-123456-bgVideo0001.log",
-    "joysound-123456-bgVideo0001.mp4",
     "joysound-123456-bgVideo0001.yt.log",
-    "joysound-123456-default.mp4",
+    "joysound-123456-default-opus.mp4",
     "joysound-123456.joy_02",
   ]);
   assert.notEqual(
     fs.readFileSync(
-      path.join(folder, "joysound-123456-bgVideo0001.mp4"),
+      path.join(folder, "joysound-123456-bgVideo0001-opus.mp4"),
       "utf8",
     ),
     "half-done",
@@ -507,8 +507,8 @@ test("a Joysound background left half-done by a crash goes before it's downloade
 
 test("a Joysound video left half-written isn't queued", () => {
   for (const name of [
-    "joysound-123456-default.mp4",
-    "joysound-123456-default.mp4.tmp",
+    "joysound-123456-default-opus.mp4",
+    "joysound-123456-default-opus.mp4.tmp",
     "joysound-123456.joy_02",
   ]) {
     fs.writeFileSync(path.join(folder, name), "x");
@@ -522,6 +522,24 @@ test("a Joysound video left half-written isn't queued", () => {
   );
   assert.deepEqual(queued, []);
   assert.deepEqual(files(), []);
+});
+
+test("a Joysound video from before the Opus sound isn't queued again", () => {
+  // Joysound's Vorbis, which Chromium decodes wrong, under the old name.
+  for (const name of [
+    "joysound-123456-default.mp4",
+    "joysound-123456.joy_02",
+  ]) {
+    fs.writeFileSync(path.join(folder, name), "x");
+  }
+  const queued: JoysoundQueueItem[] = [];
+  assert.equal(
+    queueDownloadedJoysoundSong(folder, joysoundItem(null), (item) =>
+      queued.push(item),
+    ),
+    false,
+  );
+  assert.deepEqual(queued, []);
 });
 
 test("a Joysound download whose song data fails stops its background download", async () => {

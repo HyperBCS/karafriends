@@ -73,11 +73,13 @@ export function songFileNames({
     case "joysound": {
       const base = `joysound-${songId}-${suffix ?? "default"}`;
       return {
-        video: `${base}.mp4`,
+        // "-opus": the sound is Opus (joysoundJob says why). A video from
+        // before, <base>.mp4 with Joysound's Vorbis, isn't used again.
+        video: `${base}-opus.mp4`,
         log: `${base}.log`,
         telop: `joysound-${songId}.joy_02`,
         ...(suffix !== null && { backgroundLog: `${base}.yt.log` }),
-        // The padding steps name their files <base>-pad.mp4 and so on.
+        // The padding steps name their files <base>-opus-pad.mp4 and so on.
         prefixes: [`joysound-${songId}.`, `${base}.`, `${base}-`],
       };
     }

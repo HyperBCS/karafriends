@@ -317,6 +317,11 @@ async function composeJoysoundVideoPromise(
 ): Promise<JoysoundVideoData> {
   let videoPlaytime = 0;
 
+  // The video as it is; the sound as Opus. Joysound's ogg is 3-channel
+  // Vorbis, which Chromium decodes wrong wherever the third channel (the
+  // guide melody) plays: all three come out garbled, as if underwater. ffmpeg
+  // decodes it right, and Chromium decodes 3-channel Opus right. 256 kb/s
+  // (about 6 MB a song) keeps the second lossy step from being heard.
   const ffmpegArgs = [
     "-stream_loop",
     "-1",
@@ -324,8 +329,12 @@ async function composeJoysoundVideoPromise(
     sourceFilename,
     "-i",
     "-",
-    "-c",
+    "-c:v",
     "copy",
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "256k",
     "-shortest",
     "-movflags",
     "faststart",
