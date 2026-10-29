@@ -1,7 +1,7 @@
 // Runs on Node's test runner through tsx (yarn test:unit). How the DAM and
-// Joysound clients retry, log in again and fail, against a local server that
-// plays sound-cafe or DAM. The logins are fakes, kept by the app's own
-// memoizeSuccess.
+// Joysound clients retry, link or log in again, and fail, against a local
+// server that plays sound-cafe's TV API, its audio CDN, or DAM. The links
+// and logins are fakes, kept by the app's own memoizeSuccess.
 import assert from "node:assert/strict";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -10,10 +10,8 @@ import { after, before, beforeEach, describe, mock, test } from "node:test";
 import { memoizeSuccess, NoLoginError } from "./credentials";
 import { MinseiAPI, type MinseiCredentialsProvider } from "./damApi";
 import { HttpStatusError } from "./http";
-import { JoysoundAPI, type JoysoundCredentialsProvider } from "./joysoundApi";
+import { JoysoundAPI, type JoysoundLink } from "./joysoundApi";
 
-// What each client's login answers.
-type JoysoundLogin = Awaited<ReturnType<JoysoundCredentialsProvider>>;
 type DamLogin = Awaited<ReturnType<MinseiCredentialsProvider>>;
 
 // Retries without the waits.
@@ -24,7 +22,14 @@ type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 let server: http.Server;
 let base: string;
 let handle: Handler;
-const received: { url: string; cookie: string; body: string }[] = [];
+const received: {
+  url: string;
+  linkCode: string | undefined;
+  cookie: string;
+  body: string;
+}[] = [];
+// What the clients logged.
+const logged: string[] = [];
 
 const json = (res: ServerResponse, value: unknown, headers = {}) => {
   res.writeHead(200, { "Content-Type": "application/json", ...headers });
@@ -34,29 +39,23 @@ const status = (res: ServerResponse, code: number) => {
   res.writeHead(code, { "Content-Type": "text/html" });
   res.end("<html>error</html>");
 };
-const loginPage = (res: ServerResponse) => {
-  res.writeHead(302, { Location: "/login" });
-  res.end();
-};
 
 before(async () => {
-  // The clients log each request, and each failure, for debugging.
-  for (const level of ["debug", "log", "warn", "error"] as const) {
-    mock.method(console, level, () => {});
+  // The clients log each failure; kept, to check what they say.
+  for (const level of ["debug", "log", "info", "warn", "error"] as const) {
+    mock.method(console, level, (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    });
   }
   server = http.createServer((req, res) => {
     let body = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      if (req.url === "/login") {
-        // Where a lost session ends up: sound-cafe's login form.
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end('<html><meta name="_csrf" content="anon" /></html>');
-        return;
-      }
+      const linkCode = req.headers["x-linkcode"];
       received.push({
         url: req.url ?? "",
+        linkCode: typeof linkCode === "string" ? linkCode : undefined,
         cookie: req.headers.cookie ?? "",
         body,
       });
@@ -75,17 +74,19 @@ after(() => {
 
 beforeEach(() => {
   received.length = 0;
+  logged.length = 0;
   handle = (_req, res) => json(res, {});
 });
 
-// Sessions s1, s2, ...: each login makes the next.
-function joysoundLogins() {
-  const logins: string[] = [];
-  const session = memoizeSuccess<JoysoundLogin>(async () => {
-    logins.push(`s${logins.length + 1}`);
-    return { cookies: { JSESSIONID: logins.at(-1)! }, csrfToken: "token" };
+// Links c1, c2, ...: each link makes the next, with membership()'s
+// membership.
+function joysoundLinks(membership: () => string | null = () => "PAID") {
+  const links: string[] = [];
+  const session = memoizeSuccess<JoysoundLink>(async () => {
+    links.push(`c${links.length + 1}`);
+    return { linkCode: links.at(-1)!, membershipType: membership() };
   });
-  return { logins, session };
+  return { links, session };
 }
 
 function joysoundWith(session: ConstructorParameters<typeof JoysoundAPI>[0]) {
@@ -95,21 +96,114 @@ function joysoundWith(session: ConstructorParameters<typeof JoysoundAPI>[0]) {
   return joysound;
 }
 
-const SONG = {
-  slc: "",
-  telop: "dGVsb3A=",
-  ogg: "b2dn",
-  streaming_wifi_url: "",
+// A song's lyrics data, as getSongDuration and the JOY-02 check read it,
+// and its audio.
+const TELOP = Buffer.concat([Buffer.from("JOY-02"), Buffer.alloc(26, 1)]);
+const OGG = Buffer.concat([Buffer.from("OggS"), Buffer.alloc(60, 2)]);
+// The secret part of the signed audio URL.
+const SIGNATURE = "Signature=SECRETSIGNATURE";
+
+// getFME's answer for a paid member, as sound-cafe sends it.
+const fme = (changes: object = {}) => ({
+  slc: "425691",
+  telop: TELOP.toString("base64"),
+  th2: null,
+  membershipType: "PAID",
+  isFree: false,
+  streaming_wifi_url: `${base}/media/425691.ogg?Expires=1&${SIGNATURE}`,
+  ...changes,
+});
+const ogg = (res: ServerResponse) => {
+  res.writeHead(200, { "Content-Type": "audio/ogg" });
+  res.end(OGG);
 };
+const MOVIES = { slc: "425691", movie: { mov1: "https://cdn/mov1.mp4" } };
+
+// The paths asked for, in order.
+const paths = () => received.map(({ url }) => url.split("?")[0]);
+
+// The usual sound-cafe: getFME, the audio and the videos.
+function soundCafe(overrides: {
+  getFme?: Handler;
+  audio?: Handler;
+  contentsInfo?: Handler;
+}): Handler {
+  return (req, res) => {
+    const route = req.url?.split("?")[0];
+    if (route === "/api/v1/spc/getFME") {
+      return (overrides.getFme ?? ((_q, r) => json(r, fme())))(req, res);
+    }
+    if (route === "/media/425691.ogg") {
+      return (overrides.audio ?? ((_q, r) => ogg(r)))(req, res);
+    }
+    if (route === "/api/v1/spc/contentsInfo") {
+      return (overrides.contentsInfo ?? ((_q, r) => json(r, MOVIES)))(req, res);
+    }
+    status(res, 404);
+  };
+}
 
 describe("JoysoundAPI's downloads", () => {
+  test("decode the lyrics as they come, and fetch the audio from its URL", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({});
+    const song = await joysound.getSongData("425691");
+    assert.deepEqual(song, { telop: TELOP, ogg: OGG });
+    assert.deepEqual(paths(), ["/api/v1/spc/getFME", "/media/425691.ogg"]);
+    const [getFme, audio] = received;
+    assert.deepEqual(JSON.parse(getFme.body), {
+      songNumber: "425691",
+      serviceType: "003000761",
+      key: 0,
+    });
+    assert.equal(getFme.linkCode, "c1");
+    // The audio's URL is signed: it gets nothing of the link's.
+    assert.equal(audio.linkCode, undefined);
+    assert.equal(audio.cookie, "");
+  });
+
+  test("refuse lyrics in the website's old order", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    const base64 = TELOP.toString("base64");
+    handle = soundCafe({
+      getFme: (_req, res) =>
+        json(res, fme({ telop: base64.slice(-30) + base64.slice(0, -30) })),
+    });
+    await assert.rejects(joysound.getSongData("425691"), /isn't JOY-02/);
+    assert.deepEqual(paths(), ["/api/v1/spc/getFME"]);
+  });
+
+  test("refuse audio that isn't Ogg, such as an error page with 200", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({
+      audio: (_req, res) => {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end("<html>Access denied</html>");
+      },
+    });
+    await assert.rejects(
+      joysound.getSongData("425691"),
+      /audio for song 425691 isn't Ogg audio \(text\/html, 26 bytes\)/,
+    );
+    assert.deepEqual(paths(), ["/api/v1/spc/getFME", "/media/425691.ogg"]);
+  });
+
   test("try a 5xx again, a few times at most", async () => {
-    const { session } = joysoundLogins();
+    const { session } = joysoundLinks();
     const joysound = joysoundWith(session);
     let calls = 0;
-    handle = (_req, res) => (++calls < 3 ? status(res, 503) : json(res, SONG));
-    assert.deepEqual(await joysound.getSongRawData("425691"), SONG);
-    assert.equal(received.length, 3);
+    handle = soundCafe({
+      getFme: (_req, res) =>
+        ++calls < 3 ? status(res, 503) : json(res, fme()),
+    });
+    assert.deepEqual(await joysound.getSongData("425691"), {
+      telop: TELOP,
+      ogg: OGG,
+    });
+    assert.equal(calls, 3);
 
     received.length = 0;
     handle = (_req, res) => status(res, 500);
@@ -122,42 +216,184 @@ describe("JoysoundAPI's downloads", () => {
   });
 
   test("try a dropped connection again, a few times at most", async () => {
-    const { session } = joysoundLogins();
+    const { session } = joysoundLinks();
     const joysound = joysoundWith(session);
     handle = (req) => req.socket.destroy();
-    await assert.rejects(joysound.getSongRawData("425691"));
+    await assert.rejects(joysound.getSongData("425691"));
     assert.equal(received.length, 4);
   });
 
+  test("ask getFME again when the audio fails for a while", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    let audioCalls = 0;
+    handle = soundCafe({
+      audio: (req, res) =>
+        ++audioCalls === 1 ? req.socket.destroy() : ogg(res),
+    });
+    assert.deepEqual(await joysound.getSongData("425691"), {
+      telop: TELOP,
+      ogg: OGG,
+    });
+    assert.deepEqual(paths(), [
+      "/api/v1/spc/getFME",
+      "/media/425691.ogg",
+      "/api/v1/spc/getFME",
+      "/media/425691.ogg",
+    ]);
+  });
+
+  test("ask once for a new audio URL when one is refused as if it had run out", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    let audioCalls = 0;
+    handle = soundCafe({
+      audio: (_req, res) => (++audioCalls === 1 ? status(res, 403) : ogg(res)),
+    });
+    assert.deepEqual(await joysound.getSongData("425691"), {
+      telop: TELOP,
+      ogg: OGG,
+    });
+    assert.equal(paths().length, 4);
+
+    // Refused every time: one new URL, then the 403.
+    received.length = 0;
+    handle = soundCafe({ audio: (_req, res) => status(res, 403) });
+    await assert.rejects(
+      joysound.getSongData("425691"),
+      (err) => err instanceof HttpStatusError && err.status === 403,
+    );
+    assert.deepEqual(paths(), [
+      "/api/v1/spc/getFME",
+      "/media/425691.ogg",
+      "/api/v1/spc/getFME",
+      "/media/425691.ogg",
+    ]);
+  });
+
+  test("never put the audio's signed URL in an error or the log", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    for (const audio of [
+      (_req: IncomingMessage, res: ServerResponse) => status(res, 403),
+      (req: IncomingMessage) => req.socket.destroy(),
+    ]) {
+      handle = soundCafe({ audio });
+      const err = await joysound.getSongData("425691").then(
+        () => assert.fail("it worked"),
+        (failure: Error) => failure,
+      );
+      assert.match(err.message, /Joysound's audio for song 425691/);
+      for (const text of [err.message, String(err.stack), ...logged]) {
+        assert.ok(!text.includes(SIGNATURE), text);
+        assert.ok(!text.includes("/media/"), text);
+      }
+    }
+  });
+
   test("fail a 4xx at once", async () => {
-    const { session } = joysoundLogins();
+    const { session } = joysoundLinks();
     const joysound = joysoundWith(session);
     handle = (_req, res) => status(res, 404);
     await assert.rejects(
-      joysound.getSongRawData("425691"),
+      joysound.getSongData("425691"),
       (err) => err instanceof HttpStatusError && err.status === 404,
     );
     assert.equal(received.length, 1);
   });
 
-  test("fail a refused login at once, logging in once", async () => {
-    let logins = 0;
-    const joysound = joysoundWith(
-      memoizeSuccess<JoysoundLogin>(async () => {
-        logins++;
-        throw new Error("Joysound login rejected (result 1)");
-      }),
+  // A free or unlinked code still gets an answer, with 200, but a preview's.
+  test("check the link again once when Joysound sends a preview", async () => {
+    const { links, session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({
+      getFme: (req, res) =>
+        json(
+          res,
+          fme(
+            req.headers["x-linkcode"] === "c1"
+              ? { membershipType: "FREE", telop: "c2hvcnQ=" }
+              : {},
+          ),
+        ),
+    });
+    assert.deepEqual(await joysound.getSongData("425691"), {
+      telop: TELOP,
+      ogg: OGG,
+    });
+    assert.deepEqual(links, ["c1", "c2"]);
+    // And c2 is kept.
+    await joysound.getSongData("425691");
+    assert.deepEqual(links, ["c1", "c2"]);
+  });
+
+  test("give up after one new link that still gets previews", async () => {
+    const { links, session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({
+      getFme: (_req, res) => json(res, fme({ membershipType: "FREE" })),
+    });
+    await assert.rejects(
+      joysound.getSongData("425691"),
+      /isn't a paid member \(membership: FREE\)/,
     );
-    await assert.rejects(joysound.getSongRawData("425691"), /rejected/);
-    assert.equal(logins, 1);
+    assert.deepEqual(links, ["c1", "c2"]);
+    // No audio: a preview's isn't the song.
+    assert.deepEqual(paths(), ["/api/v1/spc/getFME", "/api/v1/spc/getFME"]);
+  });
+
+  test("don't ask for a song with a free member's link", async () => {
+    const { links, session } = joysoundLinks(() => "FREE");
+    const joysound = joysoundWith(session);
+    handle = soundCafe({});
+    await assert.rejects(
+      joysound.getSongData("425691"),
+      /isn't a paid member \(membership: FREE\)/,
+    );
+    // Checked again once, in case the membership changed.
+    assert.deepEqual(links, ["c1", "c2"]);
     assert.equal(received.length, 0);
   });
 
-  test("fail a login from outside Japan at once", async () => {
-    let logins = 0;
+  test("two downloads on an ended link link again once", async () => {
+    const { links, session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({
+      getFme: (req, res) =>
+        json(
+          res,
+          fme(
+            req.headers["x-linkcode"] === "c1"
+              ? { membershipType: "NONE" }
+              : {},
+          ),
+        ),
+    });
+    await Promise.all([
+      joysound.getSongData("425691"),
+      joysound.getSongData("425691"),
+    ]);
+    assert.deepEqual(links, ["c1", "c2"]);
+  });
+
+  test("fail a refused link at once, linking once", async () => {
+    let links = 0;
     const joysound = joysoundWith(
-      memoizeSuccess<JoysoundLogin>(async () => {
-        logins++;
+      memoizeSuccess<JoysoundLink>(async () => {
+        links++;
+        throw new Error("Joysound login rejected (result 1)");
+      }),
+    );
+    await assert.rejects(joysound.getSongData("425691"), /rejected/);
+    assert.equal(links, 1);
+    assert.equal(received.length, 0);
+  });
+
+  test("fail a link from outside Japan at once", async () => {
+    let links = 0;
+    const joysound = joysoundWith(
+      memoizeSuccess<JoysoundLink>(async () => {
+        links++;
         throw new HttpStatusError(403, "https://www.sound-cafe.jp/login");
       }),
     );
@@ -165,74 +401,19 @@ describe("JoysoundAPI's downloads", () => {
       joysound.getMovieUrls("425691"),
       (err) => err instanceof HttpStatusError && err.status === 403,
     );
-    assert.equal(logins, 1);
+    assert.equal(links, 1);
   });
 
-  test("log in again once when the session has ended", async () => {
-    const { logins, session } = joysoundLogins();
-    const joysound = joysoundWith(session);
-    // s1 ends after its first song: sound-cafe sends it to the login page.
-    handle = (req, res) =>
-      req.headers.cookie === "JSESSIONID=s1" && received.length > 1
-        ? loginPage(res)
-        : json(res, SONG);
-    assert.deepEqual(await joysound.getSongRawData("425691"), SONG);
-    assert.deepEqual(await joysound.getSongRawData("425691"), SONG);
-    assert.deepEqual(logins, ["s1", "s2"]);
-    assert.deepEqual(
-      received.map(({ cookie }) => cookie),
-      ["JSESSIONID=s1", "JSESSIONID=s1", "JSESSIONID=s2"],
-    );
-    // And s2 is kept.
-    await joysound.getSongRawData("425691");
-    assert.deepEqual(logins, ["s1", "s2"]);
-  });
-
-  test("give up after one new login that doesn't help", async () => {
-    const { logins, session } = joysoundLogins();
+  test("a 403 from the TV API doesn't count as an ended link", async () => {
+    const { links, session } = joysoundLinks();
     const joysound = joysoundWith(session);
     handle = (_req, res) => status(res, 403);
-    await assert.rejects(joysound.getSongRawData("425691"), /session/);
-    assert.deepEqual(logins, ["s1", "s2"]);
-    assert.equal(received.length, 2);
-  });
-
-  test("a page where data was expected counts as a lost session", async () => {
-    const { logins, session } = joysoundLogins();
-    const joysound = joysoundWith(session);
-    handle = (req, res) => {
-      if (req.headers.cookie === "JSESSIONID=s1") {
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end("<html>Please log in</html>");
-      } else {
-        json(res, SONG);
-      }
-    };
-    assert.deepEqual(await joysound.getSongRawData("425691"), SONG);
-    assert.deepEqual(logins, ["s1", "s2"]);
-  });
-
-  test("two requests on the same dead session log in again once", async () => {
-    const { logins, session } = joysoundLogins();
-    const joysound = joysoundWith(session);
-    handle = (req, res) =>
-      req.headers.cookie === "JSESSIONID=s1" ? loginPage(res) : json(res, SONG);
-    await Promise.all([
-      joysound.getSongRawData("425691"),
-      joysound.getMovieUrls("425691"),
-    ]);
-    assert.deepEqual(logins, ["s1", "s2"]);
-  });
-
-  test("keep the cookies sound-cafe sets on the session", async () => {
-    const { logins, session } = joysoundLogins();
-    const joysound = joysoundWith(session);
-    handle = (_req, res) =>
-      json(res, SONG, { "Set-Cookie": "XSRF-TOKEN=renewed; Path=/" });
-    await joysound.getSongRawData("425691");
-    await joysound.getSongRawData("425691");
-    assert.equal(received[1].cookie, "JSESSIONID=s1; XSRF-TOKEN=renewed");
-    assert.deepEqual(logins, ["s1"]);
+    await assert.rejects(
+      joysound.getSongData("425691"),
+      (err) => err instanceof HttpStatusError && err.status === 403,
+    );
+    assert.deepEqual(links, ["c1"]);
+    assert.equal(received.length, 1);
   });
 });
 
@@ -245,7 +426,7 @@ describe("JoysoundAPI's lookups", () => {
   ];
 
   test("reject when sound-cafe fails, without trying again", async () => {
-    const { session } = joysoundLogins();
+    const { session } = joysoundLinks();
     const joysound = joysoundWith(session);
     handle = (_req, res) => status(res, 500);
     const results = await Promise.allSettled(lookups(joysound));
@@ -256,7 +437,20 @@ describe("JoysoundAPI's lookups", () => {
     assert.equal(received.length, 4);
   });
 
-  test("reject when the login fails, instead of a song called 'Error'", async () => {
+  test("reject an answer that isn't data", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html>maintenance</html>");
+    };
+    await assert.rejects(
+      joysound.getSongListByKeyword("lemon", 1, 20),
+      /something other than data/,
+    );
+  });
+
+  test("reject when the link fails, instead of a song called 'Error'", async () => {
     const joysound = joysoundWith(async () => {
       throw new Error("Joysound login rejected (result 1)");
     });
@@ -266,13 +460,14 @@ describe("JoysoundAPI's lookups", () => {
     }
   });
 
-  test("log in again once when the session has ended", async () => {
-    const { logins, session } = joysoundLogins();
+  test("work with a free member's link", async () => {
+    const { session } = joysoundLinks(() => "FREE");
     const joysound = joysoundWith(session);
-    handle = (req, res) =>
-      req.headers.cookie === "JSESSIONID=s1" ? loginPage(res) : json(res, []);
-    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), []);
-    assert.deepEqual(logins, ["s1", "s2"]);
+    handle = (_req, res) =>
+      json(res, { hitCount: "1", contentsList: [{ selSongNo: "1" }] });
+    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), [
+      { selSongNo: "1" },
+    ]);
   });
 
   test("answer no results without a request when no login is set", async () => {

@@ -26,7 +26,9 @@ import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders, memoizeSuccess } from "./credentials";
 import { DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
+import { createJoysoundLinker, type StoredLink } from "./joysoundLink";
 import { createLiveHub } from "./live";
+import { createSecretFile } from "./secretFile";
 import { createSettingsHandlers } from "./settings";
 import { createStateStore } from "./state";
 import { withTimeout } from "./timeout";
@@ -77,6 +79,24 @@ endSessionsOnPasswordChange(configStore, adminSessions, () =>
   }),
 );
 
+// karafriends' link to the Joysound account (joysoundLink.ts), kept in
+// userData encrypted by the OS: not in config.yaml, so Export config leaves
+// it out.
+const joysoundLinker = createJoysoundLinker({
+  store: createSecretFile<StoredLink>(
+    path.join(app.getPath("userData"), "joysoundLink.bin"),
+    "Joysound link",
+  ),
+});
+
+// A link made for one account is never used for another: a new email
+// drops it (and the shared link goes too, below).
+configStore.onChange(({ keys }) => {
+  if (keys.includes("joysoundEmail")) {
+    joysoundLinker.forgetOtherAccounts(configStore.get().joysoundEmail);
+  }
+});
+
 // The clients' shared logins, forgotten when the settings change them.
 const credentials = createCredentialProviders({
   store: configStore,
@@ -87,7 +107,7 @@ const credentials = createCredentialProviders({
       authToken: minseiLoginResult.data.authToken,
     };
   },
-  joysoundLogin: (email, password) => JoysoundAPI.login(email, password),
+  joysoundLogin: (email, password) => joysoundLinker.link(email, password),
 });
 
 configStore.onChange(({ keys }) => {
@@ -133,9 +153,13 @@ export const api: ApiHandlers = {
   ...createSettingsHandlers({
     store: configStore,
     // Fresh logins, so a test never touches the clients' shared ones.
+    // Joysound's signs in to the website and says how the kept link stands,
+    // without linking anything.
     logins: {
-      dam: (username, password) => MinseiAPI.login(username, password),
-      joysound: (email, password) => JoysoundAPI.login(email, password),
+      dam: async (username, password) => {
+        await MinseiAPI.login(username, password);
+      },
+      joysound: (email, password) => joysoundLinker.test(email, password),
     },
     restart: () => {
       // app.exit skips will-quit, where they are stopped otherwise.

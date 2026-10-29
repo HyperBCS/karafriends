@@ -2196,9 +2196,10 @@ test.describe(
       expect(await output(display, "testLogin", { service: "dam" })).toEqual({
         ok: true,
       });
+      // With a note on karafriends' link to the account.
       expect(
         await output(display, "testLogin", { service: "joysound" }),
-      ).toEqual({ ok: true });
+      ).toMatchObject({ ok: true });
     });
   },
 );

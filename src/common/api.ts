@@ -388,8 +388,10 @@ export type SettingsChanges = Partial<Omit<Settings, "adminPasswordSet">>;
 export type LoginService = "dam" | "joysound";
 
 // ok: false comes with a sentence for the host ("Joysound answered 403:
-// this usually means no Japanese IP address").
-export type TestLoginResult = { ok: true } | { ok: false; reason: string };
+// this usually means no Japanese IP address"); ok: true may come with one
+// too, a note on how karafriends' link to the Joysound account stands.
+export type TestLoginResult =
+  { ok: true; note?: string } | { ok: false; reason: string };
 
 // ffmpeg's or yt-dlp's status. version: what it gave as its version
 // (ffmpeg -version, yt-dlp --version), or null (not asked yet, or it

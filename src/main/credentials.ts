@@ -1,6 +1,8 @@
 // The DAM and Joysound logins the clients share: each logs in on first use
 // and keeps the session, until the login fails, a client finds the session
-// has ended (withSession in http.ts), or the settings change it.
+// has ended (withSession in http.ts), or the settings change it. Joysound's
+// "login" is karafriends' link to the account (joysoundLink.ts), made with
+// the saved email and password and kept between launches.
 //
 // No Electron imports, so unit tests can load this file under plain Node.
 import {
@@ -59,6 +61,16 @@ export class NoLoginError extends Error {
   constructor(service: "DAM" | "Joysound") {
     super(`The host hasn't set up a ${service} login`);
     this.name = "NoLoginError";
+  }
+}
+
+// A login that worked, but with a problem the host should know about (the
+// Joysound account isn't a paid member, say). Test login shows its message
+// as it is, in place of "Couldn't sign in" (settings.ts).
+export class LoginWarning extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LoginWarning";
   }
 }
 

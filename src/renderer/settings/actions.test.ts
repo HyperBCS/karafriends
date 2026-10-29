@@ -79,6 +79,21 @@ describe("Settings' actions", () => {
     ]);
   });
 
+  test("Test login shows the note on Joysound's link after signing in", async () => {
+    const { actions, last } = setUp({
+      testLogin: () => ({
+        ok: true,
+        note: "karafriends is linked to this account, a paid member.",
+      }),
+    });
+    await actions.testLogin("joysound");
+    assert.equal(
+      last("joysound")?.text,
+      "Signed in to Joysound. karafriends is linked to this account, a paid member.",
+    );
+    assert.notEqual(last("joysound")?.tone, "problem");
+  });
+
   test("Test login doesn't run after a save that failed, and the save's message stays", async () => {
     const { actions, shown, methods } = setUp({
       setSettings: refused,

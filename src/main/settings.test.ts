@@ -14,6 +14,7 @@ import { DEFAULT_CONFIG } from "../common/configSchema";
 import { createConfigStore } from "../common/configStore";
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { ApiError, type Caller } from "./api";
+import { LoginWarning } from "./credentials";
 import { HttpStatusError } from "./http";
 import { createSettingsHandlers, loginFailureReason } from "./settings";
 import { validators } from "./validate";
@@ -47,7 +48,7 @@ const TOOLS_STATUS = {
   problemSince: null,
 };
 
-type LoginFake = (username: string, password: string) => Promise<unknown>;
+type LoginFake = (username: string, password: string) => Promise<string | void>;
 
 function setup(
   options: {
@@ -350,6 +351,31 @@ describe("testLogin", () => {
       loginFailureReason("dam", new HttpStatusError(500, "u")),
       "Couldn't sign in to DAM: 500 from u",
     );
+  });
+
+  test("passes on a note on the Joysound link, and a warning as it is", async () => {
+    let answer: () => Promise<string | void> = async () =>
+      "karafriends is linked to this account, a paid member.";
+    const { api, store } = setup({ logins: { joysound: () => answer() } });
+    store.update(LOGINS);
+    assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+      ok: true,
+      note: "karafriends is linked to this account, a paid member.",
+    });
+
+    answer = async () => {
+      throw new LoginWarning("Signed in, but the account isn't a paid member.");
+    };
+    const { warn } = console;
+    console.warn = () => {};
+    try {
+      assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
+        ok: false,
+        reason: "Signed in, but the account isn't a paid member.",
+      });
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 

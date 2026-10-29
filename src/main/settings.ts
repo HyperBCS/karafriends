@@ -27,6 +27,7 @@ import {
 } from "../common/configSchema";
 import type { ConfigStore } from "../common/configStore";
 import { ApiError, type ApiHandlers, type Caller } from "./api";
+import { LoginWarning } from "./credentials";
 import { HttpStatusError } from "./http";
 import { TimeoutError, withTimeout } from "./timeout";
 
@@ -61,10 +62,13 @@ const SERVICE_NAMES: Record<LoginService, string> = {
 
 export interface SettingsDeps {
   store: Pick<ConfigStore, "saved" | "atLaunch" | "update" | "loadProblem">;
-  // A fresh login, not the clients' shared one. Resolves on success.
+  // A fresh login, not the clients' shared one. Resolves on success, to a
+  // sentence for the host if there's more to say (how karafriends' link to
+  // the Joysound account stands). It changes nothing the clients use:
+  // Joysound's test links nothing.
   logins: Record<
     LoginService,
-    (username: string, password: string) => Promise<unknown>
+    (username: string, password: string) => Promise<string | void>
   >;
   // app.relaunch() and app.exit(0).
   restart(): void;
@@ -82,6 +86,7 @@ export function loginFailureReason(
   err: unknown,
 ): string {
   const name = SERVICE_NAMES[service];
+  if (err instanceof LoginWarning) return err.message;
   if (err instanceof TimeoutError) {
     return (
       `${name} didn't answer within ${LOGIN_TIMEOUT_MS / 1000} seconds. ` +
@@ -140,12 +145,14 @@ export function createSettingsHandlers(
       };
     }
     try {
-      await withTimeout(
+      const note = await withTimeout(
         deps.logins[service](username, password),
         LOGIN_TIMEOUT_MS,
         `${SERVICE_NAMES[service]}'s login`,
       );
-      return { ok: true };
+      return typeof note === "string" && note !== ""
+        ? { ok: true, note }
+        : { ok: true };
     } catch (err) {
       console.warn(
         `testLogin: ${SERVICE_NAMES[service]} failed:`,
@@ -275,9 +282,9 @@ export function createSettingsHandlers(
         (["dam", "joysound"] as const).map(async (service) => {
           const result = await testLogin(service);
           // Each reason names the service.
-          return result.ok
-            ? `${SERVICE_NAMES[service]} login works.`
-            : result.reason;
+          if (!result.ok) return result.reason;
+          const works = `${SERVICE_NAMES[service]} login works.`;
+          return result.note ? `${works} ${result.note}` : works;
         }),
       );
       return { ok: true, problems: [...notes, ...results] };

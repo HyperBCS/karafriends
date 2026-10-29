@@ -199,9 +199,9 @@ export function createSettingsActions(deps: SettingsDeps) {
       if (unsaved.has(service)) return undefined;
       say(service, { text: "Signing in…", tone: "busy" });
       const result = await call("testLogin", { service });
-      return result.ok
-        ? { text: `Signed in to ${SERVICE_NAMES[service]}.` }
-        : { text: result.reason, tone: "problem" };
+      if (!result.ok) return { text: result.reason, tone: "problem" };
+      const signedIn = `Signed in to ${SERVICE_NAMES[service]}.`;
+      return { text: result.note ? `${signedIn} ${result.note}` : signedIn };
     });
 
   // How many saves were asked for so far, to give failedSince.

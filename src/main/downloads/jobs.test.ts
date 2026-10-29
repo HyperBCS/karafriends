@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 
 import type { JoysoundQueueItem, UserIdentity } from "../../common/api";
-import type { JoysoundAPI } from "../joysoundApi";
+import type { JoysoundAPI, JoysoundSongData } from "../joysoundApi";
 import { failureReason, REASONS } from "../../common/downloadFailure";
 import { songFileNames, type SongFiles } from "../../common/songFiles";
 import type { DownloadQueueItem } from "../state";
@@ -233,17 +233,11 @@ test("a Niconico download leaves its video", async () => {
   assertFilesOf({ kind: "nico", songId: "sm9", suffix: null });
 });
 
-// Joysound's getFME answer: base64 with its last 30 characters moved to
-// the front.
-function scrambled(data: Buffer): string {
-  const base64 = data.toString("base64");
-  return base64.slice(-30) + base64.slice(0, -30);
-}
-
 // A JOY-02 file with only what getSongDuration reads: the metadata offset
 // at byte 6, and the duration in seconds 18 bytes into the metadata.
 function telop(durationSeconds: number): Buffer {
   const data = Buffer.alloc(32);
+  data.write("JOY-02", 0, "latin1");
   data.writeUInt32LE(10, 6);
   data.writeUInt16LE(durationSeconds, 28);
   return data;
@@ -270,23 +264,19 @@ test("getJoysoundOggPlaytime reads the ogg's playtime comment", () => {
   assert.ok(Number.isNaN(getJoysoundOggPlaytime(Buffer.from("playtime=1"))));
 });
 
-type FakeJoysoundApi = Pick<JoysoundAPI, "getSongRawData" | "getMovieUrls">;
+type FakeJoysoundApi = Pick<JoysoundAPI, "getSongData" | "getMovieUrls">;
 
 const movieUrls = async () => ({
   slc: "",
   movie: { mov1: "https://example.invalid/mov1.mp4" },
 });
 
-// Only the telop and the ogg matter to the job; the rest is filled in.
+// The song as JoysoundAPI.getSongData gives it: decoded, its audio fetched.
 const joysoundApi = (
-  songData: () => Promise<{ telop: string; ogg: string }>,
+  songData: () => Promise<JoysoundSongData>,
   getMovieUrls: FakeJoysoundApi["getMovieUrls"] = movieUrls,
 ): FakeJoysoundApi => ({
-  getSongRawData: async () => ({
-    slc: "",
-    streaming_wifi_url: "",
-    ...(await songData()),
-  }),
+  getSongData: () => songData(),
   getMovieUrls,
 });
 
@@ -294,9 +284,9 @@ const getFmeFails = async (): Promise<never> => {
   throw new Error("getFME failed");
 };
 
-const songData = async () => ({
-  telop: scrambled(telop(183)),
-  ogg: scrambled(ogg(183_456)),
+const songData = async (): Promise<JoysoundSongData> => ({
+  telop: telop(183),
+  ogg: ogg(183_456),
 });
 
 const joysoundItem = (youtubeVideoId: string | null): JoysoundQueueItem => ({
@@ -329,12 +319,42 @@ test("a Joysound download without a background leaves its video and lyrics", asy
   assertFilesOf({ kind: "joysound", songId: "123456", suffix: null });
 });
 
+test("a Joysound song whose ogg doesn't give its playtime takes the lyrics' length", async () => {
+  const noPlaytime = async (): Promise<JoysoundSongData> => ({
+    telop: telop(183),
+    ogg: Buffer.from("OggS without a playtime comment"),
+  });
+  const outcome = await download([], { kind: "joysound" }, (item) =>
+    joysoundJob(paths, item, joysoundApi(noPlaytime), joysoundItem(null)),
+  );
+  assert.ok(outcome.ok);
+  assert.equal(outcome.result.playtime, 183);
+});
+
+test("a Joysound download without a background video fails, leaving nothing", async () => {
+  const noMovies = async () => ({ slc: "123456", movie: { mov1: "" } });
+  const outcome = await download(
+    [],
+    { kind: "joysound" },
+    (item) =>
+      joysoundJob(
+        paths,
+        item,
+        joysoundApi(songData, noMovies),
+        joysoundItem(null),
+      ),
+    () => deleteJoysoundTempFiles(folder, joysoundItem(null)),
+  );
+  assert.equal(!outcome.ok && outcome.reason, REASONS.joysound);
+  assert.deepEqual(files(), []);
+});
+
 test("a Joysound download with a YouTube background pads it and leaves only the song's files", async () => {
   // ffmpeg-ok says every video is 2 s long. A 5 s song is within 10 s of
   // that, so the background gets 3 s of its first frame in front.
-  const shortSong = async () => ({
-    telop: scrambled(telop(5)),
-    ogg: scrambled(ogg(5_000)),
+  const shortSong = async (): Promise<JoysoundSongData> => ({
+    telop: telop(5),
+    ogg: ogg(5_000),
   });
   const queue: DownloadQueueItem[] = [];
   const outcome = await download(queue, { kind: "joysound" }, (item) =>
@@ -363,9 +383,9 @@ test("a Joysound download is marked started until its padding is done", async ()
   // Every ffmpeg step adds what the folder holds to listing.txt. A song
   // within 10 s of the background's 2 s gets padded.
   paths.ffmpeg = fake("ffmpeg-lists-folder");
-  const shortSong = async () => ({
-    telop: scrambled(telop(5)),
-    ogg: scrambled(ogg(5_000)),
+  const shortSong = async (): Promise<JoysoundSongData> => ({
+    telop: telop(5),
+    ogg: ogg(5_000),
   });
   const outcome = await download(
     [],

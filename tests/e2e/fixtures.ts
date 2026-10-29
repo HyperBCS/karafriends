@@ -468,6 +468,38 @@ function prepareMediaTools(userDataDir: string, mode: MediaTools) {
   fs.cpSync(source, dest, { recursive: true });
 }
 
+// With real logins, karafriends' link to the Joysound account
+// (src/main/joysoundLink.ts) is kept here from one run to the next, so the
+// @jp tests don't link a new JOYSOUND TV device to the account each time
+// they start the app. "Local State" holds the key safeStorage encrypts the
+// link with (on Windows), so it comes and goes with it.
+const JOYSOUND_LINK_DIR = path.join(
+  os.tmpdir(),
+  "karafriends-e2e-joysound-link",
+);
+const JOYSOUND_LINK_FILES = ["Local State", "joysoundLink.bin"];
+
+function restoreJoysoundLink(userDataDir: string) {
+  if (!fs.existsSync(path.join(JOYSOUND_LINK_DIR, "joysoundLink.bin"))) return;
+  for (const name of JOYSOUND_LINK_FILES) {
+    const kept = path.join(JOYSOUND_LINK_DIR, name);
+    if (fs.existsSync(kept)) {
+      fs.copyFileSync(kept, path.join(userDataDir, name));
+    }
+  }
+}
+
+function keepJoysoundLink(userDataDir: string) {
+  if (!fs.existsSync(path.join(userDataDir, "joysoundLink.bin"))) return;
+  fs.mkdirSync(JOYSOUND_LINK_DIR, { recursive: true });
+  for (const name of JOYSOUND_LINK_FILES) {
+    const file = path.join(userDataDir, name);
+    if (fs.existsSync(file)) {
+      fs.copyFileSync(file, path.join(JOYSOUND_LINK_DIR, name));
+    }
+  }
+}
+
 const CREDENTIAL_KEYS = [
   "damUsername",
   "damPassword",
@@ -635,6 +667,13 @@ async function launchKarafriends(
         });
       }
     }
+    if (options.realCredentials) {
+      try {
+        keepJoysoundLink(userDataDir);
+      } catch (err) {
+        console.warn(`Couldn't keep the Joysound link: ${err}`);
+      }
+    }
     try {
       // Windows can hold a file for a moment after the process exits.
       fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10 });
@@ -655,6 +694,7 @@ async function launchKarafriends(
       }),
     );
     prepareMediaTools(userDataDir, options.mediaTools);
+    if (options.realCredentials) restoreJoysoundLink(userDataDir);
     if (options.seedQueue) {
       const [queueDir, videosDir] = options.seedQueueInTempFolder
         ? [
@@ -688,7 +728,7 @@ async function launchKarafriends(
       displayRequests.push(request.url());
     });
 
-    // The main process logs DAM tokens and Joysound cookies once logged in,
+    // The main process logs DAM tokens once logged in,
     // so its output is only kept when the test runs without real logins.
     if (!options.realCredentials) {
       app.process().stdout?.on("data", (chunk) => mainLog.push(String(chunk)));
