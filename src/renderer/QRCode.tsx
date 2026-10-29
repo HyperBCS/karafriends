@@ -2,6 +2,7 @@ import { create } from "qrcode";
 import React, { useEffect, useRef } from "react";
 
 import "./QRCode.css";
+import { addressText } from "./remoteAddress";
 
 // The white border round the code, in modules. Cameras need light round
 // the corner squares to find the code: with none it doesn't scan. The
@@ -47,10 +48,11 @@ function draw(canvas: HTMLCanvasElement, text: string) {
   }
 }
 
-// The remote's QR code: big on the idle screen, with "Scan to join" and
-// the address under it for typing; while a song plays, the code alone on a
-// small tile in the top-left corner.
-function QRCode(props: { hostname: string; corner?: boolean }) {
+// The remote's QR code for url (http://192.168.1.20:8080, or a custom
+// URL): big on the idle screen, with "Scan to join" and the address under
+// it for typing; while a song plays, the code alone on a small tile in the
+// top-left corner.
+function QRCode(props: { url: string; corner?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Again when the box changes size (the window, the UI scale).
@@ -58,12 +60,12 @@ function QRCode(props: { hostname: string; corner?: boolean }) {
     const canvas = canvasRef.current;
     const tile = canvas?.parentElement;
     if (!canvas || !tile) return;
-    const update = () => draw(canvas, `http://${props.hostname}`);
+    const update = () => draw(canvas, props.url);
     update();
     const observer = new ResizeObserver(update);
     observer.observe(tile);
     return () => observer.disconnect();
-  }, [props.hostname]);
+  }, [props.url]);
 
   return (
     <div className={props.corner ? "join joinCorner" : "join"}>
@@ -78,7 +80,7 @@ function QRCode(props: { hostname: string; corner?: boolean }) {
       {props.corner ? null : (
         <>
           <p className="joinScan">Scan to join</p>
-          <p className="joinAddress">{props.hostname}</p>
+          <p className="joinAddress">{addressText(props.url)}</p>
         </>
       )}
     </div>

@@ -32,6 +32,8 @@ export default function Settings(
     onClose: () => void;
     hostname: string;
     onHostnameChange: (hostname: string) => void;
+    customUrl: string | null;
+    onCustomUrlChange: (url: string) => void;
   } & SoundProps &
     DisplayProps,
 ) {
@@ -187,6 +189,8 @@ export default function Settings(
               onAdminDraftChange={setAdminDraft}
               hostname={props.hostname}
               onHostnameChange={props.onHostnameChange}
+              customUrl={props.customUrl}
+              onCustomUrlChange={props.onCustomUrlChange}
             />
           ) : null}
           {props.tab === "sound" ? (
