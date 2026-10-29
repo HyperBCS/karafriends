@@ -35,7 +35,7 @@ function useJoysoundArtist(id: string) {
   return {
     name: paged.items[0]?.artistName ?? "",
     nameYomi: undefined,
-    songCount: null,
+    songCount: (paged.first.songCount as number | null | undefined) ?? null,
     paged,
   };
 }

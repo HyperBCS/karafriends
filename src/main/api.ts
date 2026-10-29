@@ -41,7 +41,7 @@ import {
   type DkwebsysAPI,
   type MinseiAPI,
 } from "./damApi";
-import type { JoysoundAPI } from "./joysoundApi";
+import type { JoysoundAPI, JoysoundListPage } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
@@ -488,18 +488,24 @@ export function createApi(
     artistName: song.artistName,
   });
 
-  // Joysound counts from 1, and has no total: a full page may have more after
-  // it.
+  // Joysound counts from 1. A page ends the list where its total says;
+  // without one, a full page may have more after it.
   const joysoundPage = async <T, U>(
-    fetchPage: (start: number, count: number) => Promise<T[]>,
+    fetchPage: (start: number, count: number) => Promise<JoysoundListPage<T>>,
     toItem: (item: T) => U,
     offset = 0,
     limit = DEFAULT_LIMIT.joysound,
   ) => {
-    const items = await fetchPage(offset + 1, limit);
+    const { items, total } = await fetchPage(offset + 1, limit);
     return {
       items: items.map(toItem),
-      nextOffset: items.length === limit ? offset + limit : null,
+      nextOffset:
+        total !== null
+          ? nextOffset(offset, limit, total)
+          : items.length === limit
+            ? offset + limit
+            : null,
+      total,
     };
   };
 
@@ -600,31 +606,37 @@ export function createApi(
       };
     },
 
-    joysoundSearchSongs: ({ query, offset, limit }) =>
-      joysoundPage(
+    async joysoundSearchSongs({ query, offset, limit }) {
+      const { items, nextOffset } = await joysoundPage(
         (start, count) =>
           deps.joysound.getSongListByKeyword(query, start, count),
         toJoysoundSong,
         offset,
         limit,
-      ),
+      );
+      return { items, nextOffset };
+    },
 
-    joysoundSearchArtists: ({ query, offset, limit }) =>
-      joysoundPage(
+    async joysoundSearchArtists({ query, offset, limit }) {
+      const { items, nextOffset } = await joysoundPage(
         (start, count) =>
           deps.joysound.getArtistListByKeyword(query, start, count),
         (artist) => ({ id: artist.artistId_digi, name: artist.artistName }),
         offset,
         limit,
-      ),
+      );
+      return { items, nextOffset };
+    },
 
-    joysoundArtistSongs: ({ id, offset, limit }) =>
-      joysoundPage(
+    async joysoundArtistSongs({ id, offset, limit }) {
+      const { items, nextOffset, total } = await joysoundPage(
         (start, count) => deps.joysound.getSongListByArtist(id, start, count),
         toJoysoundSong,
         offset,
         limit,
-      ),
+      );
+      return { items, nextOffset, songCount: total };
+    },
 
     async joysoundSong({ id }) {
       const detail = await deps.joysound.getSongDetail(id);

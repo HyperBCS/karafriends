@@ -465,18 +465,23 @@ describe("JoysoundAPI's lookups", () => {
     const joysound = joysoundWith(session);
     handle = (_req, res) =>
       json(res, { hitCount: "1", contentsList: [{ selSongNo: "1" }] });
-    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), [
-      { selSongNo: "1" },
-    ]);
+    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), {
+      items: [{ selSongNo: "1" }],
+      total: 1,
+    });
   });
 
   test("answer no results without a request when no login is set", async () => {
     const joysound = joysoundWith(async () => {
       throw new NoLoginError("Joysound");
     });
-    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), []);
-    assert.deepEqual(await joysound.getArtistListByKeyword("lemon", 1, 20), []);
-    assert.deepEqual(await joysound.getSongListByArtist("232873", 1, 20), []);
+    const none = { items: [], total: null };
+    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), none);
+    assert.deepEqual(
+      await joysound.getArtistListByKeyword("lemon", 1, 20),
+      none,
+    );
+    assert.deepEqual(await joysound.getSongListByArtist("232873", 1, 20), none);
     await assert.rejects(
       joysound.getSongDetail("425691"),
       (err) => err instanceof NoLoginError && err.status === 409,

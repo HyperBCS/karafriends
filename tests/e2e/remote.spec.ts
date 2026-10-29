@@ -651,6 +651,34 @@ const damSongDetail = (n: number) => ({
   picture: false,
 });
 
+test("a Joysound artist's page says how many songs the artist has, as DAM's does", async ({
+  karafriends,
+  remote,
+}) => {
+  let asked = 0;
+  await remote.route("**/api/joysoundArtistSongs", (route) => {
+    asked++;
+    return route.fulfill({
+      json: {
+        items: [{ id: "425691", name: "Lemon", artistName: "米津玄師" }],
+        nextOffset: 20,
+        songCount: 139,
+      },
+    });
+  });
+  await remote.goto(
+    new URL("#/joysoundArtist/232873", karafriends.remoconUrl).href,
+  );
+  await expect(remote.getByRole("heading", { level: 2 })).toHaveText(
+    "米津玄師",
+  );
+  await expect(
+    remote.getByRole("main").getByText("Joysound · 139 songs", { exact: true }),
+  ).toBeVisible();
+  // The count came with the songs: one request.
+  expect(asked).toBe(1);
+});
+
 // A 1×1 PNG, for a song's picture.
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",

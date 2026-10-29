@@ -209,23 +209,35 @@ describe("JoysoundAPI", () => {
   });
 
   test("takes the songs or the artists out of the answer", async () => {
-    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), [
-      SONG_ROW,
-    ]);
-    assert.deepEqual(await joysound.getArtistListByKeyword("米津", 1, 20), [
-      ARTIST_ROW,
-    ]);
-    assert.deepEqual(await joysound.getSongListByArtist("232873", 1, 20), [
-      SONG_ROW,
-    ]);
+    // With the whole list's count (hitCount, as text).
+    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 1, 20), {
+      items: [SONG_ROW],
+      total: 1,
+    });
+    assert.deepEqual(await joysound.getArtistListByKeyword("米津", 1, 20), {
+      items: [ARTIST_ROW],
+      total: 1,
+    });
+    assert.deepEqual(await joysound.getSongListByArtist("232873", 1, 20), {
+      items: [SONG_ROW],
+      total: 1,
+    });
     // Past the last page.
     contentsList = () => ({
       hitCount: "1",
       contentsList: null,
       artistList: null,
     });
-    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 21, 20), []);
-    assert.deepEqual(await joysound.getArtistListByKeyword("米津", 21, 20), []);
+    assert.deepEqual(await joysound.getSongListByKeyword("lemon", 21, 20), {
+      items: [],
+      total: 1,
+    });
+    // A hitCount that isn't a count: none.
+    contentsList = () => ({ hitCount: "many", contentsList: null });
+    assert.deepEqual(await joysound.getArtistListByKeyword("米津", 21, 20), {
+      items: [],
+      total: null,
+    });
   });
 
   test("reads a song's details from contentsDetail", async () => {

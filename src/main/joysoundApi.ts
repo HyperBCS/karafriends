@@ -209,11 +209,32 @@ function contentsListRequest(
   };
 }
 
+// A page of one of the lists, and how many the whole list has (its
+// hitCount), or null if Joysound didn't say.
+export interface JoysoundListPage<T> {
+  items: T[];
+  total: number | null;
+}
+
+function pageOf<T>(
+  answer: ContentsListAnswer,
+  rows: T[] | null | undefined,
+): JoysoundListPage<T> {
+  const hitCount = answer.hitCount;
+  return {
+    items: rows ?? [],
+    total:
+      typeof hitCount === "string" && /^\d+$/.test(hitCount)
+        ? Number(hitCount)
+        : null,
+  };
+}
+
 // A search's answer when no Joysound login is set: no results, without a
 // request, so a DAM-only host's phones search DAM without an error.
 // Any other failure rejects, and the phone shows it with a Retry button.
-function noResultsWithoutLogin<T>(err: unknown): T[] {
-  if (err instanceof NoLoginError) return [];
+function noResultsWithoutLogin<T>(err: unknown): JoysoundListPage<T> {
+  if (err instanceof NoLoginError) return { items: [], total: null };
   throw err;
 }
 
@@ -354,7 +375,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.contentsList ?? [])
+      .then((answer) => pageOf(answer, answer.contentsList))
       .catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 
@@ -371,7 +392,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.artistList ?? [])
+      .then((answer) => pageOf(answer, answer.artistList))
       .catch(noResultsWithoutLogin<JoysoundArtistListItem>);
   }
 
@@ -389,7 +410,7 @@ export class JoysoundAPI {
         count,
       ),
     )
-      .then((answer) => answer.contentsList ?? [])
+      .then((answer) => pageOf(answer, answer.contentsList))
       .catch(noResultsWithoutLogin<JoysoundSongListItem>);
   }
 

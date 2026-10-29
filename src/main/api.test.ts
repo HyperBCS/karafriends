@@ -199,14 +199,17 @@ function makeApi(
         joysoundCalls.push([keyword, start, count]);
         // 150 results in all.
         const n = Math.max(Math.min(count, 151 - start), 0);
-        return Array.from({ length: n }, (_, i) => ({
-          selSongNo: `${start + i}`,
-          songName: `Song ${start + i}`,
-          artistName: "Artist",
-        }));
+        return {
+          items: Array.from({ length: n }, (_, i) => ({
+            selSongNo: `${start + i}`,
+            songName: `Song ${start + i}`,
+            artistName: "Artist",
+          })),
+          total: 150,
+        };
       },
-      getArtistListByKeyword: async () => [],
-      getSongListByArtist: async () => [],
+      getArtistListByKeyword: async () => ({ items: [], total: 0 }),
+      getSongListByArtist: async () => ({ items: [], total: 0 }),
       getSongDetail: async () => {
         throw new Error("not faked");
       },
@@ -1572,6 +1575,48 @@ describe("paging", () => {
     assert.deepEqual(joysoundCalls[1], ["x", 101, 100]);
     assert.equal(second.items.length, 50);
     assert.equal(second.nextOffset, null);
+  });
+
+  test("a Joysound artist's songs come with the count; the total ends the list", async () => {
+    let total: number | null = 30;
+    const row = (n: number) => ({
+      selSongNo: `${n}`,
+      songName: `Song ${n}`,
+      artistName: "Artist",
+    });
+    const api = makeApi(
+      {},
+      {
+        joysound: upstream<ApiDeps["joysound"]>({
+          // 30 songs in all.
+          getSongListByArtist: async (
+            _id: string,
+            start: number,
+            count: number,
+          ) => ({
+            items: Array.from(
+              { length: Math.max(Math.min(count, 31 - start), 0) },
+              (_, i) => row(start + i),
+            ),
+            total,
+          }),
+        }),
+      },
+    );
+    // A full page that is the whole list: no More.
+    const page = await api.joysoundArtistSongs({ id: "1", limit: 30 }, alice);
+    assert.equal(page.songCount, 30);
+    assert.equal(page.items.length, 30);
+    assert.equal(page.nextOffset, null);
+
+    // Without a total, a full page may have more after it.
+    total = null;
+    const unknown = await api.joysoundArtistSongs(
+      { id: "1", limit: 30 },
+      alice,
+    );
+    assert.equal(unknown.songCount, null);
+    assert.equal(unknown.nextOffset, 30);
   });
 
   test("history pages through every song, newest first", async () => {

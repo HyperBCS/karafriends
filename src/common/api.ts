@@ -449,9 +449,10 @@ export interface Api {
     input: { query: string } & PageInput;
     output: Page<JoysoundArtist>;
   };
+  // songCount: all the artist's songs, if Joysound said.
   joysoundArtistSongs: {
     input: { id: string } & PageInput;
-    output: Page<JoysoundSong>;
+    output: Page<JoysoundSong> & { songCount: number | null };
   };
   joysoundSong: { input: { id: string }; output: JoysoundSongDetail };
   youtubeInfo: {
