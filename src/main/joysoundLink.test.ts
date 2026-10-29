@@ -24,6 +24,9 @@ import { createCredentialProviders, LoginWarning } from "./credentials";
 import {
   createJoysoundLinker,
   linkStatusNote,
+  redirectTarget,
+  TAKEN_RETRY_MS,
+  TvLinkTakenError,
   type LinkStore,
   type StoredLink,
 } from "./joysoundLink";
@@ -47,6 +50,8 @@ let site: {
   membership: string;
   // Whether opening the link page links the code (as it did on 2026-10-29).
   linkPageLinks: boolean;
+  // Whether another TV app holds the account's link (one at a time).
+  otherTvLinked: boolean;
   // Whether signing in gives a session.
   loginSticks: boolean;
 };
@@ -86,16 +91,59 @@ function serve(req: IncomingMessage, res: ServerResponse, body: string) {
     return res.end();
   }
   if (route === "GET /") return html(res, "<html>home</html>");
-  if (req.method === "GET" && url.pathname.startsWith("/mypage/tvlink/")) {
-    if (!signedIn) {
-      res.writeHead(302, { Location: "/login" });
-      return res.end();
-    }
-    const code = site.codes.get(
-      decodeURIComponent(url.pathname.slice("/mypage/tvlink/".length)),
+  // The link page, as sound-cafe's (2026-10-29): /mypage/tvlink/<code>
+  // keeps the code in the session and redirects, with an absolute URL, to
+  // /mypage/tvlink, which links it (and is a 404 without one); an unknown
+  // code goes to /mypage/tvlink/linkCodeError. Signed out, both go to the
+  // login page.
+  const redirect = (location: string, cookie?: string) => {
+    res.writeHead(302, {
+      Location: location,
+      ...(cookie ? { "Set-Cookie": cookie } : {}),
+    });
+    res.end();
+  };
+  if (route === "GET /mypage/tvlink/linkCodeError") {
+    return html(res, "<html>リンクコードが正しくありません</html>");
+  }
+  if (route === "GET /mypage/tvlink/linkedConfirm") {
+    return html(
+      res,
+      "<html>すでに紐づいているテレビアプリが存在します。リンクを切り替えますか？</html>",
     );
-    if (code?.valid && site.linkPageLinks) code.linked = true;
-    return html(res, "<html>テレビアプリとの連携が完了しました</html>");
+  }
+  if (route === "GET /mypage/tvlink") {
+    if (!signedIn) return redirect("/login");
+    const kept = (req.headers.cookie ?? "").match(/TVLINK=([^;]+)/)?.[1];
+    const code = kept && site.codes.get(kept);
+    if (!code) {
+      res.writeHead(404, { "Content-Type": "text/html" });
+      return res.end("<html>not found</html>");
+    }
+    if (site.linkPageLinks) code.linked = true;
+    return html(res, "<html>テレビアプリとの連携が完了しました</html>", {
+      "Set-Cookie": "TVLINK=; Max-Age=0; Path=/",
+    });
+  }
+  if (req.method === "GET" && url.pathname.startsWith("/mypage/tvlink/")) {
+    if (!signedIn) return redirect("/login");
+    const linkCode = decodeURIComponent(
+      url.pathname.slice("/mypage/tvlink/".length),
+    );
+    if (!site.codes.get(linkCode)?.valid) {
+      return redirect(`${base}/mypage/tvlink/linkCodeError`);
+    }
+    // Another TV app: the page asks first; ?force=1 (its "switch") unlinks it.
+    if (site.otherTvLinked) {
+      if (url.searchParams.get("force") !== "1") {
+        return redirect(
+          `${base}/mypage/tvlink/linkedConfirm`,
+          `TVLINK=${linkCode}; Path=/`,
+        );
+      }
+      site.otherTvLinked = false;
+    }
+    return redirect(`${base}/mypage/tvlink`, `TVLINK=${linkCode}; Path=/`);
   }
   if (route === "POST /api/v1/linkCode") {
     const linkCode = `${CODE}${site.codes.size + 1}`;
@@ -127,7 +175,8 @@ before(async () => {
     req.setEncoding("utf8");
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      asked.push(`${req.method} ${new URL(req.url ?? "/", base).pathname}`);
+      const { pathname, search } = new URL(req.url ?? "/", base);
+      asked.push(`${req.method} ${pathname}${search}`);
       serve(req, res, body);
     });
   });
@@ -149,6 +198,7 @@ beforeEach(() => {
     password: PASSWORD,
     membership: "PAID",
     linkPageLinks: true,
+    otherTvLinked: false,
     loginSticks: true,
   };
 });
@@ -156,16 +206,16 @@ beforeEach(() => {
 function memoryStore(initial: StoredLink | null = null) {
   const store: LinkStore & { value: StoredLink | null } = {
     value: initial,
-    load: () => store.value,
-    save: (link) => {
+    load: async () => store.value,
+    save: async (link) => {
       store.value = link;
     },
   };
   return store;
 }
 
-const linkerWith = (store: LinkStore) =>
-  createJoysoundLinker({ store, baseURL: base });
+const linkerWith = (store: LinkStore, now?: () => number) =>
+  createJoysoundLinker({ store, baseURL: base, now });
 
 // What linking a new code asks, in order.
 const NEW_LINK = [
@@ -175,6 +225,7 @@ const NEW_LINK = [
   "POST /login",
   "GET /",
   "GET /mypage/tvlink/SECRETCODE1",
+  "GET /mypage/tvlink",
   "POST /api/v1/linkInfo",
 ];
 
@@ -248,7 +299,10 @@ describe("createJoysoundLinker's link", () => {
         () => assert.fail("it linked"),
         (failure: unknown) => failure,
       );
-    assert.match(String(err), /didn't link karafriends to the account/);
+    assert.match(
+      String(err),
+      /didn't link karafriends to the account: its link code is still not linked after authorizing it \(the link page ended on \/mypage\/tvlink\)/,
+    );
     assert.deepEqual(asked, NEW_LINK);
     // Tried again later, it authorizes the same code: no new one.
     asked.length = 0;
@@ -299,6 +353,9 @@ describe("the shared Joysound link", () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+  // The last forgetOtherAccounts the config change started.
+  let forgetting: Promise<void> = Promise.resolve();
+
   function shared() {
     const config = createConfigStore(path.join(dir, "config.yaml"));
     config.update({ joysoundEmail: EMAIL, joysoundPassword: PASSWORD });
@@ -307,7 +364,7 @@ describe("the shared Joysound link", () => {
     // As services.ts wires them.
     config.onChange(({ keys }) => {
       if (keys.includes("joysoundEmail")) {
-        linker.forgetOtherAccounts(config.get().joysoundEmail);
+        forgetting = linker.forgetOtherAccounts(config.get().joysoundEmail);
       }
     });
     const { joysound } = createCredentialProviders({
@@ -330,6 +387,7 @@ describe("the shared Joysound link", () => {
     await joysound();
     config.update({ joysoundEmail: "other@example.com" });
     // Dropped at once, not only when it's next used.
+    await forgetting;
     assert.equal(store.value, null);
     site.codes.clear();
     asked.length = 0;
@@ -389,20 +447,22 @@ describe("createJoysoundLinker's status and test", () => {
   test("test signs in and describes the link, linking nothing", async () => {
     const store = memoryStore();
     const linker = linkerWith(store);
+    const before = await linker.test(EMAIL, PASSWORD);
     assert.match(
-      await linker.test(EMAIL, PASSWORD),
-      /links itself to this account, as a JOYSOUND TV device/,
+      before.note,
+      /links itself to this account, as its JOYSOUND TV app/,
     );
+    // Not linked yet: the link may be another TV app's, so Switch is offered.
+    assert.equal(before.canSwitchLink, true);
     assert.ok(NOTHING_CHANGED(asked), asked.join(", "));
     assert.equal(store.value, null);
     assert.equal(site.codes.size, 0);
 
     await linker.link(EMAIL, PASSWORD);
     asked.length = 0;
-    assert.equal(
-      await linker.test(EMAIL, PASSWORD),
-      "karafriends is linked to this account, a paid member.",
-    );
+    assert.deepEqual(await linker.test(EMAIL, PASSWORD), {
+      note: "karafriends is linked to this account, a paid member.",
+    });
     assert.ok(NOTHING_CHANGED(asked), asked.join(", "));
 
     site.membership = "FREE";
@@ -422,14 +482,165 @@ describe("createJoysoundLinker's status and test", () => {
   });
 
   test("linkStatusNote says what karafriends will do", () => {
-    assert.match(linkStatusNote({ state: "pending" }), /isn't finished/);
+    assert.match(linkStatusNote({ state: "pending" }).note, /isn't finished/);
     assert.match(
-      linkStatusNote({ state: "ended" }),
+      linkStatusNote({ state: "ended" }).note,
       /has ended; it links again/,
     );
     assert.throws(
       () => linkStatusNote({ state: "linked", membershipType: null }),
       /membership: none/,
     );
+  });
+});
+
+describe("redirectTarget", () => {
+  const base = new URL("https://www.sound-cafe.jp");
+
+  test("takes sound-cafe's http:// redirects back to https", () => {
+    // What the link page sent on 2026-10-29.
+    assert.equal(
+      redirectTarget(
+        "http://www.sound-cafe.jp/mypage/tvlink/linkCodeError",
+        new URL("https://www.sound-cafe.jp/mypage/tvlink/X"),
+        base,
+      ).toString(),
+      "https://www.sound-cafe.jp/mypage/tvlink/linkCodeError",
+    );
+    assert.equal(
+      redirectTarget(
+        "/login",
+        new URL("https://www.sound-cafe.jp/mypage/tvlink"),
+        base,
+      ).toString(),
+      "https://www.sound-cafe.jp/login",
+    );
+  });
+
+  test("refuses another site", () => {
+    assert.throws(
+      () =>
+        redirectTarget(
+          "https://example.com/mypage",
+          new URL("https://www.sound-cafe.jp/mypage/tvlink/X"),
+          base,
+        ),
+      /another site \(example\.com\)/,
+    );
+  });
+});
+
+describe("the link page's redirects", () => {
+  test("keep the session's cookies, and an unknown code isn't linked", async () => {
+    const store = memoryStore({ account: EMAIL, linkCode: "NOTISSUED" });
+    // linkInfo says the kept code is no longer valid: a new one is linked,
+    // through the redirect, with the cookie set on the way.
+    const link = await linkerWith(store).link(EMAIL, PASSWORD);
+    assert.equal(link.linkCode, "SECRETCODE1");
+    assert.ok(asked.includes("GET /mypage/tvlink"));
+    assert.equal(site.codes.get("SECRETCODE1")?.linked, true);
+  });
+});
+
+describe("another TV app holding the link", () => {
+  const isTaken = (err: unknown) =>
+    err instanceof TvLinkTakenError &&
+    err.status === 409 &&
+    /Settings › Accounts › Joysound/.test(err.message);
+
+  test("isn't unlinked: the link fails, saying so, and waits a while to try again", async () => {
+    site.otherTvLinked = true;
+    let time = 1_000;
+    const store = memoryStore();
+    const linker = linkerWith(store, () => time);
+    await assert.rejects(linker.link(EMAIL, PASSWORD), isTaken);
+    assert.equal(site.otherTvLinked, true);
+    assert.ok(!asked.some((p) => p.includes("force")), asked.join(", "));
+    assert.deepEqual(asked.slice(-2), [
+      "GET /mypage/tvlink/SECRETCODE1",
+      "GET /mypage/tvlink/linkedConfirm",
+    ]);
+    // The code is kept, for when the link can be made.
+    assert.deepEqual(store.value, { account: EMAIL, linkCode: "SECRETCODE1" });
+
+    // Meanwhile, only linkInfo: no sign-in for every search.
+    asked.length = 0;
+    await assert.rejects(linker.link(EMAIL, PASSWORD), isTaken);
+    assert.deepEqual(asked, ["POST /api/v1/linkInfo"]);
+
+    // Later, the link page again, with the same code.
+    time += TAKEN_RETRY_MS;
+    asked.length = 0;
+    await assert.rejects(linker.link(EMAIL, PASSWORD), isTaken);
+    assert.ok(asked.includes("GET /mypage/tvlink/SECRETCODE1"));
+    assert.ok(!asked.includes("POST /api/v1/linkCode"));
+    assertNoSecrets();
+  });
+
+  test("Test login says so, offering the switch, and changes nothing", async () => {
+    site.otherTvLinked = true;
+    const linker = linkerWith(memoryStore());
+    await assert.rejects(linker.link(EMAIL, PASSWORD), isTaken);
+    asked.length = 0;
+    await assert.rejects(
+      linker.test(EMAIL, PASSWORD),
+      (err) =>
+        err instanceof LoginWarning &&
+        err.canSwitchLink &&
+        /another TV app is linked/.test(err.message),
+    );
+    assert.ok(
+      !asked.some((p) => p.includes("/mypage/tvlink")),
+      asked.join(", "),
+    );
+    assert.equal(site.otherTvLinked, true);
+  });
+
+  test("switchLink takes the link, and then it's kept", async () => {
+    site.otherTvLinked = true;
+    const store = memoryStore();
+    const linker = linkerWith(store);
+    await assert.rejects(linker.link(EMAIL, PASSWORD), isTaken);
+
+    asked.length = 0;
+    assert.equal(
+      await linker.switchLink(EMAIL, PASSWORD),
+      "karafriends is linked to this account, a paid member.",
+    );
+    // As a browser: the link page, its question, then its switch.
+    const page = asked.indexOf("GET /mypage/tvlink/SECRETCODE1");
+    assert.equal(asked[page + 1], "GET /mypage/tvlink/linkedConfirm");
+    assert.equal(asked[page + 2], "GET /mypage/tvlink/SECRETCODE1?force=1");
+    // Signed in once.
+    assert.equal(asked.filter((p) => p === "POST /login").length, 1);
+    assert.ok(!asked.includes("POST /api/v1/linkCode"));
+    assert.equal(site.otherTvLinked, false);
+    assert.equal(site.codes.get("SECRETCODE1")?.linked, true);
+
+    // The next request uses it, without waiting out the retry.
+    asked.length = 0;
+    assert.deepEqual(await linker.link(EMAIL, PASSWORD), {
+      linkCode: "SECRETCODE1",
+      membershipType: "PAID",
+    });
+    assert.deepEqual(asked, ["POST /api/v1/linkInfo"]);
+  });
+
+  test("switchLink with no other TV app links as usual, without the switch", async () => {
+    const linker = linkerWith(memoryStore());
+    assert.equal(
+      await linker.switchLink(EMAIL, PASSWORD),
+      "karafriends is linked to this account, a paid member.",
+    );
+    assert.deepEqual(asked, NEW_LINK);
+  });
+
+  test("switchLink on a link karafriends already holds only checks it", async () => {
+    const store = memoryStore();
+    const linker = linkerWith(store);
+    await linker.link(EMAIL, PASSWORD);
+    asked.length = 0;
+    await linker.switchLink(EMAIL, PASSWORD);
+    assert.deepEqual(asked, ["POST /api/v1/linkInfo"]);
   });
 });

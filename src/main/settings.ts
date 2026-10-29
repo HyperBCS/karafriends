@@ -27,7 +27,7 @@ import {
 } from "../common/configSchema";
 import type { ConfigStore } from "../common/configStore";
 import { ApiError, type ApiHandlers, type Caller } from "./api";
-import { LoginWarning } from "./credentials";
+import { type LoginNote, LoginWarning } from "./credentials";
 import { HttpStatusError } from "./http";
 import { TimeoutError, withTimeout } from "./timeout";
 
@@ -36,6 +36,7 @@ export const SETTINGS_METHODS = [
   "setSettings",
   "setAdminPassword",
   "testLogin",
+  "switchJoysoundLink",
   "exportConfig",
   "importConfig",
   "restartApp",
@@ -54,6 +55,8 @@ export const SETTABLE_KEYS = CONFIG_KEYS.filter(
 );
 
 const LOGIN_TIMEOUT_MS = 15_000;
+// Signing in, switching and checking the link: a few more requests.
+const SWITCH_TIMEOUT_MS = 30_000;
 
 const SERVICE_NAMES: Record<LoginService, string> = {
   dam: "DAM",
@@ -68,8 +71,12 @@ export interface SettingsDeps {
   // Joysound's test links nothing.
   logins: Record<
     LoginService,
-    (username: string, password: string) => Promise<string | void>
+    (username: string, password: string) => Promise<LoginNote | void>
   >;
+  // Links karafriends to the Joysound account as its TV app, unlinking any
+  // other (joysoundLink.ts's switchLink), and has the clients check their
+  // link again. Resolves to a sentence for the host.
+  switchJoysoundLink(email: string, password: string): Promise<string>;
   // app.relaunch() and app.exit(0).
   restart(): void;
   // externalResources.ts's, with the live state's problem.
@@ -84,12 +91,13 @@ export interface SettingsDeps {
 export function loginFailureReason(
   service: LoginService,
   err: unknown,
+  timeoutMs = LOGIN_TIMEOUT_MS,
 ): string {
   const name = SERVICE_NAMES[service];
   if (err instanceof LoginWarning) return err.message;
   if (err instanceof TimeoutError) {
     return (
-      `${name} didn't answer within ${LOGIN_TIMEOUT_MS / 1000} seconds. ` +
+      `${name} didn't answer within ${timeoutMs / 1000} seconds. ` +
       "Check this computer's internet connection and VPN."
     );
   }
@@ -150,15 +158,22 @@ export function createSettingsHandlers(
         LOGIN_TIMEOUT_MS,
         `${SERVICE_NAMES[service]}'s login`,
       );
-      return typeof note === "string" && note !== ""
-        ? { ok: true, note }
-        : { ok: true };
+      if (!note || note.note === "") return { ok: true };
+      return note.canSwitchLink
+        ? { ok: true, note: note.note, canSwitchLink: true }
+        : { ok: true, note: note.note };
     } catch (err) {
       console.warn(
         `testLogin: ${SERVICE_NAMES[service]} failed:`,
         (err as Error)?.message ?? err,
       );
-      return { ok: false, reason: loginFailureReason(service, err) };
+      return err instanceof LoginWarning && err.canSwitchLink
+        ? {
+            ok: false,
+            reason: loginFailureReason(service, err),
+            canSwitchLink: true,
+          }
+        : { ok: false, reason: loginFailureReason(service, err) };
     }
   };
 
@@ -211,6 +226,35 @@ export function createSettingsHandlers(
     async testLogin({ service }, caller) {
       requireDisplay(caller);
       return testLogin(service);
+    },
+
+    async switchJoysoundLink(_input, caller) {
+      requireDisplay(caller);
+      const saved = store.saved();
+      if (!hasLogin(saved, "joysound")) {
+        return {
+          ok: false,
+          reason:
+            "No Joysound login is set: enter the email and password first.",
+        };
+      }
+      try {
+        const note = await withTimeout(
+          deps.switchJoysoundLink(saved.joysoundEmail, saved.joysoundPassword),
+          SWITCH_TIMEOUT_MS,
+          "Joysound's TV link",
+        );
+        return { ok: true, note };
+      } catch (err) {
+        console.warn(
+          "switchJoysoundLink failed:",
+          (err as Error)?.message ?? err,
+        );
+        return {
+          ok: false,
+          reason: loginFailureReason("joysound", err, SWITCH_TIMEOUT_MS),
+        };
+      }
     },
 
     async exportConfig(_input, caller) {

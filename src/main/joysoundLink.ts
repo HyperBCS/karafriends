@@ -1,20 +1,26 @@
 // karafriends' link to the host's Joysound account. The TV API
 // (joysoundApi.ts) takes a link code where the website took a login: Joysound
 // issues the code, the account authorizes it, and from then on the code
-// stands for the account, as a JOYSOUND TV device would.
+// stands for the account, as a JOYSOUND TV app would.
 //
 // The TV app shows a QR code for a signed-in phone to open. karafriends
 // authorizes the code itself with the saved email and password: signed in
-// to the website, GET /mypage/tvlink/<code> links it. That GET is the
-// authorization itself (checked 2026-10-29), not a page to look at. The
+// to the website, it opens /mypage/tvlink/<code>, which links it. That page
+// is the authorization itself (checked 2026-10-29), not one to look at. The
 // code is kept between launches in a LinkStore, with the account it was
 // made for, and checked with linkInfo once a run.
+//
+// An account links one TV app at a time. When another holds the link, the
+// page asks whether to switch it (/mypage/tvlink/linkedConfirm), which would
+// unlink the other one: karafriends doesn't, and says so (TvLinkTakenError)
+// until the host presses Switch in Settings (switchLink, the page's
+// "?force=1").
 //
 // The code is a secret: it never goes into a log line or an error's
 // message, and never into config.yaml (so Export config leaves it out).
 //
 // No Electron imports, so unit tests can load this file under plain Node.
-import { LoginWarning } from "./credentials";
+import { type LoginNote, LoginWarning } from "./credentials";
 import {
   formBody,
   getSetCookies,
@@ -34,10 +40,10 @@ export interface StoredLink {
 }
 
 // Where the link is kept: in services.ts, a file in userData encrypted by
-// the OS. load() and save() never throw.
+// the OS. load() and save() never reject.
 export interface LinkStore {
-  load(): StoredLink | null;
-  save(link: StoredLink | null): void;
+  load(): Promise<StoredLink | null>;
+  save(link: StoredLink | null): Promise<void>;
 }
 
 export interface LinkInfo {
@@ -54,9 +60,29 @@ export type LinkStatus =
   | { state: "none" }
   // Issued, but not authorized yet: a link that stopped halfway.
   | { state: "pending" }
+  // Not authorized: the last try found another TV app holding the link.
+  | { state: "taken" }
   // linkInfo says the code is no longer valid.
   | { state: "ended" }
   | { state: "linked"; membershipType: string | null };
+
+// Another TV app holds the account's link, and karafriends won't unlink it
+// by itself. 409, so a phone shows why.
+export class TvLinkTakenError extends Error {
+  readonly status = 409;
+  constructor() {
+    super(
+      "Another TV app is linked to the host's Joysound account, which links " +
+        "one at a time. The host can switch the link to karafriends: " +
+        "Settings › Accounts › Joysound, Test login.",
+    );
+    this.name = "TvLinkTakenError";
+  }
+}
+
+// How long after finding the link taken karafriends tries the link page
+// again, rather than signing in to the website for every request meanwhile.
+export const TAKEN_RETRY_MS = 5 * 60_000;
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0";
@@ -217,29 +243,88 @@ export async function getLinkInfo(
   };
 }
 
-// Links linkCode to the account signed in with cookies. Its HTML isn't
-// read: linkInfo says whether it worked.
+const MAX_REDIRECTS = 5;
+
+// Where the link page sends karafriends when another TV app holds the link.
+const LINKED_CONFIRM = "/mypage/tvlink/linkedConfirm";
+
+// Where a redirect from `from` to location goes, on sound-cafe's own host.
+// It redirects to http:// URLs (it sits behind a TLS proxy, which takes
+// them back to https): those go to https at once, so the session's cookies
+// never go out unencrypted. Another host is refused.
+export function redirectTarget(location: string, from: URL, base: URL): URL {
+  const next = new URL(location, from);
+  if (next.hostname !== base.hostname) {
+    throw new Error(
+      `Joysound's website sent karafriends' link to another site (${next.hostname})`,
+    );
+  }
+  if (next.protocol === "http:" && base.protocol === "https:") {
+    next.protocol = "https:";
+    next.port = base.port;
+  }
+  return next;
+}
+
+// Links linkCode to the account signed in with cookies, and resolves to the
+// path the link page ended on, with the code left out (for an error, if
+// linkInfo then says it didn't link). force switches the link from another
+// TV app, unlinking it; without it, the page stops at LINKED_CONFIRM and
+// this throws a TvLinkTakenError.
+//
+// The page redirects (from /mypage/tvlink/<code> to another /mypage/tvlink
+// page, which links), and node-fetch drops the Cookie header when a
+// redirect changes protocol, so the redirects are followed here, with the
+// session's cookies, kept up to date at each step. Its HTML isn't read:
+// linkInfo says whether it worked.
 async function authorizeLinkCode(
   cookies: Cookies,
   linkCode: string,
   baseURL: string,
-): Promise<void> {
-  const url = `${baseURL}/mypage/tvlink/${encodeURIComponent(linkCode)}`;
-  const shownAs = `${baseURL}/mypage/tvlink/<link code>`;
-  await withUrlHidden(url, shownAs, async () => {
-    const resp = await httpFetch(url, {
-      headers: {
-        Cookie: cookieHeader(cookies),
-        Referer: `${baseURL}/`,
-        "User-Agent": BROWSER_USER_AGENT,
-      },
-    });
-    await resp.text().catch(() => "");
-    if (!resp.ok) throw new HttpStatusError(resp.status, shownAs);
-    if (new URL(resp.url || url).pathname.startsWith("/login")) {
-      throw new Error(
-        "Joysound's website sent karafriends' link to its login page: the sign-in didn't take",
-      );
+  force: boolean,
+): Promise<string> {
+  const base = new URL(baseURL);
+  const hide = <T>(run: () => Promise<T>) =>
+    withUrlHidden(encodeURIComponent(linkCode), "<link code>", () =>
+      withUrlHidden(linkCode, "<link code>", run),
+    );
+  return hide(async () => {
+    let url = new URL(
+      `${baseURL}/mypage/tvlink/${encodeURIComponent(linkCode)}${
+        force ? "?force=1" : ""
+      }`,
+    );
+    for (let hop = 0; ; hop++) {
+      const resp = await httpFetch(url.toString(), {
+        headers: {
+          Cookie: cookieHeader(cookies),
+          Referer: `${baseURL}/`,
+          "User-Agent": BROWSER_USER_AGENT,
+        },
+        redirect: "manual",
+      });
+      keepCookies(resp, cookies);
+      await resp.text().catch(() => "");
+      const location = resp.headers.get("Location");
+      if (resp.status >= 300 && resp.status < 400 && location) {
+        if (hop === MAX_REDIRECTS) {
+          throw new Error(
+            "Joysound's website redirected karafriends' link too many times",
+          );
+        }
+        url = redirectTarget(location, url, base);
+        continue;
+      }
+      if (!resp.ok) {
+        throw new HttpStatusError(resp.status, `${baseURL}${url.pathname}`);
+      }
+      if (url.pathname.startsWith("/login")) {
+        throw new Error(
+          "Joysound's website sent karafriends' link to its login page: the sign-in didn't take",
+        );
+      }
+      if (url.pathname === LINKED_CONFIRM) throw new TvLinkTakenError();
+      return url.pathname;
     }
   });
 }
@@ -250,20 +335,42 @@ function statusOf(info: LinkInfo): LinkStatus {
   return { state: "linked", membershipType: info.membershipType };
 }
 
-// What Test login adds after "Signed in", or, for a link whose account
-// isn't a paid member, a LoginWarning.
-export function linkStatusNote(status: LinkStatus): string {
+// What Test login adds after "Signed in", or, for a link the host should
+// do something about, a LoginWarning. Until karafriends is linked, it
+// offers the switch: the link may be another TV app's.
+export function linkStatusNote(status: LinkStatus): LoginNote {
   const later = "the next time it gets a song or a search from Joysound";
+  const orSwitch =
+    "If another TV app holds the link (Joysound links one at a time), " +
+    "Switch takes it, unlinking the other one.";
   switch (status.state) {
     case "none":
-      return `karafriends links itself to this account, as a JOYSOUND TV device, ${later}.`;
+      return {
+        note: `karafriends links itself to this account, as its JOYSOUND TV app, ${later}. ${orSwitch}`,
+        canSwitchLink: true,
+      };
     case "pending":
-      return `karafriends' link to this account isn't finished; it finishes ${later}.`;
+      return {
+        note: `karafriends' link to this account isn't finished; it finishes ${later}. ${orSwitch}`,
+        canSwitchLink: true,
+      };
+    case "taken":
+      throw new LoginWarning(
+        "Signed in, but another TV app is linked to this Joysound account, " +
+          "which links one at a time. Switching the link to karafriends " +
+          "unlinks the other one.",
+        { canSwitchLink: true },
+      );
     case "ended":
-      return `karafriends' link to this account has ended; it links again ${later}.`;
+      return {
+        note: `karafriends' link to this account has ended; it links again ${later}. ${orSwitch}`,
+        canSwitchLink: true,
+      };
     case "linked":
       if (status.membershipType === "PAID") {
-        return "karafriends is linked to this account, a paid member.";
+        return {
+          note: "karafriends is linked to this account, a paid member.",
+        };
       }
       throw new LoginWarning(
         "Signed in, but the Joysound account isn't a paid member " +
@@ -276,91 +383,161 @@ export function linkStatusNote(status: LinkStatus): string {
 export interface JoysoundLinker {
   // The link for email's account: the kept one if linkInfo says it is
   // linked; else the kept code, authorized, if it never was; else a new
-  // code, authorized. Signs in to the website only to authorize. For
+  // code, authorized. Signs in to the website only to authorize. Fails
+  // with a TvLinkTakenError, without unlinking anything, if another TV app
+  // holds the link (at once, for TAKEN_RETRY_MS after finding that). For
   // credentials.ts, whose memoizeSuccess has concurrent requests share one.
   link(email: string, password: string): Promise<JoysoundLink>;
+  // Settings' Switch: links karafriends even if another TV app holds the
+  // link, unlinking that one, as the website does: the link page, and its
+  // switch only if it asks. Resolves to a sentence for the host.
+  switchLink(email: string, password: string): Promise<string>;
   // How the kept link for email's account stands, from linkInfo. Issues,
   // authorizes and unlinks nothing.
   status(email: string): Promise<LinkStatus>;
   // Test login: signs in to the website with email and password, and
   // resolves to a sentence on the kept link (see linkStatusNote). Issues,
   // authorizes and unlinks nothing.
-  test(email: string, password: string): Promise<string>;
+  test(email: string, password: string): Promise<LoginNote>;
   // Drops the kept link if it was made for another account than email's,
   // as when the setting changes. Joysound keeps it linked to that account
   // (karafriends unlinks nothing): the host can unlink it on the website.
-  forgetOtherAccounts(email: string): void;
+  forgetOtherAccounts(email: string): Promise<void>;
 }
 
 export function createJoysoundLinker({
   store,
   baseURL = JOYSOUND_BASE_URL,
+  now = Date.now,
 }: {
   store: LinkStore;
   baseURL?: string;
+  now?: () => number;
 }): JoysoundLinker {
-  const storedFor = (email: string): StoredLink | null => {
-    const stored = store.load();
+  // The account whose link the last try found taken, and when.
+  let taken: { account: string; at: number } | null = null;
+  const takenFor = (email: string) =>
+    taken !== null && sameAccount(taken.account, email);
+
+  const storedFor = async (email: string): Promise<StoredLink | null> => {
+    const stored = await store.load();
     return isStoredLink(stored) && sameAccount(stored.account, email)
       ? stored
       : null;
   };
 
   const status = async (email: string): Promise<LinkStatus> => {
-    const stored = storedFor(email);
+    const stored = await storedFor(email);
     if (!stored) return { state: "none" };
-    return statusOf(await getLinkInfo(stored.linkCode, baseURL));
+    const kept = statusOf(await getLinkInfo(stored.linkCode, baseURL));
+    return kept.state === "pending" && takenFor(email)
+      ? { state: "taken" }
+      : kept;
+  };
+
+  // The kept code for email's account, if linked, or one to authorize: the
+  // kept one if it never was, or a new one (kept before it's authorized, so
+  // a link that fails halfway is finished with it, not a new one).
+  const codeFor = async (
+    email: string,
+  ): Promise<
+    { linked: true; link: JoysoundLink } | { linked: false; stored: StoredLink }
+  > => {
+    let stored = await storedFor(email);
+    if (stored) {
+      const kept = statusOf(await getLinkInfo(stored.linkCode, baseURL));
+      if (kept.state === "linked") {
+        taken = null;
+        return {
+          linked: true,
+          link: {
+            linkCode: stored.linkCode,
+            membershipType: kept.membershipType,
+          },
+        };
+      }
+      if (kept.state === "ended") {
+        console.info(
+          "[joysound] karafriends' link to the account has ended; linking again",
+        );
+        await store.save(null);
+        stored = null;
+      }
+    }
+    if (!stored) {
+      stored = { account: email, linkCode: await issueLinkCode(baseURL) };
+      await store.save(stored);
+    }
+    return { linked: false, stored };
+  };
+
+  // Signs in and authorizes stored's code, then checks it with linkInfo.
+  // If another TV app holds the link: switching, the page's switch, in the
+  // same session (as the host would press it), which unlinks that one;
+  // otherwise a TvLinkTakenError.
+  const authorize = async (
+    email: string,
+    password: string,
+    stored: StoredLink,
+    switching: boolean,
+  ): Promise<JoysoundLink> => {
+    const cookies = await websiteLogin(email, password, baseURL);
+    const open = (force: boolean) =>
+      authorizeLinkCode(cookies, stored.linkCode, baseURL, force);
+    let endedOn: string;
+    let switched = false;
+    try {
+      endedOn = await open(false);
+    } catch (err) {
+      if (!(err instanceof TvLinkTakenError)) throw err;
+      if (!switching) {
+        console.info(
+          "[joysound] another TV app holds the account's link; karafriends waits for the host to switch it",
+        );
+        taken = { account: email, at: now() };
+        throw err;
+      }
+      endedOn = await open(true);
+      switched = true;
+    }
+    const linked = statusOf(await getLinkInfo(stored.linkCode, baseURL));
+    if (linked.state !== "linked") {
+      throw new Error(
+        "Joysound didn't link karafriends to the account: its link code is " +
+          `${linked.state === "ended" ? "no longer valid" : "still not linked"} ` +
+          `after authorizing it (the link page ended on ${endedOn})`,
+      );
+    }
+    taken = null;
+    console.info(
+      `[joysound] karafriends is ${
+        switched
+          ? "now the account's TV app, in place of another"
+          : "linked to the account"
+      } (membership: ${linked.membershipType ?? "none"})`,
+    );
+    return { linkCode: stored.linkCode, membershipType: linked.membershipType };
   };
 
   return {
     async link(email, password) {
-      let stored = storedFor(email);
-      if (stored) {
-        const kept = statusOf(await getLinkInfo(stored.linkCode, baseURL));
-        if (kept.state === "linked") {
-          return {
-            linkCode: stored.linkCode,
-            membershipType: kept.membershipType,
-          };
-        }
-        if (kept.state === "ended") {
-          console.info(
-            "[joysound] karafriends' link to the account has ended; linking again",
-          );
-          store.save(null);
-          stored = null;
-        } else {
-          console.info(
-            "[joysound] karafriends' link code was never authorized; authorizing it",
-          );
-        }
+      const code = await codeFor(email);
+      if (code.linked) return code.link;
+      if (takenFor(email) && now() - taken!.at < TAKEN_RETRY_MS) {
+        throw new TvLinkTakenError();
       }
-      if (!stored) {
-        stored = { account: email, linkCode: await issueLinkCode(baseURL) };
-        // Kept before it's authorized: a link that fails halfway is finished
-        // with this code next time, not a new one.
-        store.save(stored);
-      }
+      return authorize(email, password, code.stored, false);
+    },
 
-      const cookies = await websiteLogin(email, password, baseURL);
-      await authorizeLinkCode(cookies, stored.linkCode, baseURL);
-      const linked = statusOf(await getLinkInfo(stored.linkCode, baseURL));
-      if (linked.state !== "linked") {
-        throw new Error(
-          "Joysound didn't link karafriends to the account: its link code is " +
-            `${linked.state === "ended" ? "no longer valid" : "still not linked"} ` +
-            "after authorizing it",
-        );
-      }
-      console.info(
-        `[joysound] karafriends is linked to the Joysound account (membership: ${
-          linked.membershipType ?? "none"
-        })`,
-      );
-      return {
-        linkCode: stored.linkCode,
-        membershipType: linked.membershipType,
-      };
+    async switchLink(email, password) {
+      const code = await codeFor(email);
+      const link = code.linked
+        ? code.link
+        : await authorize(email, password, code.stored, true);
+      return linkStatusNote({
+        state: "linked",
+        membershipType: link.membershipType,
+      }).note;
     },
 
     status,
@@ -371,20 +548,23 @@ export function createJoysoundLinker({
       try {
         linkStatus = await status(email);
       } catch (err) {
-        return `Couldn't check karafriends' link to the account: ${
-          (err as Error)?.message ?? String(err)
-        }`;
+        return {
+          note: `Couldn't check karafriends' link to the account: ${
+            (err as Error)?.message ?? String(err)
+          }`,
+        };
       }
       return linkStatusNote(linkStatus);
     },
 
-    forgetOtherAccounts(email) {
-      const stored = store.load();
+    async forgetOtherAccounts(email) {
+      const stored = await store.load();
+      if (taken && !sameAccount(taken.account, email)) taken = null;
       if (
         stored &&
         !(isStoredLink(stored) && sameAccount(stored.account, email))
       ) {
-        store.save(null);
+        await store.save(null);
       }
     },
   };

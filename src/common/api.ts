@@ -390,8 +390,11 @@ export type LoginService = "dam" | "joysound";
 // ok: false comes with a sentence for the host ("Joysound answered 403:
 // this usually means no Japanese IP address"); ok: true may come with one
 // too, a note on how karafriends' link to the Joysound account stands.
+// canSwitchLink: karafriends isn't the account's TV app (another may be),
+// and switchJoysoundLink can make it so.
 export type TestLoginResult =
-  { ok: true; note?: string } | { ok: false; reason: string };
+  | { ok: true; note?: string; canSwitchLink?: boolean }
+  | { ok: false; reason: string; canSwitchLink?: boolean };
 
 // ffmpeg's or yt-dlp's status. version: what it gave as its version
 // (ffmpeg -version, yt-dlp --version), or null (not asked yet, or it
@@ -620,6 +623,13 @@ export interface Api {
   // session. Gives up after 15 seconds.
   testLogin: {
     input: { service: LoginService };
+    output: TestLoginResult;
+  };
+  // Links karafriends to the saved Joysound account as its TV app, even if
+  // another TV app holds the link: that one is unlinked (an account links
+  // one at a time). Only when the host asks. Gives up after 30 seconds.
+  switchJoysoundLink: {
+    input: Record<string, never>;
     output: TestLoginResult;
   };
   // config.yaml, logins and admin password hash included, with a

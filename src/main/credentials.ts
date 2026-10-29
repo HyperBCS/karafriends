@@ -64,13 +64,25 @@ export class NoLoginError extends Error {
   }
 }
 
+// What a login test that worked says beyond "Signed in": how karafriends'
+// link to the Joysound account stands, and whether Settings can switch the
+// account's TV link to karafriends.
+export interface LoginNote {
+  note: string;
+  canSwitchLink?: boolean;
+}
+
 // A login that worked, but with a problem the host should know about (the
 // Joysound account isn't a paid member, say). Test login shows its message
-// as it is, in place of "Couldn't sign in" (settings.ts).
+// as it is, in place of "Couldn't sign in" (settings.ts). canSwitchLink:
+// another TV app holds the Joysound account's link, which Settings can
+// switch to karafriends.
 export class LoginWarning extends Error {
-  constructor(message: string) {
+  readonly canSwitchLink: boolean;
+  constructor(message: string, { canSwitchLink = false } = {}) {
     super(message);
     this.name = "LoginWarning";
+    this.canSwitchLink = canSwitchLink;
   }
 }
 

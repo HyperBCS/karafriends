@@ -468,34 +468,28 @@ function prepareMediaTools(userDataDir: string, mode: MediaTools) {
   fs.cpSync(source, dest, { recursive: true });
 }
 
-// With real logins, karafriends' link to the Joysound account
-// (src/main/joysoundLink.ts) is kept here from one run to the next, so the
-// @jp tests don't link a new JOYSOUND TV device to the account each time
-// they start the app. "Local State" holds the key safeStorage encrypts the
-// link with (on Windows), so it comes and goes with it.
-const JOYSOUND_LINK_DIR = path.join(
-  os.tmpdir(),
-  "karafriends-e2e-joysound-link",
-);
+// With real logins, the tests use the installed app's link to the Joysound
+// account (src/main/joysoundLink.ts), as a copy in their own profile:
+// Joysound links one TV app to an account at a time, so a link of their own
+// would take it from the app, and the app from them. "Local State" holds the
+// key safeStorage encrypts the link with (on Windows), so it comes along.
+// The app's files are never written.
 const JOYSOUND_LINK_FILES = ["Local State", "joysoundLink.bin"];
 
-function restoreJoysoundLink(userDataDir: string) {
-  if (!fs.existsSync(path.join(JOYSOUND_LINK_DIR, "joysoundLink.bin"))) return;
-  for (const name of JOYSOUND_LINK_FILES) {
-    const kept = path.join(JOYSOUND_LINK_DIR, name);
-    if (fs.existsSync(kept)) {
-      fs.copyFileSync(kept, path.join(userDataDir, name));
-    }
+function borrowJoysoundLink(userDataDir: string) {
+  const source = installedAppDataDir();
+  if (!fs.existsSync(path.join(source, "joysoundLink.bin"))) {
+    throw new Error(
+      `The @jp tests use the app's link to Joysound, and ${source} has none. ` +
+        "Start karafriends (`yarn run-dev`) and search Joysound once, or, if " +
+        "another TV app holds the account's link, press Test login and then " +
+        "Switch under Settings › Accounts › Joysound.",
+    );
   }
-}
-
-function keepJoysoundLink(userDataDir: string) {
-  if (!fs.existsSync(path.join(userDataDir, "joysoundLink.bin"))) return;
-  fs.mkdirSync(JOYSOUND_LINK_DIR, { recursive: true });
   for (const name of JOYSOUND_LINK_FILES) {
-    const file = path.join(userDataDir, name);
+    const file = path.join(source, name);
     if (fs.existsSync(file)) {
-      fs.copyFileSync(file, path.join(JOYSOUND_LINK_DIR, name));
+      fs.copyFileSync(file, path.join(userDataDir, name));
     }
   }
 }
@@ -667,13 +661,6 @@ async function launchKarafriends(
         });
       }
     }
-    if (options.realCredentials) {
-      try {
-        keepJoysoundLink(userDataDir);
-      } catch (err) {
-        console.warn(`Couldn't keep the Joysound link: ${err}`);
-      }
-    }
     try {
       // Windows can hold a file for a moment after the process exits.
       fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10 });
@@ -694,7 +681,7 @@ async function launchKarafriends(
       }),
     );
     prepareMediaTools(userDataDir, options.mediaTools);
-    if (options.realCredentials) restoreJoysoundLink(userDataDir);
+    if (options.realCredentials) borrowJoysoundLink(userDataDir);
     if (options.seedQueue) {
       const [queueDir, videosDir] = options.seedQueueInTempFolder
         ? [

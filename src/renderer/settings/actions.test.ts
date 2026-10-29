@@ -94,6 +94,31 @@ describe("Settings' actions", () => {
     assert.notEqual(last("joysound")?.tone, "problem");
   });
 
+  test("Test login offers the switch when another TV app holds Joysound's link, and Switch says how it went", async () => {
+    const { actions, last, methods } = setUp({
+      testLogin: () => ({
+        ok: false,
+        reason: "Signed in, but another TV app is linked.",
+        canSwitchLink: true,
+      }),
+      switchJoysoundLink: () => ({
+        ok: true,
+        note: "karafriends is linked to this account, a paid member.",
+      }),
+    });
+    await actions.testLogin("joysound");
+    assert.deepEqual(last("joysound"), {
+      text: "Signed in, but another TV app is linked.",
+      tone: "problem",
+      offersSwitch: true,
+    });
+    await actions.switchJoysoundLink();
+    assert.equal(methods().at(-1), "switchJoysoundLink");
+    assert.deepEqual(last("joysound"), {
+      text: "Switched. karafriends is linked to this account, a paid member.",
+    });
+  });
+
   test("Test login doesn't run after a save that failed, and the save's message stays", async () => {
     const { actions, shown, methods } = setUp({
       setSettings: refused,

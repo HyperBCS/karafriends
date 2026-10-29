@@ -93,7 +93,7 @@ const joysoundLinker = createJoysoundLinker({
 // drops it (and the shared link goes too, below).
 configStore.onChange(({ keys }) => {
   if (keys.includes("joysoundEmail")) {
-    joysoundLinker.forgetOtherAccounts(configStore.get().joysoundEmail);
+    void joysoundLinker.forgetOtherAccounts(configStore.get().joysoundEmail);
   }
 });
 
@@ -160,6 +160,14 @@ export const api: ApiHandlers = {
         await MinseiAPI.login(username, password);
       },
       joysound: (email, password) => joysoundLinker.test(email, password),
+    },
+    // The host's Switch: the clients then check their link again (a lookup
+    // that found the link taken failed, so none is kept, but a link to a
+    // free account may be).
+    switchJoysoundLink: async (email, password) => {
+      const note = await joysoundLinker.switchLink(email, password);
+      credentials.joysound.forget();
+      return note;
     },
     restart: () => {
       // app.exit skips will-quit, where they are stopped otherwise.
