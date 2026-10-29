@@ -28,7 +28,7 @@ import {
   nicoWatchUrl,
   parseNicoVideoInfo,
 } from "../../common/nicoVideoInfo";
-import type { SongFiles } from "../../common/songFiles";
+import { songFilesOf, type SongFiles } from "../../common/songFiles";
 import type { JoysoundAPI } from "../joysoundApi";
 import type { ApiDeps } from "../api";
 import { isDownloading, type DownloadQueueItem } from "../state";
@@ -150,11 +150,8 @@ export function createDownloads(
     // Downloads a Joysound song and its video, then queues it with onReady;
     // or calls onFailed with the reason for guests.
     joysound(queueItem, pushToHead, onReady, onFailed) {
-      const key = {
-        kind: "joysound" as const,
-        songId: queueItem.songId,
-        suffix: queueItem.youtubeVideoId,
-      };
+      // The guide-vocal version's own: its songId has a "v".
+      const key = songFilesOf(queueItem);
       // First: while it downloads, its video is there but half-made, and
       // queueDownloadedJoysoundSong would delete the running download's
       // files.
@@ -171,7 +168,9 @@ export function createDownloads(
         downloadQueue(),
         { ...key, userIdentity: queueItem.user },
         {
-          description: `Joysound song ${queueItem.songId}`,
+          description: `Joysound song ${queueItem.songId}${
+            queueItem.guideVocal ? " (guide vocal)" : ""
+          }`,
           job: async (item) =>
             joysoundJob(await jobPaths(), item, joysoundApi, queueItem),
           onReady: queue,

@@ -2283,7 +2283,10 @@ describe("a failed download", () => {
       songId: "123456",
       suffix: "bgVideo0001",
     });
-    const queueJoysound = (youtubeVideoId: string | null) =>
+    const queueJoysound = (
+      youtubeVideoId: string | null,
+      guideVocal?: boolean,
+    ) =>
       api.queueSong(
         {
           kind: "joysound",
@@ -2293,6 +2296,7 @@ describe("a failed download", () => {
           playtime: 1,
           lyricsMode: "kana",
           youtubeVideoId,
+          ...(guideVocal !== undefined && { guideVocal }),
         },
         bob,
       );
@@ -2302,9 +2306,12 @@ describe("a failed download", () => {
     };
     assert.deepEqual(await queueVideo(api, bob), refused);
     assert.deepEqual(await queueJoysound("bgVideo0001"), refused);
-    // Another background is another download.
+    assert.deepEqual(await queueJoysound("bgVideo0001", false), refused);
+    // Another background is another download, and so is the song's
+    // guide-vocal version.
     assert.equal((await queueJoysound(null)).ok, true);
-    assert.deepEqual(asked, ["joysound"]);
+    assert.equal((await queueJoysound("bgVideo0001", true)).ok, true);
+    assert.deepEqual(asked, ["joysound", "joysound"]);
   });
 
   test("of YouTube, Niconico or a Joysound song's YouTube background, because of yt-dlp, sets the tools problem until one works", async () => {
@@ -2572,7 +2579,32 @@ describe("validators", () => {
         tryHeadOfQueue: undefined,
         lyricsMode: "kana",
         youtubeVideoId: null,
+        // Left out: the guide-melody version.
+        guideVocal: false,
       },
+    );
+    const vocal = validators.queueSong({
+      kind: "joysound",
+      songId: "123",
+      name: "Song",
+      artistName: "Artist",
+      lyricsMode: "kana",
+      youtubeVideoId: null,
+      guideVocal: true,
+    });
+    assert.equal(vocal.kind === "joysound" && vocal.guideVocal, true);
+    assert.throws(
+      () =>
+        validators.queueSong({
+          kind: "joysound",
+          songId: "123",
+          name: "Song",
+          artistName: "Artist",
+          lyricsMode: "kana",
+          youtubeVideoId: null,
+          guideVocal: "yes",
+        }),
+      /"guideVocal" must be true or false/,
     );
     for (const lyricsMode of ["romaji", "both"]) {
       const input = validators.queueSong({

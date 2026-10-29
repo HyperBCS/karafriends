@@ -163,6 +163,23 @@ describe("JoysoundAPI's downloads", () => {
     assert.equal(audio.cookie, "");
   });
 
+  test("ask for the guide-vocal version when told to", async () => {
+    const { session } = joysoundLinks();
+    const joysound = joysoundWith(session);
+    handle = soundCafe({});
+    await joysound.getSongData("425691", true);
+    await joysound.getMovieUrls("425691", true);
+    await joysound.getSongData("425691");
+    const serviceTypes = received
+      .filter(({ url }) => url.startsWith("/api/v1/spc/"))
+      .map(({ url, body }) => [url, JSON.parse(body).serviceType]);
+    assert.deepEqual(serviceTypes, [
+      ["/api/v1/spc/getFME", "003000762"],
+      ["/api/v1/spc/contentsInfo", "003000762"],
+      ["/api/v1/spc/getFME", "003000761"],
+    ]);
+  });
+
   test("refuse lyrics in the website's old order", async () => {
     const { session } = joysoundLinks();
     const joysound = joysoundWith(session);

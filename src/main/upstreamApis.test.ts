@@ -248,6 +248,8 @@ describe("JoysoundAPI", () => {
       tieUp: "",
       // The fixture leaves out its shop links.
       pictureUrl: null,
+      // Its selection has the guide-melody version only.
+      guideVocal: false,
     });
   });
 
@@ -321,6 +323,7 @@ describe("songDetailOf", () => {
         lyricsPreview: "",
         tieUp: "",
         pictureUrl: null,
+        guideVocal: false,
       },
     );
   });
@@ -357,6 +360,26 @@ describe("songDetailOf", () => {
       songDetailOf("428493", detail({ outsideUrlInfo: null })).pictureUrl,
       null,
     );
+  });
+
+  test("says whether the song has a guide-vocal version, from its own selection", () => {
+    const aplList = (services: string[], selSongNo = "428493") => [
+      {
+        aplId: "0002004",
+        selectionList: [
+          {
+            selSongNo,
+            serviceTypeList: services.map((serviceType) => ({ serviceType })),
+          },
+        ],
+      },
+    ];
+    const guideVocal = (list: object) =>
+      songDetailOf("428493", detail({ aplList: list })).guideVocal;
+    assert.equal(guideVocal(aplList(["003000761", "003000762"])), true);
+    assert.equal(guideVocal(aplList(["003000761"])), false);
+    // Another song's selection doesn't count.
+    assert.equal(guideVocal(aplList(["003000762"], "999999")), false);
   });
 
   test("refuses an answer without the song", () => {

@@ -98,6 +98,9 @@ export interface JoysoundQueueItem extends QueueItemBase {
   kind: "joysound";
   lyricsMode: LyricsMode;
   youtubeVideoId: string | null;
+  // The song's guide-vocal version (another recording, its guide channel a
+  // sung vocal), not its guide-melody one.
+  guideVocal: boolean;
 }
 
 export interface YoutubeQueueItem extends QueueItemBase {
@@ -170,6 +173,8 @@ export type QueueSongInput =
       kind: "joysound";
       lyricsMode: LyricsMode;
       youtubeVideoId: string | null;
+      // Its guide-vocal version; the guide-melody one if left out.
+      guideVocal?: boolean;
     })
   | (SongToQueueBase & {
       kind: "youtube";
@@ -338,6 +343,8 @@ export interface JoysoundSong {
 export interface JoysoundSongDetail extends JoysoundSong {
   lyricsPreview: string | null;
   tieUp: string | null;
+  // Whether it has a guide-vocal version.
+  guideVocal: boolean;
   // Whether /api/songPicture/joysound/<id> has its album art.
   picture: boolean;
 }

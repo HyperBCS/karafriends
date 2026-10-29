@@ -16,7 +16,7 @@ import {
 } from "../../common/downloadFailure";
 import { getSongDuration } from "../../common/joysoundParser";
 import { nicoWatchUrl } from "../../common/nicoVideoInfo";
-import { songFileNames } from "../../common/songFiles";
+import { songFileNames, songFilesOf } from "../../common/songFiles";
 import { backgroundVideoUrl, type JoysoundAPI } from "../joysoundApi";
 import type { DownloadQueueItem } from "../state";
 import { withDamSlot, withYtdlpSlot } from "./queue";
@@ -492,17 +492,18 @@ async function padJoysoundVideoPromise(
 // (Joysound's or the background) before the song's sound is put in.
 function joysoundFiles(
   folder: string,
-  queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
+  queueItem: Pick<
+    JoysoundQueueItem,
+    "songId" | "youtubeVideoId" | "guideVocal"
+  >,
 ) {
-  const names = songFileNames({
-    kind: "joysound",
-    songId: queueItem.songId,
-    suffix: queueItem.youtubeVideoId,
-  });
+  // The guide-vocal version's files are its own (songFilesOf).
+  const files = songFilesOf({ kind: "joysound", ...queueItem });
+  const names = songFileNames(files);
   const videoBaseName = names.video.slice(0, -".mp4".length);
   const videoFilename = path.join(folder, names.video);
   return {
-    filenamePrefix: `joysound-${queueItem.songId}`,
+    filenamePrefix: `joysound-${files.songId}`,
     videoBaseName,
     telopFilename: path.join(folder, names.telop ?? ""),
     videoFilename,
@@ -556,7 +557,10 @@ export function queueDownloadedJoysoundSong(
 // song. The lyrics go too once no other background's files are left.
 export function deleteJoysoundTempFiles(
   folder: string,
-  queueItem: Pick<JoysoundQueueItem, "songId" | "youtubeVideoId">,
+  queueItem: Pick<
+    JoysoundQueueItem,
+    "songId" | "youtubeVideoId" | "guideVocal"
+  >,
 ): void {
   const { filenamePrefix, videoBaseName, telopFilename } = joysoundFiles(
     folder,
@@ -579,6 +583,7 @@ export async function joysoundJob(
   joysoundApi: Pick<JoysoundAPI, "getSongData" | "getMovieUrls">,
   queueItem: JoysoundQueueItem,
 ): Promise<JoysoundQueueItem> {
+  const { guideVocal } = queueItem;
   const songId = queueItem.songId;
   const {
     telopFilename,
@@ -601,7 +606,7 @@ export async function joysoundJob(
   let videoTool: Promise<void> = Promise.resolve();
   // The lyrics data and the audio, in memory: nothing to clean up.
   const songDataPromise = joysoundApi
-    .getSongData(songId)
+    .getSongData(songId, guideVocal)
     .catch(joysoundFailure);
   const videoDataPromise = queueItem.youtubeVideoId
     ? (videoTool = downloadJoysoundYoutubeVideoPromise(
@@ -614,7 +619,7 @@ export async function joysoundJob(
         stopVideo.signal,
       ))
     : joysoundApi
-        .getMovieUrls(songId)
+        .getMovieUrls(songId, guideVocal)
         .catch(joysoundFailure)
         .then((data) => {
           const videoUrl = backgroundVideoUrl(data);

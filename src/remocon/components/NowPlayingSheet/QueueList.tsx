@@ -55,10 +55,14 @@ export const SingerBadge = ({ nickname }: { nickname: string }) => (
 );
 
 // The small label: where the song comes from, and for Joysound, how its
-// lyrics show on the TV.
+// lyrics show on the TV, and its guide-vocal version if it's that one.
 export const sourceOf = (item: SharedQueueItem) =>
   item.kind === "joysound"
-    ? `${sourceName(item.kind)} · ${t(`lyricsMode.${item.lyricsMode}`)}`
+    ? [
+        sourceName(item.kind),
+        t(`lyricsMode.${item.lyricsMode}`),
+        ...(item.guideVocal ? [t("queue.guideVocal")] : []),
+      ].join(" · ")
     : sourceName(item.kind);
 
 // A queued song's wait (from useQueue(false)), counting down while the

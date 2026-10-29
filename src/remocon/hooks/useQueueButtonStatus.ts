@@ -2,6 +2,7 @@ import formatDuration from "format-duration";
 import { useEffect, useRef, useState } from "react";
 
 import type { DownloadProgress, LiveState } from "../../common/api";
+import { joysoundFilesId } from "../../common/songFiles";
 import { useLiveState } from "../../common/apiClient";
 import { t } from "../i18n";
 import { reasonText } from "../i18n/reasons";
@@ -108,6 +109,7 @@ export function statusLabel(
 
 type Song = {
   kind: DownloadProgress["kind"];
+  // Joysound: joysoundFilesId's, so its guide-vocal version is its own.
   songId: string;
   // Joysound: the background video's ID, or null.
   suffix: string | null;
@@ -121,7 +123,9 @@ function mineQueued(state: LiveState | null, song: Song): string {
       (item) =>
         item?.isMine &&
         item.kind === song.kind &&
-        item.songId === song.songId &&
+        (item.kind === "joysound"
+          ? joysoundFilesId(item.songId, item.guideVocal)
+          : item.songId) === song.songId &&
         (item.kind !== "joysound" || item.youtubeVideoId === song.suffix),
     )
     .map((item) => item!.timestamp)

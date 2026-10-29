@@ -24,9 +24,13 @@ import {
 
 export const JOYSOUND_BASE_URL = "https://www.sound-cafe.jp";
 
-// The song with its guide melody (the TV app's GUIDE_MELODY), as karafriends
-// has always downloaded it. (GUIDE_VOCAL, 003000762, is untested.)
-const SERVICE_TYPE = "003000761";
+// A song's versions (the TV app's ServiceType): with a synthesised guide
+// melody on the audio's third channel, as karafriends has always downloaded
+// it; or, for some songs, another recording with a sung guide vocal there.
+const GUIDE_MELODY = "003000761";
+const GUIDE_VOCAL = "003000762";
+const serviceType = (guideVocal: boolean) =>
+  guideVocal ? GUIDE_VOCAL : GUIDE_MELODY;
 
 const CONTENTS_LIST = "/api/v1/spc/contentsList";
 
@@ -94,7 +98,12 @@ interface ContentsDetailAnswer {
       | {
           aplId?: string;
           selectionList?:
-            { selSongNo?: string; lyricIntro?: string | null }[] | null;
+            | {
+                selSongNo?: string;
+                lyricIntro?: string | null;
+                serviceTypeList?: { serviceType?: string }[] | null;
+              }[]
+            | null;
         }[]
       | null;
     tieupList?: { tieupName?: string | null }[] | null;
@@ -139,6 +148,8 @@ export interface JoysoundSongDetail {
   // Its album art: Amazon's largest (500 px), else Amazon's (160 px), else
   // Apple's (100 px). null if none.
   pictureUrl: string | null;
+  // Whether it has a guide-vocal version (getSongData's guideVocal).
+  guideVocal: boolean;
 }
 
 // A song as its download needs it.
@@ -261,6 +272,9 @@ export function songDetailOf(
     null;
   return {
     pictureUrl,
+    guideVocal: (selection?.serviceTypeList ?? []).some(
+      (type) => type.serviceType === GUIDE_VOCAL,
+    ),
     name: detail.songName,
     artistName: detail.artistInfo?.artistName ?? "",
     lyricsPreview: selection?.lyricIntro ?? "",
@@ -423,23 +437,27 @@ export class JoysoundAPI {
     return songDetailOf(id, answer);
   }
 
-  async getMovieUrls(id: string) {
+  async getMovieUrls(id: string, guideVocal = false) {
     checkId(id, "song number");
     return this.post<JoysoundMovieList>(
       "/api/v1/spc/contentsInfo",
-      { songNumber: id, serviceType: SERVICE_TYPE },
+      { songNumber: id, serviceType: serviceType(guideVocal) },
       this.retryPolicy,
     );
   }
 
   // getFME for the whole song, at the original key. A preview (any
   // membership but PAID) is a SessionLostError: the link may have ended.
-  private async getFme(link: JoysoundLink, id: string): Promise<GetFmeAnswer> {
+  private async getFme(
+    link: JoysoundLink,
+    id: string,
+    guideVocal: boolean,
+  ): Promise<GetFmeAnswer> {
     const answer = await tvPost<GetFmeAnswer>(
       this.baseURL,
       "/api/v1/spc/getFME",
       link.linkCode,
-      { songNumber: id, serviceType: SERVICE_TYPE, key: 0 },
+      { songNumber: id, serviceType: serviceType(guideVocal), key: 0 },
     );
     if (answer.membershipType !== "PAID") throw notPaid(answer.membershipType);
     return answer;
@@ -448,13 +466,13 @@ export class JoysoundAPI {
   // The song's lyrics data and its audio, for a paid member's link. Every
   // try asks getFME again, so each has a fresh audio URL; an audio URL
   // refused as if it had run out gets one more fresh one.
-  async getSongData(id: string): Promise<JoysoundSongData> {
+  async getSongData(id: string, guideVocal = false): Promise<JoysoundSongData> {
     checkId(id, "song number");
     return withSession(
       this.link,
       async (link) => {
         if (link.membershipType !== "PAID") throw notPaid(link.membershipType);
-        const fme = await this.getFme(link, id);
+        const fme = await this.getFme(link, id, guideVocal);
         const telop = decodeTelop(fme.telop, id);
         const ogg = await fetchAudio(fme.streaming_wifi_url, id).catch(
           async (err) => {
@@ -463,13 +481,16 @@ export class JoysoundAPI {
               `Joysound getFME ${id}: asking for a new audio URL after:`,
               (err as Error).message,
             );
-            const again = await this.getFme(link, id);
+            const again = await this.getFme(link, id, guideVocal);
             return fetchAudio(again.streaming_wifi_url, id);
           },
         );
         return { telop, ogg };
       },
-      { policy: this.retryPolicy, label: `Joysound getFME ${id}` },
+      {
+        policy: this.retryPolicy,
+        label: `Joysound getFME ${id}${guideVocal ? " (guide vocal)" : ""}`,
+      },
     );
   }
 }

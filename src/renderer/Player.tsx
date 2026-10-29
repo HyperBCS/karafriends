@@ -33,9 +33,12 @@ function Player(props: {
     announce: props.announce,
   });
   // Read once the song has loaded (its lyrics have), and only while the
-  // bars show.
+  // bars show. Not from a guide-vocal version: a voice, not a melody line.
   const guideMelody = useGuideMelody(
-    props.pitchBars && overlay?.kind === "joysound" && overlay.telop !== null
+    props.pitchBars &&
+      overlay?.kind === "joysound" &&
+      overlay.telop !== null &&
+      !overlay.guideVocal
       ? overlay
       : null,
   );

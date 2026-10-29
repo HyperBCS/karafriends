@@ -118,6 +118,7 @@ export const ja: Messages = {
   "queue.remove": "予約を取り消す",
   "queue.moveToTop": "先頭に移動",
   "queue.openSong": "曲のページ",
+  "queue.guideVocal": "ガイドボーカル",
 
   "playback.play": "再生",
   "playback.pause": "一時停止",

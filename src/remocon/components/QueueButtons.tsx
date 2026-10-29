@@ -9,6 +9,7 @@ import {
   type VocalType,
 } from "../../common/api";
 import { useApiMutation } from "../../common/apiQueries";
+import { joysoundFilesId } from "../../common/songFiles";
 import { getItem, setItem } from "../../common/storage";
 import useQueueButtonStatus, {
   statusLabel,
@@ -39,7 +40,10 @@ export const QueueButton = ({
 }: QueueButtonProps) => {
   const [status, setStatus] = useQueueButtonStatus({
     kind: song.kind,
-    songId: song.songId,
+    songId:
+      song.kind === "joysound"
+        ? joysoundFilesId(song.songId, song.guideVocal)
+        : song.songId,
     suffix: song.kind === "joysound" ? song.youtubeVideoId : null,
   });
   const busy = status.is !== "idle";
@@ -122,8 +126,8 @@ export const LyricsModeChoice = (props: {
 );
 
 // A DAM or Joysound song's queue buttons: one per DAM vocal type (with or
-// without a guide vocal), or Joysound's one button with the lyrics' mode
-// above it. One at a time.
+// without a guide vocal), or Joysound's, with its guide-vocal version's
+// under it if it has one, and the lyrics' mode above them. One at a time.
 const QueueButtons = (props: Props) => {
   const [busy, setBusy] = useState(false);
   const [lyricsMode, setLyricsMode] = useState(savedLyricsMode);
@@ -149,18 +153,17 @@ const QueueButtons = (props: Props) => {
             streamingUrlIdx: i,
           },
         }))
-      : [
-          {
-            label: t("queueButton.song"),
-            input: {
-              ...base,
-              kind: "joysound",
-              playtime: null,
-              lyricsMode,
-              youtubeVideoId: props.youtubeVideoId,
-            },
+      : [false, ...(props.song.guideVocal ? [true] : [])].map((guideVocal) => ({
+          label: t(guideVocal ? "queueButton.guide" : "queueButton.song"),
+          input: {
+            ...base,
+            kind: "joysound",
+            playtime: null,
+            lyricsMode,
+            youtubeVideoId: props.youtubeVideoId,
+            ...(guideVocal && { guideVocal }),
           },
-        ];
+        }));
 
   return (
     <div className={styles.buttons}>
