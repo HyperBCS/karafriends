@@ -361,7 +361,8 @@ impl Mixer {
 
     // The device's own format, at the chosen rate (else the mics', so they
     // needn't reopen) if it has it, and for ASIO the chosen buffer size if
-    // the driver takes it. On Linux, in buffers of the size the mics use.
+    // the driver takes it. On Linux and macOS, in buffers of the size the
+    // mics use.
     fn build_on(
         &mut self,
         device: &cpal::Device,
@@ -387,6 +388,13 @@ impl Mixer {
         {
             config.buffer_size =
                 crate::linux::buffer_size(default_config.buffer_size(), crate::linux_buffer());
+        }
+        // On macOS the mics' size. The device's own (512 frames on a Mac's
+        // speakers) is delay twice over: in the output's buffer, and in each
+        // mic's, which the Pacer keeps a read ahead.
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            config.buffer_size = crate::mic_buffer_size(default_config.buffer_size());
         }
         let channels = config.channels as usize;
         let output_error = Arc::new(Mutex::new(None));

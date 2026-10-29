@@ -1214,9 +1214,14 @@ test.describe("the now-playing bar", () => {
     await expect(link).toContainText("Niconico");
     await expect(link).toContainText("E2E artist");
     expect(await link.evaluate((el) => !!el.closest("button"))).toBe(false);
-    // Each reachable by keyboard: the link, then the toggle.
+    // Each reachable by keyboard: the link, then the toggle. (WebKit on
+    // macOS tabs to form fields only, as Safari does by default; Option-Tab
+    // reaches links and buttons too.)
     await link.focus();
-    await remote.keyboard.press("Tab");
+    const macWebKit =
+      process.platform === "darwin" &&
+      remote.context().browser()?.browserType().name() === "webkit";
+    await remote.keyboard.press(macWebKit ? "Alt+Tab" : "Tab");
     await expect(toggle).toBeFocused();
     // A tap on the singer still folds it.
     await tap(nickname);

@@ -146,7 +146,7 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 
 **Japan VPN and the real logins**
 
-- [ ] DAM and Joysound log in, search, download and play; DAM scoring loads. (D)
+- [x] DAM and Joysound log in, search, download and play; DAM scoring loads. (D) On macOS, 2026-10-28, after `bbec812`: DAM downloads failed there with "certificate verify failed" ([report](MACOS-CHECKS-REPORT.md)).
 - [ ] A wrong Joysound password: a queued Joysound song fails within seconds, and the search shows "Couldn't search Joysound: … rejected" with Retry. With the VPN off, a search shows the error and a queued song fails within about 2 minutes. (D)
 - [ ] After 30+ minutes idle, the next Joysound song logs in again by itself (the log says "logging in again after: …"). A DAM song without scoring data still plays. (D)
 - [ ] While a DAM song is streaming (the first after idle), turn the VPN off and on: the song buffers and carries on rather than being skipped. (K)
@@ -167,8 +167,8 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 
 **macOS (Apple Silicon, no Rosetta)**
 
-- [ ] Joysound, YouTube and Niconico songs play; Settings shows ffmpeg 9.x. (B)
-- [ ] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F)
+- [ ] Joysound, YouTube and Niconico songs play; Settings shows ffmpeg 9.x. (B) 2026-10-28: Joysound, YouTube and ffmpeg 9.0.2 (arm64) pass; Niconico downloads with the app's tools but wasn't queued in the app ([report](MACOS-CHECKS-REPORT.md)).
+- [x] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F) 2026-10-28 and 29: the built-in mic and a Blue Yeti, which comes back when plugged in again ([report](MACOS-CHECKS-REPORT.md)).
 
 **Linux, Ubuntu 22.04 or Mint 21 (stock PipeWire 0.3.48)**
 

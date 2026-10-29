@@ -1413,11 +1413,22 @@ fn best_config(
     })
 }
 
-// The buffer size a macOS mic asks for, within what the device takes. Its
-// smallest (CoreAudio's can be 15 frames) would call back thousands of
-// times a second, for little less delay: the mic output keeps its own.
+// The buffer size a macOS mic and the mic output ask for, within what the
+// device takes. Its smallest (CoreAudio's can be 15 frames) would call back
+// thousands of times a second, for little less delay.
 #[cfg(all(not(windows), any(test, not(target_os = "linux"))))]
 const MIC_BUFFER: u32 = 128;
+
+// MIC_BUFFER within a device's range, else the device's own.
+#[cfg(all(not(windows), any(test, not(target_os = "linux"))))]
+fn mic_buffer_size(range: &cpal::SupportedBufferSize) -> cpal::BufferSize {
+    match *range {
+        cpal::SupportedBufferSize::Range { min, max } if min <= max && max > 0 => {
+            cpal::BufferSize::Fixed(MIC_BUFFER.clamp(min, max))
+        }
+        _ => cpal::BufferSize::Default,
+    }
+}
 
 // The desired sample rate when the range has it, else its highest.
 #[cfg(any(test, not(target_os = "linux")))]
@@ -1430,16 +1441,12 @@ fn supported_config_to_config(
         sample_rate: desired_sample_rate
             .filter(|rate| config_range.contains_rate(*rate))
             .unwrap_or(config_range.max_sample_rate()),
-        buffer_size: match *config_range.buffer_size() {
-            // WASAPI lies about buffer size ranges and doesn't repect fixed
-            // size requests (and ASIO mics take the output's, see
-            // open_shared).
-            #[cfg(not(windows))]
-            cpal::SupportedBufferSize::Range { min, max } if min <= max && max > 0 => {
-                cpal::BufferSize::Fixed(MIC_BUFFER.clamp(min, max))
-            }
-            _ => cpal::BufferSize::Default,
-        },
+        // WASAPI lies about buffer size ranges and doesn't repect fixed size
+        // requests (and ASIO mics take the output's, see open_shared).
+        #[cfg(windows)]
+        buffer_size: cpal::BufferSize::Default,
+        #[cfg(not(windows))]
+        buffer_size: mic_buffer_size(config_range.buffer_size()),
     }
 }
 
@@ -1504,7 +1511,8 @@ fn find_input(name: &str) -> Result<(cpal::Device, DeviceType)> {
         true => asio_devices(DeviceTrait::supports_input).find(is_named),
         _ => system_inputs()?.find(is_named),
     }
-    .ok_or_else(|| format!("Could not find device: {name}"))?;
+    // Said under the mic's row while it's unplugged: its key is no news.
+    .ok_or("The mic isn't connected")?;
     if !cfg!(target_os = "linux") {
         input_devices.insert(name.to_string(), found.clone());
     }

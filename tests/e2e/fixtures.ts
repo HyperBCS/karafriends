@@ -383,10 +383,12 @@ export function appLaunch({
   Object.assign(env, {
     // Serve the built renderer and remote, as a packaged app does.
     ELECTRON_IS_DEV: "0",
-    // app.getPath("temp"): TEMP/TMP on Windows, TMPDIR elsewhere.
+    // app.getPath("temp"): TEMP/TMP on Windows, MAC_CHROMIUM_TMPDIR on macOS
+    // (Chromium ignores TMPDIR there), TMPDIR elsewhere.
     TEMP: tempDir,
     TMP: tempDir,
     TMPDIR: tempDir,
+    MAC_CHROMIUM_TMPDIR: tempDir,
     KARAFRIENDS_REMOCON_PORT: String(port),
     // Listen on 127.0.0.1 only and skip mDNS, so Windows Firewall doesn't
     // prompt for each worktree's Electron copy.

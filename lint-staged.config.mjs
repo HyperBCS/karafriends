@@ -6,7 +6,8 @@ export default {
   "!(*.ts|*.tsx)": "prettier --write --ignore-unknown",
   // Prettier doesn't know .rs files, so the line above leaves them alone.
   "**/*.rs": [
-    // Run alone, rustfmt doesn't read the edition from Cargo.toml.
+    // The crates' edition, which cargo fmt reads from Cargo.toml and plain
+    // rustfmt doesn't (it would parse 2015 and reject let chains).
     "rustfmt --edition 2024",
     // Clippy checks the whole crate, so the function form keeps lint-staged
     // from appending the staged filenames. It only runs when Rust changes.
