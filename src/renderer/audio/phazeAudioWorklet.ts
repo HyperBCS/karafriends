@@ -23,6 +23,15 @@ import FFT from "fft.js";
 // region it was in a quantum earlier, so a note that drifts between bins
 // keeps its phase. Regions end at the quietest bin between two peaks.
 //
+// Left and right share one analysis: the peaks come from both channels'
+// power, each peak's phase advance from both channels' phases, and each
+// region of both channels moves and turns alike. So a bin's left and right
+// keep the phase between them that they came in with, and a centred sound (a
+// singer, Joysound's guide melody) stays centred. Shifting each channel on its
+// own lets their phases wander apart wherever their peaks differ, which in a
+// real mix is almost everywhere: a centred voice then sounds smeared, as if
+// underwater, most of all on headphones.
+//
 // Frames overlap 16 times (hop 128, one quantum) and are Hann-windowed again
 // on the way out. At factor 1 a frame is the windowed input itself, added
 // without an FFT: the output is then the input exactly, 1920 samples late,
@@ -58,9 +67,6 @@ class Channel {
   previous = new Float64Array(2 * FFT_SIZE);
   // The shifted spectrum, bins 0 to BINS - 1.
   readonly shifted = new Float64Array(2 * BINS);
-  // Per analysis bin, the phase turn of the region the bin was in last
-  // frame.
-  readonly regionTurn = new Float64Array(BINS);
 
   constructor(readonly index: number) {}
 }
@@ -78,6 +84,9 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
   // Whether the last frame was shifted: when a shift starts, the frame one
   // quantum earlier is analysed first, for the phase advance.
   private shifting = false;
+  // Per analysis bin, the phase turn of the region the bin was in last
+  // frame (both channels').
+  private readonly regionTurn = new Float64Array(BINS);
 
   // Scratch, shared by the channels.
   private readonly frame = new Float64Array(FFT_SIZE);
@@ -122,7 +131,10 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
     } else {
       if (!this.shifting) {
         this.shifting = true;
-        for (const channel of this.channels) this.startShift(channel);
+        for (const channel of this.channels) {
+          this.analyse(channel.history, 0, channel.previous);
+        }
+        this.regionTurn.fill(0);
       }
       this.addShiftedFrames(factor);
     }
@@ -149,12 +161,6 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
     }
   }
 
-  // The frame one quantum back, for the first shifted frame's phase advance.
-  private startShift(channel: Channel) {
-    this.analyse(channel.history, 0, channel.previous);
-    channel.regionTurn.fill(0);
-  }
-
   private analyse(history: Float32Array, start: number, into: Float64Array) {
     const frame = this.frame;
     const window = this.window;
@@ -167,8 +173,8 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
     const [left, right] = this.channels;
     for (const channel of this.channels) {
       this.analyse(channel.history, QUANTUM, channel.spectrum);
-      this.shift(channel, factor);
     }
+    this.shift(factor);
 
     // Each channel's spectrum is that of a real signal: bin FFT_SIZE - k is
     // the conjugate of bin k. Packed as left + i x right:
@@ -212,13 +218,19 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
     }
   }
 
-  // Moves the channel's spectrum to channel.shifted, peak by peak.
-  private shift(channel: Channel, factor: number) {
-    const { spectrum, previous, shifted, regionTurn } = channel;
-    const { magnitudes, peaks, peakShift, peakTurn } = this;
+  // Moves both channels' spectra to their `shifted`, peak by peak.
+  private shift(factor: number) {
+    const [left, right] = this.channels;
+    const { magnitudes, peaks, peakShift, peakTurn, regionTurn } = this;
+    const l = left.spectrum;
+    const r = right.spectrum;
+    const lastL = left.previous;
+    const lastR = right.previous;
 
+    // Both channels' power.
     for (let k = 0; k < BINS; k++) {
-      magnitudes[k] = spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2;
+      magnitudes[k] =
+        l[2 * k] ** 2 + l[2 * k + 1] ** 2 + r[2 * k] ** 2 + r[2 * k + 1] ** 2;
     }
     // Peaks: louder than the bins either side.
     let count = 0;
@@ -234,15 +246,21 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
     // overwritten below.
     for (let i = 0; i < count; i++) {
       const p = peaks[i];
-      const re = spectrum[2 * p];
-      const im = spectrum[2 * p + 1];
-      const lastRe = previous[2 * p];
-      const lastIm = previous[2 * p + 1];
+      const re = 2 * p;
+      const im = re + 1;
       // The phase advance at bin p since the last frame: the bin's own
       // advance plus the deviation the phases show, so the true frequency.
+      // It's the angle of this frame times the last one's conjugate, summed
+      // over the channels, so the louder channel counts for more.
       const turned = Math.atan2(
-        im * lastRe - re * lastIm,
-        re * lastRe + im * lastIm,
+        l[im] * lastL[re] -
+          l[re] * lastL[im] +
+          r[im] * lastR[re] -
+          r[re] * lastR[im],
+        l[re] * lastL[re] +
+          l[im] * lastL[im] +
+          r[re] * lastR[re] +
+          r[im] * lastR[im],
       );
       const expected = BIN_ADVANCE * p;
       const advance = expected + wrap(turned - expected);
@@ -250,7 +268,8 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
       peakTurn[i] = wrap(regionTurn[p] + (factor - 1) * advance);
     }
 
-    shifted.fill(0);
+    left.shifted.fill(0);
+    right.shifted.fill(0);
     let start = 0;
     for (let i = 0; i < count; i++) {
       const p = peaks[i];
@@ -279,12 +298,14 @@ class PhaseVocoderProcessor extends AudioWorkletProcessor {
       // Only bins in [0, BINS) are read or written.
       const from = Math.max(start, -delta);
       const to = Math.min(end, BINS - delta);
-      for (let k = from; k < to; k++) {
-        const re = spectrum[2 * k];
-        const im = spectrum[2 * k + 1];
-        const into = 2 * (k + delta);
-        shifted[into] += re * cos - im * sin;
-        shifted[into + 1] += re * sin + im * cos;
+      for (const { spectrum, shifted } of this.channels) {
+        for (let k = from; k < to; k++) {
+          const re = spectrum[2 * k];
+          const im = spectrum[2 * k + 1];
+          const into = 2 * (k + delta);
+          shifted[into] += re * cos - im * sin;
+          shifted[into + 1] += re * sin + im * cos;
+        }
       }
       start = end;
     }
