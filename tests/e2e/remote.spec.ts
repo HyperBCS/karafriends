@@ -1043,7 +1043,8 @@ test.describe("the now-playing bar", () => {
       await remote.mouse.down();
       await remote.mouse.move(x, to, { steps });
     };
-    const letGo = async (pause = 150) => {
+    // Past the time a quick swipe takes (a flick, whatever the distance).
+    const letGo = async (pause = 300) => {
       await remote.waitForTimeout(pause);
       await remote.mouse.up();
     };
@@ -1082,11 +1083,26 @@ test.describe("the now-playing bar", () => {
     await expect.poll(top).toBe(open);
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-    // A quick flick down folds it, however short.
-    await remote.mouse.move(x, barY);
-    await remote.mouse.down();
-    await remote.mouse.move(x, barY + 30, { steps: 2 });
-    await remote.mouse.up();
+    // A quick flick down folds it, however short: a finger's, all within
+    // one task, so the test's own timing can't slow it.
+    await toggle.evaluate((button) => {
+      const box = button.getBoundingClientRect();
+      const at = (type: string, dy: number) =>
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 7,
+          pointerType: "touch",
+          isPrimary: true,
+          button: type === "pointermove" ? -1 : 0,
+          clientX: box.x + box.width / 2,
+          clientY: box.y + box.height / 2 + dy,
+        });
+      button.dispatchEvent(at("pointerdown", 0));
+      button.dispatchEvent(at("pointermove", 15));
+      button.dispatchEvent(at("pointermove", 30));
+      button.dispatchEvent(at("pointerup", 30));
+    });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(queue).toBeHidden();
     await expect.poll(top).toBe(folded);

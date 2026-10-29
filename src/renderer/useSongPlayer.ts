@@ -39,6 +39,16 @@ const POSITION_REPORT_MS = 10 * 1000;
 const localFile = (song: SongOfFiles, file: "video" | "telop" | "captions") =>
   `karafriends://local/${songFileNames(songFilesOf(song))[file]}`;
 
+// Plays the video. A pause() or a new source that comes before it starts
+// rejects play() with an AbortError, which is no error: the pause, or the
+// next song, wins (a phone that pauses as a song starts). Anything else is
+// logged as it was before it was caught (a file that won't play, say).
+function play(video: HTMLVideoElement) {
+  video.play().catch((err: unknown) => {
+    if ((err as Error)?.name !== "AbortError") console.error(err);
+  });
+}
+
 // What the player draws over the video for the song playing.
 export type Overlay =
   // melody: the pitch bars', from DAM's scoring data; null without it.
@@ -208,7 +218,7 @@ export default function useSongPlayer({
           if (lowUrl !== null) {
             const playing = !video.paused;
             load(lowUrl, video.currentTime);
-            if (playing) video.play();
+            if (playing) play(video);
             announce({ label: "Switched to low bitrate", song });
             return;
           }
@@ -273,7 +283,7 @@ export default function useSongPlayer({
       );
       if (!streamDam(video, song)) return;
     }
-    video.play();
+    play(video);
   };
 
   const loadJoysound = async (
@@ -302,7 +312,7 @@ export default function useSongPlayer({
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
     setOverlay({ ...overlay, telop });
-    video.play();
+    play(video);
   };
 
   const loadYoutube = (
@@ -316,7 +326,7 @@ export default function useSongPlayer({
       trackRef.current.src = localFile(song, "captions");
     }
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
-    video.play();
+    play(video);
   };
 
   const loadNico = (
@@ -325,7 +335,7 @@ export default function useSongPlayer({
   ) => {
     setOverlay({ kind: "nico" });
     video.src = localFile(song, "video");
-    video.play();
+    play(video);
   };
 
   const startSong = useEffectEvent((song: PoppedSong | null) => {
@@ -467,7 +477,7 @@ export default function useSongPlayer({
         // has no end, so the next song starts here.
         if (isFinite(video.duration)) {
           video.currentTime = video.duration;
-          video.play();
+          play(video);
         } else {
           pollQueue();
         }
