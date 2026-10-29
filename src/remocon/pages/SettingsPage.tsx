@@ -224,7 +224,8 @@ const LevelSlider = ({
   );
 };
 
-// How loud Joysound's guide melody plays, whatever is playing.
+// How loud Joysound's guide plays (its melody, or the voice of a song
+// queued with guide vocal), whatever is playing.
 const GuideMelodySlider = () => {
   const [guideMelodyLevel, setGuideMelodyLevel] = useLiveSetter(
     useLiveState((state) => state?.guideMelodyLevel ?? 0),
