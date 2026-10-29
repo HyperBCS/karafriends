@@ -12,12 +12,13 @@ import { parse } from "yaml";
 
 import {
   adminPasswordConfig,
+  anyOf,
   apiCall,
   currentSongKey,
+  defaultAddress,
   displayCall,
   displayLiveState,
   downloadsFolder,
-  anyOf,
   expect,
   fakeJoysoundDownload,
   liveState as phoneLiveState,
@@ -47,6 +48,17 @@ async function openTab(display: Page, name: string) {
   await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
 }
+
+test("Party lists Phones first and the admin password last", async ({
+  display,
+}) => {
+  await openTab(display, "Party");
+  await expect(
+    display
+      .getByRole("dialog", { name: "Settings" })
+      .locator("section.settingsSection > h2"),
+  ).toHaveText(["Phones", "Queue", "Admin password"]);
+});
 
 test.describe("on a profile with logins", () => {
   test.use({
@@ -343,39 +355,39 @@ test("the display's offset and UI scale save on the display, and the scale sizes
   await expect(offset).toHaveValue("-40");
 });
 
-test("the Address pick is kept on the display; one this computer no longer has goes back to karafriends.local", async ({
+test("the Address is this computer's first LAN address until another is picked, which is kept while it's here", async ({
   display,
 }) => {
   const address = display
     .getByRole("dialog", { name: "Settings" })
     .getByRole("region", { name: "Phones", exact: true })
     .getByLabel("Address");
-  const port = await display.evaluate(() =>
-    (
-      window as unknown as { karafriends: { remoconPort(): number } }
-    ).karafriends.remoconPort(),
-  );
+  const first = await defaultAddress(display);
+  const port = first.slice(first.lastIndexOf(":") + 1);
   await openTab(display, "Party");
-  await expect(address).toHaveValue(`karafriends.local:${port}`);
-
-  // This computer's LAN addresses, if it has one here.
+  await expect(address).toHaveValue(first);
+  // Just the addresses: no karafriends.local.
   const names = await address.locator("option").allTextContents();
+  expect(names).not.toContain("karafriends.local");
+  expect(`${names[0]}:${port}`).toBe(first);
+
+  // Another of this computer's addresses, if it has one here.
   if (names.length > 1) {
     await address.selectOption(names[1]);
     await display.reload();
     await openTab(display, "Party");
     await expect(address).toHaveValue(`${names[1]}:${port}`);
-    await address.selectOption("karafriends.local");
-    expect(
-      await display.evaluate(() => localStorage.getItem("hostname")),
-    ).toBeNull();
+    await address.selectOption(names[0]);
+    expect(await display.evaluate(() => localStorage.getItem("hostname"))).toBe(
+      names[0],
+    );
   }
 
-  // An address from another network.
+  // An address from another network: back to the first.
   await display.evaluate(() => localStorage.setItem("hostname", "203.0.113.9"));
   await display.reload();
   await openTab(display, "Party");
-  await expect(address).toHaveValue(`karafriends.local:${port}`);
+  await expect(address).toHaveValue(first);
   await expect(address.locator("option")).toHaveText(names);
 });
 
@@ -1126,7 +1138,9 @@ test.describe("the microphones", () => {
     await expect(mic.getByLabel("Gain 150%")).toBeVisible();
     expect(await sliderFill(mic.getByLabel("Gain 150%"))).toBe(75);
     expect(await sliderFill(mic.getByLabel("Echo 25%"))).toBe(25);
-    await expect.poll(phoneMics).toEqual([{ ...MIC, gain: 150, echo: 25 }]);
+    await expect
+      .poll(phoneMics)
+      .toEqual([{ ...MIC, gain: 150, echo: 25, gate: -60 }]);
     expect(await fakeAudioCalls(display)).toEqual(
       expect.arrayContaining([
         ["inputDevice_new", MIC_DEVICE, 0],
@@ -1138,8 +1152,8 @@ test.describe("the microphones", () => {
     // A second, then the first goes and the second stays.
     await add.selectOption(INTERFACE.label);
     await expect.poll(phoneMics).toEqual([
-      { ...MIC, gain: 150, echo: 25 },
-      { ...INTERFACE, gain: 100, echo: 40 },
+      { ...MIC, gain: 150, echo: 25, gate: -60 },
+      { ...INTERFACE, gain: 100, echo: 40, gate: -60 },
     ]);
     await mic.getByRole("button", { name: "Remove" }).click();
     await expect(mic).toHaveCount(0);
@@ -1147,7 +1161,7 @@ test.describe("the microphones", () => {
     await expect(second).toBeVisible();
     await expect
       .poll(phoneMics)
-      .toEqual([{ ...INTERFACE, gain: 100, echo: 40 }]);
+      .toEqual([{ ...INTERFACE, gain: 100, echo: 40, gate: -60 }]);
     expect(await fakeAudioCalls(display)).toContainEqual([
       "inputDevice_stop",
       0,
@@ -1187,19 +1201,24 @@ test.describe("the microphones", () => {
         id: INTERFACE.id,
         gain: 50,
         echo: 10,
+        gate: -40,
       }),
     ).toEqual([true]);
     await expect(second.getByLabel("Gain 50%")).toBeVisible();
     await expect(second.getByLabel("Echo 10%")).toBeVisible();
+    await expect(second.getByLabel("Noise gate \u221240 dB")).toBeVisible();
     expect(await fakeAudioCalls(display)).toEqual(
       expect.arrayContaining([
         ["inputDevice_setGain", 1, 0.5],
         ["inputDevice_setEcho", 1, 0.1],
+        ["inputDevice_setGate", 1, 0.01],
       ]),
     );
     // And it stays so: the display's own list coming back changes nothing.
     await display.waitForTimeout(1_000);
-    expect(await phoneMics()).toEqual([{ ...INTERFACE, gain: 50, echo: 10 }]);
+    expect(await phoneMics()).toEqual([
+      { ...INTERFACE, gain: 50, echo: 10, gate: -40 },
+    ]);
 
     // All of it is kept on the display: a reload opens the mic at its
     // levels, on the output picked.
@@ -1209,7 +1228,7 @@ test.describe("the microphones", () => {
         localStorage.getItem("micOutput"),
       ]),
     ).toEqual([
-      [{ name: INTERFACE_DEVICE, channel: 1, gain: 50, echo: 10 }],
+      [{ name: INTERFACE_DEVICE, channel: 1, gain: 50, echo: 10, gate: -40 }],
       "E2E Interface (ASIO)",
     ]);
     await display.reload();
@@ -1222,12 +1241,68 @@ test.describe("the microphones", () => {
         ["setOutputDevice", "E2E Interface (ASIO)", null, null],
         ["inputDevice_new", INTERFACE_DEVICE, 1],
         ["inputDevice_setGain", 0, 0.5],
+        ["inputDevice_setGate", 0, 0.01],
       ]),
     );
     // The output before the mic, so the mic opens on it.
     expect(
       calls.findIndex(([name]) => name === "setOutputDevice"),
     ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
+  });
+
+  test("a mic's noise gate is off until raised, marks the meter, and reaches the device and the phones", async ({
+    karafriends,
+    display,
+  }) => {
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Microphones" });
+    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    const mic = section.getByRole("group", { name: MIC.label });
+    const mark = mic.locator(".settingsMeterGate");
+    const off = mic.getByLabel("Noise gate Off");
+    await expect(off).toHaveValue("-60");
+    expect(await sliderFill(off)).toBe(0);
+    await expect(mark).toHaveCount(0);
+    const gateCalls = async () =>
+      (await fakeAudioCalls(display)).filter(
+        ([name]) => name === "inputDevice_setGate",
+      );
+    // Off on the device: 0, every time the mic opens or its levels change.
+    const gateCalls0 = await gateCalls();
+    expect(gateCalls0.length).toBeGreaterThan(0);
+    expect(gateCalls0).toEqual(
+      gateCalls0.map(() => ["inputDevice_setGate", 0, 0]),
+    );
+
+    await off.fill("-40");
+    const raised = mic.getByLabel("Noise gate \u221240 dB");
+    await expect(raised).toBeVisible();
+    expect(await sliderFill(raised)).toBe(50);
+    // -40 dB is a third of the way along the meter's 60 dB.
+    const meter = (await mic
+      .getByRole("meter", { name: "Level" })
+      .boundingBox())!;
+    const at = (await mark.boundingBox())!;
+    expect(
+      Math.abs(at.x + at.width / 2 - (meter.x + meter.width / 3)),
+    ).toBeLessThan(2);
+    // The fake mic's level, -12 dB, is over it: the bar isn't grey.
+    await expect(mic.locator(".settingsMeterBar")).not.toHaveClass(/gated/);
+    await expect
+      .poll(async () => (await gateCalls()).at(-1))
+      .toEqual(["inputDevice_setGate", 0, 0.01]);
+    await expect
+      .poll(async () => (await phoneLiveState(karafriends.remoconUrl)).mics)
+      .toEqual([{ ...MIC, gain: 100, echo: 40, gate: -40 }]);
+
+    // Back to Off.
+    await raised.fill("-60");
+    await expect(mic.getByLabel("Noise gate Off")).toBeVisible();
+    await expect(mark).toHaveCount(0);
+    await expect
+      .poll(async () => (await gateCalls()).at(-1))
+      .toEqual(["inputDevice_setGate", 0, 0]);
   });
 
   test("an admin's levels reach the display as given: back to an earlier level, two mics at once, one level of two", async ({
@@ -1285,8 +1360,8 @@ test.describe("the microphones", () => {
     await expect
       .poll(async () => (await phoneLiveState(karafriends.remoconUrl)).mics)
       .toEqual([
-        { ...MIC, gain: 90, echo: 15 },
-        { ...INTERFACE, gain: 80, echo: 40 },
+        { ...MIC, gain: 90, echo: 15, gate: -60 },
+        { ...INTERFACE, gain: 80, echo: 40, gate: -60 },
       ]);
   });
 
@@ -1508,8 +1583,8 @@ test.describe("the microphones", () => {
         display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
       )
       .toEqual([
-        { name: MIC_DEVICE, channel: 0, gain: 120, echo: 40 },
-        { ...GONE, gain: 70, echo: 10 },
+        { name: MIC_DEVICE, channel: 0, gain: 120, echo: 40, gate: -60 },
+        { ...GONE, gain: 70, echo: 10, gate: -60 },
       ]);
 
     // The watchdog opens it once it can, at its levels.
@@ -1621,7 +1696,9 @@ test.describe("devices that won't open", () => {
     await expect(mic.getByLabel("Microphone")).toHaveValue(`${MIC_DEVICE}_0`);
     expect(
       await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
-    ).toEqual([{ name: MIC_DEVICE, channel: 0, gain: 100, echo: 40 }]);
+    ).toEqual([
+      { name: MIC_DEVICE, channel: 0, gain: 100, echo: 40, gate: -60 },
+    ]);
 
     // One that opens clears the message.
     await failOpen(display, []);
@@ -1719,7 +1796,9 @@ test.describe("devices that won't open", () => {
     await expect(crashed).toHaveCount(0);
     expect(
       await display.evaluate(() => JSON.parse(localStorage.getItem("mics")!)),
-    ).toEqual([{ name: MIC_DEVICE, channel: 0, gain: 100, echo: 40 }]);
+    ).toEqual([
+      { name: MIC_DEVICE, channel: 0, gain: 100, echo: 40, gate: -60 },
+    ]);
 
     // Once it reads again, the next launch opens it.
     await failListing(display, false);

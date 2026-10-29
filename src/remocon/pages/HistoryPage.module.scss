@@ -1,5 +1,13 @@
 @use "../tokens" as *;
 
+// All or Mine, above the list and in line with its card.
+.whose {
+  display: flex;
+  align-items: center;
+  min-height: $kf-tap;
+  padding: $kf-space-3 $kf-card-inset 0;
+}
+
 // When and who, on two lines at the end of a row.
 .when {
   display: flex;

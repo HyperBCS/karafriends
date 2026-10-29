@@ -69,7 +69,7 @@ mod reverb_module;
 
 use std::collections::HashMap;
 use std::iter::Iterator;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, TryLockError, Weak};
 use std::time::{Duration, Instant};
 
@@ -614,13 +614,72 @@ fn error_callback(
 
 // What a mic's callback notes for Settings: the frames per callback, and
 // the loudest sample since Settings last asked, before the gain (f32 bits:
-// for floats of one sign the bits order as the values do). And for its
-// status, a count of its callbacks (see Stall).
+// for floats of one sign the bits order as the values do). For its status,
+// a count of its callbacks (see Stall). And for its pitch, whether its
+// noise gate let its latest sound through.
 #[derive(Default)]
 struct Meters {
     frames: AtomicU32,
     peak: AtomicU32,
     callbacks: AtomicU32,
+    gate_open: AtomicBool,
+}
+
+// A mic's noise gate: its sound fades out once it stays under the threshold
+// (the loudest sample, before the gain, as the meter shows it) for
+// GATE_HOLD, so the gaps between words don't chop, and fades back in within
+// GATE_OPEN of a sample over it.
+const GATE_OPEN: Duration = Duration::from_millis(2);
+const GATE_HOLD: Duration = Duration::from_millis(200);
+const GATE_CLOSE: Duration = Duration::from_millis(150);
+
+struct Gate {
+    // How far the gate's gain moves each sample, opening and closing.
+    open_step: f32,
+    close_step: f32,
+    hold_frames: u32,
+    // Samples left before it starts to close.
+    held: u32,
+    gain: f32,
+}
+
+impl Gate {
+    fn new(rate: u32) -> Self {
+        let frames = |time: Duration| (time.as_secs_f32() * rate as f32).max(1.0);
+        Gate {
+            open_step: 1.0 / frames(GATE_OPEN),
+            close_step: 1.0 / frames(GATE_CLOSE),
+            hold_frames: frames(GATE_HOLD) as u32,
+            held: 0,
+            gain: 1.0,
+        }
+    }
+
+    // Gates the samples in place by threshold (0 to 1; 0 is off, which
+    // passes everything). Whether any of them got through.
+    fn process(&mut self, samples: &mut [f32], threshold: f32) -> bool {
+        if threshold <= 0.0 {
+            self.held = self.hold_frames;
+            self.gain = 1.0;
+            return true;
+        }
+        let mut through = false;
+        for sample in samples.iter_mut() {
+            if sample.abs() >= threshold {
+                self.held = self.hold_frames;
+            } else {
+                self.held = self.held.saturating_sub(1);
+            }
+            self.gain = if self.held > 0 {
+                (self.gain + self.open_step).min(1.0)
+            } else {
+                (self.gain - self.close_step).max(0.0)
+            };
+            *sample *= self.gain;
+            through |= self.gain > 0.0;
+        }
+        through
+    }
 }
 
 // A stream that stops calling back without saying so (an ASIO driver that
@@ -659,10 +718,12 @@ impl Stall {
     }
 }
 
-// A mic's levels, set from JS and read once per callback, as f32 bits.
+// A mic's levels, set from JS and read once per callback, as f32 bits. The
+// noise gate starts off.
 struct Levels {
     gain: AtomicU32,
     echo: AtomicU32,
+    gate: AtomicU32,
 }
 
 impl Levels {
@@ -670,6 +731,7 @@ impl Levels {
         Levels {
             gain: AtomicU32::new(gain.to_bits()),
             echo: AtomicU32::new(echo.to_bits()),
+            gate: AtomicU32::new(0.0_f32.to_bits()),
         }
     }
 }
@@ -1012,9 +1074,15 @@ impl InputDevice {
     }
 
     // The pitch of its newest 1/40 s, as a MIDI number, and how sure that
-    // is (0 to 1); see PitchWindow.
+    // is (0 to 1); see PitchWindow. Not sure at all while the noise gate
+    // holds the mic quiet, so the TV draws no pitch for a noise.
     pub fn get_pitch(&mut self) -> (f32, f32) {
-        self.pitch.pitch()
+        let (pitch, confidence) = self.pitch.pitch();
+        if self.meters.gate_open.load(Relaxed) {
+            (pitch, confidence)
+        } else {
+            (pitch, 0.0)
+        }
     }
 
     // Linear, 0 to 2: multiplies the dry signal before the reverb.
@@ -1029,6 +1097,13 @@ impl InputDevice {
         self.levels
             .echo
             .store(echo.clamp(0.0, 1.0).to_bits(), Relaxed);
+    }
+
+    // The noise gate's threshold, linear, 0 to 1 (0 is off): see Gate.
+    pub fn set_gate(&self, threshold: f32) {
+        self.levels
+            .gate
+            .store(threshold.clamp(0.0, 1.0).to_bits(), Relaxed);
     }
 
     // "ok"; "ok: <note>" while it works but something is worth saying; or
@@ -1093,8 +1168,8 @@ impl InputDevice {
     }
 
     // The input callback: the chosen channel goes to the pitch buffer as it
-    // is, and with gain, reverb and resampling to the output rate to the
-    // mixer's buffer (mono).
+    // is, and through the noise gate, with gain, reverb and resampling to
+    // the output rate, to the mixer's buffer (mono).
     fn input_data_callback<Sample: cpal::Sample + Copy>(
         input_config: &cpal::StreamConfig,
         output_rate: cpal::SampleRate,
@@ -1134,6 +1209,7 @@ impl InputDevice {
         // them once at startup so the output stays aligned with the input.
         let mut resampler_delay = resampler.as_ref().map_or(0, |r| r.output_delay());
 
+        let mut gate = Gate::new(input_rate);
         // The chosen channel, and its reverb: sized by the first callback.
         let mut mono: Vec<f32> = Vec::new();
         let mut wet: Vec<f32> = Vec::new();
@@ -1155,6 +1231,9 @@ impl InputDevice {
             pitch_tx.push_slice(&mono);
             let peak = mono.iter().fold(0.0_f32, |peak, s| peak.max(s.abs()));
             meters.peak.fetch_max(peak.to_bits(), Relaxed);
+            let threshold = f32::from_bits(levels.gate.load(Relaxed));
+            let open = gate.process(&mut mono, threshold);
+            meters.gate_open.store(open, Relaxed);
 
             let gain = f32::from_bits(levels.gain.load(Relaxed));
             let echo = f32::from_bits(levels.echo.load(Relaxed));
@@ -1801,6 +1880,71 @@ mod tests {
             "{midi_number}, not {}",
             freq2midi(150.0)
         );
+        Ok(())
+    }
+
+    // The noise gate: a quiet sound under the threshold fades out once the
+    // hold is over and stays out; a loud one comes back at once, whole; the
+    // meters say which. The pitch buffer gets every sample either way.
+    #[test]
+    fn test_the_gate_mutes_what_stays_under_it() -> Result<()> {
+        let rate = 48000;
+        let tone = |amplitude: f32, ms: usize| -> Vec<f32> {
+            wf!(f32, rate as f32, sine!(220.0_f32, amplitude, 0.0_f32))
+                .iter()
+                .take(rate as usize * ms / 1000)
+                .collect()
+        };
+        let levels = Arc::new(Levels::new(1.0, 0.0));
+        levels.gate.store(0.1_f32.to_bits(), Relaxed);
+        let meters = Arc::new(Meters::default());
+        let (pitch_tx, mut pitch_rx) = ringbuf::HeapRb::new(rate as usize * 2).split();
+        let (output_tx, mut output_rx) = ringbuf::HeapRb::new(rate as usize * 2).split();
+        let mut callback = InputDevice::input_data_callback::<f32>(
+            &config(rate),
+            rate,
+            0,
+            levels.clone(),
+            meters.clone(),
+            pitch_tx,
+            output_tx,
+        )?;
+        let ms = |n: usize| rate as usize * n / 1000;
+
+        // Loud: through whole, after the first 2 ms.
+        let loud = tone(0.5, 100);
+        callback(&loud);
+        assert!(meters.gate_open.load(Relaxed));
+        let out: Vec<f32> = output_rx.pop_iter().collect();
+        assert_eq!(&out[ms(2)..], &loud[ms(2)..]);
+
+        // Quiet: through for the hold, then fading, then nothing.
+        let quiet = tone(0.05, 600);
+        for part in quiet.chunks(480) {
+            callback(part);
+        }
+        assert!(!meters.gate_open.load(Relaxed));
+        let out: Vec<f32> = output_rx.pop_iter().collect();
+        assert_eq!(&out[..ms(150)], &quiet[..ms(150)]);
+        assert!(out[ms(400)..].iter().all(|&s| s == 0.0));
+
+        // Loud again: open within 2 ms of the first sample over it (the
+        // sine's 7th).
+        callback(&loud);
+        assert!(meters.gate_open.load(Relaxed));
+        let out: Vec<f32> = output_rx.pop_iter().collect();
+        assert_eq!(out[..5], [0.0; 5]);
+        assert_eq!(&out[ms(3)..], &loud[ms(3)..]);
+
+        // The pitch buffer had all of it.
+        assert_eq!(pitch_rx.pop_iter().count(), loud.len() * 2 + quiet.len());
+
+        // Off: everything goes through.
+        levels.gate.store(0.0_f32.to_bits(), Relaxed);
+        callback(&quiet);
+        assert!(meters.gate_open.load(Relaxed));
+        let out: Vec<f32> = output_rx.pop_iter().collect();
+        assert_eq!(out, quiet);
         Ok(())
     }
 

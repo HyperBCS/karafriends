@@ -131,6 +131,7 @@ export const en = {
   "queue.queuedBy": "Queued by {nickname}",
   "queue.remove": "Remove from queue",
   "queue.moveToTop": "Move to top",
+  "queue.openSong": "Song page",
 
   // Playback and key.
   "playback.play": "Play",
@@ -147,6 +148,10 @@ export const en = {
   // History.
   "history.heading": "History",
   "history.empty": "No history",
+  "history.emptyMine": "Nothing sung from this phone yet",
+  "history.whose": "Whose songs",
+  "history.all": "All",
+  "history.mine": "Mine",
   // When a song was sung; for one sung before the server kept that, when
   // it was queued.
   "history.sungAt": "Sung {time}",
@@ -199,6 +204,10 @@ export const en = {
   "mics.none": "No microphones",
   "mics.gain": "Gain",
   "mics.echo": "Echo",
+  "mics.gate": "Noise gate",
+  "mics.gateOff": "Off",
+  "mics.gateHelp":
+    "Under its noise gate, a mic stays quiet and draws no pitch line, so small noises don't come through.",
   "readings.label": "Readings",
   "readings.written": "Written",
   "readings.kana": "Kana",

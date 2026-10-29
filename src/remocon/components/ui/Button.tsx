@@ -1,5 +1,6 @@
 import classnames from "classnames";
 import React from "react";
+import { Link } from "react-router";
 
 import * as styles from "./Button.module.scss";
 
@@ -80,4 +81,34 @@ export const IconButton = ({
   >
     <span aria-hidden="true">{icon}</span>
   </button>
+);
+
+export interface IconLinkProps {
+  // Where it goes, for screen readers (and the e2e tests): "Song page".
+  label: string;
+  icon: React.ReactNode;
+  // A page in the remote, and what the link tells it (router state).
+  to: string;
+  state?: unknown;
+  onClick?: () => void;
+}
+
+// An IconButton that goes to a page in the remote: a router <Link> that
+// looks like one.
+export const IconLink = ({
+  label,
+  icon,
+  to,
+  state,
+  onClick,
+}: IconLinkProps) => (
+  <Link
+    to={to}
+    state={state}
+    aria-label={label}
+    className={styles.iconButton}
+    onClick={onClick}
+  >
+    <span aria-hidden="true">{icon}</span>
+  </Link>
 );

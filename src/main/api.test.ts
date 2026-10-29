@@ -1072,6 +1072,7 @@ describe("the song volume and the mics", () => {
     label: `Mic ${n} (Windows), channel 1`,
     gain: 100,
     echo: 40,
+    gate: -60,
   });
 
   test("only an admin may set the song volume", async () => {
@@ -1116,12 +1117,17 @@ describe("the song volume and the mics", () => {
       true,
     );
     assert.equal(
+      await api.setMicLevels({ id: mic(2).id, gate: -45 }, admin("x")),
+      true,
+    );
+    assert.equal(
       await api.setMicLevels({ id: "Gone (Windows)#0", gain: 10 }, admin("x")),
       false,
     );
     assert.deepEqual(published, [
       { type: "micLevels", id: mic(1).id, gain: 150 },
       { type: "micLevels", id: mic(2).id, echo: 0 },
+      { type: "micLevels", id: mic(2).id, gate: -45 },
     ]);
     // The display owns them: the phones see them once it lists its mics
     // again (setMics).
@@ -1607,6 +1613,35 @@ describe("paging", () => {
       anonymous.items.map((item) => item.isMine),
       [false, false],
     );
+  });
+
+  test("history with mine has just the caller's songs, and pages through them", async () => {
+    const api = makeApi();
+    store.update((state) => {
+      for (let n = 1; n <= 70; n++) {
+        state.songHistory.unshift({
+          song: song(n, n % 2 ? alice : bob),
+          playedAt: n,
+        });
+      }
+    });
+    const first = await api.history({ mine: true }, alice);
+    assert.equal(first.items.length, 30);
+    assert.ok(first.items.every((item) => item.isMine));
+    assert.equal(first.items[0].songId, "sm69");
+    assert.equal(first.nextOffset, 30);
+    const rest = await api.history(
+      { mine: true, offset: first.nextOffset! },
+      alice,
+    );
+    assert.deepEqual(
+      rest.items.map((item) => item.songId),
+      ["sm9", "sm7", "sm5", "sm3", "sm1"],
+    );
+    assert.equal(rest.nextOffset, null);
+    // A caller without a device ID queued nothing.
+    const anonymous = await api.history({ mine: true }, display);
+    assert.deepEqual(anonymous.items, []);
   });
 });
 
@@ -2680,19 +2715,36 @@ describe("validators", () => {
       id: "m#0",
       gain: 200,
       echo: undefined,
+      gate: undefined,
     });
     assert.deepEqual(validators.setMicLevels({ id: "m#0", echo: 0 }), {
       id: "m#0",
       gain: undefined,
       echo: 0,
+      gate: undefined,
     });
+    assert.deepEqual(validators.setMicLevels({ id: "m#0", gate: -60 }), {
+      id: "m#0",
+      gain: undefined,
+      echo: undefined,
+      gate: -60,
+    });
+    invalid("setMicLevels", { id: "m#0", gate: -61 });
+    invalid("setMicLevels", { id: "m#0", gate: -19 });
+    invalid("setMicLevels", { id: "m#0", gate: -40.5 });
     invalid("setMicLevels", { gain: 100 });
     invalid("setMicLevels", { id: "m#0", gain: 201 });
     invalid("setMicLevels", { id: "m#0", gain: 99.5 });
     invalid("setMicLevels", { id: "m#0", echo: 101 });
     invalid("setMicLevels", { id: "m#0", echo: -1 });
     invalid("setMicLevels", { id: "m#0", level: 1 });
-    const mic = { id: "m#0", label: "M, channel 1", gain: 100, echo: 40 };
+    const mic = {
+      id: "m#0",
+      label: "M, channel 1",
+      gain: 100,
+      echo: 40,
+      gate: -60,
+    };
     assert.deepEqual(validators.setMics({ mics: [] }), { mics: [] });
     assert.deepEqual(validators.setMics({ mics: [mic] }), { mics: [mic] });
     invalid("setMics", {});
@@ -2700,6 +2752,8 @@ describe("validators", () => {
     invalid("setMics", { mics: Array(33).fill(mic) });
     invalid("setMics", { mics: [{ ...mic, gain: 201 }] });
     invalid("setMics", { mics: [{ ...mic, echo: 40.5 }] });
+    invalid("setMics", { mics: [{ ...mic, gate: undefined }] });
+    invalid("setMics", { mics: [{ ...mic, gate: 0 }] });
     invalid("setMics", { mics: [{ ...mic, label: undefined }] });
     invalid("setMics", { mics: [{ ...mic, extra: 1 }] });
     const position = {
@@ -2729,6 +2783,17 @@ describe("validators", () => {
     invalid("damSearchSongs", { query: "a", limit: 0 });
     invalid("damSearchSongs", { query: "a", limit: 101 });
     invalid("damSearchSongs", { query: "a", offset: -1 });
+    assert.deepEqual(validators.history({ mine: true, offset: 30 }), {
+      offset: 30,
+      limit: undefined,
+      mine: true,
+    });
+    assert.deepEqual(validators.history({}), {
+      offset: undefined,
+      limit: undefined,
+      mine: undefined,
+    });
+    invalid("history", { mine: "yes" });
     invalid("damSearchSongs", { name: "a" });
     invalid("removeSong", { songId: "sm9" });
     assert.deepEqual(

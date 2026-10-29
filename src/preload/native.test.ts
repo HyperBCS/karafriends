@@ -17,6 +17,7 @@ const DECLARED: Record<keyof typeof native, true> = {
   inputDevice_new: true,
   inputDevice_setEcho: true,
   inputDevice_setGain: true,
+  inputDevice_setGate: true,
   inputDevice_status: true,
   inputDevice_stop: true,
   inputDevices: true,

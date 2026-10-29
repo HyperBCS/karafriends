@@ -1,9 +1,10 @@
+/* Over the stage, so the emotes rise from the top of the Up next strip
+   (or the bottom of the screen, without it). Above the idle screen, which
+   covers the stage between songs, and under the QR code's corner. */
 #effects {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
+  z-index: 2;
   overflow: hidden;
   pointer-events: none;
 }

@@ -23,6 +23,7 @@ import {
   expect,
   fakeTool,
   NICKNAME,
+  showQueue,
   test,
 } from "./fixtures";
 
@@ -103,7 +104,7 @@ test.describe("for a removed video", () => {
       });
     }
 
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     await expect(
       remote
         .getByRole("region", { name: "Queue" })

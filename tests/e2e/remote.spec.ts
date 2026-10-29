@@ -12,6 +12,8 @@ import {
   liveState,
   MAIN_ENTRY,
   NICKNAME,
+  sheetSettled,
+  showQueue,
   test,
 } from "./fixtures";
 
@@ -267,7 +269,7 @@ test("a phone with site storage blocked still gets in, until it reloads", async 
   await expect(
     page.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Show queue" }).click();
+  await showQueue(page);
   await expect(page.getByRole("region", { name: "Queue" })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -872,7 +874,7 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
   remote,
 }) => {
   await remote.setViewportSize({ width: 412, height: 800 });
-  await remote.getByRole("button", { name: "Show queue" }).click();
+  await showQueue(remote);
   const sheetBody = await remote
     .getByRole("button", { name: "Hide queue" })
     .getAttribute("aria-controls");
@@ -974,7 +976,7 @@ test.describe("in supervised mode", () => {
         return route.fulfill({ json: null });
       });
     }
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     // Someone else's song, so the transport and the key are dimmed.
     for (const name of ["Restart", "Play", "Skip", "Lower the key"]) {
       const control = remote.getByRole("button", { name, exact: true });
@@ -1013,10 +1015,137 @@ test.describe("the now-playing bar", () => {
   // A tap where a finger lands, on whatever is on top there: the bar's
   // text lets taps through to the toggle under it, so Playwright's click on
   // the text itself would wait for it forever.
+  // The sheet first stops moving, so the tap lands where the text is.
   const tap = async (el: Locator) => {
+    await sheetSettled(el.page());
     const box = (await el.boundingBox())!;
     await el.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   };
+
+  test("drags open and shut by its bar, following the finger, and settles by how far it got or a flick", async ({
+    remote,
+  }) => {
+    const sheet = remote.getByRole("region", { name: "Now playing" });
+    const toggle = sheet.getByRole("button", { name: /^(Show|Hide) queue$/ });
+    const queue = sheet.getByRole("region", { name: "Queue" });
+    await expect(sheet.getByText(/^E2E playing song/)).toBeVisible({
+      timeout: 15_000,
+    });
+    const top = async () => (await sheet.boundingBox())!.y;
+    const folded = await top();
+    // From the middle of the bar's arrow, with a pause before letting go
+    // (no flick).
+    const box = (await toggle.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const drag = async (to: number, steps = 10) => {
+      await remote.mouse.move(x, y);
+      await remote.mouse.down();
+      await remote.mouse.move(x, to, { steps });
+    };
+    const letGo = async (pause = 150) => {
+      await remote.waitForTimeout(pause);
+      await remote.mouse.up();
+    };
+
+    // Up 60 px: the sheet comes up with the finger, the queue under it.
+    await drag(y - 60);
+    expect(Math.abs(folded - 60 - (await top()))).toBeLessThan(3);
+    await expect(queue).toBeVisible();
+    // Let go that low, it goes back down.
+    await letGo();
+    await expect(queue).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await sheetSettled(remote);
+    expect(await top()).toBe(folded);
+
+    // Most of the way up: it opens.
+    await drag(80);
+    await letGo();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(queue).toBeVisible();
+    await sheetSettled(remote);
+    expect(await top()).toBeLessThan(folded - 150);
+    const open = await top();
+    // A drag never toggles it again as it ends.
+    await remote.waitForTimeout(400);
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // Down a little and back: it stays open.
+    const bar = (await toggle.boundingBox())!;
+    const barY = bar.y + bar.height / 2;
+    await remote.mouse.move(x, barY);
+    await remote.mouse.down();
+    await remote.mouse.move(x, barY + 40, { steps: 5 });
+    expect(Math.abs(open + 40 - (await top()))).toBeLessThan(3);
+    await letGo();
+    await expect.poll(top).toBe(open);
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // A quick flick down folds it, however short.
+    await remote.mouse.move(x, barY);
+    await remote.mouse.down();
+    await remote.mouse.move(x, barY + 30, { steps: 2 });
+    await remote.mouse.up();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(queue).toBeHidden();
+    await expect.poll(top).toBe(folded);
+  });
+
+  test("slides open and shut when tapped, and at once with reduced motion", async ({
+    remote,
+  }) => {
+    const sheet = remote.getByRole("region", { name: "Now playing" });
+    const toggle = sheet.getByRole("button", { name: /^(Show|Hide) queue$/ });
+    await expect(sheet.getByText(/^E2E playing song/)).toBeVisible({
+      timeout: 15_000,
+    });
+    // The body's style straight after the tap (React renders a click's
+    // change a task later, at most): on its way, from where it was.
+    const tapAndLook = () =>
+      toggle.evaluate(async (button) => {
+        (button as HTMLButtonElement).click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const body = document.getElementById(
+          button.getAttribute("aria-controls")!,
+        )!;
+        return {
+          transition: body.style.transition,
+          height: body.style.height,
+          hidden: body.hidden,
+        };
+      });
+    const opening = await tapAndLook();
+    expect(opening.transition).toContain("height");
+    expect(opening.hidden).toBe(false);
+    expect(parseFloat(opening.height)).toBeGreaterThan(100);
+    await expect(sheet.getByRole("region", { name: "Queue" })).toBeVisible();
+    // Settled, the body has no style of its own left.
+    await expect
+      .poll(() =>
+        toggle.evaluate(
+          (button) =>
+            document.getElementById(button.getAttribute("aria-controls")!)!
+              .style.cssText,
+        ),
+      )
+      .toBe("");
+    const closing = await tapAndLook();
+    expect(closing).toMatchObject({ height: "0px", hidden: false });
+    await expect(sheet.getByRole("region", { name: "Queue" })).toBeHidden();
+
+    await remote.emulateMedia({ reducedMotion: "reduce" });
+    expect(await tapAndLook()).toEqual({
+      transition: "",
+      height: "",
+      hidden: false,
+    });
+    expect(await tapAndLook()).toEqual({
+      transition: "",
+      height: "",
+      hidden: true,
+    });
+  });
 
   test("is the only place the current song shows, and a toggle anywhere but its link", async ({
     remote,
@@ -1106,7 +1235,7 @@ test.describe("the now-playing bar", () => {
     karafriends,
     remote,
   }) => {
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     // Once the display has started the song, the controls work.
     const pause = remote.getByRole("button", { name: "Pause", exact: true });
     await expect(pause).toHaveAttribute("aria-disabled", "false", {
@@ -1145,7 +1274,7 @@ test.describe("the now-playing bar", () => {
   });
 
   test("quick ♯ taps each count", async ({ karafriends, remote }) => {
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const raise = remote.getByRole("button", {
       name: "Raise the key",
       exact: true,
@@ -1510,8 +1639,34 @@ test.describe("an admin's queue", () => {
       .allTextContents();
   }
 
+  test("a tapped song says who queued it in place of its artist and source, and links to its page", async ({
+    remote,
+  }) => {
+    await showQueue(remote);
+    const queue = remote.getByRole("region", { name: "Queue" });
+    const row = queue
+      .getByRole("listitem")
+      .filter({ hasText: "E2E queue song 4" });
+    await expect(row).toContainText("E2E artist");
+    await expect(row).toContainText("Niconico");
+    await expect(row).not.toContainText("Queued by");
+
+    await row.getByRole("button", { name: /E2E queue song 4/ }).click();
+    await expect(row).toContainText("Queued by someone");
+    await expect(row).not.toContainText("E2E artist");
+    await expect(row).not.toContainText("Niconico");
+
+    // Its page, for anyone; the sheet folds to show it.
+    await row.getByRole("link", { name: "Song page" }).click();
+    await expect(remote).toHaveURL(/#\/search\/niconico\/sm60004$/);
+    await expect(
+      remote.getByRole("button", { name: "Show queue" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(queue).toBeHidden();
+  });
+
   test("moves songs, which a guest can't", async ({ remote }) => {
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const queue = remote.getByRole("region", { name: "Queue" });
     // Song 1 starts within 5 seconds: it's on the bar, and the queue holds
     // the other three.
@@ -1645,6 +1800,72 @@ test.describe("history", () => {
   });
 });
 
+test.describe("history, everyone's or mine", () => {
+  const MINE = "e2e-history-mine";
+  const entry = (n: number, deviceId: string) => ({
+    song: {
+      kind: "youtube",
+      songId: `e2e-whose-${n}`,
+      name: `E2E whose song ${n}`,
+      artistName: "E2E artist",
+      playtime: 60,
+      timestamp: String(Date.UTC(2026, 0, 1) + n * 60_000),
+      user: { deviceId, nickname: deviceId === MINE ? NICKNAME : "someone" },
+      hasAdhocLyrics: false,
+      hasCaptions: false,
+      gainValue: 1,
+    },
+    playedAt: Date.UTC(2026, 0, 1) + (n + 1) * 60_000,
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [],
+      playbackState: "WAITING",
+      songHistory: [4, 3, 2, 1].map((n) =>
+        entry(n, n % 2 ? MINE : "e2e-someone"),
+      ),
+    },
+  });
+
+  test("shows everyone's songs, or with Mine just this phone's, and remembers which", async ({
+    remote,
+  }) => {
+    await remote.evaluate((id) => localStorage.setItem("deviceId", id), MINE);
+    await remote.reload();
+    await remote.getByRole("link", { name: "History" }).click();
+    const whose = remote.getByRole("radiogroup", { name: "Whose songs" });
+    const songs = remote
+      .getByRole("main")
+      .getByRole("link", { name: /E2E whose song/ });
+    await expect(whose.getByRole("radio", { name: "All" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(songs).toHaveText([/song 4/, /song 3/, /song 2/, /song 1/]);
+
+    await whose.getByRole("radio", { name: "Mine" }).click();
+    await expect(songs).toHaveText([/song 3/, /song 1/]);
+    await remote.reload();
+    await expect(whose.getByRole("radio", { name: "Mine" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(songs).toHaveText([/song 3/, /song 1/]);
+
+    // Another phone has sung nothing.
+    await remote.evaluate(() =>
+      localStorage.setItem("deviceId", "e2e-history-nobody"),
+    );
+    await remote.reload();
+    await expect(
+      remote.getByText("Nothing sung from this phone yet"),
+    ).toBeVisible();
+    await whose.getByRole("radio", { name: "All" }).click();
+    await expect(songs).toHaveCount(4);
+  });
+});
+
 test.describe("a long queue", () => {
   test.use({
     seedQueue: {
@@ -1666,7 +1887,7 @@ test.describe("a long queue", () => {
   // Opens the sheet once song 1 has started (within 5 seconds): it's on the
   // bar, and the other eleven wait in the queue.
   async function openQueue(remote: Page) {
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     await expect(
       remote
         .getByRole("region", { name: "Now playing" })
@@ -1882,7 +2103,7 @@ test.describe("dragging the queue", () => {
     remote: Page,
     karafriends: { remoconUrl: string; display: Page },
   ) {
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const queue = remote.getByRole("region", { name: "Queue" });
     await expect(
       remote
@@ -2139,7 +2360,7 @@ test.describe("the lyrics mode", () => {
       });
     // The open sheet shows each one's mode by its source: the one playing
     // on the bar (its link), the others on their rows in the queue.
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const songs = remote
       .getByRole("region", { name: "Now playing" })
       .locator("a, li");
@@ -2162,7 +2383,7 @@ test.describe("the guide melody slider", () => {
     const { remoconUrl } = karafriends;
     const slider = remote.getByRole("slider", { name: "Guide melody" });
     // Not in the playback controls any more.
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     await expect(remote.getByText("Nothing playing")).toBeVisible();
     await expect(
       remote.getByRole("button", { name: "Raise the key" }),
@@ -2336,12 +2557,14 @@ test.describe("the song volume and mic sliders", () => {
         label: "Yeti Stereo Microphone (USB), channel 1",
         gain: 100,
         echo: 40,
+        gate: -60,
       },
       {
         id: "Focusrite USB (USB)#2",
         label: "Focusrite USB (USB), channel 2",
         gain: 123,
         echo: 0,
+        gate: -45,
       },
     ];
     // As it starts, the display sends its own mics (none), then opens
@@ -2363,7 +2586,10 @@ test.describe("the song volume and mic sliders", () => {
 
     await expect(remote.getByText("No microphones")).toHaveCount(0);
     // Each slider is named for its mic, so two mics' sliders aren't alike.
-    const slider = (mic: (typeof mics)[number], level: "Gain" | "Echo") =>
+    const slider = (
+      mic: (typeof mics)[number],
+      level: "Gain" | "Echo" | "Noise gate",
+    ) =>
       remote.getByRole("slider", {
         name: `${mic.label}: ${level}`,
         exact: true,
@@ -2375,13 +2601,31 @@ test.describe("the song volume and mic sliders", () => {
     // The labels show the levels, as the display's do.
     await expect(remote.getByText("Gain 123%")).toBeVisible();
     await expect(remote.getByText("Echo 40%")).toBeVisible();
+    // The noise gate in dB, Off at its floor.
+    await expect(slider(mics[0], "Noise gate")).toHaveValue("-60");
+    await expect(slider(mics[1], "Noise gate")).toHaveValue("-45");
+    await expect(remote.getByText("Noise gate Off")).toBeVisible();
+    await expect(remote.getByText("Noise gate \u221245 dB")).toBeVisible();
+    await expect(
+      remote.getByText("Under its noise gate, a mic stays quiet"),
+    ).toBeVisible();
 
     await slider(mics[1], "Echo").fill("63");
     await expect.poll(() => sent).toEqual([{ id: mics[1].id, echo: 63 }]);
+    await slider(mics[0], "Noise gate").fill("-50");
+    await expect
+      .poll(() => sent)
+      .toEqual([
+        { id: mics[1].id, echo: 63 },
+        { id: mics[0].id, gate: -50 },
+      ]);
     await expect(slider(mics[1], "Echo")).toHaveValue("63");
     // The display applies it to the mic and lists its mics again (these
     // aren't open there, so do its part: settings.spec has the real one).
-    const applied = [mics[0], { ...mics[1], echo: 63 }];
+    const applied = [
+      { ...mics[0], gate: -50 },
+      { ...mics[1], echo: 63 },
+    ];
     await displayCall(display, "setMics", { mics: applied });
     await expect
       .poll(async () => (await liveState(karafriends.remoconUrl)).mics)
@@ -2739,7 +2983,7 @@ test.describe("a queued DAM song", () => {
       readingsMode: "romaji",
     });
 
-    await remote.getByRole("button", { name: "Show queue" }).click();
+    await showQueue(remote);
     const row = remote
       .getByRole("region", { name: "Queue" })
       .getByRole("listitem")

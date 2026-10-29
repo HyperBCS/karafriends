@@ -12,8 +12,9 @@ import {
   adminPasswordConfig,
   expect,
   firstLiveEvent,
-  type Phone,
+  showQueue,
   test,
+  type Phone,
 } from "./fixtures";
 
 const ALICE: Phone = { deviceId: "e2e-alice-device", nickname: "alice" };
@@ -67,7 +68,7 @@ async function openPhone(
   await expect(
     page.getByRole("heading", { name: "Find a song" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Show queue" }).click();
+  await showQueue(page);
   return { context, page };
 }
 

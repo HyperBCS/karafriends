@@ -82,7 +82,7 @@ describe("toLiveState", () => {
       state.guideMelodyLevel = 0.5;
       state.songVolume = 70;
       state.mics = [
-        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+        { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0, gate: -40 },
       ];
       state.currentSongStartedAt = 1000;
       state.currentSongPausedSince = 1500;
@@ -105,7 +105,7 @@ describe("toLiveState", () => {
     assert.equal(live.guideMelodyLevel, 0.5);
     assert.equal(live.songVolume, 70);
     assert.deepEqual(live.mics, [
-      { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0 },
+      { id: "Mic#0", label: "Mic, channel 1", gain: 50, echo: 0, gate: -40 },
     ]);
     assert.deepEqual(
       [live.currentSongStartedAt, live.currentSongPausedSince],

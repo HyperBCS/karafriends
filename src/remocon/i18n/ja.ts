@@ -117,6 +117,7 @@ export const ja: Messages = {
   "queue.queuedBy": "{nickname}さんの予約",
   "queue.remove": "予約を取り消す",
   "queue.moveToTop": "先頭に移動",
+  "queue.openSong": "曲のページ",
 
   "playback.play": "再生",
   "playback.pause": "一時停止",
@@ -131,6 +132,10 @@ export const ja: Messages = {
 
   "history.heading": "履歴",
   "history.empty": "履歴はありません",
+  "history.emptyMine": "この端末で歌った曲はまだありません",
+  "history.whose": "表示する曲",
+  "history.all": "すべて",
+  "history.mine": "自分の曲",
   "history.sungAt": "{time}に歌唱",
   "history.queuedAt": "{time}に予約",
 
@@ -172,6 +177,10 @@ export const ja: Messages = {
   "mics.none": "マイクがありません",
   "mics.gain": "ゲイン",
   "mics.echo": "エコー",
+  "mics.gate": "ノイズゲート",
+  "mics.gateOff": "オフ",
+  "mics.gateHelp":
+    "ノイズゲートより小さい音はマイクから出ず、音程の線も出ません。小さな雑音を拾わなくなります。",
   "readings.label": "読み方",
   "readings.written": "そのまま",
   "readings.kana": "かな",

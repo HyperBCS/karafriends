@@ -26,7 +26,13 @@ export type HubMessage =
   | { type: "emote"; emote: string; user: UserIdentity }
   | { type: "queueAdded"; item: QueueItem }
   | { type: "queueFailed"; item: QueueItem; reason: string }
-  | { type: "micLevels"; id: string; gain?: number; echo?: number };
+  | {
+      type: "micLevels";
+      id: string;
+      gain?: number;
+      echo?: number;
+      gate?: number;
+    };
 
 // Who is listening: a phone gives its device ID; the display, or a phone
 // that gives none, owns nothing.

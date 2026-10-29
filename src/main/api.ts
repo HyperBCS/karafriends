@@ -707,8 +707,21 @@ export function createApi(
       return adhocLyricsOf(item ?? null) ?? null;
     },
 
-    async history({ offset = 0, limit = DEFAULT_LIMIT.history }, caller) {
-      const { songHistory } = store.getState();
+    async history(
+      { offset = 0, limit = DEFAULT_LIMIT.history, mine = false },
+      caller,
+    ) {
+      // Just this phone's: the songs its device ID queued (none for a
+      // caller without one).
+      const songHistory = mine
+        ? store
+            .getState()
+            .songHistory.filter(
+              ({ song }) =>
+                caller.deviceId !== null &&
+                song.user.deviceId === caller.deviceId,
+            )
+        : store.getState().songHistory;
       return {
         // Without device IDs, like the live state.
         items: songHistory.slice(offset, offset + limit).map((entry) => ({
@@ -975,7 +988,7 @@ export function createApi(
       return true;
     },
 
-    async setMicLevels({ id, gain, echo }, caller) {
+    async setMicLevels({ id, gain, echo, gate }, caller) {
       if (!isAdmin(caller)) {
         throw new ApiError(403, "Only an admin can change the mics");
       }
@@ -988,6 +1001,7 @@ export function createApi(
         id,
         ...(gain !== undefined && { gain }),
         ...(echo !== undefined && { echo }),
+        ...(gate !== undefined && { gate }),
       });
       return true;
     },

@@ -13,7 +13,8 @@
 
 /* A card with a shadow over the video: the label, then the title, the
    artist and the singer, each on its own line, then what went wrong, if
-   anything. */
+   anything. Semi-transparent, so the video shows through it, blurred so
+   the text stays easy to read over a busy picture. */
 .announcement {
   display: flex;
   flex-direction: column;
@@ -21,7 +22,8 @@
   gap: var(--kf-space-1);
   padding: var(--kf-space-5) var(--kf-space-6);
   border-radius: var(--kf-radius-card);
-  background-color: var(--kf-surface);
+  background-color: color-mix(in srgb, var(--kf-surface) 72%, transparent);
+  backdrop-filter: blur(1rem);
   box-shadow: var(--kf-shadow-float);
   font-size: var(--kf-text-body);
   /* A long artist starts sliding sooner: the card is up for 4 seconds. */

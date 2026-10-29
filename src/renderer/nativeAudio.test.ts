@@ -27,6 +27,7 @@ const native = {
   },
   inputDevice_setGain: (_deviceId: number, _gain: number) => undefined,
   inputDevice_setEcho: () => undefined,
+  inputDevice_setGate: () => undefined,
   inputDevice_status: () => "ok",
   inputDevice_level: () => 0.5,
   inputDevice_format: () => "Shared, 48 kHz",

@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { GATE_MAX_DB, GATE_OFF_DB } from "../common/micGate";
 import "./global";
 import {
   channelLabel,
@@ -15,10 +16,12 @@ import {
   outputStatus,
 } from "./nativeAudio";
 
-// A mic's levels, in percent: gain 0 to 200, echo (the reverb) 0 to 100.
+// A mic's levels: in percent, gain 0 to 200 and echo (the reverb) 0 to
+// 100; and its noise gate in whole dB (micGate.ts).
 export interface MicLevels {
   gain: number;
   echo: number;
+  gate: number;
 }
 
 // How often a row looks again at its mic's status (the watchdog in
@@ -294,31 +297,43 @@ function LinuxBufferSetting(props: {
   );
 }
 
-// The meter's range: -60 dB (empty) to 0 dB (full); red from -6 dB.
-const METER_FLOOR_DB = -60;
+// The meter's range: -60 dB (empty) to 0 dB (full); red from -6 dB. Its
+// floor is where the noise gate is off.
+const METER_FLOOR_DB = GATE_OFF_DB;
 const METER_HOT = 0.9;
+
+// Where a level in dB sits on the meter, 0 to 1.
+const meterPlace = (db: number) =>
+  Math.min(1, Math.max(0, 1 - db / METER_FLOOR_DB));
+
+// A level in dB as the TV writes it: "−45 dB", with a minus sign.
+const dbText = (db: number) => `${db < 0 ? "\u2212" : ""}${Math.abs(db)} dB`;
 
 // The mic's level as it comes in (before Gain), each frame, falling back
 // slowly after a peak. Drawn straight onto the bar, not through React.
-function LevelMeter(props: { mic: InputDevice }) {
+// With the noise gate on, a mark where it is, and the bar grey while the
+// level stays under it.
+function LevelMeter(props: { mic: InputDevice; gate: number }) {
   const meter = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
+  const gateOn = props.gate > GATE_OFF_DB;
+  const gatePlace = meterPlace(props.gate);
   useEffect(() => {
     let shown = 0;
     let frame = requestAnimationFrame(function draw() {
       const peak = props.mic.level();
       const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
-      const level = Math.min(1, Math.max(0, 1 - db / METER_FLOOR_DB));
-      shown = Math.max(level, shown - 0.02);
+      shown = Math.max(meterPlace(db), shown - 0.02);
       if (bar.current && meter.current) {
         bar.current.style.width = `${shown * 100}%`;
         bar.current.classList.toggle("hot", shown > METER_HOT);
+        bar.current.classList.toggle("gated", gateOn && shown < gatePlace);
         meter.current.setAttribute("aria-valuenow", shown.toFixed(2));
       }
       frame = requestAnimationFrame(draw);
     });
     return () => cancelAnimationFrame(frame);
-  }, [props.mic]);
+  }, [props.mic, gateOn, gatePlace]);
   return (
     <div
       ref={meter}
@@ -330,6 +345,13 @@ function LevelMeter(props: { mic: InputDevice }) {
       aria-valuenow={0}
     >
       <div ref={bar} className="settingsMeterBar" />
+      {gateOn ? (
+        <div
+          className="settingsMeterGate"
+          style={{ left: `${gatePlace * 100}%` }}
+          aria-hidden="true"
+        />
+      ) : null}
     </div>
   );
 }
@@ -359,8 +381,35 @@ function LevelSlider(props: {
   );
 }
 
-// One microphone: an input device and one of its channels, its levels, how
-// it is doing, and a button that removes it.
+// The noise gate: Off at the left (the meter's floor), up to GATE_MAX_DB.
+// Under it the mic stays quiet and draws no pitch.
+function GateSlider(props: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const span = GATE_MAX_DB - GATE_OFF_DB;
+  const fill = {
+    "--kf-fill": `${((props.value - GATE_OFF_DB) / span) * 100}%`,
+  };
+  return (
+    <label className="kfLabel">
+      {`Noise gate ${props.value <= GATE_OFF_DB ? "Off" : dbText(props.value)}`}
+      <input
+        className="kfSlider"
+        style={fill as React.CSSProperties}
+        type="range"
+        min={GATE_OFF_DB}
+        max={GATE_MAX_DB}
+        step={1}
+        value={props.value}
+        onChange={(e) => props.onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
+// One microphone: an input device and one of its channels, its levels and
+// noise gate, how it is doing, and a button that removes it.
 export function MicrophoneSetting(props: {
   mic: InputDevice;
   // The inputs, as listed when the Sound tab opened.
@@ -395,11 +444,15 @@ export function MicrophoneSetting(props: {
           max={100}
           onChange={(echo) => props.onLevelsChange({ ...levels, echo })}
         />
+        <GateSlider
+          value={levels.gate}
+          onChange={(gate) => props.onLevelsChange({ ...levels, gate })}
+        />
         <button type="button" className="kfButton" onClick={props.onRemove}>
           Remove
         </button>
       </div>
-      <LevelMeter mic={mic} />
+      <LevelMeter mic={mic} gate={levels.gate} />
       {mic.error ? (
         <p className="settingsMessage problem" role="status">
           {mic.error}

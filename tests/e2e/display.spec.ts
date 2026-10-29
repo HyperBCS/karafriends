@@ -1,7 +1,14 @@
 import type { Locator } from "@playwright/test";
 
 import { secondsLeft } from "../../src/common/currentSong";
-import { apiCall, currentSongKey, expect, liveState, test } from "./fixtures";
+import {
+  apiCall,
+  currentSongKey,
+  defaultAddress,
+  expect,
+  liveState,
+  test,
+} from "./fixtures";
 
 // A Marquee's text (the element getByText finds) and its box: whether it
 // slides, and the animation's settings.
@@ -90,7 +97,12 @@ test("the display opens on its idle screen without console errors", async ({
     display.getByRole("img", { name: "QR code for the remote" }),
   ).toBeVisible();
   await expect(display.getByText("Scan to join")).toBeVisible();
-  await expect(display.getByText(`karafriends.local:${port}`)).toBeVisible();
+  // This computer's LAN address: no mDNS name.
+  const address = await defaultAddress(display);
+  expect(address).toMatch(
+    new RegExp(`^(\\d+\\.){3}\\d+:${port}$|^localhost:${port}$`),
+  );
+  await expect(display.getByText(address)).toBeVisible();
   await expect(
     display.getByRole("list", { name: "Queue" }).getByRole("listitem"),
   ).toHaveCount(0);
@@ -100,9 +112,7 @@ test("the display opens on its idle screen without console errors", async ({
   await display.keyboard.press("s");
   await expect(settings).toBeVisible();
   await settings.getByRole("tab", { name: "Party" }).click();
-  await expect(
-    settings.locator(`option[value="karafriends.local:${port}"]`),
-  ).toHaveCount(1);
+  await expect(settings.locator(`option[value="${address}"]`)).toHaveCount(1);
   await settings.getByRole("tab", { name: "Sound" }).click();
   await expect(settings.getByLabel("Add a microphone")).toBeVisible();
   await settings.getByRole("button", { name: "Close" }).click();
@@ -148,6 +158,40 @@ test.describe("while a song plays", () => {
     },
   });
 
+  test("an emote rises from the top of the up-next strip, not behind it", async ({
+    display,
+    karafriends,
+  }) => {
+    const settings = display.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await display.keyboard.press("Escape");
+    const upNext = display.getByRole("region", { name: "Up next" });
+    await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
+
+    expect(
+      await apiCall(karafriends.remoconUrl, "sendEmote", { emote: "🎉" }),
+    ).toMatchObject({ status: 200 });
+    const emote = display.locator("#effects > div");
+    await expect(emote).toHaveText("🎉");
+    // The emotes' layer ends where the strip starts, so an emote starts
+    // above it; and it's over the video, the whole width.
+    const [layer, strip, stage] = await Promise.all(
+      [display.locator("#effects"), upNext, display.locator(".appStage")].map(
+        async (el) => (await el.boundingBox())!,
+      ),
+    );
+    expect(Math.abs(layer.y + layer.height - strip.y)).toBeLessThan(1);
+    expect(layer).toEqual(stage);
+    // Without the strip, from the bottom of the screen.
+    await display.keyboard.press("q");
+    await expect(upNext).toHaveCount(0);
+    const full = (await display.locator("#effects").boundingBox())!;
+    expect(full.y + full.height).toBeCloseTo(
+      await display.evaluate(() => window.innerHeight),
+      0,
+    );
+  });
+
   test("Q hides and shows the up-next strip", async ({ display }) => {
     // A first launch opens Settings; close it, so Q reaches the display.
     const settings = display.getByRole("dialog", { name: "Settings" });
@@ -165,14 +209,11 @@ test.describe("while a song plays", () => {
 
   test("the QR code stays in the corner, without the address, but not over Settings", async ({
     display,
-    karafriends,
   }) => {
     const settings = display.getByRole("dialog", { name: "Settings" });
     await expect(settings).toBeVisible();
     const qrCode = display.getByRole("img", { name: "QR code for the remote" });
-    const address = display.getByText(
-      `karafriends.local:${new URL(karafriends.remoconUrl).port}`,
-    );
+    const address = display.getByText(await defaultAddress(display));
     await display.keyboard.press("Escape");
     // Song 1 plays once song 2 is up next.
     await expect(

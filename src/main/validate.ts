@@ -16,6 +16,7 @@ import type {
 } from "../common/api";
 import { LYRICS_MODES, PLAYBACK_COMMANDS, READINGS_MODES } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
+import { GATE_MAX_DB, GATE_OFF_DB } from "../common/micGate";
 import { ApiError } from "./api";
 import { SETTABLE_KEYS } from "./settings";
 
@@ -94,6 +95,10 @@ function boolean(input: Fields, key: string): boolean {
   return input[key] as boolean;
 }
 
+function optionalBoolean(input: Fields, key: string): boolean | undefined {
+  return input[key] === undefined ? undefined : boolean(input, key);
+}
+
 function oneOf<T extends string>(
   input: Fields,
   key: string,
@@ -114,12 +119,13 @@ function songKeyOf(input: Fields, key = "song"): string {
 const MAX_MICS = 32;
 
 function mic(raw: unknown): MicInfo {
-  const input = fields(raw, ["id", "label", "gain", "echo"]);
+  const input = fields(raw, ["id", "label", "gain", "echo", "gate"]);
   return {
     id: string(input, "id", 300),
     label: string(input, "label", 300),
     gain: integer(input, "gain", 0, 200),
     echo: integer(input, "echo", 0, 100),
+    gate: integer(input, "gate", GATE_OFF_DB, GATE_MAX_DB),
   };
 }
 
@@ -275,7 +281,10 @@ export const validators: {
   adhocLyrics: (raw) => ({
     songId: string(fields(raw, ["songId"]), "songId", 64),
   }),
-  history: (raw) => page(fields(raw, PAGE_KEYS)),
+  history: (raw) => {
+    const input = fields(raw, [...PAGE_KEYS, "mine"]);
+    return { ...page(input), mine: optionalBoolean(input, "mine") };
+  },
   queueSong,
   removeSong: (raw) => {
     const input = fields(raw, ["songId", "timestamp"]);
@@ -331,11 +340,12 @@ export const validators: {
     volume: integer(fields(raw, ["volume"]), "volume", 0, 100),
   }),
   setMicLevels: (raw) => {
-    const input = fields(raw, ["id", "gain", "echo"]);
+    const input = fields(raw, ["id", "gain", "echo", "gate"]);
     return {
       id: string(input, "id", 300),
       gain: optionalInteger(input, "gain", 0, 200),
       echo: optionalInteger(input, "echo", 0, 100),
+      gate: optionalInteger(input, "gate", GATE_OFF_DB, GATE_MAX_DB),
     };
   },
   pushAdhocLyrics: (raw) => {

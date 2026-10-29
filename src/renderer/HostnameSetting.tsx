@@ -1,18 +1,19 @@
 import React from "react";
 
-import { HOSTNAME } from "../common/constants";
 import "./global";
 
-// Which of this computer's names or addresses the QR code points phones at,
-// with the remote's port: "karafriends.local:8080". One picked that this
-// computer no longer has (a new network) still shows, as the QR code
-// still has it, until another is picked.
+// Which of this computer's LAN addresses the QR code points phones at, with
+// the remote's port: "192.168.1.20:8080". The first is the default. One
+// shown that this computer no longer has (a new network) still shows, as
+// the QR code still has it, until the display looks again.
 export default function HostnameSetting(props: {
   hostname: string;
   onChange: (hostname: string) => void;
 }) {
   const port = window.karafriends.remoconPort();
-  const names = [HOSTNAME, ...window.karafriends.ipAddresses()];
+  const addresses = window.karafriends.ipAddresses();
+  // No network: what the QR code says then (App.tsx's savedHostname).
+  const names = addresses.length > 0 ? addresses : ["localhost"];
   const listed = names.some((name) => `${name}:${port}` === props.hostname);
   return (
     <label className="kfLabel">

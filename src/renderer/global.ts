@@ -67,6 +67,8 @@ export interface NativeAudio {
   inputDevice_setGain: (deviceId: number, gain: number) => void;
   // The amount of reverb, 0 to 1.
   inputDevice_setEcho: (deviceId: number, echo: number) => void;
+  // The noise gate's threshold, linear, 0 to 1; 0 is off.
+  inputDevice_setGate: (deviceId: number, threshold: number) => void;
   // "ok", "ok: <a note>", or the error that stopped it.
   inputDevice_status: (deviceId: number) => string;
   // How it is open: "Shared, 48 kHz, 480 samples (10.0 ms)".

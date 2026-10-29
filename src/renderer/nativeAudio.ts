@@ -150,6 +150,7 @@ export class InputDevice {
   error: string | null = null;
   private gain = 1;
   private echo = 0.4;
+  private gate = 0;
   private open = false;
   private watchdog: ReturnType<typeof setInterval>;
 
@@ -169,6 +170,7 @@ export class InputDevice {
     const deviceId = native.inputDevice_new(this.name, this.channelSelection);
     native.inputDevice_setGain(deviceId, this.gain);
     native.inputDevice_setEcho(deviceId, this.echo);
+    native.inputDevice_setGate(deviceId, this.gate);
     return deviceId;
   }
 
@@ -234,7 +236,14 @@ export class InputDevice {
     if (this.open) native.inputDevice_setEcho(this.deviceId, echo);
   }
 
-  // No pitch (confidence 0) while it's stopped.
+  // The noise gate's threshold, linear, 0 to 1 (gateThreshold); 0 is off.
+  setGate(threshold: number) {
+    this.gate = threshold;
+    if (this.open) native.inputDevice_setGate(this.deviceId, threshold);
+  }
+
+  // No pitch (confidence 0) while it's stopped, or while its noise gate
+  // holds it quiet.
   getPitch() {
     if (!this.open) return { midiNumber: 0, confidence: 0 };
     return native.inputDevice_getPitch(this.deviceId);

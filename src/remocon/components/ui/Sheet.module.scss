@@ -21,6 +21,8 @@
 }
 
 // The bar: the caller's content and the toggle, over the toggle's tap area.
+// It drags the sheet (Sheet.tsx), so a finger on it never scrolls or zooms
+// the page.
 .bar {
   position: relative;
   isolation: isolate;
@@ -32,8 +34,9 @@
   padding: $kf-space-4 $kf-space-2 $kf-space-2 $kf-space-4;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 
-  // The grab handle, centred at the top. Only a cue: it doesn't drag.
+  // The grab handle, centred at the top: the cue that the bar drags.
   &::before {
     content: "";
     position: absolute;
@@ -97,6 +100,11 @@
     }
   }
 
+  // A finger dragging the sheet isn't pressing the bar.
+  .sheet[data-moving] &::after {
+    background-color: transparent;
+  }
+
   &:focus-visible {
     outline: none;
   }
@@ -115,14 +123,16 @@
 }
 
 // A column the sheet's height limits: what scrolls inside it (the queue)
-// is the caller's.
-.body {
+// is the caller's. While the sheet moves, the body's height does, and the
+// content keeps its open height under it (Sheet.tsx).
+.body,
+.content {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
 
-  &[hidden] {
-    display: none;
-  }
+.body[hidden] {
+  display: none;
 }

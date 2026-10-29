@@ -141,6 +141,32 @@ export function anyOf(...patterns: RegExp[]): RegExp {
   );
 }
 
+// The phone's now-playing sheet once it has stopped moving: it slides open
+// and shut, and follows a drag, marked data-moving meanwhile (Sheet.tsx).
+export async function sheetSettled(page: Page) {
+  await expect(
+    page.getByRole("region", { name: "Now playing" }),
+  ).not.toHaveAttribute("data-moving");
+}
+
+// Opens the now-playing sheet with its toggle, and waits for it to settle.
+export async function showQueue(page: Page) {
+  await page.getByRole("button", { name: "Show queue" }).click();
+  await sheetSettled(page);
+}
+
+// The address the display's QR code shows by default: this computer's first
+// LAN address (localhost with none), with the remote's port.
+export async function defaultAddress(display: Page): Promise<string> {
+  return display.evaluate(() => {
+    const { karafriends } = window as unknown as {
+      karafriends: { ipAddresses(): string[]; remoconPort(): number };
+    };
+    const [first = "localhost"] = karafriends.ipAddresses();
+    return `${first}:${karafriends.remoconPort()}`;
+  });
+}
+
 // A phone, as its requests name it.
 export type Phone = { deviceId: string; nickname: string };
 export const PHONE: Phone = { deviceId: "e2e-phone", nickname: NICKNAME };

@@ -148,7 +148,7 @@ const NowPlayingSheet = () => {
     >
       <h2 className={styles.heading}>{t("queue.upNext")}</h2>
       <section aria-label={t("queue.label")} className={styles.queue}>
-        <QueueList />
+        <QueueList onOpenSong={() => setExpanded(false)} />
       </section>
       <div
         className={styles.controls}
