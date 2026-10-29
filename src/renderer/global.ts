@@ -24,8 +24,8 @@ export interface NativeAudio {
   // " (USB)", " (ASIO)" or " (Linux)". Listed once, as first asked for
   // (see refreshInputDevices).
   inputDevices: () => [string, string, number][];
-  // On Linux, has inputDevices list the inputs again (Settings does as it
-  // opens, for a mic plugged in since). Elsewhere they're listed once.
+  // Has inputDevices list the inputs again: Settings does as its Sound tab
+  // opens and as devices come and go, for a mic plugged in since.
   refreshInputDevices: () => void;
   // Every output device, with the host in parentheses.
   outputDevices: () => string[];

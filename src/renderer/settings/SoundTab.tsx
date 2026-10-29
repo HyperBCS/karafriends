@@ -1,7 +1,17 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 
+import { call, useLiveState } from "../../common/apiClient";
+import useLiveSetter from "../../common/hooks/useLiveSetter";
 import {
   AddMicrophone,
+  LevelSlider,
   MicModeSetting,
   MicOutputSetting,
   MicrophoneSetting,
@@ -12,6 +22,7 @@ import {
   type InputDevice,
   type MicMode,
   type MicOutput,
+  listingIsSlow,
   type SoundDevices,
   soundDevices,
 } from "../nativeAudio";
@@ -175,11 +186,43 @@ export default function SoundTab(
   },
 ) {
   const { messages, report } = props;
-  // Listed each time the tab opens, outside the render (a listing can
-  // fail): the outputs, and on Linux the inputs too, so a mic plugged in
-  // since can be picked.
+  // Listed as the tab opens, and again as devices come and go, outside the
+  // render (a listing can fail), so a mic plugged in since can be picked.
   const [devices, setDevices] = useState<SoundDevices | null>(null);
-  useLayoutEffect(() => setDevices(soundDevices()), []);
+  // Saying "Looking for microphones…" through a listing that may be slow.
+  const [looking, setLooking] = useState(false);
+  const lastListed = useRef(0);
+  // now: before the page goes on (the Add select's list opens with them).
+  // When the last listing was slow, the line shows first, and the listing
+  // follows once it has painted (it holds the page).
+  const relist = useCallback((now = false) => {
+    lastListed.current = Date.now();
+    if (listingIsSlow()) {
+      setLooking(true);
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          setDevices(soundDevices());
+          setLooking(false);
+        }),
+      );
+    } else if (now) {
+      flushSync(() => setDevices(soundDevices()));
+    } else {
+      setDevices(soundDevices());
+    }
+  }, []);
+  useLayoutEffect(() => relist(), [relist]);
+  // A device plugged in or out (Chromium hears of it from the system).
+  useEffect(() => {
+    const changed = () => relist();
+    navigator.mediaDevices?.addEventListener("devicechange", changed);
+    return () =>
+      navigator.mediaDevices?.removeEventListener("devicechange", changed);
+  }, [relist]);
+  // Opening Add a microphone lists them again, unless they just were.
+  const onOpenAdd = () => {
+    if (Date.now() - lastListed.current > 1000) relist(true);
+  };
 
   return (
     <>
@@ -218,11 +261,58 @@ export default function SoundTab(
           Plus delays the sound, minus delays the lyrics.{" "}
           <OutputLatency latencyMs={props.audioLatencyMs} />
         </Hint>
+        <SongLevels />
       </SettingsSection>
 
       <SettingsSection title="Microphones" message={messages.mics}>
-        {devices ? <Microphones {...props} devices={devices} /> : null}
+        {looking ? (
+          <div className="settingsMessage busy" role="status">
+            <p>Looking for microphones…</p>
+          </div>
+        ) : null}
+        {devices ? (
+          <Microphones {...props} devices={devices} onOpenAdd={onOpenAdd} />
+        ) : null}
       </SettingsSection>
+    </>
+  );
+}
+
+// The song's volume and Joysound's guide melody, for every song, as an
+// admin's phone sets them (the live state's songVolume and
+// guideMelodyLevel): the display is always an admin.
+function SongLevels() {
+  const [volume, setVolume] = useLiveSetter(
+    useLiveState((state) => state?.songVolume ?? 100),
+    (volume: number) => call("setSongVolume", { volume }),
+    "change the song volume",
+  );
+  const [guide, setGuide] = useLiveSetter(
+    useLiveState((state) => state?.guideMelodyLevel ?? 0),
+    (level: number) => call("setGuideMelodyLevel", { level }),
+    "change the guide melody level",
+  );
+  return (
+    <>
+      <div className="settingsFields">
+        <LevelSlider
+          label="Song volume"
+          value={volume}
+          max={100}
+          onChange={setVolume}
+        />
+        <LevelSlider
+          label="Guide melody"
+          value={Math.round(guide * 100)}
+          max={100}
+          step={5}
+          onChange={(percent) => setGuide(percent / 100)}
+        />
+      </div>
+      <Hint>
+        For every song; an admin's phone has them too. The guide melody plays
+        with Joysound songs.
+      </Hint>
     </>
   );
 }
@@ -232,6 +322,7 @@ function Microphones(
   props: SoundProps & {
     devices: SoundDevices;
     report: (section: Section, problem: string | null) => void;
+    onOpenAdd: () => void;
   },
 ) {
   const { devices, report } = props;
@@ -277,6 +368,7 @@ function Microphones(
         onAdd={(name, channel) =>
           report("mics", props.onChangeMic(props.mics.length, name, channel))
         }
+        onOpen={props.onOpenAdd}
       />
     </>
   );

@@ -30,13 +30,32 @@ function listed<T>(
 }
 
 // The inputs as listed; none while the listing fails.
+// How long the last listing took, in ms: listing the ASIO devices loads
+// every ASIO driver (only while no stream is open), which can take seconds
+// on some computers, and the page waits for it. Settings says it's looking
+// before a listing when the last one was slow.
+let lastListingMs = 0;
+const SLOW_LISTING_MS = 250;
+
+export const listingIsSlow = () => lastListingMs > SLOW_LISTING_MS;
+
+function timed<T>(list: () => T): T {
+  const start = performance.now();
+  try {
+    return list();
+  } finally {
+    lastListingMs = performance.now() - start;
+  }
+}
+
+// The inputs (listed once, at first; see soundDevices).
 export function inputDevices(): Input[] {
   return listed("the inputs", () => native.inputDevices(), []).value;
 }
 
-// What Settings shows as its Sound tab opens: the inputs (listed again on
-// Linux, for a mic plugged in since), the outputs, the ASIO drivers'
-// status and Linux's sound system. A listing that fails leaves its part
+// What Settings shows as its Sound tab opens, and again as devices come
+// and go: the inputs (listed again, for a mic plugged in since), the
+// outputs, the ASIO drivers' status and Linux's sound system. A listing that fails leaves its part
 // empty, and problem says why.
 export interface SoundDevices {
   inputs: Input[];
@@ -47,6 +66,10 @@ export interface SoundDevices {
 }
 
 export function soundDevices(): SoundDevices {
+  return timed(listSoundDevices);
+}
+
+function listSoundDevices(): SoundDevices {
   const refreshed = listed(
     "the inputs",
     () => native.refreshInputDevices(),

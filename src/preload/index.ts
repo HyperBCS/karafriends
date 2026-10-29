@@ -102,6 +102,11 @@ const FAIL_OPEN_KEY = "karafriendsFakeAudioFailOpen";
 // pitch detector is of it (the pitch bars draw only from 0.8).
 let fakePitch = { midiNumber: 0, confidence: 0 };
 
+// Inputs plugged in since launch (window.karafriendsFakeAudio.plugIn()),
+// and how long each listing takes (slowListing()).
+const fakePluggedIn: [string, string, number][] = [];
+let fakeListingMs = 0;
+
 // The open fake mics, by number: the input each is of, and why it stopped
 // (window.karafriendsFakeAudio.stopMics()), if it did.
 const fakeMics = new Map<number, { name: string; stopped: string | null }>();
@@ -138,10 +143,19 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
   let chosenOutput: string | null = null;
   const fake = faker(calls);
   return {
-    inputDevices: fake("inputDevices", (): [string, string, number][] => [
-      ["{0.0.1.00000000}.{e2e-mic} (USB)", "E2E Mic (USB)", 1],
-      ["{0.0.1.00000000}.{e2e-interface} (USB)", "E2E Interface (USB)", 2],
-    ]),
+    inputDevices: fake("inputDevices", (): [string, string, number][] => {
+      // window.karafriendsFakeAudio.slowListing(): a listing that holds the
+      // page, as loading the ASIO drivers can.
+      const until = Date.now() + fakeListingMs;
+      while (Date.now() < until) {
+        // Busy, as the native listing is.
+      }
+      return [
+        ["{0.0.1.00000000}.{e2e-mic} (USB)", "E2E Mic (USB)", 1],
+        ["{0.0.1.00000000}.{e2e-interface} (USB)", "E2E Interface (USB)", 2],
+        ...fakePluggedIn,
+      ];
+    }),
     refreshInputDevices: fake("refreshInputDevices", () => undefined),
     linuxAudio: fake("linuxAudio", () => null),
     outputDevices: fake("outputDevices", () => [
@@ -269,6 +283,14 @@ if (fakeAudioCalls) {
     setPitch: (midiNumber: number, confidence: number) => {
       fakePitch = { midiNumber, confidence };
     },
+    // A USB mic plugged in: listed from the next listing on.
+    plugIn: (label: string) => {
+      const id = `{0.0.1.00000000}.{${label}} (USB)`;
+      fakePluggedIn.push([id, `${label} (USB)`, 1]);
+    },
+    slowListing: (ms: number) => {
+      fakeListingMs = ms;
+    },
     // The open mics of these inputs stop, as a stream that stops calling
     // back does; they open again as usual.
     stopMics: (names: string[]) => {
@@ -292,14 +314,14 @@ contextBridge.exposeInMainWorld("karafriends", {
 // The native module, each mic as a number (see inputDevices above).
 function realAudio(): NativeAudio {
   return {
-    // Repeatedly asking CPAL for input devices seems to cause unexpected
-    // breakages, like the default output device being released. Let's avoid
-    // that: they're listed once. Except on Linux, where Settings lists them
-    // again as it opens, for a mic plugged in since (PipeWire and PulseAudio
-    // list them without opening any).
+    // Listed once, and again when Settings asks (refreshInputDevices): as
+    // its Sound tab opens, and as devices come and go. That's safe with mics
+    // open: the native module lists the ASIO drivers again only while no
+    // stream is (loading them stopped the open WASAPI mics; OPEN_STREAMS in
+    // native/karafriends-lib/src/lib.rs).
     inputDevices: () => (inputList ??= nativeAudio.inputDevices()),
     refreshInputDevices() {
-      if (process.platform === "linux") inputList = null;
+      inputList = null;
     },
     // Outputs are listed again each time Settings opens, so an interface
     // switched on after launch can be picked.
