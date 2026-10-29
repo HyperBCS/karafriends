@@ -355,6 +355,79 @@ test("the display's offset and UI scale save on the display, and the scale sizes
   await expect(offset).toHaveValue("-40");
 });
 
+test("a custom URL takes the QR code's place until a LAN address is picked again", async ({
+  display,
+}) => {
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const phones = settings.getByRole("region", { name: "Phones", exact: true });
+  const address = phones.getByLabel("Address");
+  const custom = phones.getByRole("textbox", { name: "Custom URL" });
+  const shown = display.locator(".joinAddress");
+  const first = await defaultAddress(display);
+  const closeSettings = async () => {
+    await settings.getByRole("button", { name: "Close" }).click();
+    await expect(settings).toHaveCount(0);
+  };
+  const openParty = async () => {
+    await display.keyboard.press("s");
+    await openTab(display, "Party");
+  };
+  await openTab(display, "Party");
+  await expect(custom).toHaveCount(0);
+
+  // Picked, it opens to type in; what isn't a site's root is refused, and
+  // the QR code keeps the LAN address meanwhile.
+  await address.selectOption("Custom URL…");
+  await expect(custom).toBeFocused();
+  for (const [typed, why] of [
+    ["ftp://example.com", "Only http:// or https:// addresses."],
+    [
+      "https://karaoke.example.ts.net/party",
+      "the remote has to be at its root",
+    ],
+  ]) {
+    await custom.fill(typed);
+    await custom.press("Enter");
+    await expect(phones.getByRole("alert")).toContainText(why);
+  }
+  expect(await display.evaluate(() => localStorage.getItem("customUrl"))).toBe(
+    null,
+  );
+
+  // An https one, tidied: the idle screen shows it whole.
+  await custom.fill(" HTTPS://Karaoke.Example.ts.net/ ");
+  await custom.press("Enter");
+  await expect(custom).toHaveValue("https://karaoke.example.ts.net");
+  await expect(phones.getByRole("alert")).toHaveCount(0);
+  await closeSettings();
+  await expect(shown).toHaveText("https://karaoke.example.ts.net");
+
+  // Kept across a reload.
+  await display.reload();
+  await openTab(display, "Party");
+  await expect(address).toHaveValue("custom");
+  await expect(custom).toHaveValue("https://karaoke.example.ts.net");
+
+  // A port forward's host and port: http, shown without it.
+  await custom.fill("203.0.113.5:8080");
+  await custom.press("Enter");
+  await closeSettings();
+  await expect(shown).toHaveText("203.0.113.5:8080");
+  expect(await display.evaluate(() => localStorage.getItem("customUrl"))).toBe(
+    "http://203.0.113.5:8080",
+  );
+
+  // A LAN address again: the custom URL is gone.
+  await openParty();
+  await address.selectOption(first);
+  await expect(custom).toHaveCount(0);
+  expect(await display.evaluate(() => localStorage.getItem("customUrl"))).toBe(
+    null,
+  );
+  await closeSettings();
+  await expect(shown).toHaveText(first);
+});
+
 test("the Address is this computer's first LAN address until another is picked, which is kept while it's here", async ({
   display,
 }) => {
@@ -366,8 +439,10 @@ test("the Address is this computer's first LAN address until another is picked, 
   const port = first.slice(first.lastIndexOf(":") + 1);
   await openTab(display, "Party");
   await expect(address).toHaveValue(first);
-  // Just the addresses: no karafriends.local.
-  const names = await address.locator("option").allTextContents();
+  // The addresses, then the custom URL; no karafriends.local.
+  const options = await address.locator("option").allTextContents();
+  expect(options.at(-1)).toBe("Custom URL…");
+  const names = options.slice(0, -1);
   expect(names).not.toContain("karafriends.local");
   expect(`${names[0]}:${port}`).toBe(first);
 
@@ -388,7 +463,7 @@ test("the Address is this computer's first LAN address until another is picked, 
   await display.reload();
   await openTab(display, "Party");
   await expect(address).toHaveValue(first);
-  await expect(address.locator("option")).toHaveText(names);
+  await expect(address.locator("option")).toHaveText(options);
 });
 
 test("Settings is in tabs: the arrows, Home and End move through them, the panel follows, and the last one opens again", async ({

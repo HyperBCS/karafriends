@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 
 import "../global";
-import HostnameSetting from "../HostnameSetting";
+import HostnameSetting, { CustomUrlSetting } from "../HostnameSetting";
 import {
   LABELS,
   type Loaded,
@@ -30,8 +30,13 @@ export default function PartyTab(props: {
   onAdminDraftChange: (draft: string) => void;
   hostname: string;
   onHostnameChange: (hostname: string) => void;
+  customUrl: string | null;
+  onCustomUrlChange: (url: string) => void;
 }) {
   const { loaded, messages, actions } = props;
+  // Custom URL… picked, before a URL is saved for it.
+  const [customPicked, setCustomPicked] = useState(false);
+  const custom = customPicked || props.customUrl !== null;
   const { settings } = loaded;
   const setAdminPassword = (password: string) =>
     actions.setAdminPassword(password, () => props.onAdminDraftChange(""));
@@ -43,7 +48,12 @@ export default function PartyTab(props: {
         <div className="settingsFields">
           <HostnameSetting
             hostname={props.hostname}
-            onChange={props.onHostnameChange}
+            custom={custom}
+            onChange={(hostname) => {
+              setCustomPicked(false);
+              props.onHostnameChange(hostname);
+            }}
+            onPickCustom={() => setCustomPicked(true)}
           />
           <TextSetting
             label={LABELS.remoconPort}
@@ -60,6 +70,12 @@ export default function PartyTab(props: {
             }
           />
         </div>
+        {custom ? (
+          <CustomUrlSetting
+            url={props.customUrl}
+            onChange={props.onCustomUrlChange}
+          />
+        ) : null}
         <Hint>The QR code sends phones to this address.</Hint>
         {loaded.needsRestart ? (
           <div className="settingsRestart">

@@ -8,6 +8,7 @@ import "./App.css";
 import Announcements from "./Announcements";
 import Effects from "./Effects";
 import IdleScreen from "./IdleScreen";
+import { parseCustomUrl } from "./remoteAddress";
 import type { MicLevels } from "./MicrophoneSetting";
 import {
   InputDevice,
@@ -114,6 +115,18 @@ const SETTINGS_TAB_KEY = "settingsTab";
 // The LAN address the QR code sends phones to, without the port, when the
 // host picked one; not set for the default, this computer's first.
 const HOSTNAME_KEY = "hostname";
+
+// The custom URL the QR code sends phones to instead (Tailscale, a port
+// forward, a proxy), when the host set one; one saved that no longer passes
+// parseCustomUrl is left out.
+const CUSTOM_URL_KEY = "customUrl";
+
+function savedCustomUrl(): string | null {
+  const saved = localStorage.getItem(CUSTOM_URL_KEY);
+  if (saved === null) return null;
+  const parsed = parseCustomUrl(saved);
+  return "url" in parsed ? parsed.url : null;
+}
 
 // How often the display looks again at this computer's addresses, so the QR
 // code follows a new network (or a new address from the router).
@@ -222,6 +235,9 @@ function App(props: { audio: KarafriendsAudio }) {
     savedChoice(localStorage.getItem(UI_SCALE_KEY), UI_SCALES, 100),
   );
   const [hostname, setHostname] = useState(savedHostname);
+  const [customUrl, setCustomUrl] = useState(savedCustomUrl);
+  // Where the QR code sends phones.
+  const remoteUrl = customUrl ?? `http://${hostname}`;
   const [pitchBars, setPitchBars] = useState(
     () => localStorage.getItem(PITCH_BARS_KEY) !== "off",
   );
@@ -385,10 +401,17 @@ function App(props: { audio: KarafriendsAudio }) {
   };
 
   // "address:port": the address is kept, for the next launch to use with
-  // its port.
+  // its port, in place of a custom URL.
   const changeHostname = (picked: string) => {
     save(HOSTNAME_KEY, picked.slice(0, picked.lastIndexOf(":")));
+    save(CUSTOM_URL_KEY, null);
     setHostname(picked);
+    setCustomUrl(null);
+  };
+
+  const changeCustomUrl = (url: string) => {
+    save(CUSTOM_URL_KEY, url);
+    setCustomUrl(url);
   };
 
   // A new network, or a new address on this one: the QR code moves to it
@@ -498,15 +521,13 @@ function App(props: { audio: KarafriendsAudio }) {
             avOffsetMs={avOffsetMs}
             pitchBars={pitchBars}
           />
-          {!idle && !settingsOpen ? (
-            <QRCode hostname={hostname} corner />
-          ) : null}
+          {!idle && !settingsOpen ? <QRCode url={remoteUrl} corner /> : null}
           <Effects />
         </div>
         {!idle && upNextVisible ? <UpNext layout="strip" /> : null}
         {idle ? (
           <IdleScreen
-            hostname={hostname}
+            url={remoteUrl}
             onOpenSettings={() => setSettingsOpen(true)}
           />
         ) : null}
@@ -518,6 +539,8 @@ function App(props: { audio: KarafriendsAudio }) {
             onClose={() => setSettingsOpen(false)}
             hostname={hostname}
             onHostnameChange={changeHostname}
+            customUrl={customUrl}
+            onCustomUrlChange={changeCustomUrl}
             mics={mics}
             micLevels={(mic) => levelsOf(idOf(mic))}
             onChangeMic={onChangeMic}

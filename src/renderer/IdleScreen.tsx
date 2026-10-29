@@ -6,7 +6,8 @@ import UpNext from "./UpNext";
 
 // While no song plays: the remote's QR code and address, and what's queued.
 export default function IdleScreen(props: {
-  hostname: string;
+  // Where the QR code sends phones.
+  url: string;
   onOpenSettings: () => void;
 }) {
   return (
@@ -24,7 +25,7 @@ export default function IdleScreen(props: {
           />
         </svg>
       </button>
-      <QRCode hostname={props.hostname} />
+      <QRCode url={props.url} />
       <UpNext layout="rows" />
     </div>
   );
