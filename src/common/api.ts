@@ -262,12 +262,17 @@ export interface LiveState {
   downloads: DownloadProgress[];
   // Only what every phone may see: no credentials, no admin list (ask
   // whoami instead).
-  // joysoundLogin: a Joysound login is set, so Browse (Joysound's) shows.
   config: {
     supervisedMode: boolean;
     everyoneIsAdmin: boolean;
-    joysoundLogin: boolean;
   };
+  // DAM's and Joysound's songs: phones show a catalog's only while it is
+  // on (see CatalogStatus).
+  catalogs: Record<LoginService, CatalogStatus>;
+  // ffmpeg and yt-dlp are being downloaded for the first time, so YouTube
+  // and Niconico songs wait: how far along (0 to 100, or null while it
+  // can't tell). Null otherwise.
+  toolsDownload: { percent: number | null } | null;
   // ToolsStatus's problem, for the display's notice. Phones ignore it.
   toolsProblem: string | null;
   // Why phones can't connect (the server couldn't listen: "Phones can't
@@ -432,6 +437,19 @@ export type LoginService = "dam" | "joysound";
 // too, a note on how karafriends' link to the Joysound account stands.
 // canSwitchLink: karafriends isn't the account's TV app (another may be),
 // and switchJoysoundLink can make it so.
+// How a catalog (DAM's songs, or Joysound's) stands on this karaoke PC:
+// off, no login is filled in; checking, signing in; on, signed in, so
+// guests can find and sing its songs. unreachable: the service couldn't be
+// reached (no connection, or no Japanese IP address: the VPN), and is tried
+// again by itself at retryAt. failed: the service refused the login (a
+// wrong password, an account that isn't a paid member, another TV app
+// holding Joysound's link), until the host changes it. reason says why, in
+// a sentence for the host.
+export type CatalogStatus =
+  | { state: "off" | "checking" | "on" }
+  | { state: "unreachable"; reason: string; retryAt: number }
+  | { state: "failed"; reason: string; canSwitchLink?: boolean };
+
 export type TestLoginResult =
   | { ok: true; note?: string; canSwitchLink?: boolean }
   | { ok: false; reason: string; canSwitchLink?: boolean };
@@ -643,7 +661,8 @@ export interface Api {
 
   // Settings: the display only (over IPC). A phone gets 403 for each.
 
-  // isFirstRun: neither a DAM nor a Joysound login is filled in.
+  // setup: there was no config.yaml at launch (a first start), and the
+  // host hasn't finished or skipped the setup screen yet (finishSetup).
   // needsRestart: a setting that only takes effect after a restart
   // (remoconPort) is saved with a value other than the one the app started
   // with.
@@ -654,7 +673,7 @@ export interface Api {
     input: Record<string, never>;
     output: {
       settings: Settings;
-      isFirstRun: boolean;
+      setup: boolean;
       needsRestart: boolean;
       loadProblem: string | null;
     };
@@ -701,6 +720,12 @@ export interface Api {
     input: { yaml: string };
     output:
       { ok: true; problems: string[] } | { ok: false; problems: string[] };
+  };
+  // The setup screen is done (finished, or skipped): it doesn't open again
+  // until config.yaml is new again.
+  finishSetup: {
+    input: Record<string, never>;
+    output: Record<string, never>;
   };
   // Restarts the app, for remoconPort. Answers first.
   restartApp: {

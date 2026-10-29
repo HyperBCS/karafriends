@@ -65,6 +65,8 @@ function setup(
   const store = createConfigStore(filePath);
   const tried: string[] = [];
   const restarts: number[] = [];
+  // The logins that worked, for their catalogs (loginWorked).
+  const worked: LoginService[] = [];
   const recording =
     (service: LoginService): LoginFake =>
     async (username, password) => {
@@ -78,6 +80,7 @@ function setup(
       tried.push(`switch ${email}:${password}`);
       return (options.switchLink ?? (async () => "Switched."))(email, password);
     },
+    loginWorked: (service) => worked.push(service),
     restart: () => restarts.push(Date.now()),
     tools: {
       status: () => TOOLS_STATUS,
@@ -85,7 +88,7 @@ function setup(
     },
   });
   const onDisk = () => parse(fs.readFileSync(filePath, "utf8"));
-  return { api, store, onDisk, tried, restarts };
+  return { api, store, onDisk, tried, restarts, worked };
 }
 
 const rejectsWith = (promise: Promise<unknown>, status: number) =>
@@ -115,16 +118,24 @@ describe("getSettings", () => {
     assert.doesNotMatch(JSON.stringify(settings), /dam-pw|joy-pw|abcd|00ff/);
   });
 
-  test("isFirstRun until one login is filled in", async () => {
+  test("setup on a first start (no config.yaml), until it's finished", async () => {
     const { api, store } = setup();
     const first = await api.getSettings({}, display);
-    assert.equal(first.isFirstRun, true);
+    assert.equal(first.setup, true);
     assert.equal(first.needsRestart, false);
     assert.equal(first.settings.adminPasswordSet, false);
-    store.update({ damUsername: "dam-user" });
-    assert.equal((await api.getSettings({}, display)).isFirstRun, true);
-    store.update({ joysoundEmail: "a@b", joysoundPassword: "pw" });
-    assert.equal((await api.getSettings({}, display)).isFirstRun, false);
+    // Logins filled in don't end it; finishing (or skipping) does.
+    store.update(LOGINS);
+    assert.equal((await api.getSettings({}, display)).setup, true);
+    await rejectsWith(api.finishSetup({}, phone), 403);
+    assert.deepEqual(await api.finishSetup({}, display), {});
+    assert.equal((await api.getSettings({}, display)).setup, false);
+  });
+
+  test("no setup when config.yaml was there, even without a login", async () => {
+    fs.writeFileSync(path.join(dir, "config.yaml"), "supervisedMode: true\n");
+    const { api } = setup();
+    assert.equal((await api.getSettings({}, display)).setup, false);
   });
 
   test("says when config.yaml couldn't be read at launch", async (t) => {
@@ -289,8 +300,8 @@ describe("setAdminPassword", () => {
 });
 
 describe("testLogin", () => {
-  test("uses the saved login", async () => {
-    const { api, store, tried } = setup();
+  test("uses the saved login, and says it worked, for its catalog", async () => {
+    const { api, store, tried, worked } = setup();
     store.update(LOGINS);
     assert.deepEqual(await api.testLogin({ service: "dam" }, display), {
       ok: true,
@@ -300,6 +311,25 @@ describe("testLogin", () => {
       "dam dam-user:dam-pw",
       "joysound joy@example.com:joy-pw",
     ]);
+    assert.deepEqual(worked, ["dam", "joysound"]);
+  });
+
+  test("a login that fails or warns isn't one that worked", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    const { api, store, worked } = setup({
+      logins: {
+        dam: async () => {
+          throw new Error("wrong password");
+        },
+        joysound: async () => {
+          throw new LoginWarning("not a paid member");
+        },
+      },
+    });
+    store.update(LOGINS);
+    await api.testLogin({ service: "dam" }, display);
+    await api.testLogin({ service: "joysound" }, display);
+    assert.deepEqual(worked, []);
   });
 
   test("gives up on a service that doesn't answer in 15 seconds", async (t) => {
@@ -409,7 +439,7 @@ describe("testLogin", () => {
 
 describe("switchJoysoundLink", () => {
   test("switches with the saved login, on the display only", async () => {
-    const { api, store, tried } = setup({
+    const { api, store, tried, worked } = setup({
       switchLink: async () => "karafriends is linked to this account.",
     });
     store.update(LOGINS);
@@ -420,6 +450,8 @@ describe("switchJoysoundLink", () => {
       note: "karafriends is linked to this account.",
     });
     assert.deepEqual(tried, ["switch joy@example.com:joy-pw"]);
+    // Joysound's songs come on.
+    assert.deepEqual(worked, ["joysound"]);
   });
 
   test("says when no login is set, without asking", async () => {
@@ -569,9 +601,8 @@ describe("exportConfig and importConfig", () => {
       assert.equal(saved[key], "", key);
     }
     assert.equal(saved.supervisedMode, true);
-    const { settings, isFirstRun } = await api.getSettings({}, display);
+    const { settings } = await api.getSettings({}, display);
     assert.equal(settings.damPassword, "");
-    assert.equal(isFirstRun, true);
   });
 
   test("unknown keys are dropped and listed", async () => {

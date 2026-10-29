@@ -109,6 +109,7 @@ describe("POST /api/<method>", () => {
       "clearDownloads",
       "downloadsInfo",
       "exportConfig",
+      "finishSetup",
       "getSettings",
       "getToolsStatus",
       "importConfig",

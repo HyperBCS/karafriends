@@ -37,6 +37,7 @@ export const SETTINGS_METHODS = [
   "setAdminPassword",
   "testLogin",
   "switchJoysoundLink",
+  "finishSetup",
   "exportConfig",
   "importConfig",
   "restartApp",
@@ -64,7 +65,10 @@ const SERVICE_NAMES: Record<LoginService, string> = {
 };
 
 export interface SettingsDeps {
-  store: Pick<ConfigStore, "saved" | "atLaunch" | "update" | "loadProblem">;
+  store: Pick<
+    ConfigStore,
+    "saved" | "atLaunch" | "update" | "loadProblem" | "createdAtLaunch"
+  >;
   // A fresh login, not the clients' shared one. Resolves on success, to a
   // sentence for the host if there's more to say (how karafriends' link to
   // the Joysound account stands). It changes nothing the clients use:
@@ -77,6 +81,9 @@ export interface SettingsDeps {
   // other (joysoundLink.ts's switchLink), and has the clients check their
   // link again. Resolves to a sentence for the host.
   switchJoysoundLink(email: string, password: string): Promise<string>;
+  // A login that just worked (Test login, Switch): its catalog is checked
+  // again, so one that was off for it comes on (catalogs.ts).
+  loginWorked?(service: LoginService): void;
   // app.relaunch() and app.exit(0).
   restart(): void;
   // externalResources.ts's, with the live state's problem.
@@ -114,6 +121,8 @@ export function createSettingsHandlers(
   deps: SettingsDeps,
 ): Pick<ApiHandlers, SettingsMethod> {
   const { store } = deps;
+  // The setup screen is done for this launch (finishSetup).
+  let setupDone = false;
 
   const requireDisplay = (caller: Caller) => {
     if (!caller.isDisplay) {
@@ -158,6 +167,7 @@ export function createSettingsHandlers(
         LOGIN_TIMEOUT_MS,
         `${SERVICE_NAMES[service]}'s login`,
       );
+      deps.loginWorked?.(service);
       if (!note || note.note === "") return { ok: true };
       return note.canSwitchLink
         ? { ok: true, note: note.note, canSwitchLink: true }
@@ -192,7 +202,7 @@ export function createSettingsHandlers(
           ...settings,
           adminPasswordSet: saved.adminPasswordHash !== "",
         },
-        isFirstRun: !hasLogin(saved, "dam") && !hasLogin(saved, "joysound"),
+        setup: store.createdAtLaunch && !setupDone,
         needsRestart: needsRestart(),
         loadProblem: store.loadProblem,
       };
@@ -244,6 +254,7 @@ export function createSettingsHandlers(
           SWITCH_TIMEOUT_MS,
           "Joysound's TV link",
         );
+        deps.loginWorked?.("joysound");
         return { ok: true, note };
       } catch (err) {
         console.warn(
@@ -255,6 +266,12 @@ export function createSettingsHandlers(
           reason: loginFailureReason("joysound", err, SWITCH_TIMEOUT_MS),
         };
       }
+    },
+
+    async finishSetup(_input, caller) {
+      requireDisplay(caller);
+      setupDone = true;
+      return {};
     },
 
     async exportConfig(_input, caller) {

@@ -13,6 +13,7 @@ import type {
   DamQueueItem,
   DamSong,
   JoysoundQueueItem,
+  LoginService,
   NicoQueueItem,
   NicoVideoInfo,
   PoppedSong,
@@ -34,6 +35,7 @@ import type { KarafriendsConfig } from "../common/config";
 import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
+import type { Catalogs } from "./catalogs";
 import { NoLoginError } from "./credentials";
 import {
   damPictureUrl,
@@ -163,6 +165,9 @@ export interface ApiDeps {
   // The song pages' pictures (songPictures.ts): each song lookup leaves its
   // picture's URL there, for /api/songPicture.
   pictures?: Pick<SongPictures, "remember">;
+  // Whether DAM's and Joysound's songs are on (catalogs.ts): a phone asking
+  // for one that's off is refused. Every catalog is on without it (tests).
+  catalogs?: Pick<Catalogs, "isOn">;
   now?: () => number;
   // How long popSong waits for DAM (see DAM_POP_TIMEOUT_MS).
   damPopTimeoutMs?: number;
@@ -204,12 +209,28 @@ const NICO_INFO_FAILED = "Failed getting video info. Maybe an invalid VideoID?";
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 
+// Why a phone can't have a catalog's songs: its login isn't set up, or
+// doesn't work (catalogs.ts). The remote says it in the phone's language
+// (src/remocon/i18n/reasons.ts).
+export const CATALOG_OFF: Record<LoginService, string> = {
+  dam: "DAM isn't set up on this karaoke PC",
+  joysound: "Joysound isn't set up on this karaoke PC",
+};
+
 // Every method but the settings ones (settings.ts).
 export function createApi(
   deps: ApiDeps,
 ): Omit<ApiHandlers, SettingsMethod> & { resumeDownloads(): void } {
   const { config, store } = deps;
   const now = deps.now ?? Date.now;
+
+  // Phones only show the catalogs that are on: one that asks for another
+  // (a page left open since) is refused, with why.
+  const catalogOff = (service: LoginService) =>
+    deps.catalogs !== undefined && !deps.catalogs.isOn(service);
+  const requireCatalog = (service: LoginService) => {
+    if (catalogOff(service)) throw new ApiError(409, CATALOG_OFF[service]);
+  };
 
   // The display, or a phone signed in with the admin password. Nicknames
   // grant nothing, since anyone can pick any nickname and every phone sees
@@ -532,6 +553,7 @@ export function createApi(
     },
 
     async damSearchSongs({ query, offset = 0, limit = DEFAULT_LIMIT.dam }) {
+      requireCatalog("dam");
       const result = await deps.dkwebsys.getMusicByKeyword(
         query,
         limit,
@@ -544,6 +566,7 @@ export function createApi(
     },
 
     async damSearchArtists({ query, offset = 0, limit = DEFAULT_LIMIT.dam }) {
+      requireCatalog("dam");
       const result = await deps.dkwebsys.getArtistByKeyword(
         query,
         limit,
@@ -561,6 +584,7 @@ export function createApi(
     },
 
     async damArtist({ id, offset = 0, limit = DEFAULT_LIMIT.dam }) {
+      requireCatalog("dam");
       const result = await deps.dkwebsys.getMusicListByArtist(
         id,
         limit,
@@ -579,6 +603,7 @@ export function createApi(
     },
 
     async damSong({ id }) {
+      requireCatalog("dam");
       const { data, list } = await deps.dkwebsys.getMusicDetailsInfo(id);
       const info = list[0].mModelMusicInfoList[0];
       const pictureUrl = damPictureUrl(info.thumbnailPath);
@@ -612,6 +637,7 @@ export function createApi(
     },
 
     async joysoundSearchSongs({ query, offset, limit }) {
+      requireCatalog("joysound");
       const { items, nextOffset } = await joysoundPage(
         (start, count) =>
           deps.joysound.getSongListByKeyword(query, start, count),
@@ -623,6 +649,7 @@ export function createApi(
     },
 
     async joysoundSearchArtists({ query, offset, limit }) {
+      requireCatalog("joysound");
       const { items, nextOffset } = await joysoundPage(
         (start, count) =>
           deps.joysound.getArtistListByKeyword(query, start, count),
@@ -634,6 +661,7 @@ export function createApi(
     },
 
     async joysoundArtistSongs({ id, offset, limit }) {
+      requireCatalog("joysound");
       const { items, nextOffset, total } = await joysoundPage(
         (start, count) => deps.joysound.getSongListByArtist(id, start, count),
         toJoysoundSong,
@@ -644,6 +672,7 @@ export function createApi(
     },
 
     async joysoundSong({ id }) {
+      requireCatalog("joysound");
       const detail = await deps.joysound.getSongDetail(id);
       deps.pictures?.remember("joysound", id, detail.pictureUrl);
       return {
@@ -657,9 +686,13 @@ export function createApi(
       };
     },
 
-    joysoundGenres: () => deps.joysound.getGenres(),
+    async joysoundGenres() {
+      requireCatalog("joysound");
+      return deps.joysound.getGenres();
+    },
 
     async joysoundGenreSongs({ id, offset, limit }) {
+      requireCatalog("joysound");
       const { items, nextOffset } = await joysoundPage(
         (start, count) => deps.joysound.getSongListByGenre(id, start, count),
         toJoysoundSong,
@@ -671,6 +704,7 @@ export function createApi(
 
     // All of them come at once (about 100): served a page at a time.
     async joysoundNewSongs({ offset = 0, limit = DEFAULT_LIMIT.joysound }) {
+      requireCatalog("joysound");
       const songs = await deps.joysound.getNewSongs();
       return {
         items: songs.slice(offset, offset + limit).map(toJoysoundSong),
@@ -680,6 +714,7 @@ export function createApi(
 
     // Each list's picture's URL is left for /api/songPicture.
     async joysoundFeatures() {
+      requireCatalog("joysound");
       const features = await deps.joysound.getFeatures();
       for (const feature of features) {
         deps.pictures?.remember(
@@ -697,6 +732,7 @@ export function createApi(
     },
 
     async joysoundFeature({ id }) {
+      requireCatalog("joysound");
       const feature = (await deps.joysound.getFeatures()).find(
         (candidate) => candidate.id === id,
       );
@@ -825,6 +861,13 @@ export function createApi(
       // Its song and video IDs are safe for file names and yt-dlp: the
       // validator (validate.ts) let only those through.
       const user = requireIdentity(caller);
+
+      if (
+        (input.kind === "dam" || input.kind === "joysound") &&
+        catalogOff(input.kind)
+      ) {
+        return { ok: false, reason: CATALOG_OFF[input.kind] };
+      }
 
       if (hasMaxSongsInQueue(user, caller)) {
         return {

@@ -87,10 +87,7 @@ function liveDownloads(
 // reported it.
 // What the live state's config comes from: the running config, or (in
 // tests) just its two queue rules.
-export type LiveConfig = Omit<LiveState["config"], "joysoundLogin"> & {
-  joysoundEmail?: string;
-  joysoundPassword?: string;
-};
+export type LiveConfig = LiveState["config"];
 
 export function toLiveState(
   state: Readonly<State>,
@@ -117,8 +114,9 @@ export function toLiveState(
     config: {
       supervisedMode: config.supervisedMode,
       everyoneIsAdmin: config.everyoneIsAdmin,
-      joysoundLogin: Boolean(config.joysoundEmail && config.joysoundPassword),
     },
+    catalogs: state.catalogs,
+    toolsDownload: state.toolsDownload,
     toolsProblem: state.toolsProblem?.message ?? null,
     remoconProblem: state.remoconProblem,
     adminSignOuts: state.adminSignOuts,

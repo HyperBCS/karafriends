@@ -20,7 +20,11 @@
 // message, and never into config.yaml (so Export config leaves it out).
 //
 // No Electron imports, so unit tests can load this file under plain Node.
-import { type LoginNote, LoginWarning } from "./credentials";
+import {
+  type LoginNote,
+  LoginRejectedError,
+  LoginWarning,
+} from "./credentials";
 import {
   formBody,
   getSetCookies,
@@ -166,7 +170,7 @@ export async function websiteLogin(
   // 0 means the credentials were accepted; 1 means a wrong email/password.
   const result = typeof checked === "object" ? checked.result : undefined;
   if (result !== 0) {
-    throw new Error(
+    throw new LoginRejectedError(
       `Joysound login rejected (result ${String(result)}); check joysoundEmail and joysoundPassword in config.yaml`,
     );
   }

@@ -29,6 +29,8 @@ import {
 import Player from "./Player";
 import QRCode from "./QRCode";
 import Settings, { SETTINGS_TABS, type SettingsTab } from "./Settings";
+import type { SoundProps } from "./settings/SoundTab";
+import Setup from "./Setup";
 import UpNext from "./UpNext";
 import type { Announcement } from "./useSongPlayer";
 import KarafriendsAudio, { type SongOutput } from "./webAudio";
@@ -218,7 +220,8 @@ function savedLevels(): Record<string, MicLevels> {
 }
 
 function App(props: { audio: KarafriendsAudio }) {
-  const [mics, _setMics] = useState(savedMics);
+  // None until the display has painted (see below).
+  const [mics, _setMics] = useState<InputDevice[]>([]);
   // Apart from the devices, so the piano roll keeps its mics (and what they
   // sang) while a level changes. By micId.
   const [levels, setLevels] = useState(savedLevels);
@@ -243,6 +246,11 @@ function App(props: { audio: KarafriendsAudio }) {
   );
   const [upNextVisible, setUpNextVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The setup screen, on a first start.
+  const [setupOpen, setSetupOpen] = useState(false);
+  // For the keys: S doesn't open Settings under the setup screen.
+  const setupShown = useRef(false);
+  setupShown.current = setupOpen;
   const [settingsTab, setSettingsTab] = useState(savedSettingsTab);
   const [announcements, setAnnouncements] = useState<
     (Announcement & { id: number })[]
@@ -477,21 +485,44 @@ function App(props: { audio: KarafriendsAudio }) {
       }
       const key = event.key.toLowerCase();
       if (key === "q") setUpNextVisible((visible) => !visible);
-      if (key === "s") setSettingsOpen(true);
+      if (key === "s" && !setupShown.current) setSettingsOpen(true);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // The first launch, with no DAM or Joysound login, opens Settings on
-  // Accounts.
+  // The saved mics open once the display has painted: listing and opening
+  // sound devices can take seconds (a Linux sound system that's slow to
+  // answer, ASIO drivers loading), and the screen would stay black
+  // meanwhile. After the next frame, or half a second in a window that
+  // draws none (hidden, under the tests).
+  useEffect(() => {
+    let opened = false;
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      const saved = savedMics();
+      // None saved: the phones were sent none already.
+      _setMics((current) =>
+        saved.length === 0 && current.length === 0 ? current : saved,
+      );
+    };
+    let afterFrame: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => {
+      afterFrame = setTimeout(open, 0);
+    });
+    const fallback = setTimeout(open, 500);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(afterFrame);
+      clearTimeout(fallback);
+    };
+  }, []);
+
+  // A first start (no config.yaml at launch) opens the setup screen.
   useEffect(() => {
     call("getSettings", {}).then(
-      ({ isFirstRun }) => {
-        if (!isFirstRun) return;
-        setSettingsTab("accounts");
-        setSettingsOpen(true);
-      },
+      ({ setup }) => setSetupOpen(setup),
       (err) => console.error("Couldn't load the settings:", err),
     );
   }, []);
@@ -509,6 +540,26 @@ function App(props: { audio: KarafriendsAudio }) {
     });
   });
 
+  // The Sound tab's, in Settings and on the setup screen.
+  const soundProps: SoundProps = {
+    mics,
+    micLevels: (mic) => levelsOf(idOf(mic)),
+    onChangeMic,
+    onChangeLevels: (mic, newLevels) =>
+      changeLevels({ [idOf(mic)]: newLevels }),
+    onRemoveMic: removeMic,
+    micOutput,
+    onMicOutputChange: changeMicOutput,
+    micMode,
+    onMicModeChange: changeMicMode,
+    songOutput,
+    onSongOutputChange: changeSongOutput,
+    songOutputPlace: () => props.audio.outputPlace(),
+    avOffsetMs,
+    onAvOffsetChange: changeAvOffset,
+    audioLatencyMs: () => props.audio.latencyMs(),
+  };
+
   return (
     <div className="app">
       <NoticeBar />
@@ -521,7 +572,9 @@ function App(props: { audio: KarafriendsAudio }) {
             avOffsetMs={avOffsetMs}
             pitchBars={pitchBars}
           />
-          {!idle && !settingsOpen ? <QRCode url={remoteUrl} corner /> : null}
+          {!idle && !settingsOpen && !setupOpen ? (
+            <QRCode url={remoteUrl} corner />
+          ) : null}
           <Effects />
         </div>
         {!idle && upNextVisible ? <UpNext layout="strip" /> : null}
@@ -541,28 +594,15 @@ function App(props: { audio: KarafriendsAudio }) {
             onHostnameChange={changeHostname}
             customUrl={customUrl}
             onCustomUrlChange={changeCustomUrl}
-            mics={mics}
-            micLevels={(mic) => levelsOf(idOf(mic))}
-            onChangeMic={onChangeMic}
-            onChangeLevels={(mic, newLevels) =>
-              changeLevels({ [idOf(mic)]: newLevels })
-            }
-            onRemoveMic={removeMic}
-            micOutput={micOutput}
-            onMicOutputChange={changeMicOutput}
-            micMode={micMode}
-            onMicModeChange={changeMicMode}
-            songOutput={songOutput}
-            onSongOutputChange={changeSongOutput}
-            songOutputPlace={() => props.audio.outputPlace()}
-            avOffsetMs={avOffsetMs}
-            onAvOffsetChange={changeAvOffset}
+            {...soundProps}
             uiScale={uiScale}
             onUiScaleChange={changeUiScale}
             pitchBars={pitchBars}
             onPitchBarsChange={changePitchBars}
-            audioLatencyMs={() => props.audio.latencyMs()}
           />
+        ) : null}
+        {setupOpen ? (
+          <Setup {...soundProps} onDone={() => setSetupOpen(false)} />
         ) : null}
       </main>
     </div>

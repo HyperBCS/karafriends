@@ -75,15 +75,17 @@ test("a song queued while the display waits starts within 2 seconds", async ({
     .toBe("E2E player song");
   expect(Date.now() - queuedAt).toBeLessThan(2_000);
 
-  // The corner says so, and the idle screen made way for the video.
+  // The corner says so, and the idle screen made way for the video: only
+  // the corner's small QR code is left.
   const corner = display.getByRole("status").filter({ hasText: "Now playing" });
   await expect(corner).toContainText("E2E player song");
   const artist = corner.getByText("E2E artist", { exact: true }).first();
   await expect(artist).toBeVisible();
   await expect(corner.getByText("e2e", { exact: true }).first()).toBeVisible();
+  await expect(display.getByText("Scan to join")).toHaveCount(0);
   await expect(
     display.getByRole("img", { name: "QR code for the remote" }),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
 });
 
 test.describe("a download the display can't play", () => {
@@ -300,12 +302,6 @@ test.describe("where the song really is", () => {
     display,
   }) => {
     const { remoconUrl } = karafriends;
-    // A first launch opens Settings; close it, so Up next shows.
-    const settings = display.getByRole("dialog", { name: "Settings" });
-    await expect(settings).toBeVisible();
-    await display.keyboard.press("Escape");
-    await expect(settings).toHaveCount(0);
-
     const video = display.locator("video");
     const next = display
       .getByRole("region", { name: "Up next" })

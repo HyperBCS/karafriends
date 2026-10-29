@@ -196,6 +196,9 @@ test("/api/events sends the live state", async ({ karafriends }) => {
       adhocLyrics: [],
       downloads: [],
       config: { supervisedMode: false, everyoneIsAdmin: false },
+      // Faked on for the tests (the catalogs fixture option).
+      catalogs: { dam: { state: "on" }, joysound: { state: "on" } },
+      toolsDownload: null,
       toolsProblem: null,
       remoconProblem: null,
       adminSignOuts: 0,
@@ -813,11 +816,10 @@ test.describe("the song volume and the mics", () => {
       body: { error: "setMics is for the display only, not phones" },
     });
 
-    // As it starts, the display sends its own mics (none), then opens
-    // Settings on a first launch. Wait for that, or its list could replace
-    // this one.
+    // As it starts, the display sends its own mics (none). Wait for it to be
+    // up, or its list could replace this one.
     await expect(
-      display.getByRole("dialog", { name: "Settings" }),
+      display.getByRole("img", { name: "QR code for the remote" }),
     ).toBeVisible();
     expect(await displayCall(display, "setMics", { mics: [MIC] })).toEqual({
       ok: true,

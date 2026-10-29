@@ -70,20 +70,10 @@ test("the display opens on its idle screen without console errors", async ({
 }) => {
   await expect(display).toHaveTitle("karafriends");
 
-  // A fresh profile has no DAM or Joysound login, so Settings opens first,
-  // on Accounts.
+  // A profile with a config.yaml opens on the idle screen, even without a
+  // login (a first start opens the setup screen: settings.spec.ts).
   const settings = display.getByRole("dialog", { name: "Settings" });
-  await expect(
-    settings.getByText(
-      "Add your DAM or Joysound login to search their catalogs. YouTube works without one.",
-    ),
-  ).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await display.keyboard.press("Escape");
-  await expect(settings).toHaveCount(0);
+  await expect(display.getByRole("dialog")).toHaveCount(0);
 
   // The idle screen: the remote's QR code and address, and an empty queue.
   // The address carries the remote's port, which the preload got from the
@@ -162,9 +152,6 @@ test.describe("while a song plays", () => {
     display,
     karafriends,
   }) => {
-    const settings = display.getByRole("dialog", { name: "Settings" });
-    await expect(settings).toBeVisible();
-    await display.keyboard.press("Escape");
     const upNext = display.getByRole("region", { name: "Up next" });
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
 
@@ -193,12 +180,6 @@ test.describe("while a song plays", () => {
   });
 
   test("Q hides and shows the up-next strip", async ({ display }) => {
-    // A first launch opens Settings; close it, so Q reaches the display.
-    const settings = display.getByRole("dialog", { name: "Settings" });
-    await expect(settings).toBeVisible();
-    await display.keyboard.press("Escape");
-    await expect(settings).toHaveCount(0);
-
     const upNext = display.getByRole("region", { name: "Up next" });
     await expect(upNext.getByRole("listitem")).toHaveText([/E2E strip song 2/]);
     await display.keyboard.press("q");
@@ -211,10 +192,8 @@ test.describe("while a song plays", () => {
     display,
   }) => {
     const settings = display.getByRole("dialog", { name: "Settings" });
-    await expect(settings).toBeVisible();
     const qrCode = display.getByRole("img", { name: "QR code for the remote" });
     const address = display.getByText(await defaultAddress(display));
-    await display.keyboard.press("Escape");
     // Song 1 plays once song 2 is up next.
     await expect(
       display.getByRole("region", { name: "Up next" }).getByRole("listitem"),
@@ -255,10 +234,6 @@ test.describe("while a song plays", () => {
     display,
     karafriends,
   }) => {
-    const settings = display.getByRole("dialog", { name: "Settings" });
-    await expect(settings).toBeVisible();
-    await display.keyboard.press("Escape");
-    await expect(settings).toHaveCount(0);
     const next = display
       .getByRole("region", { name: "Up next" })
       .getByRole("listitem");

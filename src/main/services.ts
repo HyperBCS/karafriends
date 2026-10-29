@@ -7,7 +7,16 @@ import { app } from "electron";
 import { Innertube } from "youtubei.js";
 
 import { configStore } from "../common/config";
-import { toolsStatus, updateTools } from "../common/externalResources";
+import {
+  DAM_LOGIN_KEYS,
+  hasLogin,
+  JOYSOUND_LOGIN_KEYS,
+} from "../common/configSchema";
+import {
+  onFirstToolsDownload,
+  toolsStatus,
+  updateTools,
+} from "../common/externalResources";
 import { songFilesOf } from "../common/songFiles";
 import {
   createDownloads,
@@ -23,7 +32,12 @@ import {
 } from "./downloads/folder";
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
-import { createCredentialProviders, memoizeSuccess } from "./credentials";
+import { CATALOGS, createCatalogs, fakeCatalogs } from "./catalogs";
+import {
+  createCredentialProviders,
+  LoginWarning,
+  memoizeSuccess,
+} from "./credentials";
 import { damPictureUrl, DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
 import { createJoysoundLinker, type StoredLink } from "./joysoundLink";
@@ -59,6 +73,14 @@ if (queueMoved) {
 sweepHalfDone(DOWNLOADS_FOLDER);
 
 export const hub = createLiveHub(store, karafriendsConfig);
+
+// ffmpeg and yt-dlp's first download, for the display (and its setup
+// screen) to say YouTube is getting ready.
+onFirstToolsDownload((progress) =>
+  store.update((state) => {
+    state.toolsDownload = progress;
+  }),
+);
 
 // The remote's server can't take connections (its port is taken, say), so
 // phones can't connect. The display works without it, and shows why.
@@ -112,15 +134,53 @@ const credentials = createCredentialProviders({
 });
 
 configStore.onChange(({ keys }) => {
-  // The phones' live state shows supervisedMode and everyoneIsAdmin, and
-  // whether a Joysound login is set (Browse).
-  if (
-    keys.includes("supervisedMode") ||
-    keys.includes("everyoneIsAdmin") ||
-    keys.includes("joysoundEmail") ||
-    keys.includes("joysoundPassword")
-  )
+  // The phones' live state shows supervisedMode and everyoneIsAdmin.
+  if (keys.includes("supervisedMode") || keys.includes("everyoneIsAdmin"))
     hub.refresh();
+});
+
+// Whether DAM's and Joysound's songs are on: each login is checked now, at
+// launch, and again when it changes (after credentials.ts has dropped the
+// old session). The phones see it in the live state.
+const catalogs = createCatalogs({
+  hasLogin: (service) => hasLogin(configStore.get(), service),
+  signIn: {
+    dam: async () => {
+      await credentials.dam();
+    },
+    // Linked, but to an account that can't download songs: they'd be
+    // previews.
+    joysound: async () => {
+      const link = await credentials.joysound();
+      if (link.membershipType !== "PAID") {
+        throw new LoginWarning(
+          "The Joysound account isn't a paid member " +
+            `(membership: ${link.membershipType ?? "none"}), so karafriends ` +
+            "can't download its songs.",
+        );
+      }
+    },
+  },
+  forget: {
+    dam: () => credentials.dam.forget(),
+    joysound: () => credentials.joysound.forget(),
+  },
+  onChange: (statuses) =>
+    store.update((state) => {
+      state.catalogs = statuses;
+    }),
+  fake: fakeCatalogs(process.env.KARAFRIENDS_FAKE_CATALOGS),
+});
+for (const service of CATALOGS) void catalogs.check(service);
+configStore.onChange(({ keys }) => {
+  if (keys.some((key) => (DAM_LOGIN_KEYS as readonly string[]).includes(key))) {
+    void catalogs.check("dam");
+  }
+  if (
+    keys.some((key) => (JOYSOUND_LOGIN_KEYS as readonly string[]).includes(key))
+  ) {
+    void catalogs.check("joysound");
+  }
 });
 
 // The clients keep no per-request state, so every request shares one of each.
@@ -166,6 +226,7 @@ const { resumeDownloads: resume, ...queueApi } = createApi({
   ),
   publish: hub.publish,
   pictures: songPictures,
+  catalogs,
 });
 
 // Starts again the downloads a restart cut short (queue.json's pending
@@ -188,6 +249,12 @@ export const api: ApiHandlers = {
     // The host's Switch: the clients then check their link again (a lookup
     // that found the link taken failed, so none is kept, but a link to a
     // free account may be).
+    // A login that just worked turns its catalog on, if it was off: a
+    // fresh sign-in, as the test's.
+    loginWorked: (service) => {
+      if (!catalogs.isOn(service))
+        void catalogs.check(service, { fresh: true });
+    },
     switchJoysoundLink: async (email, password) => {
       const note = await joysoundLinker.switchLink(email, password);
       credentials.joysound.forget();

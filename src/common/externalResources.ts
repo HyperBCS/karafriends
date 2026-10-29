@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import fs, { promises as fsp } from "fs";
 import os from "os";
 import path from "path";
-import type { Readable } from "stream";
+import { Transform, type Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { promisify } from "util";
 
@@ -81,6 +81,16 @@ export interface ToolsDeps {
   tmpDir: string;
   // fetchAsset's retries (promise-retry's options).
   retry?: { retries: number; minTimeout: number; factor?: number };
+  // A first download (a tool that isn't in the cache yet) as it goes: how
+  // far along all of them are, 0 to 100 (null while a size is unknown),
+  // then null once none is running. Not for refreshes: a cached copy works
+  // meanwhile.
+  onFirstDownload?: (progress: ToolsDownload | null) => void;
+}
+
+// See LiveState's toolsDownload.
+export interface ToolsDownload {
+  percent: number | null;
 }
 
 export interface ToolsManager {
@@ -112,6 +122,37 @@ const DEFAULT_RETRY = { retries: 5, minTimeout: 1000, factor: 2 };
 
 export function createToolsManager(deps: ToolsDeps): ToolsManager {
   const { cacheDir } = deps;
+
+  // The first downloads, by tool: bytes so far, and in all (null if the
+  // server didn't say). One being unpacked counts as all received; one
+  // that's done stays counted, so the percentage never goes back, until
+  // none is running.
+  const firstDownloads = new Map<
+    AssetPlan["id"],
+    { received: number; total: number | null; done: boolean }
+  >();
+  let lastPercent: number | null | undefined;
+  const reportFirstDownloads = () => {
+    if (!deps.onFirstDownload) return;
+    if ([...firstDownloads.values()].every((download) => download.done)) {
+      firstDownloads.clear();
+      lastPercent = undefined;
+      deps.onFirstDownload(null);
+      return;
+    }
+    const all = [...firstDownloads.values()];
+    const percent = all.every((download) => download.total)
+      ? Math.floor(
+          (100 * all.reduce((sum, download) => sum + download.received, 0)) /
+            all.reduce((sum, download) => sum + (download.total ?? 0), 0),
+        )
+      : null;
+    if (percent === lastPercent) return;
+    lastPercent = percent;
+    deps.onFirstDownload({
+      percent: percent === null ? null : Math.min(percent, 100),
+    });
+  };
   const versionsFile = path.join(cacheDir, "versions.json");
   const overrides = toolOverrides(deps.env);
   const resourcePaths: ResourcePaths = {
@@ -176,22 +217,31 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
 
   // Download an asset into `tmpDir`, unpack it per its plan, and return the
   // path of the finished binary to move into place.
+  // onChunk: each chunk's size, as it comes.
   const materialize = async (
     plan: AssetPlan,
     tmpDir: string,
     res: AssetResponse,
+    onChunk?: (bytes: number) => void,
   ): Promise<string> => {
     if (res.body === null) throw new Error(`${plan.url} sent no body`);
+    const counter = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        onChunk?.(chunk.length);
+        done(null, chunk);
+      },
+    });
     if (plan.download.kind === "binary") {
       // Named as in the cache: Windows only runs a .exe.
       const bin = path.join(tmpDir, path.basename(plan.dest));
-      await pipeline(res.body, fs.createWriteStream(bin));
+      await pipeline(res.body, counter, fs.createWriteStream(bin));
       return bin;
     }
 
     const { archiveName, steps, binary } = plan.download;
     await pipeline(
       res.body,
+      counter,
       fs.createWriteStream(path.join(tmpDir, archiveName)),
     );
     for (const step of steps) {
@@ -268,9 +318,31 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     const tmpDir = fs.mkdtempSync(
       path.join(deps.tmpDir, "karafriends_externalResources"),
     );
+    // A first download says how it goes (onFirstDownload).
+    const first = exists
+      ? null
+      : {
+          received: 0,
+          total: Number(res.headers.get("content-length")) || null,
+          done: false,
+        };
+    if (first) {
+      firstDownloads.set(plan.id, first);
+      reportFirstDownloads();
+    }
     let version: string | null;
     try {
-      const src = await materialize(plan, tmpDir, res);
+      const src = await materialize(
+        plan,
+        tmpDir,
+        res,
+        first
+          ? (bytes) => {
+              first.received += bytes;
+              reportFirstDownloads();
+            }
+          : undefined,
+      );
       if (deps.platform !== "win32") {
         fs.chmodSync(src, 0o755);
       }
@@ -292,6 +364,10 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       throw err;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (first) {
+        first.done = true;
+        reportFirstDownloads();
+      }
     }
 
     versions[plan.id] = {
@@ -551,6 +627,15 @@ const execFileAsync = promisify(execFile);
 // at the top, so unit tests can load this file under plain Node.
 let appManager: ToolsManager | null = null;
 
+// Who hears about the app's manager's first downloads (services.ts).
+let firstDownloadListener: ((progress: ToolsDownload | null) => void) | null =
+  null;
+export function onFirstToolsDownload(
+  listener: (progress: ToolsDownload | null) => void,
+) {
+  firstDownloadListener = listener;
+}
+
 function tools(): ToolsManager {
   if (appManager) return appManager;
   const { app } = require("electron") as typeof import("electron");
@@ -578,6 +663,7 @@ function tools(): ToolsManager {
       ).stdout,
     now: Date.now,
     tmpDir: os.tmpdir(),
+    onFirstDownload: (progress) => firstDownloadListener?.(progress),
   });
   return appManager;
 }

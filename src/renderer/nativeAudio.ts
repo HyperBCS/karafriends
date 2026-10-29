@@ -13,6 +13,23 @@ const WATCH_MS = 2000;
 // label (what the system calls it) and its channel count.
 export type Input = [id: string, label: string, channels: number];
 
+// A call into the sound system that took a second or more is logged: the
+// page waits for each one (on Linux, a sound system slow to answer can
+// hold the display for seconds), so the console says which.
+const SLOW_CALL_MS = 1000;
+
+function watched<T>(what: string, call: () => T): T {
+  const start = performance.now();
+  try {
+    return call();
+  } finally {
+    const ms = performance.now() - start;
+    if (ms >= SLOW_CALL_MS) {
+      console.warn(`${what} took ${(ms / 1000).toFixed(1)} s`);
+    }
+  }
+}
+
 // What list() answers, or fallback and why when it throws: one device that
 // won't give its name can fail a whole listing. Logged, so no listing
 // throws into a render.
@@ -22,7 +39,7 @@ function listed<T>(
   fallback: T,
 ): { value: T; problem: string | null } {
   try {
-    return { value: list(), problem: null };
+    return { value: watched(`Listing ${what}`, list), problem: null };
   } catch (err) {
     console.error(`Couldn't list ${what}:`, err);
     return { value: fallback, problem: String((err as Error)?.message ?? err) };
@@ -101,7 +118,9 @@ export interface MicOutput {
 }
 
 export function setOutputDevice(output: MicOutput) {
-  native.setOutputDevice(output.name, output.rate, output.bufferSize);
+  watched("Opening the mic output", () =>
+    native.setOutputDevice(output.name, output.rate, output.bufferSize),
+  );
 }
 
 // How the mics open on Windows: shared with other programs (Windows
@@ -190,7 +209,9 @@ export class InputDevice {
   }
 
   private create() {
-    const deviceId = native.inputDevice_new(this.name, this.channelSelection);
+    const deviceId = watched(`Opening ${this.label}`, () =>
+      native.inputDevice_new(this.name, this.channelSelection),
+    );
     native.inputDevice_setGain(deviceId, this.gain);
     native.inputDevice_setEcho(deviceId, this.echo);
     native.inputDevice_setGate(deviceId, this.gate);

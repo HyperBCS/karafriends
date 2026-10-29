@@ -11,6 +11,7 @@ import { formBody } from "./http";
 import {
   backgroundVideoUrl,
   featuresOf,
+  withoutTvAppPitch,
   JoysoundAPI,
   keptFor,
   songDetailOf,
@@ -589,6 +590,34 @@ describe("featuresOf", () => {
         ["14", "Number ID", ["5"], null],
       ],
     );
+  });
+});
+
+describe("withoutTvAppPitch", () => {
+  test("drops the TV app's sign-up, its buttons and its QR codes, and nothing else", () => {
+    // From feature_tv.json (2026-10-29).
+    assert.equal(
+      withoutTvAppPitch(
+        "そこで今回は、バラードソングを集めてみました。会員登録がまだの人も、「うたう」を押して無料カラオケ体験を♪",
+      ),
+      "そこで今回は、バラードソングを集めてみました。",
+    );
+    assert.equal(
+      withoutTvAppPitch(
+        "ぜひ参考にしてください。（もちろん、笑顔も忘れずに！）会員登録がまだの人も、「うたう」を押して無料カラオケ体験を♪ジョイサウンドカフェならみんなに披露する前にしっかり練習ができますよ💖",
+      ),
+      "ぜひ参考にしてください。（もちろん、笑顔も忘れずに！）",
+    );
+    assert.equal(
+      withoutTvAppPitch(
+        "アドバイスが届きました！詳細は上のQRコードからチェックしてください♪",
+      ),
+      "アドバイスが届きました！",
+    );
+    // A ♪ in the middle of lyrics, and text after the last stop, stay.
+    const lyrics =
+      "♪私より　低音を響かせるように、♪ならないで　では感情をぶつけます。Let's enjoy singing";
+    assert.equal(withoutTvAppPitch(lyrics), lyrics);
   });
 });
 
