@@ -70,6 +70,7 @@ Dependencies
 
 - Node.js, plus any `yarn` on your PATH (`npm install -g yarn` is enough). The repo pins its Yarn version in `.yarn/releases` via `yarnPath`, so whichever `yarn` you run hands off to it; corepack isn't needed.
 - Rust
+- The project's TypeScript is 7, the native compiler, which ships no `tsserver`: for type errors in the editor, use VS Code's "TypeScript Native Preview" extension or the editor's bundled TypeScript. `yarn typecheck` needs nothing extra.
 - On Windows, LLVM, once: `winget install LLVM.LLVM`. Windows builds include ASIO by default, and its bindings need LLVM's libclang; if cargo can't find it, set `LIBCLANG_PATH` to `C:\Program Files\LLVM\bin`. The build downloads Steinberg's ASIO SDK itself, into `buildResources/asio` the first time `yarn dev` or a `yarn build-*` runs (`yarn get-external-resources` does it alone, before a bare `cargo` command); cargo uses `CPAL_ASIO_DIR` instead when it is set. `CARGO_ARGS=--no-default-features yarn build-prod` (or `yarn dev`) builds without ASIO, and without LLVM.
 - On Linux, a C toolchain, pkg-config, the ALSA, PipeWire and D-Bus headers, and libclang (PipeWire's Rust bindings are generated with it):
 

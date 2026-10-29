@@ -182,4 +182,5 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 
 **First CI run after the round** (added by R)
 
-- [ ] Both workflows build the Linux module with `-C relro-level=partial` and `scripts/checkLazyPipewire.sh` passes; the Windows job compiles the ASIO code (the `#[cfg(all(windows, feature = "asio"))]` arms from F were never compiled here). (E, F, R)
+- [x] Both workflows build the Linux module with `-C relro-level=partial` and `scripts/checkLazyPipewire.sh` passes; the Windows job compiles the ASIO code and runs the Windows Rust tests; the Ubuntu 22.04 smoke job passes. Green on run 40791413753 (2026-10-28), after three fixes the first runs found: `pianoRoll.ts` shadowed `PianoRoll.tsx` on case-insensitive filesystems (`7933426`); on a machine with no audio output, Settings called the saved song output "went away" and refused System default (`cbb2f1a`, `c831363`); cargo-careful's sysroot build hit setup-rust-toolchain v2's denied warnings (`6d37929`). (E, F, R)
+- [ ] A manual Release run (workflow_dispatch): the 4-entry matrix, signing on both Macs, four zips as artifacts, and the tag check against package.json's version. (R)
