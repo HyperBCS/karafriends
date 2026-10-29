@@ -64,7 +64,9 @@ On `macos-checks`, each with its test or measurement:
    | 128 / 128 (now)           | 60.5 ms (60.4 to 60.5)         | none       |
    | 64 / 64 (tried, not kept) | 56.8 ms, every trial           | one refill |
 
-   What's left is mostly the built-in mic's and speakers' own processing: CoreAudio gives the MacBook Pro Microphone a stream latency of 2210 frames (50 ms) and the speakers 639 (14.5 ms). A USB mic and wired speakers would be much shorter. The mic output's Fixed buffer has no fallback to the device's own if a device refuses it, the same as the mics have had; worth a check with Bluetooth or AirPlay as the mic output.
+   Those are the MacBook Pro's own mic and speakers. The next day, a Blue Yeti (USB) into the same speakers, at 128 / 128: **32.6 ms** (8 of 8 trials within 1 ms, 32.3 to 33.4; the Yeti's clock drifts against the speakers'). The example takes a mic's name for that (`… --example mic_latency Yeti`), averages the trials, and plays the echo at gain 2, since a mic farther from the speakers hears much less of it.
+
+   What's left is mostly the devices' own processing. The Yeti's 32.6 ms is about its 6.0 ms (buffer, latency, safety offset) + the mic's buffer's 7 + the speakers' 6.1 + their stream latency, 639 frames (14.5 ms). The built-in mic adds about 28 ms more of its own processing (CoreAudio says 2210 frames, 50 ms, which overstates it). A wired mic output (the Yeti's headphone jack, the TV) has no such stream latency, so a USB mic through one should be under 20 ms; not measured. The mic output's Fixed buffer has no fallback to the device's own if a device refuses it, the same as the mics have had; worth a check with Bluetooth or AirPlay as the mic output.
 
 Not fixed, for the host: the shell's `NOTARIZATION_KEY_PATH` points at a missing key, so `yarn package-prod` fails until it's unset or the key is put back.
 

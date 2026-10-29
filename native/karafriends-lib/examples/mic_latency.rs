@@ -1,7 +1,7 @@
 // How late the default mic plays through the mic output, measured through
-// the speakers: a burst of noise plays on the default output and the
-// default mic records it, first with the mic (opened as the app opens it)
-// at gain 0, then at gain 1. The second recording also holds the burst as
+// the speakers: a burst of noise plays on the default output and the mic
+// records it, first with the mic (opened as the app opens it) at gain 0,
+// then at gain 2. The second recording also holds the burst as
 // the mic output played it back; the first, taken away, leaves only that.
 // The time between the two bursts is the whole delay from mic to speaker.
 //
@@ -9,10 +9,12 @@
 // headphones: the speakers have to reach the mic. The terminal needs
 // microphone access (System Settings › Privacy & Security › Microphone).
 //
-//   cargo run --release --manifest-path native/Cargo.toml -p karafriends-lib --example mic_latency
+//   cargo run --release --manifest-path native/Cargo.toml -p karafriends-lib --example mic_latency [mic]
+//
+// `mic` is part of a mic's name ("Yeti"); the default mic without it.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -36,7 +38,7 @@ fn burst(rate: u32) -> Vec<f32> {
             seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let noise = (seed >> 8) as f32 / (1 << 23) as f32 - 1.0;
             let window = 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / len as f32).cos();
-            0.5 * noise * window
+            0.9 * noise * window
         })
         .collect()
 }
@@ -65,7 +67,17 @@ fn argmax(values: &[f32]) -> usize {
 
 fn main() -> Result<()> {
     let host = cpal::default_host();
-    let input = host.default_input_device().ok_or("No default input")?;
+    let input = match std::env::args().nth(1) {
+        Some(name) => host
+            .input_devices()?
+            .find(|device| {
+                device
+                    .description()
+                    .is_ok_and(|description| description.name().contains(&name))
+            })
+            .ok_or_else(|| format!("No mic named {name}"))?,
+        None => host.default_input_device().ok_or("No default input")?,
+    };
     let output = host.default_output_device().ok_or("No default output")?;
 
     // The mic as the app opens it, playing through the default output.
@@ -151,54 +163,65 @@ fn main() -> Result<()> {
         sleep(RECORD);
         rec_rx.pop_iter().collect()
     };
+    let frames = |ms: f32| (ms * rate as f32 / 1000.0) as usize;
     let ms = |frames: usize| frames as f32 * 1000.0 / rate as f32;
-    let mut delays = Vec::new();
+    // Nothing comes back sooner than the two devices' own delays: an
+    // echo before that is the room's.
+    let system_ms = (mic_delay.load(Relaxed) + speaker_delay.load(Relaxed)) as f32 / 1000.0;
+    let (from, to) = (frames(ECHO_MS.0.max(system_ms)), frames(ECHO_MS.1));
+    // The peak of a difference, and how far it stands out from the rest.
+    let peak = |difference: &[f32]| {
+        let peak = argmax(difference);
+        let mut sorted: Vec<f32> = difference.iter().map(|d| d.abs()).collect();
+        sorted.sort_by(f32::total_cmp);
+        (peak, difference[peak] / sorted[sorted.len() / 2].max(1e-9))
+    };
+    let mut total = vec![0.0; to - from];
+    let mut trials = Vec::new();
     for trial in 1..=TRIALS {
         let quiet = correlate(&record(0.0), &template);
-        let echoed = correlate(&record(1.0), &template);
+        // At full gain, for the loudest echo.
+        let echoed = correlate(&record(2.0), &template);
         let (quiet_at, echoed_at) = (argmax(&quiet), argmax(&echoed));
         if quiet[quiet_at] < 1e-4 {
             return Err("The mic records silence: give the terminal microphone access".into());
         }
         // The echoed recording less the quiet one, lined up on the burst
         // and scaled to it: the room's own echoes cancel.
-        let scale = echoed[echoed_at] / quiet[quiet_at];
-        let (from, to) = (
-            (ECHO_MS.0 * rate as f32 / 1000.0) as usize,
-            (ECHO_MS.1 * rate as f32 / 1000.0) as usize,
-        );
+        let (burst_level, scale) = (quiet[quiet_at], echoed[echoed_at] / quiet[quiet_at]);
         let difference: Vec<f32> = (from..to)
             .map(|lag| {
                 let echoed = echoed.get(echoed_at + lag).copied().unwrap_or(0.0);
                 let quiet = quiet.get(quiet_at + lag).copied().unwrap_or(0.0);
-                echoed - scale * quiet
+                (echoed - scale * quiet) / burst_level
             })
             .collect();
-        let peak = argmax(&difference);
-        let mut sorted: Vec<f32> = difference.iter().map(|d| d.abs()).collect();
-        sorted.sort_by(f32::total_cmp);
-        let floor = sorted[sorted.len() / 2].max(1e-9);
-        let strength = difference[peak] / floor;
-        // An echo that hardly stands out is the room, not the mic output.
-        if strength < 8.0 {
-            println!("Trial {trial}: no echo found (the volume may be too low)");
-            continue;
-        }
-        let delay = ms(from + peak);
-        println!("Trial {trial}: {delay:.1} ms ({strength:.0}x the noise)");
-        delays.push(delay);
+        total.iter_mut().zip(&difference).for_each(|(t, d)| *t += d);
+        let (at, strength) = peak(&difference);
+        println!(
+            "Trial {trial}: {:.1} ms ({strength:.0}x the noise)",
+            ms(from + at)
+        );
+        trials.push(from + at);
     }
     mic.set_gain(0.0);
-    if delays.is_empty() {
-        return Err("No echo found: turn the volume up".into());
+    // The trials added up: the echo is in each at the same place, the
+    // noise isn't.
+    let (at, strength) = peak(&total);
+    // An echo that hardly stands out is the room, not the mic output.
+    if strength < 8.0 {
+        return Err(format!(
+            "No echo found ({strength:.0}x the noise): turn the volume up or move the mic nearer the speakers"
+        )
+        .into());
     }
-    delays.sort_by(f32::total_cmp);
+    let agree = trials
+        .iter()
+        .filter(|&&trial| trial.abs_diff(from + at) <= frames(1.0))
+        .count();
     println!(
-        "Mic to speaker: {:.1} ms (median of {} trials, {:.1} to {:.1})",
-        delays[delays.len() / 2],
-        delays.len(),
-        delays[0],
-        delays[delays.len() - 1],
+        "Mic to speaker: {:.1} ms ({strength:.0}x the noise over {TRIALS} trials; {agree} agree within 1 ms)",
+        ms(from + at),
     );
     Ok(())
 }
