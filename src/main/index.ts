@@ -1,4 +1,6 @@
-// First: a second launch leaves here, before anything below loads.
+// First: the data folder, yarn dev's too (profile.ts); then a second launch
+// leaves here, before anything below loads.
+import "./profile";
 import "./singleInstance";
 // The native module is copied next to the bundle and loaded with require().
 import nativeAudio from "../../native/index.node";
