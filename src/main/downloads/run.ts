@@ -68,6 +68,24 @@ function lineSplitter(onLine: ((line: string) => void) | undefined) {
   };
 }
 
+// macOS's own CA certificates. The macOS ffmpeg (martin-riedl.de's) has its
+// own OpenSSL, which looks for them where it was built and checks every
+// HTTPS input, so DAM's streams failed with "certificate verify failed".
+export const MAC_CERTIFICATES = "/etc/ssl/cert.pem";
+
+// Points the tools (ffmpeg, and the ffmpeg yt-dlp starts, which inherit
+// `env`) at the system's certificates on macOS, unless SSL_CERT_FILE already
+// says where. Node and Chromium ignore it: they have their own.
+export function useSystemCertificates(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  exists: (file: string) => boolean,
+): void {
+  if (platform === "darwin" && !env.SSL_CERT_FILE && exists(MAC_CERTIFICATES)) {
+    env.SSL_CERT_FILE = MAC_CERTIFICATES;
+  }
+}
+
 // The longest one yt-dlp or ffmpeg run may take before it's stopped. A song
 // downloads in a minute or two; this is for one that hangs.
 const TOOL_TIMEOUT_MS = 15 * 60 * 1000;

@@ -9,7 +9,14 @@ import { afterEach, beforeEach, test } from "node:test";
 import { REASONS } from "../../common/downloadFailure";
 import type { DownloadQueueItem } from "../state";
 import { runDownload } from "./queue";
-import { parseDuration, runTool, stopAllTools, type ToolRun } from "./run";
+import {
+  MAC_CERTIFICATES,
+  parseDuration,
+  runTool,
+  stopAllTools,
+  useSystemCertificates,
+  type ToolRun,
+} from "./run";
 
 let folder: string;
 
@@ -138,4 +145,25 @@ test("stopAllTools stops every tool running", async () => {
   // None left to stop: a tool that ran to the end isn't stopped later.
   await runTool({ ...hangs(), args: ["-e", ""] });
   stopAllTools();
+});
+
+test("on macOS the tools get the system's certificates, unless SSL_CERT_FILE is set", () => {
+  const there = () => true;
+  const env: NodeJS.ProcessEnv = {};
+  useSystemCertificates(env, "darwin", there);
+  assert.equal(env.SSL_CERT_FILE, MAC_CERTIFICATES);
+
+  const own: NodeJS.ProcessEnv = { SSL_CERT_FILE: "/my/cert.pem" };
+  useSystemCertificates(own, "darwin", there);
+  assert.equal(own.SSL_CERT_FILE, "/my/cert.pem");
+
+  for (const [platform, exists] of [
+    ["linux", there],
+    ["win32", there],
+    ["darwin", () => false],
+  ] as const) {
+    const left: NodeJS.ProcessEnv = {};
+    useSystemCertificates(left, platform, exists);
+    assert.equal(left.SSL_CERT_FILE, undefined, platform);
+  }
 });

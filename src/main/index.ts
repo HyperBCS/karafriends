@@ -49,6 +49,7 @@ import express from "express";
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { stopAllTools, DOWNLOADS_FOLDER } from "./downloads";
+import { useSystemCertificates } from "./downloads/run";
 import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
@@ -76,6 +77,9 @@ if (!HIDE_WINDOW) {
 }
 
 if (!LOCAL_ONLY) setupMdns();
+
+// Before any download starts a tool.
+useSystemCertificates(process.env, process.platform, fs.existsSync);
 
 protocol.registerSchemesAsPrivileged([
   {
