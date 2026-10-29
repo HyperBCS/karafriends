@@ -132,6 +132,7 @@ export const en = {
   "queue.remove": "Remove from queue",
   "queue.moveToTop": "Move to top",
   "queue.openSong": "Song page",
+  "queue.guideVocal": "Guide vocal",
 
   // Playback and key.
   "playback.play": "Play",

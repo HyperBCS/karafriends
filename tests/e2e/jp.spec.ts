@@ -1,8 +1,11 @@
+import fs from "fs";
+
 import type { Page } from "@playwright/test";
 
 import {
   currentSongKey,
   displayCall,
+  downloadsFolder,
   expect,
   liveState,
   NICKNAME,
@@ -190,6 +193,44 @@ test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
             .getByText(title)
             .first(),
         ).toBeVisible({ timeout: 240_000 });
+        await removeFromQueue(remote, title);
+      });
+
+      // 残酷な天使のテーゼ has a guide-vocal version: another recording, with
+      // its own lyrics timing, so its own files.
+      test("a Joysound song's guide-vocal version can be queued, into files of its own", async ({
+        remote,
+        karafriends,
+      }) => {
+        await waitForPlaceholder(remote, karafriends);
+        await remote.goto(
+          new URL("#/joysoundSong/9630", karafriends.remoconUrl).href,
+        );
+        const main = remote.getByRole("main");
+        const title = "残酷な天使のテーゼ";
+        await expect(main.getByRole("heading", { level: 2 })).toHaveText(
+          title,
+          { timeout: 30_000 },
+        );
+        await queue(
+          remote,
+          main.getByRole("button", { name: "Queue song with guide vocal" }),
+        );
+
+        await showQueue(remote);
+        const queued = remote
+          .getByRole("region", { name: "Queue" })
+          .getByRole("button", { name: new RegExp(title) });
+        await expect(queued.first()).toBeVisible({ timeout: 240_000 });
+        await expect(
+          remote
+            .getByRole("region", { name: "Queue" })
+            .getByText("Joysound · Kana · Guide vocal"),
+        ).toBeVisible();
+        const files = fs.readdirSync(await downloadsFolder(karafriends.app));
+        expect(files).toContain("joysound-9630v-default-opus.mp4");
+        expect(files).toContain("joysound-9630v.joy_02");
+        expect(files).not.toContain("joysound-9630.joy_02");
         await removeFromQueue(remote, title);
       });
     });

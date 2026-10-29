@@ -648,6 +648,7 @@ export function createApi(
         lyricsPreview: detail.lyricsPreview,
         tieUp: detail.tieUp,
         picture: detail.pictureUrl !== null,
+        guideVocal: detail.guideVocal,
       };
     },
 
@@ -774,11 +775,12 @@ export function createApi(
       // queues as whoever started it. (A DAM song queues at once.)
       if (
         input.kind !== "dam" &&
-        isDownloading(store.getState().downloadQueue, {
-          kind: input.kind,
-          songId: input.songId,
-          suffix: input.kind === "joysound" ? input.youtubeVideoId : null,
-        })
+        isDownloading(
+          store.getState().downloadQueue,
+          input.kind === "joysound"
+            ? songFilesOf(input)
+            : { kind: input.kind, songId: input.songId, suffix: null },
+        )
       ) {
         return { ok: false, reason: "Someone is already adding this song" };
       }
@@ -841,6 +843,7 @@ export function createApi(
             ...base,
             lyricsMode: input.lyricsMode,
             youtubeVideoId: input.youtubeVideoId,
+            guideVocal: input.guideVocal === true,
           };
           queueAfterDownload({
             item,

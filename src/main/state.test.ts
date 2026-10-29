@@ -343,6 +343,33 @@ describe("loadState", () => {
     );
   });
 
+  test("keeps a Joysound song's guide-vocal version; older items are the guide-melody one", () => {
+    const joysound = (n: number, fields: object) => ({
+      kind: "joysound",
+      songId: String(n),
+      name: `Song ${n}`,
+      artistName: "Artist",
+      timestamp: String(n),
+      user: { deviceId: "d", nickname: "n" },
+      lyricsMode: "kana",
+      youtubeVideoId: null,
+      ...fields,
+    });
+    write({
+      songQueue: [
+        joysound(1, { guideVocal: true }),
+        joysound(2, {}),
+        joysound(3, { guideVocal: "yes" }),
+      ],
+    });
+    assert.deepEqual(
+      loadState(file).songQueue.map(
+        (item) => item.kind === "joysound" && item.guideVocal,
+      ),
+      [true, false, false],
+    );
+  });
+
   test("keeps a DAM song's readings, which older items don't have", () => {
     const old = {
       kind: "dam",

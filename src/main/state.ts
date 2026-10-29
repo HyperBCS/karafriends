@@ -457,6 +457,8 @@ function parseQueueItem(raw: unknown): QueueItem | null {
             : "kana",
         youtubeVideoId:
           typeof raw.youtubeVideoId === "string" ? raw.youtubeVideoId : null,
+        // Items saved before it are the guide-melody version.
+        guideVocal: raw.guideVocal === true,
       };
     case "youtube":
       return {

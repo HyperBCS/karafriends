@@ -139,6 +139,7 @@ describe("songGain", () => {
       kind: "joysound",
       lyricsMode: "kana",
       youtubeVideoId: null,
+      guideVocal: false,
     };
     assert.equal(songGain(dam), 1);
     assert.equal(songGain(joysound), 1);

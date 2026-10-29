@@ -299,6 +299,7 @@ const joysoundItem = (youtubeVideoId: string | null): JoysoundQueueItem => ({
   user: USER,
   lyricsMode: "kana",
   youtubeVideoId,
+  guideVocal: false,
 });
 
 test("a Joysound download without a background leaves its video and lyrics", async () => {
@@ -317,6 +318,49 @@ test("a Joysound download without a background leaves its video and lyrics", asy
     "joysound-123456.joy_02",
   ]);
   assertFilesOf({ kind: "joysound", songId: "123456", suffix: null });
+});
+
+test("a Joysound song's guide-vocal version downloads as itself, beside its melody version", async () => {
+  const asked: unknown[] = [];
+  const api: FakeJoysoundApi = {
+    getSongData: async (id, guideVocal) => {
+      asked.push(["getSongData", id, guideVocal]);
+      return songData();
+    },
+    getMovieUrls: async (id, guideVocal) => {
+      asked.push(["getMovieUrls", id, guideVocal]);
+      return movieUrls();
+    },
+  };
+  const vocalItem = { ...joysoundItem(null), guideVocal: true };
+  const melody = await download([], { kind: "joysound" }, (item) =>
+    joysoundJob(paths, item, api, joysoundItem(null)),
+  );
+  const vocal = await download([], { kind: "joysound" }, (item) =>
+    joysoundJob(paths, item, api, vocalItem),
+  );
+  assert.ok(melody.ok && vocal.ok);
+  assert.deepEqual(asked, [
+    ["getSongData", "123456", false],
+    ["getMovieUrls", "123456", false],
+    ["getSongData", "123456", true],
+    ["getMovieUrls", "123456", true],
+  ]);
+  // Its own lyrics and video, the melody version's kept.
+  assert.deepEqual(files(), [
+    "joysound-123456-default-opus.mp4",
+    "joysound-123456-default.log",
+    "joysound-123456.joy_02",
+    "joysound-123456v-default-opus.mp4",
+    "joysound-123456v-default.log",
+    "joysound-123456v.joy_02",
+  ]);
+  // Queued again, each finds its own.
+  const queued: JoysoundQueueItem[] = [];
+  assert.ok(
+    queueDownloadedJoysoundSong(folder, vocalItem, (item) => queued.push(item)),
+  );
+  assert.equal(queued[0].guideVocal, true);
 });
 
 test("a Joysound song whose ogg doesn't give its playtime takes the lyrics' length", async () => {

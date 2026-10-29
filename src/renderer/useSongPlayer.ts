@@ -54,13 +54,16 @@ export type Overlay =
   // melody: the pitch bars', from DAM's scoring data; null without it.
   | { kind: "dam"; melody: Melody | null }
   // telop: the song's .joy_02 lyrics, once loaded. file: its video, whose
-  // sound holds the guide melody the pitch bars come from.
+  // sound holds the guide melody the pitch bars come from. guideVocal: its
+  // guide-vocal version, whose guide channel is a sung vocal (heard in
+  // full; the pitch bars can't read it).
   | {
       kind: "joysound";
       songId: string;
       file: string;
       telop: ArrayBuffer | null;
       lyricsMode: LyricsMode;
+      guideVocal: boolean;
     }
   | { kind: "youtube"; adhocLyrics: boolean }
   | { kind: "nico" }
@@ -296,6 +299,7 @@ export default function useSongPlayer({
       songId: song.songId,
       file,
       lyricsMode: song.lyricsMode,
+      guideVocal: song.guideVocal === true,
     } as const;
     setOverlay({ ...overlay, telop: null });
     video.src = file;
@@ -489,9 +493,12 @@ export default function useSongPlayer({
     audio.pitchShift(pitchShiftSemis);
   }, [audio, pitchShiftSemis]);
 
+  // A guide-vocal version's guide is what its singer asked for: heard in
+  // full, whatever the guide melody's level.
+  const guideVocal = overlay?.kind === "joysound" && overlay.guideVocal;
   useEffect(() => {
-    audio.guideMelodyLevel(guideMelodyLevel);
-  }, [audio, guideMelodyLevel]);
+    audio.guideMelodyLevel(guideVocal ? 1 : guideMelodyLevel);
+  }, [audio, guideMelodyLevel, guideVocal]);
 
   useEffect(() => {
     audio.songVolume(songVolume / 100);

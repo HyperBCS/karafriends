@@ -651,6 +651,65 @@ const damSongDetail = (n: number) => ({
   picture: false,
 });
 
+test("a Joysound song with a guide-vocal version can be queued as either", async ({
+  karafriends,
+  remote,
+}) => {
+  const song = (guideVocal: boolean) => ({
+    id: "9630",
+    name: "残酷な天使のテーゼ",
+    artistName: "高橋洋子",
+    lyricsPreview: null,
+    tieUp: null,
+    picture: false,
+    guideVocal,
+  });
+  await remote.route("**/api/joysoundSong", (route) =>
+    route.fulfill({ json: song(true) }),
+  );
+  const asked: Record<string, unknown>[] = [];
+  await remote.route("**/api/queueSong", (route) => {
+    asked.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: false, reason: "Not now" } });
+  });
+  await remote.goto(
+    new URL("#/joysoundSong/9630", karafriends.remoconUrl).href,
+  );
+  const main = remote.getByRole("main");
+  await main
+    .getByRole("button", { name: "Queue song with guide vocal" })
+    .click();
+  await expect.poll(() => asked.length).toBe(1);
+  await expect(main.getByText("Not now")).toBeVisible();
+  // The melody version's button: as before, no guideVocal.
+  await expect(
+    main.getByRole("button", { name: "Queue song", exact: true }),
+  ).toBeEnabled();
+  await main.getByRole("button", { name: "Queue song", exact: true }).click();
+  await expect.poll(() => asked.length).toBe(2);
+  expect(asked[0]).toMatchObject({
+    kind: "joysound",
+    songId: "9630",
+    guideVocal: true,
+  });
+  expect(asked[1]).not.toHaveProperty("guideVocal");
+
+  // A song without one has the one button.
+  await remote.unroute("**/api/joysoundSong");
+  await remote.route("**/api/joysoundSong", (route) =>
+    route.fulfill({ json: { ...song(false), id: "428493" } }),
+  );
+  await remote.goto(
+    new URL("#/joysoundSong/428493", karafriends.remoconUrl).href,
+  );
+  await expect(
+    main.getByRole("button", { name: "Queue song", exact: true }),
+  ).toBeVisible();
+  await expect(
+    main.getByRole("button", { name: "Queue song with guide vocal" }),
+  ).toHaveCount(0);
+});
+
 test("a Joysound artist's page says how many songs the artist has, as DAM's does", async ({
   karafriends,
   remote,

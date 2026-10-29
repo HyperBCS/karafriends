@@ -182,7 +182,7 @@ const QUEUE_FIELDS = [
 
 const QUEUE_KIND_FIELDS: Record<QueueItemKind, string[]> = {
   dam: ["streamingUrlIdx"],
-  joysound: ["lyricsMode", "youtubeVideoId"],
+  joysound: ["lyricsMode", "youtubeVideoId", "guideVocal"],
   youtube: ["adhocLyrics", "captionCode", "gainValue"],
   nico: [],
 };
@@ -242,6 +242,7 @@ function queueSong(raw: unknown): QueueSongInput {
           youtubeVideoId === null
             ? null
             : safeId(youtubeVideoId, "youtubeVideoId"),
+        guideVocal: optionalBoolean(input, "guideVocal") ?? false,
       };
     }
     case "youtube": {

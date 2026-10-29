@@ -7,8 +7,9 @@
 // tests all load this file.
 
 // A song's files, by what they're named after: its kind, its song or video
-// ID, and the streaming URL index for DAM, the YouTube background for
-// Joysound (null: Joysound's own). Also what identifies a download.
+// ID (for Joysound's guide-vocal version, joysoundFilesId's), and the
+// streaming URL index for DAM, the YouTube background for Joysound (null:
+// Joysound's own). Also what identifies a download.
 export interface SongFiles {
   kind: "dam" | "joysound" | "youtube" | "nico";
   songId: string;
@@ -18,8 +19,23 @@ export interface SongFiles {
 // A queued song, or one being queued.
 export type SongOfFiles =
   | { kind: "dam"; songId: string; streamingUrlIdx: number }
-  | { kind: "joysound"; songId: string; youtubeVideoId: string | null }
+  | {
+      kind: "joysound";
+      songId: string;
+      youtubeVideoId: string | null;
+      guideVocal?: boolean;
+    }
   | { kind: "youtube" | "nico"; songId: string };
+
+// The ID a Joysound song's files and download go by. Its guide-vocal
+// version is another recording, with its own timing (its own lyrics file):
+// the song number with a "v" after it. (Joysound's numbers are digits.)
+export function joysoundFilesId(
+  songId: string,
+  guideVocal: boolean | undefined,
+): string {
+  return guideVocal ? `${songId}v` : songId;
+}
 
 export function songFilesOf(song: SongOfFiles): SongFiles {
   switch (song.kind) {
@@ -32,7 +48,7 @@ export function songFilesOf(song: SongOfFiles): SongFiles {
     case "joysound":
       return {
         kind: "joysound",
-        songId: song.songId,
+        songId: joysoundFilesId(song.songId, song.guideVocal),
         suffix: song.youtubeVideoId,
       };
     default:
