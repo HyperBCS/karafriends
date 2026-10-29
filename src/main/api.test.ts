@@ -2824,6 +2824,110 @@ describe("validators", () => {
 });
 
 describe("lookups", () => {
+  // GetMusicDetailInfo's answer for Lemon (2026-10-29), as damSong reads
+  // it, with changes.
+  const damDetails = (changes: object = {}) => ({
+    data: {
+      artistCode: 87538,
+      artist: "米津玄師",
+      requestNo: "3246-51",
+      title: "Lemon",
+      titleYomi_Kana: "レモン",
+      firstLine: "夢ならばどれほどよかったでしょう",
+    },
+    list: [
+      {
+        mModelMusicInfoList: [
+          {
+            highlightTieUp: "TBS金曜ドラマ「アンナチュラル」主題歌",
+            thumbnailPath:
+              "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=&compAuthKey=&imageKey=c8bf",
+            guideVocal: "0,1",
+            playtime: "265",
+            ...changes,
+          },
+        ],
+      },
+    ],
+  });
+
+  test("a DAM song: its length and title card, and the picture's URL left for the route", async () => {
+    const remembered: unknown[] = [];
+    const api = makeApi(
+      {},
+      {
+        dkwebsys: upstream<ApiDeps["dkwebsys"]>({
+          getMusicDetailsInfo: async () => damDetails(),
+        }),
+        pictures: { remember: (...args) => remembered.push(args) },
+      },
+    );
+    const song = await api.damSong({ id: "3246-51" }, alice);
+    assert.equal(song.playtime, 265);
+    assert.equal(song.tieUp, "TBS金曜ドラマ「アンナチュラル」主題歌");
+    assert.equal(song.picture, true);
+    assert.deepEqual(remembered, [
+      [
+        "dam",
+        "3246-51",
+        "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=1&compAuthKey=2%2FQb9R%408s*&imageKey=c8bf",
+      ],
+    ]);
+  });
+
+  test("a DAM song without a tie-up or a title card has none, not 'undefined'", async () => {
+    const api = makeApi(
+      {},
+      {
+        dkwebsys: upstream<ApiDeps["dkwebsys"]>({
+          // ドライフラワー's, as DAM sends it.
+          getMusicDetailsInfo: async () =>
+            damDetails({ highlightTieUp: "undefined", thumbnailPath: "" }),
+        }),
+      },
+    );
+    const song = await api.damSong({ id: "6844-05" }, alice);
+    assert.equal(song.tieUp, null);
+    assert.equal(song.picture, false);
+  });
+
+  test("a Joysound song says whether it has album art", async () => {
+    const remembered: unknown[] = [];
+    const detail = {
+      name: "Lemon",
+      artistName: "米津玄師",
+      lyricsPreview: "",
+      tieUp: "",
+      pictureUrl: "https://m.media-amazon.com/images/I/x._SL500_.jpg",
+    };
+    const api = makeApi(
+      {},
+      {
+        joysound: upstream<ApiDeps["joysound"]>({
+          getSongDetail: async () => detail,
+        }),
+        pictures: { remember: (...args) => remembered.push(args) },
+      },
+    );
+    assert.equal(
+      (await api.joysoundSong({ id: "425691" }, alice)).picture,
+      true,
+    );
+    detail.pictureUrl = null as never;
+    assert.equal(
+      (await api.joysoundSong({ id: "425691" }, alice)).picture,
+      false,
+    );
+    assert.deepEqual(remembered, [
+      [
+        "joysound",
+        "425691",
+        "https://m.media-amazon.com/images/I/x._SL500_.jpg",
+      ],
+      ["joysound", "425691", null],
+    ]);
+  });
+
   test("a YouTube lookup that YouTube refuses is a result, not an error", async () => {
     const api = makeApi();
     assert.deepEqual(await api.youtubeInfo({ videoId: "x" }, alice), {

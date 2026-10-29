@@ -98,6 +98,14 @@ interface ContentsDetailAnswer {
         }[]
       | null;
     tieupList?: { tieupName?: string | null }[] | null;
+    // Album art, from Amazon (three sizes) and Apple: "" for none.
+    outsideUrlInfo?: {
+      amazonInfo?: {
+        songImageUrl?: string | null;
+        songImageUrlLarge?: string | null;
+      } | null;
+      itunesInfo?: { songImageUrl?: string | null } | null;
+    } | null;
   } | null;
 }
 
@@ -128,6 +136,9 @@ export interface JoysoundSongDetail {
   lyricsPreview: string;
   // Its tie-ups (a drama, a region...), " / " between them, or "".
   tieUp: string;
+  // Its album art: Amazon's largest (500 px), else Amazon's (160 px), else
+  // Apple's (100 px). null if none.
+  pictureUrl: string | null;
 }
 
 // A song as its download needs it.
@@ -219,7 +230,16 @@ export function songDetailOf(
   const selection = (detail.aplList ?? [])
     .flatMap((apl) => apl.selectionList ?? [])
     .find((candidate) => candidate.selSongNo === id);
+  const art = detail.outsideUrlInfo;
+  const pictureUrl =
+    [
+      art?.amazonInfo?.songImageUrlLarge,
+      art?.amazonInfo?.songImageUrl,
+      art?.itunesInfo?.songImageUrl,
+    ].find((url): url is string => typeof url === "string" && url !== "") ??
+    null;
   return {
+    pictureUrl,
     name: detail.songName,
     artistName: detail.artistInfo?.artistName ?? "",
     lyricsPreview: selection?.lyricIntro ?? "",

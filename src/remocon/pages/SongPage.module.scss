@@ -110,6 +110,21 @@
 }
 
 // An embedded player or a thumbnail, as wide as the page, as a card.
+// Joysound's album art: a square, not the page's width.
+.cover {
+  overflow: hidden;
+  @include kf-card;
+  width: min(45%, 200px);
+  aspect-ratio: 1;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
 .video {
   overflow: hidden;
   @include kf-card;

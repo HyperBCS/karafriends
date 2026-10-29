@@ -648,6 +648,55 @@ const damSongDetail = (n: number) => ({
   vocalTypes: ["NORMAL"],
   tieUp: null,
   playtime: 200,
+  picture: false,
+});
+
+// A 1×1 PNG, for a song's picture.
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("a DAM song's page shows its title card and its length; a picture that won't load goes", async ({
+  karafriends,
+  remote,
+}) => {
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({
+      json: { ...damSongDetail(1), playtime: 265, picture: true },
+    }),
+  );
+  let pictures = 0;
+  await remote.route("**/api/songPicture/dam/e2e-1", (route) => {
+    pictures++;
+    return route.fulfill({ contentType: "image/png", body: PNG });
+  });
+  await remote.goto(new URL("#/song/e2e-1", karafriends.remoconUrl).href);
+  const main = remote.getByRole("main");
+  await expect(
+    remote.getByRole("heading", { name: songName(1) }),
+  ).toBeVisible();
+  await expect(main.getByText("DAM · 4:25", { exact: true })).toBeVisible();
+  const picture = main.locator('img[src="/api/songPicture/dam/e2e-1"]');
+  await expect(picture).toBeVisible();
+  await expect
+    .poll(() => picture.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBe(1);
+  expect(pictures).toBe(1);
+
+  // Song 2's picture fails: the page shows without it.
+  await remote.route("**/api/songPicture/dam/e2e-2", (route) =>
+    route.fulfill({ status: 502, json: { error: "no answer" } }),
+  );
+  await remote.unroute("**/api/damSong");
+  await remote.route("**/api/damSong", (route) =>
+    route.fulfill({ json: { ...damSongDetail(2), picture: true } }),
+  );
+  await remote.evaluate(() => (window.location.hash = "#/song/e2e-2"));
+  await expect(
+    remote.getByRole("heading", { name: songName(2) }),
+  ).toBeVisible();
+  await expect(main.locator("img")).toHaveCount(0);
 });
 
 test("another song's page starts afresh: its own spinner, not the last song or its error", async ({

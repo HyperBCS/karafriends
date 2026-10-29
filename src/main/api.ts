@@ -35,11 +35,17 @@ import { songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
 import { NoLoginError } from "./credentials";
-import type { DkwebsysAPI, MinseiAPI } from "./damApi";
+import {
+  damPictureUrl,
+  damText,
+  type DkwebsysAPI,
+  type MinseiAPI,
+} from "./damApi";
 import type { JoysoundAPI } from "./joysoundApi";
 import { shareQueueItem, type HubMessage } from "./live";
 import { nextOffset } from "./paging";
 import type { SettingsMethod } from "./settings";
+import type { SongPictures } from "./songPictures";
 import {
   currentSongSecondsLeft,
   isDownloading,
@@ -149,6 +155,9 @@ export interface ApiDeps {
     ): void;
   };
   publish: (message: HubMessage) => void;
+  // The song pages' pictures (songPictures.ts): each song lookup leaves its
+  // picture's URL there, for /api/songPicture.
+  pictures?: Pick<SongPictures, "remember">;
   now?: () => number;
   // How long popSong waits for DAM (see DAM_POP_TIMEOUT_MS).
   damPopTimeoutMs?: number;
@@ -561,6 +570,8 @@ export function createApi(
     async damSong({ id }) {
       const { data, list } = await deps.dkwebsys.getMusicDetailsInfo(id);
       const info = list[0].mModelMusicInfoList[0];
+      const pictureUrl = damPictureUrl(info.thumbnailPath);
+      deps.pictures?.remember("dam", id, pictureUrl);
       return {
         id,
         name: data.title,
@@ -569,7 +580,7 @@ export function createApi(
         // DAM's song details give no artist reading (checked 2026-10-28);
         // the remote's song page takes it from the row that opened it.
         artistNameYomi: "",
-        lyricsPreview: data.firstLine || null,
+        lyricsPreview: damText(data.firstLine),
         vocalTypes: info.guideVocal.split(",").map((vocalType): VocalType => {
           switch (vocalType) {
             case "0":
@@ -583,8 +594,9 @@ export function createApi(
               return "UNKNOWN";
           }
         }),
-        tieUp: info.highlightTieUp || null,
+        tieUp: damText(info.highlightTieUp),
         playtime: parseInt(info.playtime, 10) || null,
+        picture: pictureUrl !== null,
       };
     },
 
@@ -616,12 +628,14 @@ export function createApi(
 
     async joysoundSong({ id }) {
       const detail = await deps.joysound.getSongDetail(id);
+      deps.pictures?.remember("joysound", id, detail.pictureUrl);
       return {
         id,
         name: detail.name,
         artistName: detail.artistName,
         lyricsPreview: detail.lyricsPreview,
         tieUp: detail.tieUp,
+        picture: detail.pictureUrl !== null,
       };
     },
 

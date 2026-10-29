@@ -316,7 +316,10 @@ export interface DamSongDetail extends DamSong {
   // One per streaming URL; queueSong's streamingUrlIdx picks one.
   vocalTypes: VocalType[];
   tieUp: string | null;
+  // In seconds.
   playtime: number | null;
+  // Whether /api/songPicture/dam/<id> has its karaoke video's title card.
+  picture: boolean;
 }
 
 export interface DamArtist {
@@ -335,6 +338,8 @@ export interface JoysoundSong {
 export interface JoysoundSongDetail extends JoysoundSong {
   lyricsPreview: string | null;
   tieUp: string | null;
+  // Whether /api/songPicture/joysound/<id> has its album art.
+  picture: boolean;
 }
 
 export interface JoysoundArtist {

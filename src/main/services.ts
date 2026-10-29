@@ -24,11 +24,12 @@ import {
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
 import { createApi, type ApiHandlers } from "./api";
 import { createCredentialProviders, memoizeSuccess } from "./credentials";
-import { DkwebsysAPI, MinseiAPI } from "./damApi";
+import { damPictureUrl, DkwebsysAPI, MinseiAPI } from "./damApi";
 import { JoysoundAPI } from "./joysoundApi";
 import { createJoysoundLinker, type StoredLink } from "./joysoundLink";
 import { createLiveHub } from "./live";
 import { createSecretFile } from "./secretFile";
+import { createSongPictures } from "./songPictures";
 import { createSettingsHandlers } from "./settings";
 import { createStateStore } from "./state";
 import { withTimeout } from "./timeout";
@@ -123,6 +124,18 @@ const upstreamClients = {
   dkwebsys: new DkwebsysAPI(),
 };
 
+// The song pages' pictures, through this PC (/api/songPicture): a song
+// page's lookup leaves its picture's URL, or the song is looked up again.
+export const songPictures = createSongPictures({
+  lookUp: async (kind, id) =>
+    kind === "dam"
+      ? damPictureUrl(
+          (await upstreamClients.dkwebsys.getMusicDetailsInfo(id)).list[0]
+            ?.mModelMusicInfoList[0]?.thumbnailPath,
+        )
+      : (await upstreamClients.joysound.getSongDetail(id)).pictureUrl,
+});
+
 // Only youtubeInfo needs the YouTube client, so it is created on first use
 // there: a YouTube outage then only affects YouTube lookups. A failure (or
 // a timeout) isn't kept, so the next lookup tries again.
@@ -142,6 +155,7 @@ const { resumeDownloads: resume, ...queueApi } = createApi({
     upstreamClients.joysound,
   ),
   publish: hub.publish,
+  pictures: songPictures,
 });
 
 // Starts again the downloads a restart cut short (queue.json's pending

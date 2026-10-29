@@ -276,6 +276,39 @@ interface GetMusicListByArtistResponse extends DkwebsysReponse {
   }[];
 }
 
+// The URL of a song's karaoke video title card (a 640×360 PNG), from
+// GetMusicDetailInfo's thumbnailPath, which leaves DAM's app key out: it is
+// filled in. null if the song has none, or the path isn't DAM's thumbnail
+// API.
+export function damPictureUrl(
+  thumbnailPath: string | null | undefined,
+): string | null {
+  if (!thumbnailPath) return null;
+  let url: URL;
+  try {
+    url = new URL(thumbnailPath);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "csgw.clubdam.com" ||
+    url.pathname !== "/minsei/music/info/GetNewThumbnail.api" ||
+    !url.searchParams.get("imageKey")
+  ) {
+    return null;
+  }
+  url.searchParams.set("compId", BASE_DKWEBSYS_REQUEST.compId);
+  url.searchParams.set("compAuthKey", BASE_DKWEBSYS_REQUEST.authKey);
+  return url.toString();
+}
+
+// DAM's text fields say "undefined" (the text) for nothing, as a song with
+// no tie-up does: null then.
+export function damText(value: string | null | undefined): string | null {
+  return value && value !== "undefined" ? value : null;
+}
+
 export class DkwebsysAPI {
   baseURL = "https://csgw.clubdam.com";
 

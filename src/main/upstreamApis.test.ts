@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, mock, test } from "node:test";
 
 import { ApiError } from "./api";
-import { MinseiAPI } from "./damApi";
+import { damPictureUrl, damText, MinseiAPI } from "./damApi";
 import { formBody } from "./http";
 import { backgroundVideoUrl, JoysoundAPI, songDetailOf } from "./joysoundApi";
 
@@ -234,6 +234,8 @@ describe("JoysoundAPI", () => {
       artistName: "AISHA",
       lyricsPreview: "テストの一行目",
       tieUp: "",
+      // The fixture leaves out its shop links.
+      pictureUrl: null,
     });
   });
 
@@ -301,7 +303,47 @@ describe("songDetailOf", () => {
         "428493",
         detail({ artistInfo: null, aplList: null, tieupList: null }),
       ),
-      { name: "SHYでもいいよ", artistName: "", lyricsPreview: "", tieUp: "" },
+      {
+        name: "SHYでもいいよ",
+        artistName: "",
+        lyricsPreview: "",
+        tieUp: "",
+        pictureUrl: null,
+      },
+    );
+  });
+
+  test("takes Amazon's largest album art, else Amazon's, else Apple's", () => {
+    const art = (amazonInfo: object, itunesInfo: object) =>
+      songDetailOf(
+        "428493",
+        detail({ outsideUrlInfo: { amazonInfo, itunesInfo } }),
+      ).pictureUrl;
+    assert.equal(
+      art(
+        {
+          songImageUrl: "https://a/160.jpg",
+          songImageUrlLarge: "https://a/500.jpg",
+        },
+        { songImageUrl: "https://apple/100.jpg" },
+      ),
+      "https://a/500.jpg",
+    );
+    assert.equal(
+      art(
+        { songImageUrl: "", songImageUrlLarge: "" },
+        { songImageUrl: "https://apple/100.jpg" },
+      ),
+      "https://apple/100.jpg",
+    );
+    // TAMAGO's LEMON had none.
+    assert.equal(
+      art({ songImageUrl: "", songImageUrlLarge: "" }, { songImageUrl: "" }),
+      null,
+    );
+    assert.equal(
+      songDetailOf("428493", detail({ outsideUrlInfo: null })).pictureUrl,
+      null,
     );
   });
 
@@ -331,6 +373,40 @@ describe("backgroundVideoUrl", () => {
     );
     assert.equal(backgroundVideoUrl({ slc: "1", movie: { mov1: "" } }), null);
     assert.equal(backgroundVideoUrl({ slc: "1", movie: null }), null);
+  });
+});
+
+describe("damPictureUrl", () => {
+  test("fills in the app key DAM's thumbnail URL leaves out", () => {
+    assert.equal(
+      damPictureUrl(
+        "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=&compAuthKey=&imageKey=c8bf732035ef02d0416b663a834c48ba",
+      ),
+      "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?compId=1&compAuthKey=2%2FQb9R%408s*&imageKey=c8bf732035ef02d0416b663a834c48ba",
+    );
+  });
+
+  test("has none for no thumbnail, or one that isn't DAM's", () => {
+    for (const path of [
+      "",
+      undefined,
+      "not a url",
+      "http://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?imageKey=a",
+      "https://example.com/minsei/music/info/GetNewThumbnail.api?imageKey=a",
+      "https://csgw.clubdam.com/minsei/other.api?imageKey=a",
+      "https://csgw.clubdam.com/minsei/music/info/GetNewThumbnail.api?imageKey=",
+    ]) {
+      assert.equal(damPictureUrl(path), null, String(path));
+    }
+  });
+});
+
+describe("damText", () => {
+  test("reads DAM's 'undefined' as nothing", () => {
+    assert.equal(damText("undefined"), null);
+    assert.equal(damText(""), null);
+    assert.equal(damText(undefined), null);
+    assert.equal(damText("主題歌"), "主題歌");
   });
 });
 

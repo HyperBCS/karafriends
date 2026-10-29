@@ -57,7 +57,14 @@ import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import { createCrashReloads } from "./rendererRecovery";
 import { apiRouter, shouldCompress } from "./server";
-import { api, hub, reportRemoconProblem, resumeDownloads } from "./services";
+import {
+  api,
+  hub,
+  reportRemoconProblem,
+  resumeDownloads,
+  songPictures,
+} from "./services";
+import { songPictureRouter } from "./songPictures";
 
 // In dev, start a debug server if we don't have one already (opening a
 // second one would throw). Packaged builds don't open one, since anything
@@ -259,6 +266,8 @@ function createWindow() {
 
   expressApp.use(compression({ filter: shouldCompress }));
 
+  // Before the API's router, which answers 404 for any other GET.
+  expressApp.use("/api/songPicture", songPictureRouter(songPictures));
   expressApp.use("/api", apiRouter(api, hub));
 
   // The phone remote: its page at /, and the assets it loads. (With the
