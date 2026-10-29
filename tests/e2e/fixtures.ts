@@ -41,6 +41,7 @@ import {
 } from "../../src/common/adminPassword";
 import type { LiveState } from "../../src/common/api";
 import { resourcePathsFor } from "../../src/common/externalResourcesPlan";
+import { songFileNames } from "../../src/common/songFiles";
 import { buildJoy02 } from "../fixtures/joy02";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -354,10 +355,11 @@ export async function fakeJoysoundDownload(
 ) {
   const folder = await downloadsFolder(app);
   fs.mkdirSync(folder, { recursive: true });
-  fs.writeFileSync(path.join(folder, `joysound-${songId}.joy_02`), telop);
+  const names = songFileNames({ kind: "joysound", songId, suffix: null });
+  fs.writeFileSync(path.join(folder, names.telop ?? ""), telop);
   fs.copyFileSync(
     path.join(REPO_ROOT, "tests", "fixtures", video),
-    path.join(folder, `joysound-${songId}-default.mp4`),
+    path.join(folder, names.video),
   );
 }
 

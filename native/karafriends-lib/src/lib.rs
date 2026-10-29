@@ -132,7 +132,7 @@ pub fn linux_audio() -> Option<LinuxAudio> {
             default_buffer: linux::default_buffer(),
         },
         Err(e) => LinuxAudio {
-            status: format!("No sound system: {e}"),
+            status: linux::status_without_host(&e.to_string()),
             buffer_sizes: Vec::new(),
             default_buffer: linux::default_buffer(),
         },
@@ -756,6 +756,9 @@ pub struct InputDevice {
     // Whether its callbacks stopped (see Stall).
     stall: Mutex<Stall>,
     pitch: pitch_detector::PitchWindow,
+    // On PipeWire, the node it opened on, for status to see it go.
+    #[cfg(target_os = "linux")]
+    node: Option<linux::OpenedNode>,
 }
 
 impl Finalize for InputDevice {}
@@ -787,6 +790,11 @@ impl InputDevice {
     pub fn new(name: &str, channel_selection: usize) -> Result<Self> {
         let (input_device, device_type) = find_input(name)?;
         let opened = Self::open(&input_device, &device_type, channel_selection);
+        #[cfg(target_os = "linux")]
+        let opened = opened.map(|mut device| {
+            device.node = linux::opened_node(&input_device);
+            device
+        });
         // Looked up afresh next time: on macOS a mic plugged in again is a
         // new CoreAudio device, and on Windows a cached device can keep a
         // dead client. (An ASIO device is only a description, and listing
@@ -1003,6 +1011,8 @@ impl InputDevice {
             lost: Arc::default(),
             stall: Mutex::new(Stall::new(Instant::now())),
             pitch,
+            #[cfg(target_os = "linux")]
+            node: None,
         })
     }
 
@@ -1111,6 +1121,15 @@ impl InputDevice {
     pub fn status(&self) -> String {
         if let Some(error) = lock(&self.status).clone() {
             return error;
+        }
+        // Unplugged: its stream would go on calling back, in silence.
+        #[cfg(target_os = "linux")]
+        if let Some(node) = &self.node
+            && !linux::node_is_there(node)
+        {
+            let gone = "The mic is gone (unplugged?)".to_string();
+            eprintln!("{gone}");
+            return lock(&self.status).get_or_insert(gone).clone();
         }
         let callbacks = self.meters.callbacks.load(Relaxed);
         if lock(&self.stall).stalled(callbacks, Instant::now()) {

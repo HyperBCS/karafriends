@@ -51,38 +51,117 @@ const PIPEWIRE_MIN: (u32, u32, u32) = (0, 3, 50);
 // since.
 const FRESH: Duration = Duration::from_secs(1);
 
+// cpal gives PipeWire and PulseAudio 2 seconds to list their devices. One
+// that fails after most of that is there but isn't answering (PipeWire
+// once spent a minute and a half retrying a USB mic unplugged mid-stream),
+// not one without sound devices (PipeWire that only does video), which
+// fails at once.
+const TIMED_OUT: Duration = Duration::from_millis(1500);
+
+// How long a sound system that didn't answer is left alone: the display's
+// listings and a down mic's retries, all on its thread, don't each wait
+// another 2 seconds. They fail at once meanwhile, rather than use the
+// devices it listed before: a USB mic among them may be gone (PipeWire
+// lists one for a while after it's unplugged), and a mic reopened on it
+// records nothing real and keeps it from coming back when it's plugged in.
+const NOT_ANSWERING_PAUSE: Duration = Duration::from_secs(10);
+
+// What Settings says of a sound system that isn't answering.
+const NOT_ANSWERING: &str = "isn't answering";
+
 struct Picked {
     host: Rc<cpal::Host>,
     why: Option<String>,
-    // None until a listing asks for them; Some(None) if PipeWire didn't
-    // answer.
-    classes: Option<Option<Rc<HashMap<String, String>>>>,
+    // PipeWire's registry: None until a listing or a mic asks for it;
+    // Some(None) if PipeWire didn't answer.
+    registry: Option<Option<Rc<Registry>>>,
     at: Instant,
+}
+
+// The sound system of this run, once picked: the devices are listed afresh
+// from it, never from another. One that is slow for a moment isn't swapped
+// for the next (ALSA, whose device names a mic saved meanwhile keeps, and
+// PipeWire doesn't have).
+struct System {
+    id: cpal::HostId,
+    // Why it isn't the usual one, if it isn't.
+    why: Option<String>,
+    // While it isn't answering: since when it was last asked, and why.
+    stuck: Option<(Instant, String)>,
 }
 
 thread_local! {
     // Native calls come from the display's JS thread.
     static PICKED: RefCell<Option<Picked>> = const { RefCell::new(None) };
+    static SYSTEM: RefCell<Option<System>> = const { RefCell::new(None) };
 }
 
 // The sound system the mics use, and why it isn't the usual one if it
-// isn't (see pick_host). The one picked within the last second, if any.
+// isn't (see pick_host). The one started within the last second, if any.
+// An error while it isn't answering.
 pub(crate) fn system_host() -> Result<(Rc<cpal::Host>, Option<String>)> {
     PICKED.with_borrow_mut(|picked| {
         if let Some(picked) = picked.as_ref().filter(|p| p.at.elapsed() < FRESH) {
             return Ok((picked.host.clone(), picked.why.clone()));
         }
-        // The old one goes before a new one starts.
-        *picked = None;
-        let (host, why) = pick_host()?;
-        let host = Rc::new(host);
-        *picked = Some(Picked {
-            host: host.clone(),
-            why: why.clone(),
-            classes: None,
-            at: Instant::now(),
-        });
-        Ok((host, why))
+        match start_system() {
+            Ok((host, why)) => {
+                let host = Rc::new(host);
+                *picked = Some(Picked {
+                    host: host.clone(),
+                    why: why.clone(),
+                    registry: None,
+                    at: Instant::now(),
+                });
+                Ok((host, why))
+            }
+            Err(why) => Err(why.into()),
+        }
+    })
+}
+
+// The run's sound system started afresh, for its devices now: picked the
+// first time (pick_host), the same one after. Why not, while it isn't
+// answering: it is asked again once NOT_ANSWERING_PAUSE has passed.
+fn start_system() -> std::result::Result<(cpal::Host, Option<String>), String> {
+    SYSTEM.with_borrow_mut(|system| {
+        let Some(system) = system.as_mut() else {
+            return match pick_host() {
+                Ok(Picking::Started(host, why)) => {
+                    *system = Some(System {
+                        id: host.id(),
+                        why: why.clone(),
+                        stuck: None,
+                    });
+                    Ok((host, why))
+                }
+                Ok(Picking::NotAnswering(id, why, stuck)) => {
+                    *system = Some(System {
+                        id,
+                        why,
+                        stuck: Some((Instant::now(), stuck.clone())),
+                    });
+                    Err(stuck)
+                }
+                Err(e) => Err(e.to_string()),
+            };
+        };
+        if let Some((since, why)) = &system.stuck
+            && since.elapsed() < NOT_ANSWERING_PAUSE
+        {
+            return Err(why.clone());
+        }
+        match cpal::host_from_id(system.id) {
+            Ok(host) => {
+                system.stuck = None;
+                Ok((host, system.why.clone()))
+            }
+            Err(e) => {
+                let why = format!("{} didn't list its devices: {e}", system.id.name());
+                system.stuck = Some((Instant::now(), why.clone()));
+                Err(why)
+            }
+        }
     })
 }
 
@@ -100,14 +179,38 @@ fn default_buffer_on(id: Option<cpal::HostId>) -> u32 {
     }
 }
 
+// What the first pick came to: a sound system that started, and why it
+// isn't the usual one if it isn't; or one that is there but didn't answer,
+// that same why, and its own.
+enum Picking {
+    Started(cpal::Host, Option<String>),
+    NotAnswering(cpal::HostId, Option<String>, String),
+}
+
+// Why a sound system didn't start.
+#[derive(Debug, PartialEq)]
+enum Failed {
+    // It's there but didn't answer in time: it's still the one to use.
+    NotAnswering(String),
+    // It isn't there, or has no sound devices: the next one is.
+    Absent(String),
+}
+
 // KARAFRIENDS_AUDIO_HOST's when it is set and starts; else PipeWire, when
 // it runs and its library is new enough; else PulseAudio (pipewire-pulse
-// counts); else ALSA.
-fn pick_host() -> Result<(cpal::Host, Option<String>)> {
+// counts); else ALSA. PipeWire or PulseAudio running but not answering is
+// still the one: the next would be the same server (pipewire-pulse, or
+// ALSA's pipewire plugin), or none.
+fn pick_host() -> Result<Picking> {
     let mut why = None;
     if let Ok(name) = std::env::var(HOST_VARIABLE) {
         match chosen_host(&name) {
-            Ok(host) => return Ok((host, Some(format!("as {HOST_VARIABLE} says")))),
+            Ok(host) => {
+                return Ok(Picking::Started(
+                    host,
+                    Some(format!("as {HOST_VARIABLE} says")),
+                ));
+            }
             Err(e) => why = Some(format!("{HOST_VARIABLE}={name} didn't start: {e}")),
         }
     }
@@ -121,9 +224,12 @@ fn pick_host() -> Result<(cpal::Host, Option<String>)> {
                 pipewire_version()
             ));
         } else {
-            match cpal::host_from_id(cpal::HostId::PipeWire) {
-                Ok(host) => return Ok((host, why)),
-                Err(e) => {
+            match start(cpal::HostId::PipeWire) {
+                Ok(host) => return Ok(Picking::Started(host, why)),
+                Err(Failed::NotAnswering(stuck)) => {
+                    return Ok(Picking::NotAnswering(cpal::HostId::PipeWire, why, stuck));
+                }
+                Err(Failed::Absent(e)) => {
                     why.get_or_insert(format!("PipeWire didn't start: {e}"));
                 }
             }
@@ -131,12 +237,34 @@ fn pick_host() -> Result<(cpal::Host, Option<String>)> {
     }
     #[cfg(not(feature = "pipewire"))]
     why.get_or_insert("this build has no PipeWire".to_string());
-    if available.contains(&cpal::HostId::PulseAudio)
-        && let Ok(host) = cpal::host_from_id(cpal::HostId::PulseAudio)
-    {
-        return Ok((host, why));
+    if available.contains(&cpal::HostId::PulseAudio) {
+        match start(cpal::HostId::PulseAudio) {
+            Ok(host) => return Ok(Picking::Started(host, why)),
+            Err(Failed::NotAnswering(stuck)) => {
+                return Ok(Picking::NotAnswering(cpal::HostId::PulseAudio, why, stuck));
+            }
+            Err(Failed::Absent(_)) => {}
+        }
     }
-    Ok((cpal::host_from_id(cpal::HostId::Alsa)?, why))
+    Ok(Picking::Started(
+        cpal::host_from_id(cpal::HostId::Alsa)?,
+        why,
+    ))
+}
+
+// Starts the sound system `id`, timed to tell why it didn't (see
+// TIMED_OUT).
+fn start(id: cpal::HostId) -> std::result::Result<cpal::Host, Failed> {
+    let began = Instant::now();
+    cpal::host_from_id(id).map_err(|e| failed(id, &e.to_string(), began.elapsed()))
+}
+
+fn failed(id: cpal::HostId, error: &str, took: Duration) -> Failed {
+    if took >= TIMED_OUT {
+        Failed::NotAnswering(format!("{} {NOT_ANSWERING}", id.name()))
+    } else {
+        Failed::Absent(error.to_string())
+    }
 }
 
 // The host KARAFRIENDS_AUDIO_HOST names, if it starts.
@@ -157,15 +285,32 @@ fn chosen_host(name: &str) -> Result<cpal::Host> {
 // For Settings: the sound system the mics use ("Sound system: PipeWire
 // 1.6.2"), and why, from system_host, if it isn't the usual one.
 pub(crate) fn status(host: &cpal::Host, why: Option<String>) -> String {
+    let id = host.id();
+    status_line(&system_name(id), id == cpal::HostId::PulseAudio, why)
+}
+
+// For Settings when system_host has none (it failed with `error`): the
+// run's sound system, if it is there but isn't answering, else none.
+pub(crate) fn status_without_host(error: &str) -> String {
+    SYSTEM.with_borrow(|system| match system {
+        Some(System {
+            id, stuck: Some(_), ..
+        }) => status_line(
+            &system_name(*id),
+            *id == cpal::HostId::PulseAudio,
+            Some(NOT_ANSWERING.to_string()),
+        ),
+        _ => format!("No sound system: {error}"),
+    })
+}
+
+// "PipeWire 1.6.2", "PulseAudio", "ALSA".
+fn system_name(id: cpal::HostId) -> String {
     #[cfg(feature = "pipewire")]
-    let name = if host.id() == cpal::HostId::PipeWire {
-        format!("PipeWire {}", pipewire_version())
-    } else {
-        host.id().name().to_string()
-    };
-    #[cfg(not(feature = "pipewire"))]
-    let name = host.id().name().to_string();
-    status_line(&name, host.id() == cpal::HostId::PulseAudio, why)
+    if id == cpal::HostId::PipeWire {
+        return format!("PipeWire {}", pipewire_version());
+    }
+    id.name().to_string()
 }
 
 // "Sound system: PulseAudio (why). Not real-time: ...": cpal never says so
@@ -264,7 +409,7 @@ fn pipewire_devices(
     devices: Vec<cpal::Device>,
     wanted: Wanted,
 ) -> Vec<cpal::Device> {
-    let classes = classes_for(host);
+    let registry = registry_for(host);
     devices
         .into_iter()
         .filter(|device| {
@@ -272,7 +417,7 @@ fn pipewire_devices(
             keep_pipewire(
                 wanted,
                 &node(device),
-                classes.as_deref(),
+                registry.as_deref().map(|r| &r.classes),
                 description.as_ref().map(|d| d.direction()),
                 description.is_some_and(|d| d.driver().is_some()),
             )
@@ -319,35 +464,90 @@ fn keep_pulse_input(node: &str) -> bool {
     !node.ends_with(".monitor")
 }
 
-// PipeWire's node classes, asked once per host system_host picked (and
-// fresh for any other host).
-fn classes_for(host: &cpal::Host) -> Option<Rc<HashMap<String, String>>> {
+// PipeWire's registry, asked once per host system_host picked (and fresh
+// for any other host).
+fn registry_for(host: &cpal::Host) -> Option<Rc<Registry>> {
     let is_picked = |picked: &Picked| std::ptr::eq(&*picked.host, host);
     let asked = PICKED.with_borrow(|picked| {
         picked
             .as_ref()
             .filter(|p| is_picked(p))
-            .and_then(|p| p.classes.clone())
+            .and_then(|p| p.registry.clone())
     });
-    if let Some(classes) = asked {
-        return classes;
+    if let Some(registry) = asked {
+        return registry;
     }
-    let classes = pipewire_classes().map(Rc::new);
+    let registry = pipewire_registry().map(Rc::new);
     PICKED.with_borrow_mut(|picked| {
         if let Some(picked) = picked.as_mut().filter(|p| is_picked(p)) {
-            picked.classes = Some(classes.clone());
+            picked.registry = Some(registry.clone());
         }
     });
-    classes
+    registry
 }
 
-// Each node's media class, by node name: mics are "Audio/Source", outputs
-// "Audio/Sink", and programs' streams (karafriends' own too) "Stream/...".
-// None if PipeWire doesn't answer within two seconds. Asked while a cpal
-// PipeWire host lives, which keeps the library initialised (cpal
-// deinitialises it once its last host or stream is gone).
+// What PipeWire's registry says of its nodes, by node name: each one's
+// media class (mics are "Audio/Source", outputs "Audio/Sink", programs'
+// streams, karafriends' own too, "Stream/..."), and the serials of the
+// nodes of that name. A mic plugged in again is a new node: the name it
+// had, a new serial.
+#[derive(Default)]
+struct Registry {
+    classes: HashMap<String, String>,
+    serials: HashMap<String, Vec<String>>,
+}
+
+// The PipeWire node a mic opened on, as it was then: its name and the
+// serials PipeWire had for it.
+pub(crate) struct OpenedNode {
+    name: String,
+    serials: Vec<String>,
+}
+
+// For a mic just opened on `device`: its PipeWire node, for node_is_there.
+// None where that can't be told: on another sound system, for the system
+// default (which follows the system's choice, not a node), or if PipeWire
+// didn't answer.
+pub(crate) fn opened_node(device: &cpal::Device) -> Option<OpenedNode> {
+    let (host, _) = system_host().ok()?;
+    if host.id().name() != "PipeWire" {
+        return None;
+    }
+    let name = node(device);
+    let serials = registry_for(&host)?.serials.get(&name)?.clone();
+    Some(OpenedNode { name, serials })
+}
+
+// Whether the node a mic opened on is still there. A mic unplugged goes
+// from PipeWire's registry, but its stream doesn't stop: cpal schedules it
+// with the mic output's, so it calls back with silence, its status stays
+// "ok", and the display never reopens it, not even once the mic is plugged
+// in again (as a new node). True when PipeWire can't say.
+pub(crate) fn node_is_there(opened: &OpenedNode) -> bool {
+    let Ok((host, _)) = system_host() else {
+        return true;
+    };
+    if host.id().name() != "PipeWire" {
+        return true;
+    }
+    match registry_for(&host) {
+        Some(registry) => still_listed(&opened.serials, registry.serials.get(&opened.name)),
+        None => true,
+    }
+}
+
+// Whether any node a mic opened on (`opened`, its serials then) is among
+// those of its name now.
+fn still_listed(opened: &[String], now: Option<&Vec<String>>) -> bool {
+    now.is_some_and(|now| now.iter().any(|serial| opened.contains(serial)))
+}
+
+// The registry, from PipeWire. None if it doesn't answer within two
+// seconds. Asked while a cpal PipeWire host lives, which keeps the library
+// initialised (cpal deinitialises it once its last host or stream is
+// gone).
 #[cfg(feature = "pipewire")]
-fn pipewire_classes() -> Option<HashMap<String, String>> {
+fn pipewire_registry() -> Option<Registry> {
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -360,11 +560,11 @@ fn pipewire_classes() -> Option<HashMap<String, String>> {
     let core = context.connect_rc(None).ok()?;
     let registry = core.get_registry_rc().ok()?;
 
-    let classes: Rc<RefCell<HashMap<String, String>>> = Rc::default();
+    let nodes: Rc<RefCell<Registry>> = Rc::default();
     let _registry_listener = registry
         .add_listener_local()
         .global({
-            let classes = classes.clone();
+            let nodes = nodes.clone();
             move |global| {
                 if global.type_ != pw::types::ObjectType::Node {
                     return;
@@ -372,12 +572,19 @@ fn pipewire_classes() -> Option<HashMap<String, String>> {
                 let Some(props) = global.props else {
                     return;
                 };
-                if let (Some(name), Some(class)) =
-                    (props.get("node.name"), props.get("media.class"))
-                {
-                    classes
-                        .borrow_mut()
-                        .insert(name.to_string(), class.to_string());
+                let Some(name) = props.get("node.name") else {
+                    return;
+                };
+                let mut nodes = nodes.borrow_mut();
+                if let Some(class) = props.get("media.class") {
+                    nodes.classes.insert(name.to_string(), class.to_string());
+                }
+                if let Some(serial) = props.get("object.serial") {
+                    nodes
+                        .serials
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(serial.to_string());
                 }
             }
         })
@@ -420,12 +627,11 @@ fn pipewire_classes() -> Option<HashMap<String, String>> {
         eprintln!("PipeWire didn't list its nodes in time");
         return None;
     }
-    let classes = classes.take();
-    Some(classes)
+    Some(nodes.take())
 }
 
 #[cfg(not(feature = "pipewire"))]
-fn pipewire_classes() -> Option<HashMap<String, String>> {
+fn pipewire_registry() -> Option<Registry> {
     None
 }
 
@@ -635,7 +841,7 @@ mod tests {
         let _ = output_devices(&again);
         if first.id().name() == "PipeWire" {
             // Asked once for both listings.
-            assert!(PICKED.with_borrow(|p| p.as_ref().unwrap().classes.is_some()));
+            assert!(PICKED.with_borrow(|p| p.as_ref().unwrap().registry.is_some()));
         }
         PICKED.with_borrow_mut(|p| {
             let p = p.as_mut().unwrap();
@@ -643,6 +849,92 @@ mod tests {
         });
         let (later, _) = system_host().unwrap();
         assert!(!Rc::ptr_eq(&first, &later));
+        // Started again, the same sound system.
+        assert_eq!(later.id(), first.id());
+    }
+
+    #[test]
+    fn test_a_slow_failure_is_a_sound_system_not_answering() {
+        // cpal's 2 seconds, run out.
+        assert_eq!(
+            failed(
+                cpal::HostId::PulseAudio,
+                "timed out",
+                Duration::from_secs(2)
+            ),
+            Failed::NotAnswering("PulseAudio isn't answering".to_string())
+        );
+        // At once: not there, or without sound devices; the next one's
+        // turn.
+        assert_eq!(
+            failed(
+                cpal::HostId::PulseAudio,
+                "refused",
+                Duration::from_millis(20)
+            ),
+            Failed::Absent("refused".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_mic_is_there_while_a_node_it_opened_on_is() {
+        let serials = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let opened = serials(&["40117"]);
+        assert!(still_listed(&opened, Some(&serials(&["40117"]))));
+        // Unplugged: no node of its name.
+        assert!(!still_listed(&opened, None));
+        // Plugged in again: its name, a new node. The stream is still on
+        // the old one, so it's gone.
+        assert!(!still_listed(&opened, Some(&serials(&["40524"]))));
+        // Opened while an unplugged one lingered beside the new one: either
+        // will do.
+        assert!(still_listed(
+            &serials(&["40117", "40524"]),
+            Some(&serials(&["40524"]))
+        ));
+    }
+
+    // No sound system is asked: ALSA's host starts without a device.
+    #[test]
+    fn test_a_sound_system_not_answering_is_left_alone_and_lists_nothing() {
+        // This run's sound system (PulseAudio here; PipeWire alike), which
+        // didn't answer a moment ago, and the devices it listed before
+        // that.
+        let before = Rc::new(cpal::host_from_id(cpal::HostId::Alsa).unwrap());
+        PICKED.with_borrow_mut(|p| {
+            let at = Instant::now();
+            *p = Some(Picked {
+                host: before.clone(),
+                why: None,
+                registry: None,
+                at: at.checked_sub(FRESH).unwrap_or(at),
+            });
+        });
+        SYSTEM.with_borrow_mut(|s| {
+            *s = Some(System {
+                id: cpal::HostId::PulseAudio,
+                why: None,
+                stuck: Some((Instant::now(), "PulseAudio isn't answering".to_string())),
+            });
+        });
+
+        // Why not, at once: not another 2 seconds, not another sound
+        // system, and not the devices from before (a mic unplugged since
+        // would reopen on one that's gone).
+        let began = Instant::now();
+        let Err(error) = system_host() else {
+            panic!("a host while the sound system isn't answering");
+        };
+        let error = error.to_string();
+        assert_eq!(error, "PulseAudio isn't answering");
+        assert!(began.elapsed() < Duration::from_millis(100));
+
+        // Settings says which sound system, and why.
+        let status = status_without_host(&error);
+        assert!(
+            status.starts_with("Sound system: PulseAudio (isn't answering)"),
+            "{status}"
+        );
     }
 
     #[test]
