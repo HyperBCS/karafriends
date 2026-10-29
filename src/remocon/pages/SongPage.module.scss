@@ -139,3 +139,31 @@
     object-fit: cover;
   }
 }
+
+// Browse's sections: a heading over its list.
+.browseSection {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-2;
+}
+
+// A featured list's title: may wrap, it's long.
+.featureTitle {
+  font-size: $kf-text-title;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+// A featured list's picture (690×340).
+.featurePicture {
+  overflow: hidden;
+  @include kf-card;
+  aspect-ratio: 690 / 340;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}

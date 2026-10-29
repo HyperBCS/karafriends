@@ -112,8 +112,14 @@ const credentials = createCredentialProviders({
 });
 
 configStore.onChange(({ keys }) => {
-  // The phones' live state shows supervisedMode and everyoneIsAdmin.
-  if (keys.includes("supervisedMode") || keys.includes("everyoneIsAdmin"))
+  // The phones' live state shows supervisedMode and everyoneIsAdmin, and
+  // whether a Joysound login is set (Browse).
+  if (
+    keys.includes("supervisedMode") ||
+    keys.includes("everyoneIsAdmin") ||
+    keys.includes("joysoundEmail") ||
+    keys.includes("joysoundPassword")
+  )
     hub.refresh();
 });
 
@@ -133,7 +139,11 @@ export const songPictures = createSongPictures({
           (await upstreamClients.dkwebsys.getMusicDetailsInfo(id)).list[0]
             ?.mModelMusicInfoList[0]?.thumbnailPath,
         )
-      : (await upstreamClients.joysound.getSongDetail(id)).pictureUrl,
+      : kind === "joysound"
+        ? (await upstreamClients.joysound.getSongDetail(id)).pictureUrl
+        : ((await upstreamClients.joysound.getFeatures()).find(
+            (feature) => feature.id === id,
+          )?.pictureUrl ?? null),
 });
 
 // Only youtubeInfo needs the YouTube client, so it is created on first use

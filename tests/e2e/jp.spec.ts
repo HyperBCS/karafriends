@@ -85,6 +85,29 @@ test.describe("DAM and Joysound", { tag: "@jp", lock: "jp-accounts" }, () => {
     });
   }
 
+  // Joysound's real lists, through the installed app's link.
+  test("Browse lists Joysound's genres and featured lists, with songs", async ({
+    remote,
+  }) => {
+    await remote.getByRole("link", { name: "Browse" }).click();
+    const main = remote.getByRole("main");
+    await main.getByRole("link", { name: "J-POP" }).click({ timeout: 30_000 });
+    await expect(main.getByRole("link").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await main.getByRole("link").count()).toBeGreaterThan(10);
+    await remote.getByRole("button", { name: "Back" }).click();
+    await main
+      .getByRole("list", { name: "Featured" })
+      .getByRole("link")
+      .first()
+      .click();
+    await expect(main.getByRole("link").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await main.getByRole("link").count()).toBeGreaterThan(5);
+  });
+
   test.describe("queueing", () => {
     // A song the display starts at once (a minute of black video, from
     // seedVideos) and the test pauses, so it never finishes: a song queued

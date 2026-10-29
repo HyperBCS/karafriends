@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { LiveEvent, LiveState, QueueItem } from "../common/api";
-import { createLiveHub, toLiveState, type Viewer } from "./live";
+import {
+  createLiveHub,
+  type LiveConfig,
+  toLiveState,
+  type Viewer,
+} from "./live";
 import {
   createStateStore,
   failDownload,
@@ -90,13 +95,25 @@ describe("toLiveState", () => {
     const live = toLiveState(store.getState(), {
       supervisedMode: true,
       everyoneIsAdmin: true,
-      // Not passed on.
+      // Not passed on: only whether a Joysound login is set.
       adminPasswordHash: "secret",
-    } as LiveState["config"]);
+      joysoundEmail: "joy@example.com",
+      joysoundPassword: "joy-pw",
+    } as LiveConfig);
     assert.deepEqual(live.config, {
       supervisedMode: true,
       everyoneIsAdmin: true,
+      joysoundLogin: true,
     });
+    assert.equal(
+      toLiveState(store.getState(), {
+        supervisedMode: true,
+        everyoneIsAdmin: true,
+        joysoundEmail: "joy@example.com",
+        joysoundPassword: "",
+      }).config.joysoundLogin,
+      false,
+    );
     assert.equal(live.toolsProblem, "Update the tools");
     assert.equal(
       live.remoconProblem,
@@ -347,7 +364,12 @@ describe("createLiveHub", () => {
   });
 
   test("refresh() sends the state when the config changed", async () => {
-    const config = { supervisedMode: false, everyoneIsAdmin: false };
+    const config: LiveConfig = {
+      supervisedMode: false,
+      everyoneIsAdmin: false,
+      joysoundEmail: "joy@example.com",
+      joysoundPassword: "",
+    };
     const hub = createLiveHub(store, config, INTERVAL_MS);
     const modes: LiveState["config"][] = [];
     const stop = hub.subscribe((event) => {
@@ -363,11 +385,17 @@ describe("createLiveHub", () => {
     config.everyoneIsAdmin = true;
     hub.refresh();
     await sleep(INTERVAL_MS * 2);
+    // The Joysound login filled in: Browse shows.
+    config.joysoundPassword = "joy-pw";
+    hub.refresh();
+    await sleep(INTERVAL_MS * 2);
     stop();
+    const joysoundLogin = false;
     assert.deepEqual(modes, [
-      { supervisedMode: false, everyoneIsAdmin: false },
-      { supervisedMode: true, everyoneIsAdmin: false },
-      { supervisedMode: true, everyoneIsAdmin: true },
+      { supervisedMode: false, everyoneIsAdmin: false, joysoundLogin },
+      { supervisedMode: true, everyoneIsAdmin: false, joysoundLogin },
+      { supervisedMode: true, everyoneIsAdmin: true, joysoundLogin },
+      { supervisedMode: true, everyoneIsAdmin: true, joysoundLogin: true },
     ]);
   });
 

@@ -2,7 +2,8 @@
 // karaoke video title card (its URL needs DAM's app key) and Joysound's
 // album art (from Amazon or Apple). Phones only ever talk to karafriends:
 //
-//   GET /api/songPicture/<dam|joysound>/<id>  the picture, or 404 if the song
+//   GET /api/songPicture/<dam|joysound|joysoundFeature>/<id>
+//                                             the picture, or 404 if the song
 //                                             has none, 502 if it couldn't
 //                                             be fetched.
 //
@@ -16,7 +17,8 @@ import express, { type Router } from "express";
 
 import { httpFetch, HttpStatusError, withUrlHidden } from "./http";
 
-export type PictureKind = "dam" | "joysound";
+// joysoundFeature: one of Joysound's featured lists (Browse).
+export type PictureKind = "dam" | "joysound" | "joysoundFeature";
 
 export interface SongPicture {
   contentType: string;
@@ -50,6 +52,8 @@ const ALLOWED_HOSTS = [
   /(^|\.)media-amazon\.com$/,
   /(^|\.)ssl-images-amazon\.com$/,
   /(^|\.)mzstatic\.com$/,
+  // Where sound-cafe keeps its featured lists' pictures.
+  /^d24lvzvt5ynxi0\.cloudfront\.net$/,
 ];
 
 export function isAllowedPictureUrl(url: string): boolean {
@@ -65,14 +69,16 @@ export function isAllowedPictureUrl(url: string): boolean {
   );
 }
 
-// A DAM request number (3246-51) or a Joysound song number (425691).
+// A DAM request number (3246-51), a Joysound song number (425691), or a
+// Joysound featured list's id (63).
 const SONG_IDS: Record<PictureKind, RegExp> = {
   dam: /^\d{4}-\d{2}$/,
   joysound: /^\d+$/,
+  joysoundFeature: /^\d+$/,
 };
 
 export function isPictureKind(kind: string): kind is PictureKind {
-  return kind === "dam" || kind === "joysound";
+  return Object.hasOwn(SONG_IDS, kind);
 }
 
 export function isSongId(kind: PictureKind, id: string): boolean {

@@ -8,7 +8,13 @@ import { after, before, beforeEach, describe, mock, test } from "node:test";
 import { ApiError } from "./api";
 import { damPictureUrl, damText, MinseiAPI } from "./damApi";
 import { formBody } from "./http";
-import { backgroundVideoUrl, JoysoundAPI, songDetailOf } from "./joysoundApi";
+import {
+  backgroundVideoUrl,
+  featuresOf,
+  JoysoundAPI,
+  keptFor,
+  songDetailOf,
+} from "./joysoundApi";
 
 // What a phone might type, and what a config.yaml password might hold.
 const AWKWARD = "C&K 1+1=2 100% 米津玄師 a%2Fb";
@@ -60,6 +66,45 @@ const ARTIST_ROW = {
   artistId_digi: "232873",
 };
 
+// genreList's answer (2026-10-29, trimmed): a genre, and its one
+// sub-genre, "すべて" (all).
+const GENRES = {
+  genreList: [
+    {
+      genreId: "10000001",
+      genreName: "J-POP",
+      genreList: [{ genreId: "10000001", genreName: "すべて", genreList: [] }],
+    },
+    { genreId: "10000011", genreName: "演歌", genreList: [] },
+    // Not a genre karafriends can use.
+    { genreId: "../x", genreName: "?" },
+  ],
+};
+
+// upList's: new songs, by the date they came.
+const UP_LIST = {
+  hitCount: "3",
+  upList: [
+    { svcStartDate: "20261029", contentsList: [SONG_ROW, SONG_ROW] },
+    { svcStartDate: "20261022", contentsList: [SONG_ROW] },
+  ],
+};
+
+// feature_tv.json's, trimmed.
+const FEATURE_FILE = {
+  feature: [
+    {
+      id: "63",
+      title: "バラードソング特集",
+      thumbnail_img:
+        "https://d24lvzvt5ynxi0.cloudfront.net/static/image/feature/thumbnail/t.png",
+      header_img: "https://d24lvzvt5ynxi0.cloudfront.net/b.png",
+      description: ["しっとり", "抒情的な曲を。"],
+      song_number: [638255, 425691],
+    },
+  ],
+};
+
 let server: http.Server;
 let base: string;
 const received: {
@@ -80,6 +125,12 @@ before(async () => {
       res.writeHead(200, { "Content-Type": "application/json" });
       if (req.url === "/api/v1/spc/contentsDetail") {
         res.end(JSON.stringify(DETAIL));
+      } else if (req.url === "/api/v1/spc/genreList") {
+        res.end(JSON.stringify(GENRES));
+      } else if (req.url === "/api/v1/spc/upList") {
+        res.end(JSON.stringify(UP_LIST));
+      } else if (req.url === "/static/json/feature_tv.json") {
+        res.end(JSON.stringify(FEATURE_FILE));
       } else if (req.url === "/api/v1/spc/contentsList") {
         res.end(JSON.stringify(contentsList(JSON.parse(body))));
       } else {
@@ -391,23 +442,170 @@ describe("songDetailOf", () => {
 });
 
 describe("backgroundVideoUrl", () => {
-  test("takes mov1, or else the first other one there is", () => {
+  const movie = {
+    mov3: "https://a/3.mp4",
+    mov1: "https://a/1.mp4",
+    mov2: "",
+    mov4: "https://a/4.mp4",
+  };
+
+  test("picks one of the song's videos at random", () => {
+    // The ones there are, in order: mov1, mov3, mov4.
     assert.equal(
-      backgroundVideoUrl({
-        slc: "1",
-        movie: { mov1: "https://a/1.mp4", mov2: "https://a/2.mp4" },
-      }),
-      "https://a/1.mp4",
+      backgroundVideoUrl({ slc: "1", movie }, () => 0),
+      movie.mov1,
     );
     assert.equal(
-      backgroundVideoUrl({
-        slc: "1",
-        movie: { mov3: "https://a/3.mp4", mov1: "", mov2: "https://a/2.mp4" },
-      }),
-      "https://a/2.mp4",
+      backgroundVideoUrl({ slc: "1", movie }, () => 0.5),
+      movie.mov3,
     );
+    assert.equal(
+      backgroundVideoUrl({ slc: "1", movie }, () => 0.9999),
+      movie.mov4,
+    );
+    const picked = new Set(
+      Array.from({ length: 200 }, () =>
+        backgroundVideoUrl({ slc: "1", movie }),
+      ),
+    );
+    assert.deepEqual([...picked].sort(), [movie.mov1, movie.mov3, movie.mov4]);
+  });
+
+  test("has none when the song has none", () => {
     assert.equal(backgroundVideoUrl({ slc: "1", movie: { mov1: "" } }), null);
     assert.equal(backgroundVideoUrl({ slc: "1", movie: null }), null);
+  });
+});
+
+describe("JoysoundAPI's Browse", () => {
+  const joysound = new JoysoundAPI(async () => ({
+    linkCode: "code-1",
+    membershipType: "PAID",
+  }));
+
+  before(() => {
+    joysound.baseURL = base;
+  });
+
+  test("a genre's songs: most popular first, by its ID", async () => {
+    await joysound.getSongListByGenre("10000001", 1, 20);
+    assert.deepEqual(JSON.parse(received[0].body), {
+      params: [{ kind: "selGenre", word: "10000001", match: "exact" }],
+      sort: "popular",
+      order: "desc",
+      format: "all",
+      start: "1",
+      count: "20",
+      facet: "false",
+    });
+    await assert.rejects(
+      joysound.getSongListByGenre("../x", 1, 20),
+      (err) => err instanceof ApiError && err.status === 400,
+    );
+  });
+
+  test("the genres, asked for once an hour at most", async () => {
+    const fresh = new JoysoundAPI(async () => ({
+      linkCode: "code-1",
+      membershipType: "PAID",
+    }));
+    fresh.baseURL = base;
+    const genres = await fresh.getGenres();
+    assert.deepEqual(genres, [
+      { id: "10000001", name: "J-POP" },
+      { id: "10000011", name: "演歌" },
+    ]);
+    await fresh.getGenres();
+    assert.deepEqual(
+      received.map(({ url }) => url),
+      ["/api/v1/spc/genreList"],
+    );
+  });
+
+  test("the newest songs, every date's", async () => {
+    assert.equal((await joysound.getNewSongs()).length, 3);
+    assert.equal(received[0].url, "/api/v1/spc/upList");
+  });
+
+  test("the featured lists, from the TV app's file, with the link", async () => {
+    const fresh = new JoysoundAPI(async () => ({
+      linkCode: "code-1",
+      membershipType: "PAID",
+    }));
+    fresh.baseURL = base;
+    assert.deepEqual(await fresh.getFeatures(), [
+      {
+        id: "63",
+        title: "バラードソング特集",
+        description: "しっとり抒情的な曲を。",
+        songNumbers: ["638255", "425691"],
+        pictureUrl: FEATURE_FILE.feature[0].thumbnail_img,
+      },
+    ]);
+    assert.equal(received[0].url, "/static/json/feature_tv.json");
+  });
+
+  test("a featured list's songs: in one request, in the list's order", async () => {
+    contentsList = () => ({
+      hitCount: "2",
+      contentsList: [
+        { ...SONG_ROW, selSongNo: "425691", songName: "Lemon" },
+        { ...SONG_ROW, selSongNo: "638255", songName: "Ballad" },
+      ],
+    });
+    const songs = await joysound.getSongsByNumber(["638255", "999", "425691"]);
+    // Joysound's song-name order put back in the list's; 999 isn't one.
+    assert.deepEqual(
+      songs.map((song) => song.selSongNo),
+      ["638255", "425691"],
+    );
+    assert.equal(received.length, 1);
+    assert.deepEqual(JSON.parse(received[0].body).params, [
+      { kind: "selSongNo", word: "638255,999,425691", match: "exact" },
+    ]);
+    assert.equal(JSON.parse(received[0].body).count, "3");
+    await assert.rejects(
+      joysound.getSongsByNumber(["1", "2,3"]),
+      (err) => err instanceof ApiError && err.status === 400,
+    );
+  });
+});
+
+describe("featuresOf", () => {
+  test("keeps well-formed lists, the first of two with one ID", () => {
+    const features = featuresOf({
+      feature: [
+        { id: "12", title: "A", song_number: [1, 2] },
+        { id: "12", title: "A again", song_number: [3] },
+        { id: "x", title: "Bad ID", song_number: [1] },
+        { id: "13", title: "No songs", song_number: [] },
+        { id: 14, title: "Number ID", song_number: ["5", "../6"] },
+      ],
+    });
+    assert.deepEqual(
+      features.map((f) => [f.id, f.title, f.songNumbers, f.pictureUrl]),
+      [
+        ["12", "A", ["1", "2"], null],
+        ["14", "Number ID", ["5"], null],
+      ],
+    );
+  });
+});
+
+describe("keptFor", () => {
+  test("keeps a value for its time, and not a failure", async () => {
+    let loads = 0;
+    let fail = true;
+    const kept = keptFor(1000, async () => {
+      loads++;
+      if (fail) throw new Error("no");
+      return loads;
+    });
+    await assert.rejects(kept(0), /no/);
+    fail = false;
+    assert.equal(await kept(1), 2);
+    assert.equal(await kept(999), 2);
+    assert.equal(await kept(1001), 3);
   });
 });
 

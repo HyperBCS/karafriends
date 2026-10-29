@@ -30,6 +30,7 @@ export const en = {
 
   // Header and navigation.
   "nav.home": "Home",
+  "nav.browse": "Browse",
   "nav.history": "History",
   "nav.settings": "Settings",
 
@@ -148,6 +149,13 @@ export const en = {
 
   // History.
   "history.heading": "History",
+  // Browse: Joysound's newest songs, genres and featured lists.
+  "browse.heading": "Browse",
+  "browse.newSongs": "New songs",
+  "browse.newSongsRow": "Joysound's newest songs",
+  "browse.newSongsNote": "Newest first",
+  "browse.genres": "Popular by genre",
+  "browse.featured": "Featured",
   "history.empty": "No history",
   "history.emptyMine": "Nothing sung from this phone yet",
   "history.whose": "Whose songs",

@@ -1195,6 +1195,125 @@ test.describe("in supervised mode", () => {
   });
 });
 
+test("Browse isn't in the top bar without a Joysound login", async ({
+  remote,
+}) => {
+  await expect(
+    remote.getByRole("link", { name: "Settings" }).first(),
+  ).toBeVisible();
+  await expect(remote.getByRole("link", { name: "Browse" })).toHaveCount(0);
+});
+
+test.describe("Browse, with a Joysound login", () => {
+  // A login the app never uses here: the phone's answers are faked.
+  test.use({
+    appConfig: { joysoundEmail: "joy@example.com", joysoundPassword: "pw" },
+  });
+
+  const song = (n: number) => ({
+    id: `${n}`,
+    name: `Browse song ${n}`,
+    artistName: "Browse artist",
+  });
+
+  test("lists new songs, genres and featured lists, and opens their songs", async ({
+    remote,
+  }) => {
+    await remote.route("**/api/joysoundGenres", (route) =>
+      route.fulfill({
+        json: [
+          { id: "10000001", name: "J-POP" },
+          { id: "10000011", name: "演歌" },
+        ],
+      }),
+    );
+    await remote.route("**/api/joysoundFeatures", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: "63",
+            title: "バラードソング特集",
+            songCount: 2,
+            picture: true,
+          },
+        ],
+      }),
+    );
+    const genresAsked: string[] = [];
+    await remote.route("**/api/joysoundGenreSongs", (route) => {
+      genresAsked.push(route.request().postDataJSON().id);
+      return route.fulfill({
+        json: { items: [song(1), song(2)], nextOffset: null },
+      });
+    });
+    await remote.route("**/api/joysoundNewSongs", (route) =>
+      route.fulfill({ json: { items: [song(3)], nextOffset: null } }),
+    );
+    await remote.route("**/api/joysoundFeature", (route) =>
+      route.fulfill({
+        json: {
+          id: "63",
+          title: "バラードソング特集",
+          description: "しっとり抒情的な曲を。",
+          picture: true,
+          songs: [song(4), song(5)],
+        },
+      }),
+    );
+    await remote.route("**/api/songPicture/joysoundFeature/63", (route) =>
+      route.fulfill({ contentType: "image/png", body: PNG }),
+    );
+    await remote.route("**/api/joysoundSong", (route) =>
+      route.fulfill({
+        json: {
+          ...song(Number(route.request().postDataJSON().id)),
+          lyricsPreview: null,
+          tieUp: null,
+          picture: false,
+          guideVocal: false,
+        },
+      }),
+    );
+
+    await remote.getByRole("link", { name: "Browse" }).click();
+    const main = remote.getByRole("main");
+    await expect(
+      main.getByRole("list", { name: "Popular by genre" }).getByRole("link"),
+    ).toHaveText(["J-POP", "演歌"]);
+    await expect(
+      main.getByRole("list", { name: "Featured" }).getByRole("link"),
+    ).toHaveText([/バラードソング特集.*2 songs/]);
+
+    // A genre: its name over its songs; a song opens its page.
+    await main.getByRole("link", { name: "J-POP" }).click();
+    await expect(main.getByRole("heading", { name: "J-POP" })).toBeVisible();
+    expect(genresAsked).toEqual(["10000001"]);
+    await main.getByRole("link", { name: /Browse song 2/ }).click();
+    await expect(
+      remote.getByRole("heading", { name: "Browse song 2" }),
+    ).toBeVisible();
+    await remote.getByRole("button", { name: "Back" }).click();
+    await remote.getByRole("button", { name: "Back" }).click();
+
+    // The newest songs.
+    await main.getByRole("link", { name: /Joysound's newest songs/ }).click();
+    await expect(
+      main.getByRole("link", { name: /Browse song 3/ }),
+    ).toBeVisible();
+    await remote.getByRole("button", { name: "Back" }).click();
+
+    // A featured list: its picture, description and songs, in its order.
+    await main.getByRole("link", { name: /バラードソング特集/ }).click();
+    await expect(
+      main.getByRole("img", { name: "バラードソング特集" }),
+    ).toBeVisible();
+    await expect(main.getByText("しっとり抒情的な曲を。")).toBeVisible();
+    await expect(
+      main.getByRole("list", { name: "バラードソング特集" }).getByRole("link"),
+    ).toHaveText([/Browse song 4/, /Browse song 5/]);
+  });
+});
+
 test.describe("the now-playing bar", () => {
   const NICKNAME_LONG = "someone with a really very long nickname";
   test.use({

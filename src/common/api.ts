@@ -262,7 +262,12 @@ export interface LiveState {
   downloads: DownloadProgress[];
   // Only what every phone may see: no credentials, no admin list (ask
   // whoami instead).
-  config: { supervisedMode: boolean; everyoneIsAdmin: boolean };
+  // joysoundLogin: a Joysound login is set, so Browse (Joysound's) shows.
+  config: {
+    supervisedMode: boolean;
+    everyoneIsAdmin: boolean;
+    joysoundLogin: boolean;
+  };
   // ToolsStatus's problem, for the display's notice. Phones ignore it.
   toolsProblem: string | null;
   // Why phones can't connect (the server couldn't listen: "Phones can't
@@ -352,6 +357,29 @@ export interface JoysoundSongDetail extends JoysoundSong {
 export interface JoysoundArtist {
   id: string;
   name: string;
+}
+
+// Browse (Joysound): its genres, and its featured lists.
+export interface JoysoundGenre {
+  id: string;
+  name: string;
+}
+
+export interface JoysoundFeatureSummary {
+  id: string;
+  title: string;
+  songCount: number;
+  // Whether /api/songPicture/joysoundFeature/<id> has its picture.
+  picture: boolean;
+}
+
+export interface JoysoundFeatureDetail {
+  id: string;
+  title: string;
+  description: string;
+  picture: boolean;
+  // In the list's order; songs Joysound no longer has are left out.
+  songs: JoysoundSong[];
 }
 
 export interface VideoInfo {
@@ -462,6 +490,19 @@ export interface Api {
     output: Page<JoysoundSong> & { songCount: number | null };
   };
   joysoundSong: { input: { id: string }; output: JoysoundSongDetail };
+  // Browse: Joysound's genres; a genre's songs, most popular first; its
+  // newest songs; its featured lists, and one of them with its songs.
+  joysoundGenres: { input: Record<string, never>; output: JoysoundGenre[] };
+  joysoundGenreSongs: {
+    input: { id: string } & PageInput;
+    output: Page<JoysoundSong>;
+  };
+  joysoundNewSongs: { input: PageInput; output: Page<JoysoundSong> };
+  joysoundFeatures: {
+    input: Record<string, never>;
+    output: JoysoundFeatureSummary[];
+  };
+  joysoundFeature: { input: { id: string }; output: JoysoundFeatureDetail };
   youtubeInfo: {
     input: { videoId: string };
     output: LookupResult<YoutubeVideoInfo>;
