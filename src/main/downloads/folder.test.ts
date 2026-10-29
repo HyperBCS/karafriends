@@ -153,7 +153,7 @@ test("sweepHalfDone deletes what unfinished downloads left, and keeps the rest",
     "yt-abc.log",
     "nico-sm9.mp4",
     "joysound-777.joy_02",
-    "joysound-777-default.mp4",
+    "joysound-777-default-opus.mp4",
     "joysound-777-bg.yt.log",
     // A DAM copy stopped halfway.
     "1234-56-1.mp4.tmp",
@@ -164,10 +164,10 @@ test("sweepHalfDone deletes what unfinished downloads left, and keeps the rest",
     "nico-sm10.f1.mp4",
     // A Joysound background stopped while padding: its video is there but
     // not whole.
-    "joysound-777-bg.mp4.tmp",
-    "joysound-777-bg.mp4",
-    "joysound-777-bg-pad.mp4",
-    "joysound-777-bg.source.mp4",
+    "joysound-777-bg-opus.mp4.tmp",
+    "joysound-777-bg-opus.mp4",
+    "joysound-777-bg-opus-pad.mp4",
+    "joysound-777-bg-opus.source.mp4",
   );
 
   assert.equal(sweepHalfDone(folder), 9);
@@ -175,7 +175,7 @@ test("sweepHalfDone deletes what unfinished downloads left, and keeps the rest",
     "1234-56-0.mp4",
     "dam-1234-56-0.log",
     "joysound-777-bg.yt.log",
-    "joysound-777-default.mp4",
+    "joysound-777-default-opus.mp4",
     "joysound-777.joy_02",
     "nico-sm9.mp4",
     "yt-abc.log",

@@ -648,9 +648,10 @@ test.describe("the pitch bars", () => {
     const roll = display.locator("canvas.pianoRollRoll");
 
     // No guide channel: no bars, and no error.
-    await expect
-      .poll(playing, { timeout: 20_000 })
-      .toEqual({ file: "joysound-e2e-no-guide-default.mp4", started: true });
+    await expect.poll(playing, { timeout: 20_000 }).toEqual({
+      file: "joysound-e2e-no-guide-default-opus.mp4",
+      started: true,
+    });
     await expect(roll).toHaveCount(0);
 
     // The guide melody's: the bars come once it's read, and stay while the
@@ -662,7 +663,7 @@ test.describe("the pitch bars", () => {
       }),
     ).toBe(true);
     await expect(roll).toHaveCount(1, { timeout: 20_000 });
-    expect((await playing()).file).toBe("joysound-e2e-guide-default.mp4");
+    expect((await playing()).file).toBe("joysound-e2e-guide-default-opus.mp4");
     expect(
       await phoneCall(remoconUrl, "e2e-phone", "setPlaybackState", {
         playbackState: "PAUSED",
@@ -726,7 +727,7 @@ test.describe("the pitch bars", () => {
           display
             .locator("video")
             .evaluate((v: HTMLVideoElement) =>
-              v.currentSrc.endsWith("joysound-e2e-guide-default.mp4"),
+              v.currentSrc.endsWith("joysound-e2e-guide-default-opus.mp4"),
             ),
         { timeout: 20_000 },
       )
