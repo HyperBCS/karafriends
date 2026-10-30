@@ -21,6 +21,7 @@ import {
   downloadsFolder,
   expect,
   fakeJoysoundDownload,
+  fakeTool,
   liveState as phoneLiveState,
   NICKNAME,
   sliderFill,
@@ -2449,6 +2450,40 @@ test.describe(
     });
   },
 );
+
+test.describe("the tools", () => {
+  // yt-dlp is the tests' own, which karafriends never checks; ffmpeg is a
+  // stand-in with no recorded download, so the pinned build is new to it.
+  // The check asks nothing of the network.
+  test.use({
+    appEnv: { KARAFRIENDS_YTDLP_PATH: fakeTool("yt-dlp-downloads") },
+  });
+
+  test("Check for updates shows a tool's new version beside its own, and then Update tools", async ({
+    display,
+  }) => {
+    await openTab(display, "Advanced");
+    const section = display
+      .getByRole("dialog", { name: "Settings" })
+      .getByRole("region", { name: "Tools" });
+    await expect(section.getByText("Custom path")).toBeVisible();
+    await expect(section.getByText(/downloaded/)).toHaveCount(0);
+    await expect(
+      section.getByRole("button", { name: "Update tools" }),
+    ).toHaveCount(0);
+
+    await section.getByRole("button", { name: "Check for updates" }).click();
+    await expect(section.locator(".settingsToolNew")).toHaveText(
+      /^→ Update available: \d+\.\d+\.\d+$/,
+    );
+    await expect(
+      section.getByRole("button", { name: "Update tools" }),
+    ).toBeVisible();
+    await expect(
+      section.getByRole("button", { name: "Check for updates" }),
+    ).toHaveCount(0);
+  });
+});
 
 test.describe("the downloads", () => {
   test("Settings shows the downloads and clears them; a phone can do neither", async ({

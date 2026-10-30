@@ -420,5 +420,6 @@ export const validators: {
   }),
   restartApp: nothing,
   getToolsStatus: nothing,
+  checkTools: nothing,
   updateTools: nothing,
 };

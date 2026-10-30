@@ -13,6 +13,7 @@ import {
   JOYSOUND_LOGIN_KEYS,
 } from "../common/configSchema";
 import {
+  checkForToolUpdates,
   onFirstToolsDownload,
   toolsStatus,
   updateTools,
@@ -277,11 +278,15 @@ export const api: ApiHandlers = {
           problemSince: toolsProblem?.since ?? null,
         };
       },
+      check: checkForToolUpdates,
       update: async () => {
-        await updateTools();
-        store.update((state) => {
-          state.toolsProblem = null;
-        });
+        const updated = await updateTools();
+        if (updated.length > 0) {
+          store.update((state) => {
+            state.toolsProblem = null;
+          });
+        }
+        return updated;
       },
     },
   }),

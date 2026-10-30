@@ -273,9 +273,10 @@
   color: var(--kf-danger);
 }
 
+/* The tools: name, version, and what Check for updates found. */
 .settingsTools {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content max-content 1fr;
   gap: var(--kf-space-2) var(--kf-space-6);
   margin: 0;
   font-size: var(--kf-text-body);
@@ -288,6 +289,21 @@
 .settingsTools dd {
   margin: 0;
   color: var(--kf-muted);
+}
+
+.settingsToolNew {
+  color: var(--kf-accent);
+  font-weight: 600;
+}
+
+/* Read by screen readers, not shown. */
+.settingsVisuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* About's license or notices: plain text, sunken into the card as a

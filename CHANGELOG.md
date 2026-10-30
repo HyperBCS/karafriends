@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Settings › Advanced › Tools has **Check for updates**, which shows the newest version beside each tool that has one. **Update tools** then downloads only those tools, so a tool that's already the newest isn't downloaded again. The download date is gone.
+
 ## 0.2.2 (2026-10-30)
 
 - Shorter, plainer text across Settings, the setup screen, the display's notices and the phone remote. For example, DAM's **Stream at a low bitrate** is now **Low-bitrate streaming**, and a signed-in catalog says **Signed in** instead of "On: guests can find and sing Joysound songs."

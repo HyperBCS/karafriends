@@ -9,7 +9,12 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { parse } from "yaml";
 
 import { isAdminPassword } from "../common/adminPassword";
-import { MASKED_PASSWORD, type LoginService } from "../common/api";
+import {
+  MASKED_PASSWORD,
+  type LoginService,
+  type ToolId,
+  type ToolUpdates,
+} from "../common/api";
 import { DEFAULT_CONFIG } from "../common/configSchema";
 import { createConfigStore } from "../common/configStore";
 import { createAdminSessions, endSessionsOnPasswordChange } from "./adminAuth";
@@ -41,8 +46,8 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const TOOLS_STATUS = {
-  ffmpeg: { version: "7.1", updatedAt: 1, overridden: false },
-  ytdlp: { version: null, updatedAt: null, overridden: true },
+  ffmpeg: { version: "7.1", overridden: false },
+  ytdlp: { version: null, overridden: true },
   lastCheck: 2,
   problem: null,
   problemSince: null,
@@ -58,7 +63,8 @@ function setup(
     logins?: Partial<Record<LoginService, LoginFake>>;
     switchLink?: (email: string, password: string) => Promise<string>;
     name?: string;
-    updateTools?: () => Promise<void>;
+    checkTools?: () => Promise<ToolUpdates>;
+    updateTools?: () => Promise<ToolId[]>;
   } = {},
 ) {
   const filePath = path.join(dir, options.name ?? "config.yaml");
@@ -84,7 +90,10 @@ function setup(
     restart: () => restarts.push(Date.now()),
     tools: {
       status: () => TOOLS_STATUS,
-      update: options.updateTools ?? (async () => {}),
+      check:
+        options.checkTools ??
+        (async () => ({ ffmpeg: { latest: "9.0.2", available: true } })),
+      update: options.updateTools ?? (async () => ["ffmpeg"]),
     },
   });
   const onDisk = () => parse(fs.readFileSync(filePath, "utf8"));
@@ -173,6 +182,7 @@ describe("getSettings", () => {
     await rejectsWith(api.importConfig({ yaml: "" }, phone), 403);
     await rejectsWith(api.restartApp({}, phone), 403);
     await rejectsWith(api.getToolsStatus({}, phone), 403);
+    await rejectsWith(api.checkTools({}, phone), 403);
     await rejectsWith(api.updateTools({}, phone), 403);
   });
 
@@ -670,14 +680,33 @@ describe("exportConfig and importConfig", () => {
   });
 });
 
-describe("getToolsStatus and updateTools", () => {
+describe("getToolsStatus, checkTools and updateTools", () => {
   test("getToolsStatus answers with the tools' status", async () => {
     const { api } = setup();
     assert.deepEqual(await api.getToolsStatus({}, display), TOOLS_STATUS);
   });
 
-  test("updateTools answers ok, or why not, instead of throwing", async () => {
-    assert.deepEqual(await setup().api.updateTools({}, display), { ok: true });
+  test("checkTools answers with what it found, or why not, instead of throwing", async () => {
+    assert.deepEqual(await setup().api.checkTools({}, display), {
+      ok: true,
+      updates: { ffmpeg: { latest: "9.0.2", available: true } },
+    });
+    const { api } = setup({
+      checkTools: async () => {
+        throw new Error("500 from GitHub");
+      },
+    });
+    assert.deepEqual(await api.checkTools({}, display), {
+      ok: false,
+      reason: "Couldn't check for updates: 500 from GitHub",
+    });
+  });
+
+  test("updateTools answers with what it installed, or why not, instead of throwing", async () => {
+    assert.deepEqual(await setup().api.updateTools({}, display), {
+      ok: true,
+      updated: ["ffmpeg"],
+    });
     const { api } = setup({
       updateTools: async () => {
         throw new Error("503");

@@ -41,7 +41,7 @@ const VIDEO_INFO: YoutubeVideoInfo = {
 };
 
 const TOOLS_PROBLEM =
-  "YouTube downloads are failing. Try Update tools in Settings › Advanced.";
+  "YouTube downloads are failing. Check for tool updates in Settings › Advanced.";
 
 // Opens the video's page on the remote, with YouTube kept offline.
 async function openVideo(remote: Page) {
@@ -144,7 +144,7 @@ test.describe("at YouTube's bot check", () => {
     expect(await displayCall(display, "getToolsStatus")).toMatchObject({
       ok: true,
       output: {
-        ytdlp: { overridden: true, updatedAt: null },
+        ytdlp: { overridden: true },
         ffmpeg: { overridden: false },
         problem: TOOLS_PROBLEM,
         problemSince: expect.any(Number),
@@ -152,7 +152,7 @@ test.describe("at YouTube's bot check", () => {
     });
 
     // Phones get neither tools method.
-    for (const method of ["getToolsStatus", "updateTools"]) {
+    for (const method of ["getToolsStatus", "checkTools", "updateTools"]) {
       const res = await fetch(
         new URL(`api/${method}`, karafriends.remoconUrl),
         {

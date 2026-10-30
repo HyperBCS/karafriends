@@ -809,7 +809,7 @@ export function createApi(
           const reason = ytdlpFailureReason(failure.stderr);
           if (!isToolProblem(reason)) return { ok: false, reason };
           throw new Error(
-            "Couldn't get the video's details: the downloader failed. Try again, or Update tools in the TV's Settings.",
+            "Couldn't get the video's details: the downloader failed. Try again, or check for tool updates in the TV's Settings.",
             { cause: err },
           );
         }
