@@ -9,6 +9,10 @@
 //   build/<prod|dev>/web       renderer/ and remocon/ pages, their assets/,
 //                              and static/ (the kuromoji dict/ and the
 //                              remote's service worker)
+//   build/<prod|dev>/LICENSE.txt and THIRD_PARTY_NOTICES.txt
+//                              karafriends' license, and the work of others
+//                              in the bundles and the native module, with
+//                              their licenses (scripts/thirdPartyNotices.ts)
 //
 // The remote runs in phone browsers, so the two pages are built for them,
 // back to iPhones on iOS 15 (REMOCON_TARGET); the display's Chromium runs
@@ -27,6 +31,8 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import type { Plugin } from "vite";
+
+import { thirdPartyNotices } from "./scripts/thirdPartyNotices";
 
 // In dev, Express listens on this port and Vite proxies /api to it. Set here,
 // so the Electron app electron-vite starts (it inherits this process's
@@ -175,9 +181,14 @@ export default defineConfig(({ command, mode }) => {
       .join(" ");
   }
   const nodePlugins = () => (command === "serve" ? [devNativeModule()] : []);
+  // The notices, once the three builds are written; a license the app
+  // can't ship under the GPLv3 fails the build.
+  const notices = thirdPartyNotices({ outDir });
+  const noticesFor = (name: "main" | "preload" | "renderer") =>
+    command === "build" ? [notices.plugin(name)] : [];
   return {
     main: {
-      plugins: nodePlugins(),
+      plugins: [...nodePlugins(), ...noticesFor("main")],
       build: {
         externalizeDeps: false,
         outDir: path.join(outDir, "main"),
@@ -187,7 +198,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     preload: {
-      plugins: nodePlugins(),
+      plugins: [...nodePlugins(), ...noticesFor("preload")],
       build: {
         externalizeDeps: false,
         outDir: path.join(outDir, "preload"),
@@ -200,7 +211,17 @@ export default defineConfig(({ command, mode }) => {
       root: "src",
       // Copied to the root of build/<mode>/web once, and served at / in dev.
       publicDir: STATIC_DIR,
-      plugins: [react(), devServerRoutes(), phoneTarget()],
+      plugins: [
+        react(),
+        devServerRoutes(),
+        phoneTarget(),
+        ...noticesFor("renderer"),
+      ],
+      // The pitch shifter and the guide melody's worker: their packages are
+      // in the notices too.
+      worker: {
+        plugins: () => (command === "build" ? [notices.worker()] : []),
+      },
       resolve: {
         // kuromoji (the display's furigana): its own browser bundle. Its
         // sources need Node's path, and the gunzip they use only works with
