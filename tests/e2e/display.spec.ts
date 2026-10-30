@@ -108,7 +108,11 @@ test("the display opens on its idle screen without console errors", async ({
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
   await display.getByRole("button", { name: "Settings" }).click();
-  await expect(settings.getByLabel("Add a microphone")).toBeVisible();
+  // On its first tab again.
+  await expect(settings.getByRole("tab", { name: "Accounts" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await display.keyboard.press("Escape");
 
   // Nothing is playing.

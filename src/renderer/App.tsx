@@ -16,6 +16,7 @@ import {
   inputDevices,
   type MicMode,
   type MicOutput,
+  setAsio,
   setMicMode,
   setOutputDevice,
 } from "./nativeAudio";
@@ -112,8 +113,21 @@ function savedMicMode(): MicMode {
 // not set for on.
 const PITCH_BARS_KEY = "pitchBars";
 
-// Settings' open tab, to open on it the next time.
-const SETTINGS_TAB_KEY = "settingsTab";
+// Settings' Use ASIO: "on" or "off". Not set, it's on only if the mic
+// output or a saved mic is an ASIO device (set up before there was a
+// switch).
+const USE_ASIO_KEY = "useAsio";
+
+const isAsio = (name: string | null) => name?.endsWith(" (ASIO)") ?? false;
+
+function savedUseAsio(): boolean {
+  const saved = localStorage.getItem(USE_ASIO_KEY);
+  if (saved !== null) return saved === "on";
+  return (
+    isAsio(localStorage.getItem(MIC_OUTPUT_KEY)) ||
+    readSavedMics().some((mic) => isAsio(mic.name))
+  );
+}
 
 // The LAN address the QR code sends phones to, without the port, when the
 // host picked one; not set for the default, this computer's first.
@@ -146,11 +160,6 @@ function savedHostname(): string {
       ? saved
       : (addresses[0] ?? "localhost");
   return `${name}:${window.karafriends.remoconPort()}`;
-}
-
-function savedSettingsTab(): SettingsTab {
-  const saved = localStorage.getItem(SETTINGS_TAB_KEY);
-  return SETTINGS_TABS.find((tab) => tab === saved) ?? "accounts";
 }
 
 // How the phones tell the mics apart (MicInfo.id).
@@ -192,6 +201,8 @@ function savedMics(): InputDevice[] {
 }
 
 function openSavedMics(): InputDevice[] {
+  // Before anything lists or opens a device.
+  setAsio(savedUseAsio());
   try {
     setOutputDevice(savedMicOutput());
   } catch (err) {
@@ -252,7 +263,9 @@ function App(props: { audio: KarafriendsAudio }) {
   // For the keys: S doesn't open Settings under the setup screen.
   const setupShown = useRef(false);
   setupShown.current = setupOpen;
-  const [settingsTab, setSettingsTab] = useState(savedSettingsTab);
+  // Settings opens on its first tab every time.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(SETTINGS_TABS[0]);
+  const [useAsio, setUseAsio] = useState(savedUseAsio);
   const [announcements, setAnnouncements] = useState<
     (Announcement & { id: number })[]
   >([]);
@@ -398,6 +411,21 @@ function App(props: { audio: KarafriendsAudio }) {
     return null;
   };
 
+  // Off is refused while the mic output or a mic is an ASIO device: it
+  // would go from the lists while it plays.
+  const changeUseAsio = (on: boolean): string | null => {
+    if (
+      !on &&
+      (isAsio(micOutput.name) || mics.some((mic) => isAsio(mic.name)))
+    ) {
+      return "The mic output or a mic uses ASIO. Change it first.";
+    }
+    setAsio(on);
+    localStorage.setItem(USE_ASIO_KEY, on ? "on" : "off");
+    setUseAsio(on);
+    return null;
+  };
+
   // Every mic reopens in the new mode.
   const changeMicMode = (mode: MicMode) => {
     setMicMode(mode);
@@ -443,11 +471,6 @@ function App(props: { audio: KarafriendsAudio }) {
     const timer = setInterval(() => setHostname(savedHostname()), ADDRESSES_MS);
     return () => clearInterval(timer);
   }, []);
-
-  const changeSettingsTab = (tab: SettingsTab) => {
-    localStorage.setItem(SETTINGS_TAB_KEY, tab);
-    setSettingsTab(tab);
-  };
 
   useEffect(() => props.audio.avOffset(avOffsetMs), [props.audio, avOffsetMs]);
 
@@ -567,6 +590,8 @@ function App(props: { audio: KarafriendsAudio }) {
     onMicOutputChange: changeMicOutput,
     micMode,
     onMicModeChange: changeMicMode,
+    useAsio,
+    onUseAsioChange: changeUseAsio,
     songOutput,
     onSongOutputChange: changeSongOutput,
     songOutputPlace: () => props.audio.outputPlace(),
@@ -604,8 +629,11 @@ function App(props: { audio: KarafriendsAudio }) {
         {settingsOpen ? (
           <Settings
             tab={settingsTab}
-            onTabChange={changeSettingsTab}
-            onClose={() => setSettingsOpen(false)}
+            onTabChange={setSettingsTab}
+            onClose={() => {
+              setSettingsOpen(false);
+              setSettingsTab(SETTINGS_TABS[0]);
+            }}
             hostname={hostname}
             onHostnameChange={changeHostname}
             customUrl={customUrl}

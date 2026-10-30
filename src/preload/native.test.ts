@@ -10,6 +10,7 @@ import type native from "../../native/index.node";
 // object, so that a name left out here or extra is a type error.
 const DECLARED: Record<keyof typeof native, true> = {
   allocConsole: true,
+  asioDrivers: true,
   asioStatus: true,
   inputDevice_format: true,
   inputDevice_getPitch: true,
@@ -26,6 +27,7 @@ const DECLARED: Record<keyof typeof native, true> = {
   outputFormat: true,
   outputOptions: true,
   outputStatus: true,
+  setAsio: true,
   setMicMode: true,
   setOutputDevice: true,
 };

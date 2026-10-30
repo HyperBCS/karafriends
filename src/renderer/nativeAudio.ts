@@ -133,6 +133,16 @@ export interface MicMode {
   bufferSize: number | null;
 }
 
+// Settings' Use ASIO: until it's on, no ASIO driver is loaded.
+export function setAsio(on: boolean) {
+  native.setAsio(on);
+}
+
+// The registered ASIO drivers, none loaded: none without ASIO.
+export function asioDrivers(): string[] {
+  return listed("the ASIO drivers", () => native.asioDrivers(), []).value;
+}
+
 export function setMicMode(mode: MicMode) {
   native.setMicMode(mode.exclusive, mode.bufferSize);
 }

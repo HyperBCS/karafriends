@@ -34,9 +34,15 @@ export interface NativeAudio {
   refreshInputDevices: () => void;
   // Every output device, with the host in parentheses.
   outputDevices: () => string[];
-  // "ASIO: <drivers>", "No ASIO drivers are installed", or "ASIO isn't in
-  // this build".
+  // "ASIO: <drivers>", "No ASIO drivers are installed", "ASIO is off", or
+  // "ASIO isn't in this build".
   asioStatus: () => string;
+  // Settings' Use ASIO. Until it's on, no ASIO device is listed or opened
+  // and no driver is loaded: loading one can reset its device for every
+  // program.
+  setAsio: (on: boolean) => void;
+  // The registered ASIO drivers' names, none loaded; none without ASIO.
+  asioDrivers: () => string[];
   // Where every mic plays (null for the default output), at a rate and a
   // buffer size in frames (null for the device's own). Throws, changing
   // nothing, when it won't open.

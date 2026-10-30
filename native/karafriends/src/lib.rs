@@ -56,6 +56,23 @@ fn asio_status() -> String {
     karafriends_lib::asio_status()
 }
 
+// Settings' Use ASIO: off until it's on (see ASIO_ON in karafriends-lib).
+#[neon::export(name = "setAsio")]
+fn set_asio(on: bool) {
+    karafriends_lib::set_asio(on)
+}
+
+// The registered ASIO drivers, none loaded.
+#[neon::export(name = "asioDrivers")]
+fn asio_drivers<'cx>(cx: &mut FunctionContext<'cx>) -> JsResult<'cx, JsArray> {
+    let array = cx.empty_array();
+    for (i, name) in karafriends_lib::asio_driver_names().iter().enumerate() {
+        let name = cx.string(name);
+        array.set(cx, i as u32, name)?;
+    }
+    Ok(array)
+}
+
 #[neon::export(name = "outputDevices")]
 fn output_devices<'cx>(cx: &mut FunctionContext<'cx>) -> JsResult<'cx, JsArray> {
     let names = throw(cx, karafriends_lib::output_devices())?;
