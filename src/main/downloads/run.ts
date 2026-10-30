@@ -73,17 +73,40 @@ function lineSplitter(onLine: ((line: string) => void) | undefined) {
 // HTTPS input, so DAM's streams failed with "certificate verify failed".
 export const MAC_CERTIFICATES = "/etc/ssl/cert.pem";
 
+// Where Linux distributions keep theirs; the first that's there is used.
+// The Linux ffmpeg's OpenSSL looks in /etc/ssl, which on some (Fedora's)
+// holds no bundle it reads, and a build from elsewhere may look somewhere
+// else entirely.
+export const LINUX_CERTIFICATES = [
+  // Debian, Ubuntu, Mint, Arch
+  "/etc/ssl/certs/ca-certificates.crt",
+  // Fedora, RHEL
+  "/etc/pki/tls/certs/ca-bundle.crt",
+  "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+  // openSUSE
+  "/etc/ssl/ca-bundle.pem",
+  // Alpine, and others
+  "/etc/ssl/cert.pem",
+];
+
 // Points the tools (ffmpeg, and the ffmpeg yt-dlp starts, which inherit
-// `env`) at the system's certificates on macOS, unless SSL_CERT_FILE already
-// says where. Node and Chromium ignore it: they have their own.
+// `env`) at the system's certificates on macOS and Linux, unless
+// SSL_CERT_FILE already says where. Node and Chromium ignore it: they have
+// their own.
 export function useSystemCertificates(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
   exists: (file: string) => boolean,
 ): void {
-  if (platform === "darwin" && !env.SSL_CERT_FILE && exists(MAC_CERTIFICATES)) {
-    env.SSL_CERT_FILE = MAC_CERTIFICATES;
-  }
+  if (env.SSL_CERT_FILE) return;
+  const bundles =
+    platform === "darwin"
+      ? [MAC_CERTIFICATES]
+      : platform === "linux"
+        ? LINUX_CERTIFICATES
+        : [];
+  const bundle = bundles.find((file) => exists(file));
+  if (bundle) env.SSL_CERT_FILE = bundle;
 }
 
 // The longest one yt-dlp or ffmpeg run may take before it's stopped. A song
