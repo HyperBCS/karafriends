@@ -10,11 +10,11 @@ on:
 # read-only.
 permissions:
   contents: write
-# Mac signing and notarization are off for now, so the Mac zips are
-# unsigned (the README says how to open one). To sign them, set the MACOS_*
-# secrets (README › macOS signing) and make this "true".
+# Mac signing and notarization, with the MACOS_* secrets (README › macOS
+# signing). "false" builds unsigned Mac zips (the README says how to open
+# one).
 env:
-  MACOS_SIGN: "false"
+  MACOS_SIGN: "true"
 # The Rust toolchain steps keep the old actions-rs/toolchain behaviour: no
 # cache (a release builds from scratch) and warnings allowed, hence
 # build-warnings: warn (a new compiler warning shouldn't stop a release; the
