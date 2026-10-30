@@ -2478,3 +2478,55 @@ test.describe("a queue an older version saved in the temp folder", () => {
     expect(fs.readdirSync(path.join(temp, "karafriends_tmp"))).toEqual([]);
   });
 });
+
+// Quit karafriends, in Settings' header, asks first: Cancel leaves it be,
+// Quit quits. The main process's dialog is swapped for one that answers as
+// the test says, so nothing pops up.
+test("Quit karafriends asks first, and quits only when told to", async ({
+  karafriends,
+  display,
+}) => {
+  const { app } = karafriends;
+  await app.evaluate(({ dialog }) => {
+    const asked: Electron.MessageBoxOptions[] = [];
+    const answers = { response: 1 };
+    Object.assign(globalThis, { quitAsked: asked, quitAnswers: answers });
+    dialog.showMessageBox = (async (
+      ...args:
+        [Electron.MessageBoxOptions] | [unknown, Electron.MessageBoxOptions]
+    ) => {
+      asked.push(args[args.length - 1] as Electron.MessageBoxOptions);
+      return { response: answers.response, checkboxChecked: false };
+    }) as typeof dialog.showMessageBox;
+  });
+  const asked = () =>
+    app.evaluate(
+      () =>
+        (globalThis as { quitAsked?: { message: string }[] }).quitAsked ?? [],
+    );
+
+  await openSettings(display);
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  const quit = settings.getByRole("button", { name: "Quit karafriends" });
+
+  // Cancel: asked, and still here.
+  await quit.click();
+  await expect.poll(async () => (await asked()).length).toBe(1);
+  expect((await asked())[0]).toMatchObject({
+    message: "Quit karafriends?",
+    buttons: ["Quit", "Cancel"],
+    cancelId: 1,
+  });
+  await expect(settings).toBeVisible();
+  expect(app.process().exitCode).toBeNull();
+
+  // Quit: the app goes.
+  await app.evaluate(() => {
+    (
+      globalThis as { quitAnswers?: { response: number } }
+    ).quitAnswers!.response = 0;
+  });
+  const closed = app.waitForEvent("close");
+  await quit.click();
+  await closed;
+});

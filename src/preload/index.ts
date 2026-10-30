@@ -11,6 +11,7 @@ import {
   type DisplayAbout,
   type DisplayApi,
   type DisplayFiles,
+  type DisplayFullScreen,
 } from "../common/ipc";
 import ipAddresses from "../common/ipAddresses";
 import type { NativeAudio } from "../renderer/global";
@@ -82,6 +83,37 @@ const about: DisplayAbout = {
   version: () => version,
   readText: (which) => ipcRenderer.invoke(IPC_CHANNELS.readAboutText, which),
   openSource: () => ipcRenderer.invoke(IPC_CHANNELS.openSource),
+};
+
+// Whether the window is in full screen: asked once, then told of each
+// change (src/main/index.ts). The latest answer is kept for listeners that
+// start later.
+type FullScreenListener = (fullScreen: boolean) => void;
+const fullScreenListeners = new Set<FullScreenListener>();
+let isFullScreen: boolean | null = null;
+const fullScreenIs = (value: boolean) => {
+  isFullScreen = value;
+  for (const listener of fullScreenListeners) listener(value);
+};
+ipcRenderer.on(IPC_CHANNELS.fullScreen, (_event, value: boolean) =>
+  fullScreenIs(value),
+);
+ipcRenderer.invoke(IPC_CHANNELS.isFullScreen).then(
+  (value: boolean) => {
+    // A change told meanwhile is newer.
+    if (isFullScreen === null) fullScreenIs(value);
+  },
+  (err) =>
+    console.error("Couldn't ask whether the window is in full screen:", err),
+);
+const fullScreen: DisplayFullScreen = {
+  onChange(listener) {
+    fullScreenListeners.add(listener);
+    if (isFullScreen !== null) listener(isFullScreen);
+    return () => {
+      fullScreenListeners.delete(listener);
+    };
+  },
 };
 
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
@@ -320,6 +352,9 @@ contextBridge.exposeInMainWorld("karafriends", {
   api,
   ...files,
   about,
+  fullScreen,
+  // Settings' Quit button: the main process asks first.
+  quit: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.quit),
   nativeAudio: fakeAudioCalls ? fakeNativeAudio(fakeAudioCalls) : realAudio(),
 });
 

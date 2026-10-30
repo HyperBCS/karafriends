@@ -39,6 +39,11 @@
   font-weight: 700;
 }
 
+.settingsHeaderButtons {
+  display: flex;
+  gap: var(--kf-space-3);
+}
+
 .settingsLoading {
   padding: var(--kf-space-6) var(--settings-edge);
   font-size: var(--kf-text-body);

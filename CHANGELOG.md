@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- In full screen, the display's mouse pointer hides after 3 seconds without moving, and comes back as the mouse moves; not while Settings or the setup screen is open.
+- Settings has **Quit karafriends** next to Close. It asks first, then quits; the queue is kept for next time.
+- Out of full screen, the window (which has no frame) can be dragged by its top edge, on macOS and elsewhere.
+
 ## 0.2.0 (2026-10-29)
 
 The first release published since the fork, so it also carries 0.1.0's changes (listed under 0.1.0 in CHANGELOG.md). The phone remote is rebuilt, the display gets a settings screen and a first-start setup, Joysound goes through its TV app's API and gets pitch bars, and the mics have less delay and keep working through a party.

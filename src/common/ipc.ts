@@ -29,6 +29,14 @@ export const IPC_CHANNELS = {
   readAboutText: "about:readText",
   // invoke(): karafriends' source (SOURCE_URL) in the system's browser.
   openSource: "about:openSource",
+  // invoke() -> boolean: whether the display's window is in full screen.
+  isFullScreen: "window:isFullScreen",
+  // main -> display: boolean, whenever the window goes in or out of full
+  // screen (F11, say).
+  fullScreen: "window:fullScreen",
+  // invoke(): asks the host in a dialog, then quits karafriends if they
+  // say so (Settings' Quit button).
+  quit: "app:quit",
 } as const;
 
 // window.karafriends's file dialogs, in the display window.
@@ -48,6 +56,15 @@ export interface DisplayAbout {
   version(): string;
   readText(which: AboutText): Promise<string | null>;
   openSource(): Promise<void>;
+}
+
+// window.karafriends.fullScreen: whether the display's window is in full
+// screen, which the page can't tell by itself (the window's, not the
+// page's, so document.fullscreenElement stays null).
+export interface DisplayFullScreen {
+  // Calls listener with whether it is, once known, and at every change.
+  // Returns a function that stops it.
+  onChange(listener: (fullScreen: boolean) => void): () => void;
 }
 
 // The display window's command-line switch (webPreferences

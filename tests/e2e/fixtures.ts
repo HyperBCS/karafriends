@@ -622,7 +622,14 @@ async function launchKarafriends(
     failed = testInfo.status !== testInfo.expectedStatus,
   ) => {
     if (app) {
-      const proc = app.process();
+      // An app that quit by itself (Settings' Quit) has no process left to
+      // give, and Playwright throws instead.
+      let proc: ReturnType<ElectronApplication["process"]> | null = null;
+      try {
+        proc = app.process();
+      } catch {
+        proc = null;
+      }
       const closing = app;
       await Promise.race([
         (async () => {
@@ -637,7 +644,9 @@ async function launchKarafriends(
         })().catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 15_000)),
       ]);
-      if (proc.exitCode === null && proc.signalCode === null) proc.kill();
+      if (proc && proc.exitCode === null && proc.signalCode === null) {
+        proc.kill();
+      }
     }
     if (portHolder) {
       const holder = portHolder;

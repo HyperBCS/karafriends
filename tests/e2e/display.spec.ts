@@ -499,3 +499,69 @@ test.describe("readings and singers on the TV", () => {
     }
   });
 });
+
+// In full screen the mouse pointer hides when the mouse is still, and shows
+// as it moves; never under Settings. The window stays hidden: the test tells
+// the display it's in full screen as the main process would (F11), rather
+// than take over the screen.
+test("in full screen, a still mouse pointer hides, and not under Settings; out of it, the window moves by its top", async ({
+  karafriends,
+  display,
+}) => {
+  test.slow();
+  const pointerHidden = () =>
+    display.evaluate(() => document.body.classList.contains("pointerHidden"));
+  const fullScreen = (value: boolean) =>
+    karafriends.app.evaluate(({ BrowserWindow }, value) => {
+      BrowserWindow.getAllWindows()[0].webContents.send(
+        "window:fullScreen",
+        value,
+      );
+    }, value);
+  // HIDE_AFTER_MS (src/renderer/idleCursor.ts), and a little.
+  const still = () => display.waitForTimeout(3500);
+
+  await expect(display.getByText("Scan to join")).toBeVisible();
+  // Not in full screen (the window is hidden): it stays, and the window
+  // (which has no frame) moves by the strip along its top.
+  const dragBar = display.locator(".windowDragBar");
+  await expect(dragBar).toHaveCount(1);
+  expect(
+    await dragBar.evaluate((bar) =>
+      getComputedStyle(bar).getPropertyValue("-webkit-app-region"),
+    ),
+  ).toBe("drag");
+  expect(
+    await display
+      .getByRole("button", { name: "Settings" })
+      .evaluate((button) =>
+        getComputedStyle(button).getPropertyValue("-webkit-app-region"),
+      ),
+  ).toBe("no-drag");
+  await still();
+  expect(await pointerHidden()).toBe(false);
+
+  await fullScreen(true);
+  // In full screen, nothing to drag.
+  await expect(dragBar).toHaveCount(0);
+  await expect.poll(pointerHidden, { timeout: 6000 }).toBe(true);
+  await display.mouse.move(200, 200);
+  expect(await pointerHidden()).toBe(false);
+  await expect.poll(pointerHidden, { timeout: 6000 }).toBe(true);
+
+  // Settings is for the mouse: shown, however still.
+  await display.keyboard.press("s");
+  const settings = display.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+  expect(await pointerHidden()).toBe(false);
+  await still();
+  expect(await pointerHidden()).toBe(false);
+  await settings.getByRole("button", { name: "Close" }).click();
+  await expect(settings).toHaveCount(0);
+  await expect.poll(pointerHidden, { timeout: 6000 }).toBe(true);
+
+  // Out of full screen, it shows, and the strip is back.
+  await fullScreen(false);
+  await expect.poll(pointerHidden).toBe(false);
+  await expect(dragBar).toHaveCount(1);
+});

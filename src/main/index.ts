@@ -208,6 +208,39 @@ ipcMain.handle(IPC_CHANNELS.openSource, async (event) => {
   if (displayIpc.isFromDisplay(event)) await shell.openExternal(SOURCE_URL);
 });
 
+// Settings' Quit button: asks first, in a dialog that doesn't block the main
+// process (as F5's), so phones and downloads carry on while it's up. A
+// second click while it's up does nothing. The queue is in queue.json
+// already, and will-quit stops the tools.
+let confirmingQuit = false;
+ipcMain.handle(IPC_CHANNELS.quit, async (event) => {
+  if (!displayIpc.isFromDisplay(event) || !rendererWindow || confirmingQuit) {
+    return;
+  }
+  confirmingQuit = true;
+  try {
+    const { response } = await dialog.showMessageBox(rendererWindow, {
+      message: "Quit karafriends?",
+      detail:
+        "Phones can't connect until it's started again. The queue is kept.",
+      buttons: ["Quit", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) app.quit();
+  } finally {
+    confirmingQuit = false;
+  }
+});
+
+// Whether the display's window is in full screen, for the display (it hides
+// the mouse pointer then; and see createWindow for the changes).
+ipcMain.handle(
+  IPC_CHANNELS.isFullScreen,
+  (event) =>
+    displayIpc.isFromDisplay(event) && rendererWindow?.isFullScreen() === true,
+);
+
 // Once, at launch: the display's window, the karafriends:// protocol and the
 // phones' server. (Closing the window quits the app.)
 function createWindow() {
@@ -239,14 +272,26 @@ function createWindow() {
 
   // The window shows the display's page and nothing else: a link, or a file
   // dropped on it, doesn't take it elsewhere (another page would get the
-  // display's IPC), and nothing opens a window of its own. Reloads and the
-  // YouTube player's iframe aren't affected.
+  // display's IPC), and nothing opens a window of its own. Reloads aren't
+  // affected.
   rendererWindow.webContents.on("will-navigate", (event, url) => {
     if (!sameSite(url, rendererUrl)) {
       console.warn(`The display tried to leave its page for ${url}`);
       event.preventDefault();
     }
   });
+  // The display hides the mouse pointer in full screen: it's told when the
+  // window goes in or out (F11, say).
+  const sendFullScreen = () => {
+    if (rendererWindow && !rendererWindow.isDestroyed()) {
+      rendererWindow.webContents.send(
+        IPC_CHANNELS.fullScreen,
+        rendererWindow.isFullScreen(),
+      );
+    }
+  };
+  rendererWindow.on("enter-full-screen", sendFullScreen);
+  rendererWindow.on("leave-full-screen", sendFullScreen);
   rendererWindow.webContents.setWindowOpenHandler(({ url }) => {
     console.warn(`The display tried to open a window: ${url}`);
     return { action: "deny" };
