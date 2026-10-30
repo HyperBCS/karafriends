@@ -39,11 +39,6 @@
   font-weight: 700;
 }
 
-.settingsHeaderButtons {
-  display: flex;
-  gap: var(--kf-space-3);
-}
-
 .settingsLoading {
   padding: var(--kf-space-6) var(--settings-edge);
   font-size: var(--kf-text-body);
@@ -56,11 +51,15 @@
 }
 
 /* The tabs' labels line up with the title above them, past the bar. */
-.settingsTabs {
+.settingsTabs,
+.settingsTabList {
   display: flex;
   flex: none;
   flex-direction: column;
   gap: var(--kf-space-2);
+}
+
+.settingsTabs {
   width: calc(var(--settings-edge) + 18rem);
   padding: var(--kf-space-6) var(--kf-space-5) var(--kf-space-6)
     calc(var(--settings-edge) - var(--kf-space-5) - 0.5rem);

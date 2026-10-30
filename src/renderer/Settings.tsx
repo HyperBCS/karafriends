@@ -67,29 +67,14 @@ export default function Settings(
   const header = (
     <header className="settingsHeader">
       <h1>Settings</h1>
-      <div className="settingsHeaderButtons">
-        {/* The main process asks first. In full screen, or without a
-            frame, it's the way out without a keyboard. */}
-        <button
-          type="button"
-          className="kfButton"
-          onClick={() => {
-            window.karafriends
-              .quit()
-              .catch((err) => console.error("Couldn't quit:", err));
-          }}
-        >
-          Quit karafriends
-        </button>
-        <button
-          type="button"
-          className="kfButton"
-          onPointerDown={() => (closingFrom.current = actions.saveCount())}
-          onClick={close}
-        >
-          Close
-        </button>
-      </div>
+      <button
+        type="button"
+        className="kfButton"
+        onPointerDown={() => (closingFrom.current = actions.saveCount())}
+        onClick={close}
+      >
+        Close
+      </button>
     </header>
   );
 
@@ -131,7 +116,22 @@ export default function Settings(
           needsLook={needsLook}
           tabId={tabId}
           panelId={panelId}
-        />
+        >
+          {/* Looks like a tab, opens no panel: the main process asks, then
+              quits. Not in the tabs' keys, so passing over it, or Settings
+              opening where it was left, never asks. */}
+          <button
+            type="button"
+            className="settingsTab"
+            onClick={() => {
+              window.karafriends
+                .quit()
+                .catch((err) => console.error("Couldn't quit:", err));
+            }}
+          >
+            Quit
+          </button>
+        </SettingsTabs>
         {/* A new tab starts at its top. */}
         <div
           key={props.tab}
