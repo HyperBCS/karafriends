@@ -9,13 +9,20 @@ import path from "path";
 // renames it over filePath. Without the flush, a filesystem may commit the
 // rename before the data, and a power cut then leaves an empty file. The
 // folder is flushed too where that's possible (not on Windows), so the
-// rename itself lasts.
-export function writeFileAtomic(filePath: string, data: string): void {
+// rename itself lasts. With private, only this user may read the file (on
+// macOS and Linux; Windows keeps the data folder to its user anyway).
+export function writeFileAtomic(
+  filePath: string,
+  data: string,
+  { private: isPrivate = false }: { private?: boolean } = {},
+): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tmpPath = `${filePath}.tmp`;
-  const fd = fs.openSync(tmpPath, "w");
+  const fd = fs.openSync(tmpPath, "w", isPrivate ? 0o600 : 0o666);
   try {
+    // A temp file left from an earlier run keeps its mode, so set it.
+    if (isPrivate) fs.fchmodSync(fd, 0o600);
     fs.writeFileSync(fd, data);
     fs.fsyncSync(fd);
   } finally {

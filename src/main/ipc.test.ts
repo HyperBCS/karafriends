@@ -269,9 +269,17 @@ describe("subscribeLive", () => {
 });
 
 describe("sameSite", () => {
-  test("same scheme, host and port", () => {
+  test("same scheme, host and port, and for a file the same file", () => {
     assert.equal(sameSite(DISPLAY_PAGE, DISPLAY_URL), true);
-    assert.equal(sameSite("file:///D:/elsewhere.html", DISPLAY_URL), true);
+    assert.equal(sameSite(`${DISPLAY_PAGE}#/settings`, DISPLAY_URL), true);
+    assert.equal(sameSite("file:///D:/elsewhere.html", DISPLAY_URL), false);
+    assert.equal(
+      sameSite(
+        "file:///C:/karafriends/build/prod/web/remocon/index.html",
+        DISPLAY_URL,
+      ),
+      false,
+    );
     const dev = "http://localhost:5173/renderer/";
     assert.equal(sameSite("http://localhost:5173/renderer/#x", dev), true);
     assert.equal(sameSite("http://localhost:8080/", dev), false);

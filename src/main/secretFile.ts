@@ -41,7 +41,7 @@ export function createSecretFile<T>(
       fs.rmSync(filePath, { force: true });
     } else if (await canEncrypt()) {
       const sealed = await safeStorage.encryptStringAsync(JSON.stringify(next));
-      writeFileAtomic(filePath, sealed.toString("base64"));
+      writeFileAtomic(filePath, sealed.toString("base64"), { private: true });
     } else {
       console.warn(
         `The ${what} is kept for this run only: this system has no encryption for it`,
