@@ -33,9 +33,10 @@ export type Versions = Record<
 // Where a tool comes from, and what its download must match before it's
 // unpacked or run.
 export type Source =
-  // One build, pinned: a URL that keeps serving the same file, and that
-  // file's SHA-256. A new build comes with a new karafriends.
-  | { kind: "pinned"; url: string; sha256: string }
+  // One build, pinned: a URL that keeps serving the same file, that file's
+  // SHA-256, and its version, for Check for updates. A new build comes with
+  // a new karafriends.
+  | { kind: "pinned"; url: string; sha256: string; version?: string }
   // The latest release of a GitHub repository. "latest" is resolved to the
   // release's tag first, and the file and the release's checksums file both
   // come from that tag: a release published meanwhile can't mix them up.
@@ -100,9 +101,8 @@ export function parseToolVersion(output: string): string | null {
   return afterVersion ? afterVersion[1] : firstLine.split(/\s+/)[0] || null;
 }
 
-// One tool's status for the settings screen. An overridden tool is never
-// downloaded, so it has no updatedAt, and its version is the one it gave at
-// this launch's check.
+// One tool's status for the settings screen. An overridden tool's version
+// is the one it gave at this launch's check.
 export function toolStatus(
   id: AssetPlan["id"],
   stored: Versions,
@@ -110,17 +110,9 @@ export function toolStatus(
   overrideVersions: Partial<Record<AssetPlan["id"], string | null>>,
 ): ToolStatus {
   if (overrides[id] !== undefined) {
-    return {
-      version: overrideVersions[id] ?? null,
-      updatedAt: null,
-      overridden: true,
-    };
+    return { version: overrideVersions[id] ?? null, overridden: true };
   }
-  return {
-    version: stored[id]?.version ?? null,
-    updatedAt: stored[id]?.updatedAt ?? null,
-    overridden: false,
-  };
+  return { version: stored[id]?.version ?? null, overridden: false };
 }
 
 // A cached copy whose source wasn't recorded (an old karafriends', or a
@@ -153,6 +145,7 @@ export const FFMPEG_BUILDS = {
     kind: "pinned",
     url: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build.7z",
     sha256: "f0e46253c70dfe902bac915dfb4224f0cf1b7c6eeab9da2ccc9a5581f9a71b13",
+    version: "9.0.2",
   },
   // Martin Riedl's static build of FFmpeg 9.0.2 for Apple Silicon, signed
   // (which Apple Silicon requires of arm64 code). (karafriends isn't built
@@ -162,6 +155,7 @@ export const FFMPEG_BUILDS = {
     kind: "pinned",
     url: "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
     sha256: "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+    version: "9.0.2",
   },
   // Jellyfin's portable build of FFmpeg 8.1.3 (FFmpeg with Jellyfin's
   // patches, built with BtbN's scripts: static, for glibc 2.28 or newer).
@@ -172,11 +166,13 @@ export const FFMPEG_BUILDS = {
     kind: "pinned",
     url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-1/jellyfin-ffmpeg_8.1.3-1_portable_linux64-gpl.tar.xz",
     sha256: "b86dc023c64a5a9a410e6e3a938a970460214fae78f31c1553c9f88f1c289b6a",
+    version: "8.1.3",
   },
   linuxArm64: {
     kind: "pinned",
     url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-1/jellyfin-ffmpeg_8.1.3-1_portable_linuxarm64-gpl.tar.xz",
     sha256: "7bc8e8d0986f7f4693f63e9728570f671f07b6e21c05d5465dd7ce461d1631dc",
+    version: "8.1.3",
   },
 } as const satisfies Record<string, Source>;
 
@@ -352,7 +348,7 @@ export function isStale(
 // Whether the cached copy stays without asking the network: it's the
 // pinned build the source names, or its source wasn't recorded and it's
 // fresh (see STALE_MS). A latest release has to be asked which release is
-// latest. (Update tools always downloads.)
+// latest. (Update tools always asks.)
 export function cachedCopyStays(
   exists: boolean,
   stored: Versions[string] | undefined,

@@ -2406,7 +2406,7 @@ describe("a failed download", () => {
     const problem = () => store.getState().toolsProblem;
     const PROBLEM = {
       message:
-        "YouTube downloads are failing. Try Update tools in Settings › Advanced.",
+        "YouTube downloads are failing. Check for tool updates in Settings › Advanced.",
       since: 100,
     };
 
@@ -3272,7 +3272,7 @@ describe("lookups", () => {
         "ERROR: [niconico] sm9: Unable to extract data; please report this issue",
       );
       await assert.rejects(lookUp("sm9", broken), (err: Error) => {
-        assert.match(err.message, /Update tools/);
+        assert.match(err.message, /check for tool updates/);
         assert.equal(err.cause, broken);
         return true;
       });

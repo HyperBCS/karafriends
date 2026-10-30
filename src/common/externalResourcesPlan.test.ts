@@ -455,7 +455,6 @@ describe("toolStatus", () => {
   const stored = {
     ytdlp: {
       version: "2026.10.01",
-      updatedAt: 1000,
       url: "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.01/yt-dlp.exe",
     },
     ffmpeg: {
@@ -463,40 +462,35 @@ describe("toolStatus", () => {
     },
   };
 
-  test("a downloaded tool: its recorded version and download time", () => {
+  test("a downloaded tool: its recorded version", () => {
     assert.deepEqual(toolStatus("ytdlp", stored, {}, {}), {
       version: "2026.10.01",
-      updatedAt: 1000,
       overridden: false,
     });
     // Cached before versions were recorded, and not asked yet.
     assert.deepEqual(toolStatus("ffmpeg", stored, {}, {}), {
       version: null,
-      updatedAt: null,
       overridden: false,
     });
     assert.deepEqual(toolStatus("ffmpeg", {}, {}, {}), {
       version: null,
-      updatedAt: null,
       overridden: false,
     });
   });
 
-  test("an overridden tool: the version it gave, and no download time", () => {
+  test("an overridden tool: the version it gave", () => {
     const overrides = { ytdlp: "/opt/yt-dlp" };
     assert.deepEqual(
       toolStatus("ytdlp", stored, overrides, { ytdlp: "2026.11.02" }),
-      { version: "2026.11.02", updatedAt: null, overridden: true },
+      { version: "2026.11.02", overridden: true },
     );
     // Not asked yet, or it couldn't say.
     assert.deepEqual(toolStatus("ytdlp", stored, overrides, {}), {
       version: null,
-      updatedAt: null,
       overridden: true,
     });
     assert.deepEqual(toolStatus("ytdlp", stored, overrides, { ytdlp: null }), {
       version: null,
-      updatedAt: null,
       overridden: true,
     });
     // The other tool is unaffected.

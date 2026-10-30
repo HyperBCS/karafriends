@@ -10,7 +10,7 @@ import { promisify } from "util";
 import promiseRetry from "promise-retry";
 
 import { httpFetch } from "../main/http";
-import type { ToolsStatus } from "./api";
+import type { ToolId, ToolsStatus, ToolUpdates } from "./api";
 import { toolCommand } from "./downloadFailure";
 import {
   AssetPlan,
@@ -35,8 +35,9 @@ import { writeFileAtomic } from "./writeFileAtomic";
 // External runtime binaries are downloaded lazily on the user's machine and
 // cached here so they are fetched once and reused across launches, instead of
 // being bundled into every build. ffmpeg is a pinned build, downloaded once
-// (and again by Update tools); yt-dlp has to keep up with YouTube, so each
-// launch asks which release is the latest and downloads it when it's new.
+// (and again when karafriends pins another); yt-dlp has to keep up with
+// YouTube, so each launch, and Settings' Check for updates and Update tools,
+// asks which release is the latest, and downloads it only when it's new.
 // Every download must match its SHA-256 (the pinned one, or the one its
 // release publishes) before it's unpacked or run; one that doesn't is
 // deleted, and the copy already in the cache stays. The archive extractor is
@@ -113,10 +114,15 @@ export interface ToolsManager {
   // a single in-flight promise, and a failed attempt is cleared so a later
   // call can retry.
   ensure(): Promise<void>;
-  // Settings' Update tools: downloads each tool that isn't overridden
-  // again, whatever the cache says, and records the versions. Rejects if a
-  // download failed; the copy in the cache stays.
-  update(): Promise<void>;
+  // Settings' Check for updates: the newest version of each tool that isn't
+  // overridden, and whether the cache has it, without downloading it.
+  // Rejects if GitHub couldn't be asked.
+  checkForUpdates(): Promise<ToolUpdates>;
+  // Settings' Update tools: downloads each tool that isn't overridden and
+  // isn't the newest version in the cache, and records the versions.
+  // Resolves to the tools it installed. Rejects if one couldn't be checked
+  // or installed; the copy in the cache stays.
+  update(): Promise<ToolId[]>;
   // The tools' versions, and when they were last checked. (The problem is
   // the live state's: services.ts adds it.)
   status(): Omit<ToolsStatus, "problem" | "problemSince">;
@@ -132,6 +138,9 @@ const VERSION_TIMEOUT_MS = 30_000;
 const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 
 const DEFAULT_RETRY = { retries: 5, minTimeout: 1000, factor: 2 };
+// Check for updates retries less: the host waits on it, and it downloads
+// nothing.
+const CHECK_RETRY = { retries: 1, minTimeout: 1000 };
 
 // A first download (see onFirstDownload): bytes so far, and in all (null
 // until the server says, or if it doesn't).
@@ -238,6 +247,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
   const fetchOk = (
     url: string,
     options: FetchOptions = {},
+    retries = deps.retry ?? DEFAULT_RETRY,
   ): Promise<AssetResponse> =>
     promiseRetry(async (retry) => {
       let res: AssetResponse;
@@ -251,19 +261,38 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       if (res.ok || redirect) return res;
       (res.body as Readable | null)?.destroy?.();
       return retry(new Error(`${res.status} from ${url}`));
-    }, deps.retry ?? DEFAULT_RETRY);
+    }, retries);
 
   // The tag of repo's latest release, from where its "latest" page
   // redirects.
-  const latestTag = async (repo: string): Promise<string> => {
+  const latestTag = async (
+    repo: string,
+    retries?: Parameters<typeof fetchOk>[2],
+  ): Promise<string> => {
     const url = latestReleaseUrl(repo);
-    const res = await fetchOk(url, { redirect: "manual" });
+    const res = await fetchOk(url, { redirect: "manual" }, retries);
     (res.body as Readable | null)?.destroy?.();
     const tag = releaseTag(res.headers.get("location"), repo);
     if (tag === null) {
       throw new Error(`${url} didn't say which release is the latest`);
     }
     return tag;
+  };
+
+  // Where a tool's newest copy is, and its version: the pinned build's, or
+  // the latest release's tag, asked of GitHub.
+  const newest = async (
+    plan: AssetPlan,
+    retries?: Parameters<typeof fetchOk>[2],
+  ): Promise<{ url: string; version: string | null }> => {
+    if (plan.source.kind === "pinned") {
+      return { url: plan.source.url, version: plan.source.version ?? null };
+    }
+    const tag = await latestTag(plan.source.repo, retries);
+    return {
+      url: releaseAssetUrl(plan.source.repo, tag, plan.source.asset),
+      version: tag,
+    };
   };
 
   // The SHA-256 a release's checksums file gives its asset.
@@ -349,16 +378,17 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
 
   // Make sure a single asset is present and up to date. Returns true when
   // the cached copy changed (so the version metadata needs to be persisted).
-  // force: download it whatever the cache says, and fail if that fails (the
-  // cached copy stays).
+  // updating: Update tools, which asks for the newest copy even when the
+  // cache could stay without asking, and fails if that fails (the cached
+  // copy stays).
   const ensureAsset = async (
     plan: AssetPlan,
     versions: Versions,
-    force: boolean,
+    updating: boolean,
   ): Promise<boolean> => {
     const exists = fs.existsSync(plan.dest);
     if (
-      !force &&
+      !updating &&
       cachedCopyStays(
         exists,
         versions[plan.id],
@@ -378,7 +408,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       reportFirstDownloads();
     }
     try {
-      return await downloadAsset(plan, versions, force, exists, first);
+      return await downloadAsset(plan, versions, updating, exists, first);
     } finally {
       if (first) {
         first.done = true;
@@ -388,31 +418,31 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
   };
 
   // ensureAsset's download: which file, fetched, checked, unpacked, tried
-  // and moved into place.
+  // and moved into place; nothing if the cache has the newest copy.
   const downloadAsset = async (
     plan: AssetPlan,
     versions: Versions,
-    force: boolean,
+    updating: boolean,
     exists: boolean,
     first: FirstDownload | null,
   ): Promise<boolean> => {
     let target: Target;
     let res: AssetResponse;
     try {
-      if (plan.source.kind === "pinned") {
-        target = { url: plan.source.url, sha256: plan.source.sha256 };
-      } else {
-        const tag = await latestTag(plan.source.repo);
-        const url = releaseAssetUrl(plan.source.repo, tag, plan.source.asset);
-        // The cache has this release already.
-        if (!force && exists && versions[plan.id]?.url === url) return false;
-        target = { url, sha256: await releaseSha256(plan.source, tag) };
-      }
+      const { url, version } = await newest(plan);
+      if (exists && versions[plan.id]?.url === url) return false;
+      target = {
+        url,
+        sha256:
+          plan.source.kind === "pinned"
+            ? plan.source.sha256
+            : await releaseSha256(plan.source, version!),
+      };
       res = await fetchOk(target.url);
     } catch (err) {
       // Offline or the server is unreachable. Keep whatever we already
       // have; only fail if there is nothing cached to fall back on.
-      if (exists && !force) {
+      if (exists && !updating) {
         console.error(
           `Keeping cached ${plan.id}; version check failed: ${err}`,
         );
@@ -456,7 +486,7 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       await replaceFile(src, plan.dest, deps.platform);
     } catch (err) {
       // A failed refresh must not destroy a working cached copy.
-      if (exists && !force) {
+      if (exists && !updating) {
         console.error(`Keeping cached ${plan.id}; update failed: ${err}`);
         return false;
       }
@@ -504,18 +534,23 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
   const toolsPresent = () =>
     fs.existsSync(resourcePaths.ffmpeg) && fs.existsSync(resourcePaths.ytdlp);
 
-  const doEnsure = async (force: boolean): Promise<void> => {
-    const plans = assetPlans(deps.platform, deps.arch, resourcePaths)
+  // The tools karafriends downloads: those not overridden.
+  const downloadedPlans = () =>
+    assetPlans(deps.platform, deps.arch, resourcePaths)
       .filter((plan) => !(plan.id in overrides))
       .map((plan) => ({
         ...plan,
         source: deps.sources?.[plan.id] ?? plan.source,
       }));
+
+  // Resolves to the tools it installed.
+  const doEnsure = async (updating: boolean): Promise<ToolId[]> => {
+    const plans = downloadedPlans();
     const versions = readVersions();
     await Promise.all(plans.map((plan) => removeLeftovers(plan.dest)));
 
     const results = await Promise.allSettled(
-      plans.map((plan) => ensureAsset(plan, versions, force)),
+      plans.map((plan) => ensureAsset(plan, versions, updating)),
     );
     let changed = results.some(
       (result) => result.status === "fulfilled" && result.value,
@@ -562,37 +597,66 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       throw new Error("An external resource wasn't successfully downloaded!");
     }
     lastCheck = deps.now();
+    return plans
+      .filter((_, i) => {
+        const result = results[i];
+        return result.status === "fulfilled" && result.value;
+      })
+      .map((plan) => plan.id);
   };
 
   let ensurePromise: Promise<void> | null = null;
-  let updatePromise: Promise<void> | null = null;
+  let updatePromise: Promise<ToolId[]> | null = null;
 
   // Runs a check once any check in flight is done, and makes it the one
-  // downloads wait for. A failed check is cleared so a later call can retry,
-  // except a forced one that leaves both tools in place: downloads go on
-  // with the old copies, and only updateTools' caller sees the failure.
-  const check = (force: boolean): Promise<void> => {
+  // downloads wait for (promise). A failed check is cleared so a later call
+  // can retry, except an update that leaves both tools in place: downloads
+  // go on with the old copies, and only updateTools' caller sees the
+  // failure, through run, which resolves to the tools it installed.
+  const check = (updating: boolean) => {
     const previous = ensurePromise?.catch(() => {}) ?? Promise.resolve();
-    const run = previous.then(() => doEnsure(force));
-    const promise: Promise<void> = run.catch((err) => {
-      if (force && toolsPresent()) return;
-      if (ensurePromise === promise) ensurePromise = null;
-      throw err;
-    });
+    const run = previous.then(() => doEnsure(updating));
+    const promise: Promise<void> = run.then(
+      () => {},
+      (err) => {
+        if (updating && toolsPresent()) return;
+        if (ensurePromise === promise) ensurePromise = null;
+        throw err;
+      },
+    );
     ensurePromise = promise;
-    if (!force) return promise;
-    // The forced failure reaches updateTools' caller through run.
-    promise.catch(() => {});
-    return run;
+    return { promise, run };
   };
 
   return {
     resourcePaths,
-    ensure: () => ensurePromise ?? check(false),
+    ensure: () => ensurePromise ?? check(false).promise,
+    async checkForUpdates() {
+      const versions = readVersions();
+      const updates: ToolUpdates = {};
+      await Promise.all(
+        downloadedPlans().map(async (plan) => {
+          const { url, version } = await newest(
+            plan,
+            deps.retry ?? CHECK_RETRY,
+          );
+          updates[plan.id] = {
+            latest: version,
+            available:
+              !fs.existsSync(plan.dest) || versions[plan.id]?.url !== url,
+          };
+        }),
+      );
+      return updates;
+    },
     update() {
-      updatePromise ??= check(true).finally(() => {
-        updatePromise = null;
-      });
+      if (!updatePromise) {
+        const { promise, run } = check(true);
+        promise.catch(() => {});
+        updatePromise = run.finally(() => {
+          updatePromise = null;
+        });
+      }
       return updatePromise;
     },
     status() {
@@ -775,8 +839,13 @@ export function ensureExternalResources(): Promise<void> {
   return tools().ensure();
 }
 
+// Settings' Check for updates (see ToolsManager.checkForUpdates).
+export function checkForToolUpdates(): Promise<ToolUpdates> {
+  return tools().checkForUpdates();
+}
+
 // Settings' Update tools (see ToolsManager.update).
-export function updateTools(): Promise<void> {
+export function updateTools(): Promise<ToolId[]> {
   return tools().update();
 }
 

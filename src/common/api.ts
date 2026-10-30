@@ -458,24 +458,35 @@ export type TestLoginResult =
 
 // ffmpeg's or yt-dlp's status. version: what it gave as its version
 // (ffmpeg -version, yt-dlp --version), or null (not asked yet, or it
-// couldn't say). updatedAt: when karafriends
-// downloaded it, in ms since the epoch. overridden: KARAFRIENDS_FFMPEG_PATH
-// or KARAFRIENDS_YTDLP_PATH names the copy in use, which karafriends never
-// downloads (updatedAt is null).
+// couldn't say). overridden: KARAFRIENDS_FFMPEG_PATH or
+// KARAFRIENDS_YTDLP_PATH names the copy in use, which karafriends never
+// downloads or checks.
 export interface ToolStatus {
   version: string | null;
-  updatedAt: number | null;
   overridden: boolean;
 }
+
+export type ToolId = "ffmpeg" | "ytdlp";
+
+// A tool's newest version, as Check for updates found it: its name (the
+// latest yt-dlp release's tag, or the pinned ffmpeg build's version; null
+// if not known), and whether karafriends' copy is another.
+export interface ToolUpdate {
+  latest: string | null;
+  available: boolean;
+}
+
+// By tool. An overridden tool has none.
+export type ToolUpdates = Partial<Record<ToolId, ToolUpdate>>;
 
 export interface ToolsStatus {
   ffmpeg: ToolStatus;
   ytdlp: ToolStatus;
   // When this launch last checked for new versions, or null.
   lastCheck: number | null;
-  // "YouTube downloads are failing; try Update tools in Settings" while
-  // YouTube or Niconico downloads fail for a reason that isn't the video's,
-  // and since when; null once one works or Update tools has run.
+  // downloadFailure.ts's TOOLS_PROBLEM while YouTube or Niconico downloads
+  // fail for a reason that isn't the video's, and since when; null once one
+  // works or Update tools has installed a tool.
   problem: string | null;
   problemSince: number | null;
 }
@@ -739,12 +750,20 @@ export interface Api {
     input: Record<string, never>;
     output: ToolsStatus;
   };
-  // Downloads ffmpeg and yt-dlp again (those not overridden), even if the
-  // cached copies look current, and clears the tools problem. ok: false
-  // with a sentence for the host if a download failed (the old copy stays).
+  // The newest versions of ffmpeg and yt-dlp (those not overridden),
+  // without downloading them. ok: false with a sentence for the host if
+  // they couldn't be checked.
+  checkTools: {
+    input: Record<string, never>;
+    output: { ok: true; updates: ToolUpdates } | { ok: false; reason: string };
+  };
+  // Downloads each tool (not overridden) whose copy isn't the newest; one
+  // that is stays as it is. updated: the tools it installed; any clears the
+  // tools problem. ok: false with a sentence for the host if a tool
+  // couldn't be checked or installed (the old copy stays).
   updateTools: {
     input: Record<string, never>;
-    output: { ok: true } | { ok: false; reason: string };
+    output: { ok: true; updated: ToolId[] } | { ok: false; reason: string };
   };
 }
 

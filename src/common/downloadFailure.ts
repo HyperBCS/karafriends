@@ -52,7 +52,7 @@ export function isDamSample(
 // What the display says after a YouTube or Niconico download fails with
 // isToolProblem.
 export const TOOLS_PROBLEM =
-  "YouTube downloads are failing. Try Update tools in Settings › Advanced.";
+  "YouTube downloads are failing. Check for tool updates in Settings › Advanced.";
 
 // Whether a YouTube or Niconico download that failed for reason points at
 // yt-dlp rather than the video: YouTube's bot check (an old yt-dlp, often),

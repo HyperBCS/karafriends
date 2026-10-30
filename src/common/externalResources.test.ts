@@ -332,8 +332,8 @@ describe("createToolsManager", () => {
     assert.equal(launch.read("ytdlp"), YTDLP);
     assert.deepEqual(launch.versions(), before);
     assert.deepEqual(leftovers(), []);
-    // Update tools: kept, and the host is told. ffmpeg, served right, is
-    // installed again.
+    // Update tools: kept, and the host is told. ffmpeg, already the pinned
+    // build, stays.
     const update = setup(tampered);
     await assert.rejects(
       update.manager.update(),
@@ -544,23 +544,72 @@ describe("createToolsManager", () => {
     assert.equal(read("ffmpeg"), FFMPEG);
   });
 
-  test("Update tools installs the pinned ffmpeg again, and the latest checked yt-dlp", async () => {
+  test("Check for updates finds yt-dlp's new release, and downloads nothing", async () => {
     await setup().manager.ensure();
     const { manager, kinds, read } = setup(
       upstream({ releases: { "2026.11.01": { ytdlp: "2026.11.01\n" } } }),
     );
-    await manager.update();
+    assert.deepEqual(await manager.checkForUpdates(), {
+      ytdlp: { latest: "2026.11.01", available: true },
+      // The tests' pinned build names no version.
+      ffmpeg: { latest: null, available: false },
+    });
+    assert.deepEqual(kinds(), ["latest"]);
+    assert.equal(read("ytdlp"), YTDLP);
+  });
+
+  test("Check for updates says the cache has the newest copies", async () => {
+    await setup().manager.ensure();
+    const { manager } = setup();
+    assert.deepEqual(await manager.checkForUpdates(), {
+      ytdlp: { latest: "2026.10.26", available: false },
+      ffmpeg: { latest: null, available: false },
+    });
+  });
+
+  test("Check for updates: a tool that isn't cached is one to update; an overridden one isn't checked", async () => {
+    const fake = path.join(dir, "my-yt-dlp");
+    fs.writeFileSync(fake, "2026.12.01\n");
+    const { manager, kinds } = setup(upstream(), {
+      env: { KARAFRIENDS_YTDLP_PATH: fake },
+    });
+    assert.deepEqual(await manager.checkForUpdates(), {
+      ffmpeg: { latest: null, available: true },
+    });
+    assert.deepEqual(kinds(), []);
+  });
+
+  test("Check for updates rejects when GitHub can't say", async () => {
+    await setup().manager.ensure();
+    const { manager } = setup(() => ({ status: 500 }));
+    await assert.rejects(manager.checkForUpdates(), /500/);
+  });
+
+  test("Update tools installs yt-dlp's new release, and leaves ffmpeg as it is", async () => {
+    await setup().manager.ensure();
+    const { manager, kinds, read } = setup(
+      upstream({ releases: { "2026.11.01": { ytdlp: "2026.11.01\n" } } }),
+    );
+    assert.deepEqual(await manager.update(), ["ytdlp"]);
     assert.equal(read("ytdlp"), "2026.11.01\n");
     assert.equal(read("ffmpeg"), FFMPEG);
-    assert.deepEqual(kinds().sort(), ["ffmpeg", "latest", "sums", "ytdlp"]);
+    assert.deepEqual(kinds().sort(), ["latest", "sums", "ytdlp"]);
     assert.equal(manager.status().ytdlp.version, "2026.11.01");
   });
 
-  test("Update tools downloads yt-dlp again even when its release is the same", async () => {
+  test("Update tools downloads nothing when the cache has the newest copies", async () => {
     await setup().manager.ensure();
     const { manager, kinds } = setup();
-    await manager.update();
-    assert.deepEqual(kinds().sort(), ["ffmpeg", "latest", "sums", "ytdlp"]);
+    assert.deepEqual(await manager.update(), []);
+    assert.deepEqual(kinds(), ["latest"]);
+  });
+
+  test("Update tools installs a tool that isn't cached", async () => {
+    await setup().manager.ensure();
+    const { manager, read } = setup();
+    fs.rmSync(manager.resourcePaths.ffmpeg);
+    assert.deepEqual(await manager.update(), ["ffmpeg"]);
+    assert.equal(read("ffmpeg"), FFMPEG);
   });
 
   test("a failed Update tools rejects, but downloads go on with the cached tools", async () => {
@@ -600,8 +649,9 @@ describe("createToolsManager", () => {
     assert.equal(manager.update(), update);
     release();
     await Promise.all([launch, update]);
-    // Each check: yt-dlp's latest release, its sums and itself; and ffmpeg.
-    assert.equal(fetches.length, 8);
+    // The launch's: yt-dlp's latest release, its sums and itself, and
+    // ffmpeg. The update's: yt-dlp's latest release, which is cached now.
+    assert.equal(fetches.length, 5);
   });
 
   test("an overridden tool is never downloaded, and its version is asked", async () => {
@@ -615,7 +665,6 @@ describe("createToolsManager", () => {
     assert.equal(manager.resourcePaths.ytdlp, fake);
     assert.deepEqual(manager.status().ytdlp, {
       version: "2026.12.01",
-      updatedAt: null,
       overridden: true,
     });
   });

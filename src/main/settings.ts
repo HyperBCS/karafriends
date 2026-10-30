@@ -13,7 +13,9 @@ import {
   type LoginService,
   type Settings,
   type TestLoginResult,
+  type ToolId,
   type ToolsStatus,
+  type ToolUpdates,
 } from "../common/api";
 import {
   clearPlaceholders,
@@ -42,6 +44,7 @@ export const SETTINGS_METHODS = [
   "importConfig",
   "restartApp",
   "getToolsStatus",
+  "checkTools",
   "updateTools",
 ] as const;
 
@@ -89,8 +92,11 @@ export interface SettingsDeps {
   // externalResources.ts's, with the live state's problem.
   tools: {
     status(): ToolsStatus;
-    // Downloads the tools again; then the problem is cleared.
-    update(): Promise<void>;
+    // The newest versions, without downloading them.
+    check(): Promise<ToolUpdates>;
+    // Downloads the tools that aren't the newest; one that was installed
+    // clears the problem. Resolves to those.
+    update(): Promise<ToolId[]>;
   };
 }
 
@@ -356,11 +362,23 @@ export function createSettingsHandlers(
       return deps.tools.status();
     },
 
+    async checkTools(_input, caller) {
+      requireDisplay(caller);
+      try {
+        return { ok: true, updates: await deps.tools.check() };
+      } catch (err) {
+        console.error("Checking for tool updates failed:", err);
+        return {
+          ok: false,
+          reason: `Couldn't check for updates: ${(err as Error)?.message ?? String(err)}`,
+        };
+      }
+    },
+
     async updateTools(_input, caller) {
       requireDisplay(caller);
       try {
-        await deps.tools.update();
-        return { ok: true };
+        return { ok: true, updated: await deps.tools.update() };
       } catch (err) {
         console.error("Updating the tools failed:", err);
         return {
