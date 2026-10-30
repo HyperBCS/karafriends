@@ -70,24 +70,64 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The idle screen: a card beside the QR code, a row per song, the title
-   over the artist, and the singer's initial over the wait on the right. */
+/* The idle screen: "Up next" and how many songs, over a card beside the
+   QR code with a row per song for the first ones that fit whole (at most
+   IDLE_ROWS), the title over the artist, and the singer's initial over the
+   wait on the right; then how many more. Never taller than the screen: the
+   list gives up the room, and UpNext.tsx drops the songs it cuts off. */
 .upNext-rows {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
   max-width: 56.25rem;
+  max-height: 100%;
+}
+
+.upNextHeader {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--kf-space-6);
+  margin-bottom: var(--kf-space-4);
 }
 
 .upNext-rows .upNextHeading {
-  margin-bottom: var(--kf-space-4);
   font-size: var(--kf-text-heading);
 }
 
-.upNext-rows .upNextList {
+.upNextCount {
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.upNextCard {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 0 var(--kf-space-6);
   border-radius: var(--kf-radius-card);
   background-color: var(--kf-surface);
   box-shadow: var(--kf-shadow-card);
+}
+
+.upNext-rows .upNextList {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.upNextMore {
+  flex: none;
+  margin: 0;
+  padding: var(--kf-space-4) 0;
+  border-top: 1px solid var(--kf-line);
+  color: var(--kf-muted);
+  font-size: var(--kf-text-label);
+  font-variant-numeric: tabular-nums;
 }
 
 .upNext-rows .upNextItem {

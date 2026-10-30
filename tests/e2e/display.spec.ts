@@ -565,3 +565,62 @@ test("in full screen, a still mouse pointer hides, and not under Settings; out o
   await expect.poll(pointerHidden).toBe(false);
   await expect(dragBar).toHaveCount(1);
 });
+
+// A long queue on the idle screen: the songs that fit whole, then how many
+// more, and how many in all, never off the screen; at a bigger UI scale,
+// fewer fit and the count follows. The display is held idle (no song
+// starts) so the screen stays up.
+test.describe("a long queue on the idle screen", () => {
+  const people = ["Ken", "Mio", "Yuki"];
+  test.use({
+    holdIdle: true,
+    seedQueue: {
+      currentSong: null,
+      songQueue: Array.from({ length: 30 }, (_, n) => ({
+        kind: "nico",
+        songId: `sm9300${n + 10}`,
+        name: `Idle song ${n + 1}`,
+        artistName: "E2E artist",
+        playtime: 200,
+        timestamp: String(Date.UTC(2026, 0, 1) + n),
+        user: { deviceId: `e2e-${people[n % 3]}`, nickname: people[n % 3] },
+      })),
+      songHistory: [],
+      playbackState: "PAUSED",
+    },
+  });
+
+  test("lists the songs that fit, and counts the rest", async ({ display }) => {
+    await display.setViewportSize({ width: 1920, height: 1080 });
+    const upNext = display.getByRole("region", { name: "Up next" });
+    const rows = upNext.getByRole("listitem");
+    // Listed and counted: every song, once.
+    const shown = async () => {
+      await expect(upNext.getByText(/^\+\d+ more$/)).toBeVisible();
+      const listed = await rows.count();
+      const more = Number(
+        (await upNext.getByText(/^\+\d+ more$/).textContent())!.match(
+          /\d+/,
+        )![0],
+      );
+      expect(listed + more).toBe(30);
+      // Whole, and on the screen.
+      for (const row of await rows.all()) {
+        const box = (await row.boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(1080);
+      }
+      return listed;
+    };
+    await expect(upNext).toContainText("30 songs");
+    await expect(rows.first()).toContainText("Idle song 1");
+    const atFull = await shown();
+    expect(atFull).toBeGreaterThanOrEqual(3);
+
+    await display.evaluate(() => localStorage.setItem("uiScale", "150"));
+    await display.reload();
+    await expect(upNext).toContainText("30 songs");
+    await expect.poll(() => rows.count()).toBeLessThan(atFull);
+    expect(await shown()).toBeGreaterThanOrEqual(1);
+  });
+});
