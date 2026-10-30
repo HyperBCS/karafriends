@@ -18,6 +18,12 @@ declare module "*?worker" {
   export default WorkerConstructor;
 }
 
+// A file copied beside the main bundle: its path (electron-vite's ?asset).
+declare module "*?asset" {
+  const path: string;
+  export default path;
+}
+
 // An image's URL.
 declare module "*.png" {
   const url: string;

@@ -16,37 +16,30 @@ export interface ResourcePaths {
   ytdlp: string;
 }
 
-// An HTTP cache validator for a downloaded asset. Persisted between launches so
-// we can make a conditional request and skip the download when it is unchanged.
-export interface Validator {
-  etag?: string;
-  lastModified?: string;
-}
-
-// versions.json: each downloaded tool's validator, the version it reports,
-// when it was downloaded (ms since the epoch) and from which URL. (Versions
-// before this one didn't record the URL.)
+// versions.json: each downloaded tool's version, when it was downloaded (ms
+// since the epoch), from which URL, and the SHA-256 it matched. (Older
+// versions kept HTTP validators there too, which are ignored now, and some
+// didn't record the URL.)
 export type Versions = Record<
   string,
-  Validator & {
+  {
     version?: string;
     updatedAt?: number;
     url?: string;
-    // When the server last confirmed the copy (a 304 or a download), for a
-    // tool checked only every so often (AssetPlan.checkEveryMs).
-    checkedAt?: number;
+    sha256?: string;
   }
 >;
 
-// Whether the cached copy came from another URL than the plan's (an older
-// version's source, or another architecture's build): its validator then
-// says nothing about the plan's asset, and it's downloaded again.
-export function fromOtherSource(
-  stored: Versions[string] | undefined,
-  url: string,
-): boolean {
-  return stored?.url !== undefined && stored.url !== url;
-}
+// Where a tool comes from, and what its download must match before it's
+// unpacked or run.
+export type Source =
+  // One build, pinned: a URL that keeps serving the same file, and that
+  // file's SHA-256. A new build comes with a new karafriends.
+  | { kind: "pinned"; url: string; sha256: string }
+  // The latest release of a GitHub repository. "latest" is resolved to the
+  // release's tag first, and the file and the release's checksums file both
+  // come from that tag: a release published meanwhile can't mix them up.
+  | { kind: "latestRelease"; repo: string; asset: string; sums: string };
 
 // One extraction pass: unpack `input` (relative to the temp dir) into `outDir`
 // (relative to the temp dir). Archives that need multiple passes (e.g. .tar.xz)
@@ -71,12 +64,9 @@ export type Download =
 
 export interface AssetPlan {
   id: "ytdlp" | "ffmpeg";
-  url: string;
+  source: Source;
   dest: string;
   download: Download;
-  // Ask the server about a cached copy at most this often (Update tools
-  // always does). Unset: at every launch.
-  checkEveryMs?: number;
 }
 
 // Environment variables that point a tool at another copy (a test's fake,
@@ -133,17 +123,117 @@ export function toolStatus(
   };
 }
 
-// Refresh the cached copy once it is older than this when the server exposes no
-// cache validators, so it neither re-downloads on every launch nor goes stale
-// forever.
+// A cached copy whose source wasn't recorded (an old karafriends', or a
+// test's stand-in) is kept this long after it was written, then replaced
+// by a checked download.
 export const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
-// How often a cached ffmpeg is checked for a newer build. yt-dlp has to
-// keep up with YouTube and is checked at every launch; ffmpeg doesn't.
-export const FFMPEG_CHECK_MS = STALE_MS;
+// yt-dlp has to keep up with YouTube, so it's the latest release, checked
+// at every launch against the release's own SHA2-256SUMS.
+const YTDLP_REPO = "yt-dlp/yt-dlp";
 
-const YTDLP_BASE =
-  "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
+function ytdlpRelease(asset: string): Source {
+  return {
+    kind: "latestRelease",
+    repo: YTDLP_REPO,
+    asset,
+    sums: "SHA2-256SUMS",
+  };
+}
+
+// The ffmpeg builds, pinned: a new upstream build can't break the app or
+// reach it unchecked. Each URL is a release its host keeps, and each
+// SHA-256 was taken from a download and matched the host's own. To move to
+// another build, change both, on purpose. All are GPL builds.
+export const FFMPEG_BUILDS = {
+  // Gyan Doshi's full build of FFmpeg 9.0.2, from his GitHub mirror of
+  // gyan.dev. The mirror keeps every release (back to 4.4, from 2021);
+  // gyan.dev itself removes old ones.
+  win32: {
+    kind: "pinned",
+    url: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build.7z",
+    sha256: "f0e46253c70dfe902bac915dfb4224f0cf1b7c6eeab9da2ccc9a5581f9a71b13",
+  },
+  // Martin Riedl's static builds of FFmpeg 9.0.2, one per architecture,
+  // signed (which Apple Silicon requires of arm64 code). His release builds
+  // stay at their versioned URLs (5.0's, from 2022, still download). The zip
+  // holds just the ffmpeg binary.
+  darwinArm64: {
+    kind: "pinned",
+    url: "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
+    sha256: "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+  },
+  darwinX64: {
+    kind: "pinned",
+    url: "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
+    sha256: "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
+  },
+  // Jellyfin's portable build of FFmpeg 8.1.3 (FFmpeg with Jellyfin's
+  // patches, built with BtbN's scripts: static, for glibc 2.28 or newer).
+  // Jellyfin keeps every release on GitHub (back to 2019). No 9.x build
+  // stays put: BtbN deletes its builds within two years, and
+  // martin-riedl.de's Linux build isn't GPL (it's "nonfree").
+  linuxX64: {
+    kind: "pinned",
+    url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-1/jellyfin-ffmpeg_8.1.3-1_portable_linux64-gpl.tar.xz",
+    sha256: "b86dc023c64a5a9a410e6e3a938a970460214fae78f31c1553c9f88f1c289b6a",
+  },
+  linuxArm64: {
+    kind: "pinned",
+    url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-1/jellyfin-ffmpeg_8.1.3-1_portable_linuxarm64-gpl.tar.xz",
+    sha256: "7bc8e8d0986f7f4693f63e9728570f671f07b6e21c05d5465dd7ce461d1631dc",
+  },
+} as const satisfies Record<string, Source>;
+
+// Where a repository's latest release is: it redirects to the release's
+// page, .../releases/tag/<tag>.
+export function latestReleaseUrl(repo: string): string {
+  return `https://github.com/${repo}/releases/latest`;
+}
+
+// The tag in where latestReleaseUrl redirected (location, as the Location
+// header gave it). Null if it isn't one of repo's release pages.
+export function releaseTag(
+  location: string | null,
+  repo: string,
+): string | null {
+  if (!location) return null;
+  let url: URL;
+  try {
+    url = new URL(location, "https://github.com/");
+  } catch {
+    return null;
+  }
+  const prefix = `/${repo}/releases/tag/`.toLowerCase();
+  if (
+    url.hostname !== "github.com" ||
+    !url.pathname.toLowerCase().startsWith(prefix)
+  ) {
+    return null;
+  }
+  const tag = decodeURIComponent(url.pathname.slice(prefix.length));
+  return tag !== "" && !tag.includes("/") ? tag : null;
+}
+
+// A file of one release.
+export function releaseAssetUrl(
+  repo: string,
+  tag: string,
+  name: string,
+): string {
+  return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${name}`;
+}
+
+// A file's SHA-256 (in lower case) from a checksums file as sha256sum
+// writes it: "<hex>  <name>" a line, or "<hex> *<name>". Null if the file
+// isn't listed.
+export function sha256FromSums(sums: string, name: string): string | null {
+  for (const line of sums.split(/\r?\n/)) {
+    const match = line.trim().match(/^([0-9a-fA-F]{64}) [ *](.+)$/);
+    if (match && match[2] === name) return match[1].toLowerCase();
+  }
+  return null;
+}
 
 export function extractorFileName(platform: Platform): string {
   return platform === "win32" ? "7za.exe" : "7za";
@@ -167,8 +257,8 @@ export function resourcePathsFor(
 }
 
 // The downloadable assets for a platform and CPU architecture (process.arch):
-// their URLs, final destinations, and how (if at all) each download is
-// unpacked.
+// where each comes from, its final destination, and how (if at all) its
+// download is unpacked.
 export function assetPlans(
   platform: Platform,
   arch: string,
@@ -179,13 +269,13 @@ export function assetPlans(
       return [
         {
           id: "ytdlp",
-          url: `${YTDLP_BASE}.exe`,
+          source: ytdlpRelease("yt-dlp.exe"),
           dest: paths.ytdlp,
           download: { kind: "binary" },
         },
         {
           id: "ffmpeg",
-          url: "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z",
+          source: FFMPEG_BUILDS.win32,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
@@ -193,25 +283,22 @@ export function assetPlans(
             steps: [{ input: "ffmpeg.7z", outDir: "out", only: "ffmpeg.exe" }],
             binary: path.join("out", "ffmpeg.exe"),
           },
-          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
     case "darwin":
       return [
         {
           id: "ytdlp",
-          url: `${YTDLP_BASE}_macos`,
+          source: ytdlpRelease("yt-dlp_macos"),
           dest: paths.ytdlp,
           download: { kind: "binary" },
         },
         {
           id: "ffmpeg",
-          // Martin Riedl's static builds of the latest FFmpeg release, one
-          // per architecture (signed, which Apple Silicon requires of
-          // arm64 code). evermeet.cx, the source before, builds for Intel
-          // only, so Apple Silicon needed Rosetta. The redirect moves with
-          // each release; its zip holds just the ffmpeg binary.
-          url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch === "arm64" ? "arm64" : "amd64"}/release/ffmpeg.zip`,
+          source:
+            arch === "arm64"
+              ? FFMPEG_BUILDS.darwinArm64
+              : FFMPEG_BUILDS.darwinX64,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
@@ -219,7 +306,6 @@ export function assetPlans(
             steps: [{ input: "ffmpeg.zip", outDir: "out", only: "ffmpeg" }],
             binary: path.join("out", "ffmpeg"),
           },
-          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
     default:
@@ -230,17 +316,18 @@ export function assetPlans(
           // yt-dlp is a zipapp run by the system's python3, and it needs
           // 3.11 or later: Ubuntu 22.04 has 3.10, and some hosts have none.
           // The file keeps the name yt-dlp.
-          url: `${YTDLP_BASE}_linux${arch === "arm64" ? "_aarch64" : ""}`,
+          source: ytdlpRelease(
+            `yt-dlp_linux${arch === "arm64" ? "_aarch64" : ""}`,
+          ),
           dest: paths.ytdlp,
           download: { kind: "binary" },
         },
         {
           id: "ffmpeg",
-          // BtbN's GitHub-hosted static build (johnvansickle.com resets
-          // connections from some IPs). It's rebuilt from FFmpeg's master
-          // about daily, so its etag changes daily: checkEveryMs keeps it
-          // from being downloaded again (157 MB) at nearly every launch.
-          url: `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux${arch === "arm64" ? "arm64" : "64"}-gpl.tar.xz`,
+          source:
+            arch === "arm64"
+              ? FFMPEG_BUILDS.linuxArm64
+              : FFMPEG_BUILDS.linuxX64,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",
@@ -248,7 +335,7 @@ export function assetPlans(
             // .tar.xz needs two passes: first to the .tar, then to the contents.
             steps: [
               { input: "ffmpeg.tar.xz", outDir: "tar" },
-              // Just bin/ffmpeg: not ffprobe, ffplay and the docs too.
+              // Just ffmpeg: not ffprobe too.
               {
                 input: path.join("tar", "ffmpeg.tar"),
                 outDir: "out",
@@ -257,30 +344,9 @@ export function assetPlans(
             ],
             binary: path.join("out", "ffmpeg"),
           },
-          checkEveryMs: FFMPEG_CHECK_MS,
         },
       ];
   }
-}
-
-export function hasValidator(stored: Validator | undefined): boolean {
-  return Boolean(stored?.etag || stored?.lastModified);
-}
-
-// Conditional-request headers for an asset we already have on disk, so the
-// server can answer 304 Not Modified when the cached copy is still current.
-export function conditionalHeaders(
-  exists: boolean,
-  stored: Validator | undefined,
-): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (exists && stored?.etag) {
-    headers["If-None-Match"] = stored.etag;
-  }
-  if (exists && stored?.lastModified) {
-    headers["If-Modified-Since"] = stored.lastModified;
-  }
-  return headers;
 }
 
 export function isStale(
@@ -291,28 +357,18 @@ export function isStale(
   return nowMs - mtimeMs > staleMs;
 }
 
-// Whether the network can be skipped entirely: the file is present, there is no
-// validator to make a conditional request with, and the cached copy is fresh.
-// Downloading anyway would re-fetch the asset on every launch.
-export function canSkipUnvalidated(
+// Whether the cached copy stays without asking the network: it's the
+// pinned build the source names, or its source wasn't recorded and it's
+// fresh (see STALE_MS). A latest release has to be asked which release is
+// latest. (Update tools always downloads.)
+export function cachedCopyStays(
   exists: boolean,
-  stored: Validator | undefined,
-  stale: boolean,
-): boolean {
-  return exists && !hasValidator(stored) && !stale;
-}
-
-// Whether a tool checked only every checkEveryMs was confirmed by its server
-// recently enough to skip asking at this launch. The time is the last 304 or
-// download, or the file's time before those were recorded. A copy whose
-// source wasn't recorded is asked once, so a changed source is noticed.
-export function checkedRecently(
   stored: Versions[string] | undefined,
+  source: Source,
   mtimeMs: number,
   nowMs: number,
-  checkEveryMs: number | undefined,
 ): boolean {
-  if (checkEveryMs === undefined || stored?.url === undefined) return false;
-  const last = stored.checkedAt ?? stored.updatedAt ?? mtimeMs;
-  return nowMs - last < checkEveryMs;
+  if (!exists) return false;
+  if (stored?.url === undefined) return !isStale(mtimeMs, nowMs);
+  return source.kind === "pinned" && stored.url === source.url;
 }

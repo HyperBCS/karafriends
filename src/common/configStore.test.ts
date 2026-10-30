@@ -198,6 +198,40 @@ describe("createConfigStore at launch", () => {
   });
 });
 
+// It holds the logins. (Windows has no such modes: its user folders are
+// their user's.)
+describe("config.yaml is readable only by its user", () => {
+  const skip = process.platform === "win32";
+  const mode = (file: string) => fs.statSync(file).mode & 0o777;
+
+  test("a new one, and once it's written again", { skip }, () => {
+    const store = open();
+    assert.equal(mode(filePath), 0o600);
+    store.update({ remoconPort: 8081 });
+    assert.equal(mode(filePath), 0o600);
+  });
+
+  test(
+    "one an older version left readable by everyone, at launch",
+    { skip },
+    () => {
+      fs.writeFileSync(filePath, "remoconPort: 8080\n", { mode: 0o644 });
+      fs.chmodSync(filePath, 0o644);
+      open();
+      assert.equal(mode(filePath), 0o600);
+    },
+  );
+
+  test("the copy of a broken one", { skip }, (t) => {
+    t.mock.method(console, "error", () => {});
+    t.mock.method(console, "warn", () => {});
+    fs.writeFileSync(filePath, "damPassword: [unclosed\n");
+    fs.chmodSync(filePath, 0o644);
+    open();
+    assert.equal(mode(`${filePath}.broken`), 0o600);
+  });
+});
+
 describe("ConfigStore.update", () => {
   test("flushes the temp file to disk before renaming it into place", (t) => {
     const store = open();

@@ -379,7 +379,7 @@ export function linkStatusNote(status: LinkStatus): LoginNote {
       throw new LoginWarning(
         "Signed in, but the Joysound account isn't a paid member " +
           `(membership: ${status.membershipType ?? "none"}), so karafriends ` +
-          "can't download its songs, only search them.",
+          "can't download its songs and leaves Joysound off.",
       );
   }
 }

@@ -1,5 +1,10 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["e2e", "../playwright.config.ts", "../electron.vite.config.ts"],
+  "include": [
+    "e2e",
+    "../playwright.config.ts",
+    "../electron.vite.config.ts",
+    "../scripts/**/*.ts"
+  ],
   "exclude": []
 }

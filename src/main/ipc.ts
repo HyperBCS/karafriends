@@ -40,14 +40,15 @@ export const DISPLAY_CALLER: Caller = {
   isDisplay: true,
 };
 
-// Whether url is on the same site as the display's page: same scheme, host
-// and port (any file, for a file: URL), so not a page the window was
-// navigated to.
+// Whether url is the display's page, so not a page the window was navigated
+// to: the same scheme, host and port, and for a file: URL the same file (an
+// .html file dropped on the window is a file: URL too).
 export function sameSite(url: string, displayUrl: string): boolean {
   try {
     const a = new URL(url);
     const b = new URL(displayUrl);
-    return a.protocol === b.protocol && a.host === b.host;
+    if (a.protocol !== b.protocol || a.host !== b.host) return false;
+    return a.protocol !== "file:" || a.pathname === b.pathname;
   } catch {
     return false;
   }

@@ -125,3 +125,30 @@ test.describe("with the remote's port taken", () => {
     await expect(notice).toHaveCount(0);
   });
 });
+
+// A link, or a file dropped on the window, can't take the display elsewhere:
+// another page in its window would get the display's IPC. Nor can it open
+// windows of its own.
+test("the display stays on its page", async ({ karafriends, display }) => {
+  await expectSong1Started(display);
+  expect(
+    await display.evaluate(() => window.open("https://example.com/") === null),
+  ).toBe(true);
+
+  const page = display.url();
+  const windowUrl = () =>
+    karafriends.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.getURL(),
+    );
+  await display.evaluate((url) => {
+    window.location.href = url;
+  }, new URL("../remocon/index.html", page).href);
+  // A refused navigation leaves no trace to wait for: give it a moment.
+  // (Asked from the main process: Playwright waits on the display's page
+  // for the navigation that never comes.)
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  expect(await windowUrl()).toBe(page);
+  expect((await liveState(karafriends.remoconUrl)).currentSong?.name).toBe(
+    title(1),
+  );
+});

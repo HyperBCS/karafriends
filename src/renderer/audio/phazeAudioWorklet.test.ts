@@ -479,10 +479,17 @@ describe("the key change's vocoder", () => {
     );
     const quanta = song.length / QUANTUM;
     const vocoder = newVocoder();
+    // Per quantum, in the quickest of the seconds: a busy machine (a CI
+    // runner, the other tests) only ever slows a second down, so the
+    // quickest one is what the vocoder itself costs.
     const timed = (seconds: number, factor: number) => {
-      const started = performance.now();
-      for (let s = 0; s < seconds; s++) run(vocoder, song, song, factor);
-      return (performance.now() - started) / (seconds * quanta);
+      let quickest = Infinity;
+      for (let s = 0; s < seconds; s++) {
+        const started = performance.now();
+        run(vocoder, song, song, factor);
+        quickest = Math.min(quickest, performance.now() - started);
+      }
+      return quickest / quanta;
     };
     const freshShifted = timed(10, semitonesFactor(2));
     // Twenty minutes at key 0 (the vocoder is fed all along), then a minute

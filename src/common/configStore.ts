@@ -40,9 +40,22 @@ export interface ConfigStore {
 }
 
 // Writes config to filePath through a flushed temp file, so an interrupted
-// write or a power cut can't leave half a file.
+// write or a power cut can't leave half a file. It holds the logins, so
+// only this user may read it.
 function writeConfigFile(filePath: string, config: KarafriendsConfig) {
-  writeFileAtomic(filePath, stringify(config));
+  writeFileAtomic(filePath, stringify(config), { private: true });
+}
+
+// A config.yaml (or a copy of one) that older versions left readable by
+// everyone on the computer: only this user, from now on. Not on Windows,
+// whose user folders are their user's anyway.
+function makePrivate(filePath: string) {
+  if (process.platform === "win32") return;
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch (err) {
+    console.warn(`Couldn't make ${filePath} private:`, err);
+  }
 }
 
 // Why a file can't be read as settings. Not the parser's message: it quotes
@@ -106,6 +119,7 @@ function loadAtLaunch(filePath: string): {
   let text: string | null = null;
   const created = !fs.existsSync(filePath);
   if (!created) {
+    makePrivate(filePath);
     try {
       text = fs.readFileSync(filePath, { encoding: "utf8" });
     } catch (err) {
@@ -143,6 +157,7 @@ function loadAtLaunch(filePath: string): {
       const copy = `${filePath}.broken`;
       try {
         fs.copyFileSync(filePath, copy);
+        makePrivate(copy);
       } catch (copyErr) {
         console.error(`Failed to copy ${filePath} to ${copy}:`, copyErr);
       }

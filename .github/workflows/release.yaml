@@ -88,6 +88,16 @@ jobs:
           MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
           MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
         run: |
+          # Name what's missing, rather than failing at `security import`.
+          missing=""
+          for name in MACOS_NOTARIZATION_API_KEY_BASE64 MACOS_SIGNING_CERT_BASE64 MACOS_SIGNING_CERT_PASSWORD MACOS_KEYCHAIN_PASSWORD; do
+            if [[ -z "${!name}" ]]; then missing="$missing $name"; fi
+          done
+          if [[ -n "$missing" ]]; then
+            echo "::error::These repository secrets aren't set, so the Mac app can't be signed:$missing (see the README's Releasing)"
+            exit 1
+          fi
+
           NOTARIZATION_KEY_PATH=$RUNNER_TEMP/notarization_key.p8
           CERTIFICATE_PATH=$RUNNER_TEMP/signing_cert.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
@@ -110,15 +120,51 @@ jobs:
       - if: runner.os == 'Linux'
         run: scripts/checkLazyPipewire.sh native/index.node
       # The notarization key is only there on macOS; packager.js uses it only
-      # there.
+      # there. The key's ID and issuer, and the certificate's name, are
+      # optional secrets: packager.js falls back to the ones the project was
+      # set up with.
       - run: yarn package-prod
         env:
           PACKAGER_ARCH: ${{ matrix.arch }}
           NOTARIZATION_KEY_PATH: ${{ runner.temp }}/notarization_key.p8
+          NOTARIZATION_KEY_ID: ${{ secrets.MACOS_NOTARIZATION_KEY_ID }}
+          NOTARIZATION_ISSUER_ID: ${{ secrets.MACOS_NOTARIZATION_ISSUER_ID }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      # The zip as a user gets it: unzipped, the app is signed, notarized
+      # (with the ticket stapled), and Gatekeeper takes it. The renderer
+      # helper, where the mics open, has the microphone entitlement.
+      - name: Check the Mac app's signature
+        if: runner.os == 'macOS'
+        env:
+          ZIP: dist/${{ matrix.zip }}
+        run: |
+          check="$RUNNER_TEMP/check"
+          rm -rf "$check"
+          ditto -x -k "$ZIP" "$check"
+          app="$(find "$check" -maxdepth 2 -name '*.app' | head -n 1)"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          renderer="$app/Contents/Frameworks/karafriends Helper (Renderer).app"
+          if ! codesign -d --entitlements - --xml "$renderer" | grep -q "com.apple.security.device.audio-input"; then
+            echo "::error::The renderer helper has no microphone entitlement, so the mics would be silent"
+            exit 1
+          fi
+      # The Windows app is built with Steinberg's ASIO SDK, under its GPLv3
+      # option, so its source goes with the release.
+      - name: Zip the ASIO SDK's source
+        if: runner.os == 'Windows'
+        shell: bash
+        run: 7z a dist/asio-sdk-source.zip ./buildResources/asio/*
       - if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           files: dist/${{ matrix.zip }}
+          fail_on_unmatched_files: true
+      - if: github.event_name == 'release' && runner.os == 'Windows'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/asio-sdk-source.zip
           fail_on_unmatched_files: true
       - if: github.event_name != 'release'
         uses: actions/upload-artifact@v7

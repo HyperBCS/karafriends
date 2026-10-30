@@ -19,7 +19,7 @@ export const configStore = createConfigStore(
 );
 
 // KARAFRIENDS_LOCAL_ONLY=1 keeps the app off the network: the server listens
-// on 127.0.0.1 only and mDNS is skipped, so phones can't connect. Tests and
+// on 127.0.0.1 only, so phones can't connect. Tests and
 // automated checks use it so each new Electron copy (one per worktree) doesn't
 // raise a Windows Firewall prompt.
 export const LOCAL_ONLY = process.env.KARAFRIENDS_LOCAL_ONLY === "1";

@@ -286,6 +286,37 @@
   color: var(--kf-muted);
 }
 
+/* About's license or notices: plain text, sunken into the card as a
+   field is, scrolling on its own. Their lines are up to 80 characters, so
+   the type is monospace, sized to fit 80 to the box's width (a character
+   is about 0.6em wide), and no bigger than the labels'. Lines wrap only in
+   a box narrower than that at 1.25rem. */
+.settingsAboutBox {
+  container-type: inline-size;
+}
+
+.settingsAboutText {
+  max-height: min(40rem, 50vh);
+  margin: 0;
+  padding: var(--kf-space-4) var(--kf-space-5);
+  overflow-y: auto;
+  border: 0.125rem solid var(--kf-border-strong);
+  border-radius: var(--kf-radius-control);
+  background-color: var(--kf-field);
+  box-shadow: var(--kf-shadow-sunken);
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  /* Less the padding, the border and the scroll bar. */
+  font-size: clamp(1.25rem, (100cqi - 5rem) / 49, var(--kf-text-label));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settingsAboutText:focus-visible {
+  outline: 0.1875rem solid var(--kf-accent);
+  outline-offset: 0.1875rem;
+}
+
 /* A mic: its device, its two levels, its noise gate and Remove on one
    line, its status under them. */
 .settingsMic {

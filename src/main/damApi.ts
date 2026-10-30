@@ -27,6 +27,19 @@ const BASE_MINSEI_BODY = Object.entries(BASE_MINSEI_REQUEST)
   .map(([k, v]) => `${k}=${v}`)
   .join("&");
 
+// A request's own fields as the log shows them: without the login's user
+// code and token, which would sign anyone in as the host until DAM drops
+// them. (The log is in a console window, and gets pasted into bug reports.)
+const SECRET_FIELDS = new Set(["userCode", "authToken"]);
+function loggable(data: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      SECRET_FIELDS.has(key) ? "(hidden)" : value,
+    ]),
+  );
+}
+
 const MINSEI_HEADERS = {
   "Content-Type": "application/x-www-form-urlencoded",
   "User-Agent": "WindowsApplication",
@@ -101,7 +114,7 @@ export class MinseiAPI {
   post<T>(url: string, data: Record<string, string>): Promise<T> {
     const body = `${BASE_MINSEI_BODY}&${formBody(data)}`;
     console.debug(
-      `[minsei] curl ${this.baseURL}${url} -d '${JSON.stringify(body)}'`,
+      `[minsei] POST ${this.baseURL}${url} ${formBody(loggable(data))}`,
     );
     return http<T>(`${this.baseURL}${url}`, {
       method: "POST",
