@@ -67,14 +67,29 @@ export default function Settings(
   const header = (
     <header className="settingsHeader">
       <h1>Settings</h1>
-      <button
-        type="button"
-        className="kfButton"
-        onPointerDown={() => (closingFrom.current = actions.saveCount())}
-        onClick={close}
-      >
-        Close
-      </button>
+      <div className="settingsHeaderButtons">
+        {/* The main process asks first. In full screen, or without a
+            frame, it's the way out without a keyboard. */}
+        <button
+          type="button"
+          className="kfButton"
+          onClick={() => {
+            window.karafriends
+              .quit()
+              .catch((err) => console.error("Couldn't quit:", err));
+          }}
+        >
+          Quit karafriends
+        </button>
+        <button
+          type="button"
+          className="kfButton"
+          onPointerDown={() => (closingFrom.current = actions.saveCount())}
+          onClick={close}
+        >
+          Close
+        </button>
+      </div>
     </header>
   );
 

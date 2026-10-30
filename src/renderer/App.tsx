@@ -7,6 +7,7 @@ import "./ui.css";
 import "./App.css";
 import Announcements from "./Announcements";
 import Effects from "./Effects";
+import { watchIdleCursor } from "./idleCursor";
 import IdleScreen from "./IdleScreen";
 import { parseCustomUrl } from "./remoteAddress";
 import type { MicLevels } from "./MicrophoneSetting";
@@ -257,6 +258,20 @@ function App(props: { audio: KarafriendsAudio }) {
   >([]);
   const lastAnnouncementId = useRef(0);
   const idle = useLiveState((state) => !state?.currentSong);
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => window.karafriends.fullScreen.onChange(setFullScreen), []);
+
+  // In full screen, the mouse pointer hides when the mouse is still, unless
+  // Settings or the setup screen is up (index.css hides it).
+  const hideStillPointer = fullScreen && !settingsOpen && !setupOpen;
+  // Out of full screen, the window (which has no frame) moves by its top
+  // edge: windowDragBar in index.css.
+  useEffect(() => {
+    if (!hideStillPointer) return;
+    return watchIdleCursor(document, (hidden) =>
+      document.body.classList.toggle("pointerHidden", hidden),
+    );
+  }, [hideStillPointer]);
 
   const announce = useCallback((announcement: Announcement) => {
     const id = ++lastAnnouncementId.current;
@@ -562,6 +577,7 @@ function App(props: { audio: KarafriendsAudio }) {
 
   return (
     <div className="app">
+      {fullScreen ? null : <div className="windowDragBar" aria-hidden="true" />}
       <NoticeBar />
       <main className="appScreen">
         <div className="appStage">

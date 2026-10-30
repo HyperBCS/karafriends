@@ -31,14 +31,14 @@ The Linux zip is for 64-bit Linux as old as Ubuntu 22.04, Linux Mint 21 or Debia
 
 ### First launch
 
-- The app opens full-screen on the main display. Plug in the TV before starting it, or move the window there.
+- The app opens full-screen on the main display. Plug in the TV before starting it, or move the window there. In full screen the mouse pointer hides when the mouse is still (not while Settings is open). On a Mac, Control-Command-F (View › Full Screen in the menu bar) leaves full screen and goes back; out of it, the window has no frame, so drag it by its top edge.
 - The first start downloads ffmpeg and yt-dlp (for YouTube and Niconico songs), so be online and give it a minute. The TV says "Getting YouTube ready…" with how far along it is meanwhile.
 - Windows asks whether to let karafriends through the firewall. Allow it on private networks, or phones can't connect.
 - The first start (no `config.yaml` yet, so deleting it starts over) opens the setup screen: the DAM and Joysound logins, each checked as you enter it (or Import config, with a file from another karaoke PC's Export config), then the mics and speakers, then an admin password. Each step can be skipped, and Skip setup leaves it. After that, the app opens on the idle screen, with or without a login; Settings has everything the setup screen had.
 
 ### Settings
 
-Open Settings with the gear on the idle screen, or press `S`. Escape or Close puts it away. Its tabs run down the left: Accounts (the logins), Party (phones, queue, admin password), Sound (sound and microphones), Display, and Advanced (downloads, tools, config file, and About: the version, the license and the third-party notices); the arrow keys move between them, and Settings opens on the last one. A dot on a tab means something there needs a look. Each field saves when you leave it.
+Open Settings with the gear on the idle screen, or press `S`. Escape or Close puts it away. **Quit karafriends**, next to Close, asks first, then quits (the queue is kept for next time). Its tabs run down the left: Accounts (the logins), Party (phones, queue, admin password), Sound (sound and microphones), Display, and Advanced (downloads, tools, config file, and About: the version, the license and the third-party notices); the arrow keys move between them, and Settings opens on the last one. A dot on a tab means something there needs a look. Each field saves when you leave it.
 
 - **DAM login** and **Joysound login**: your username (for Joysound, your email) and password. Test login signs in once and says whether it worked. DAM and Joysound only answer from a Japanese IP address: outside Japan, run a VPN to Japan on this computer. Without a login, only YouTube and Niconico songs work.
   **Use DAM** and **Use Joysound** turn a catalog off whatever its login (`damEnabled` and `joysoundEnabled` in `config.yaml`, both on by default): karafriends doesn't sign in to it, and phones don't show it. Each login is checked at launch and whenever it (or its switch) changes, and a line under its title says how it stands. Its catalog (DAM's songs, or Joysound's) is on only once its login has signed in: until then, phones don't show it (no results, no song pages, no Browse) and say why. If DAM or Joysound can't be reached (no connection, or no Japanese IP address: the VPN is off), the TV says so ("Turn on the VPN to Japan"), and karafriends tries again by itself, after 10 seconds, 30, then every minute, so turning the VPN on is enough. A refused login (a wrong password, a Joysound account that isn't a paid member, or another TV app holding Joysound's link) stays off until it's changed, Test login works, or the link is switched; the TV says why.
@@ -73,6 +73,7 @@ The settings live in `config.yaml` in the app's data folder (`%APPDATA%\karafrie
 
 - `Q`: show or hide the up-next strip under a playing song.
 - `S`: open Settings. Escape closes it.
+- Control-Command-F, on a Mac: leave or go back to full screen.
 
 ## Building
 

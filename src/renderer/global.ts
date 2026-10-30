@@ -1,4 +1,9 @@
-import type { DisplayAbout, DisplayApi, DisplayFiles } from "../common/ipc";
+import type {
+  DisplayAbout,
+  DisplayApi,
+  DisplayFiles,
+  DisplayFullScreen,
+} from "../common/ipc";
 
 // On Linux: the sound system the mics use ("Sound system: PipeWire
 // 1.6.2"), the buffer sizes in frames it takes for the mics and their
@@ -97,6 +102,10 @@ declare global {
       api: DisplayApi;
       // About in Settings.
       about: DisplayAbout;
+      // Whether the window is in full screen (the mouse pointer hides then).
+      fullScreen: DisplayFullScreen;
+      // Quits karafriends, once the host says so in a dialog.
+      quit(): Promise<void>;
       nativeAudio: NativeAudio;
     };
   }

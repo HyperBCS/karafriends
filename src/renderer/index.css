@@ -51,3 +51,33 @@ code {
   width: 0;
   display: inline-block;
 }
+
+/* The mouse pointer, while the mouse is still in full screen (App.tsx). */
+body.pointerHidden,
+body.pointerHidden * {
+  cursor: none !important;
+}
+
+/* The window has no frame, so out of full screen it moves by a strip along
+   its top (App.tsx shows it then). Under the page, so what's on top of it
+   still takes clicks: the drag area is worked out from where the strip is,
+   less the controls, whatever covers it. */
+.windowDragBar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: -1;
+  height: 28px;
+  -webkit-app-region: drag;
+}
+
+button,
+input,
+select,
+textarea,
+a,
+[role="tab"],
+[role="slider"] {
+  -webkit-app-region: no-drag;
+}
