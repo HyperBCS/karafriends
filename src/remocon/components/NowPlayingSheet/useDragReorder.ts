@@ -212,9 +212,14 @@ export default function useDragReorder(
         if (to < 0 || to >= latest.current.count) return;
         // React may move this row's <li> to its new place, which drops the
         // focus; the handle is the same element there, so focus it again.
+        // Only if the focus was dropped: by the next frame (later still on a
+        // busy phone) it may have gone on to another song's handle.
         const handle = e.currentTarget;
         latest.current.onMove(index, to);
-        requestAnimationFrame(() => handle.focus());
+        requestAnimationFrame(() => {
+          const focused = document.activeElement;
+          if (!focused || focused === document.body) handle.focus();
+        });
       },
     };
   }, []);
