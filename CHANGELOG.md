@@ -96,6 +96,7 @@ The first release published since the fork, so it also carries 0.1.0's changes b
 ### License
 
 - karafriends is free software under the GNU General Public License, version 3 (`LICENSE`). The Windows app is built with Steinberg's ASIO SDK under its GPLv3 option, and each release has the SDK's source beside the Windows zip.
+- The app ships its license and the notices of everything it's built with (`LICENSE.txt` and `THIRD_PARTY_NOTICES.txt` in `resources/app/build/prod/`). Settings › Advanced › About shows the version, both texts and a link to the source. The build stops on a dependency with no license or one a GPLv3 app can't ship.
 
 ### Fixes
 
