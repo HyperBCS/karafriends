@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- With a long queue, the idle screen lists only the next songs that fit, then how many more, and shows how many songs are queued. It used to run off the screen.
+
 ## 0.2.1 (2026-10-30)
 
 - The mouse pointer hides in full screen after 3 seconds without moving. It stays visible while Settings is open.

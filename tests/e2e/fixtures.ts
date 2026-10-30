@@ -99,6 +99,9 @@ type Options = {
   occupyPort: boolean;
   // More environment variables for the app, e.g. KARAFRIENDS_YTDLP_PATH.
   appEnv: Record<string, string>;
+  // The display never starts a song (holdIdle.cjs): the idle screen stays up
+  // over a seeded queue, for as long as the test looks at it.
+  holdIdle: boolean;
   // The display's console errors (and uncaught exceptions) a test expects,
   // e.g. a song that fails to play (see anyOf). Any other fails the test.
   allowDisplayErrors: RegExp | null;
@@ -378,11 +381,13 @@ export function appLaunch({
   userDataDir,
   port,
   appEnv = {},
+  holdIdle = false,
 }: {
   tempDir: string;
   userDataDir: string;
   port: number;
   appEnv?: Record<string, string>;
+  holdIdle?: boolean;
 }): { env: Record<string, string>; args: string[] } {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -420,6 +425,7 @@ export function appLaunch({
     ...(process.platform === "linux"
       ? ["--no-sandbox", "--enable-unsafe-swiftshader"]
       : []),
+    ...(holdIdle ? ["-r", path.join(__dirname, "holdIdle.cjs")] : []),
     MAIN_ENTRY,
   ];
   return { env, args };
@@ -726,6 +732,7 @@ async function launchKarafriends(
           : {}),
         ...options.appEnv,
       },
+      holdIdle: options.holdIdle,
     });
     app = await electron.launch({
       args,
@@ -814,6 +821,7 @@ export const test = base.extend<Options & Fixtures>({
   catalogs: ["dam,joysound", { option: true }],
   occupyPort: [false, { option: true }],
   appEnv: [{}, { option: true }],
+  holdIdle: [false, { option: true }],
   allowDisplayErrors: [null, { option: true }],
 
   karafriends: async (
@@ -827,6 +835,7 @@ export const test = base.extend<Options & Fixtures>({
       catalogs,
       occupyPort,
       appEnv,
+      holdIdle,
       allowDisplayErrors,
     },
     use,
@@ -843,6 +852,7 @@ export const test = base.extend<Options & Fixtures>({
         catalogs,
         occupyPort,
         appEnv,
+        holdIdle,
       },
       testInfo,
     );
