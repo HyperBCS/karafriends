@@ -176,7 +176,7 @@ kill -0 "$app_pid" 2>/dev/null || {
 step "the app starts hidden and serves the remote"
 
 # 4. The tools: yt-dlp is the standalone build, which brings its own Python,
-# and ffmpeg BtbN's static build (src/common/externalResourcesPlan.ts).
+# and ffmpeg Jellyfin's portable static build (src/common/externalResourcesPlan.ts).
 tools="$profile/externalResources"
 if [[ "${SMOKE_TOOLS:-}" == "download" ]]; then
   for _ in $(seq 300); do

@@ -83,6 +83,7 @@ The first release published since the fork, so it also carries 0.1.0's changes b
 - The release zips unzip into a `karafriends-<platform>` folder.
 - macOS: the signed app's mics work. Under the hardened runtime a process needs the microphone entitlement to hear anything, and the display's renderer, where the mics open, didn't have it. macOS says why karafriends wants the microphone when it asks.
 - Linux: the display window has karafriends' icon.
+- ffmpeg is one pinned build per platform (FFmpeg 9.0.2 on Windows and macOS, Jellyfin's portable 8.1.3 on Linux), and yt-dlp is still the latest release. Every tool download must match its SHA-256 before it's unpacked or run; one that doesn't is deleted, and the tool already there stays. Linux points ffmpeg at the system's CA certificates. Updating from an earlier version downloads ffmpeg once more. The Windows build checks the ASIO SDK against a pinned checksum.
 - The README says what Windows SmartScreen asks on a first start, and that closing the console window beside the app closes karafriends.
 
 ### Development
