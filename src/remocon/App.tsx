@@ -17,7 +17,7 @@ import { TopBar } from "./components/ui";
 import useCatalog from "./hooks/useCatalog";
 import useUserIdentity from "./hooks/useUserIdentity";
 import { t } from "./i18n";
-import { MdExplore, MdHistory, MdHome, MdSettings } from "./icons";
+import { MdHistory, MdHome, MdLeaderboard, MdSettings } from "./icons";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
 import BrowsePage, { BrowseFeature, BrowseSongList } from "./pages/BrowsePage";
@@ -74,7 +74,7 @@ const PLACES = [
     place: "browse",
     to: BROWSE_PAGES.browse,
     label: "nav.browse",
-    icon: <MdExplore />,
+    icon: <MdLeaderboard />,
   },
   {
     place: "history",
