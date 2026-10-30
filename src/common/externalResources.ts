@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import crypto from "crypto";
 import fs, { promises as fsp } from "fs";
 import os from "os";
 import path from "path";
@@ -14,15 +15,16 @@ import { toolCommand } from "./downloadFailure";
 import {
   AssetPlan,
   assetPlans,
-  canSkipUnvalidated,
-  checkedRecently,
-  conditionalHeaders,
+  cachedCopyStays,
   extractorFileName,
-  fromOtherSource,
-  isStale,
+  latestReleaseUrl,
   parseToolVersion,
+  releaseAssetUrl,
+  releaseTag,
   ResourcePaths,
   resourcePathsFor,
+  sha256FromSums,
+  type Source,
   TOOL_PATH_ENV,
   toolOverrides,
   toolStatus,
@@ -32,11 +34,14 @@ import { writeFileAtomic } from "./writeFileAtomic";
 
 // External runtime binaries are downloaded lazily on the user's machine and
 // cached here so they are fetched once and reused across launches, instead of
-// being bundled into every build. They still need to stay current: the upstream
-// tools update frequently (some are pinned to a "latest" release), so on each
-// launch we ask the server whether a newer version exists and refresh only when
-// it does. The archive extractor is the only piece that ships with the app (see
-// extraResources), because we need it to unpack these downloads at runtime.
+// being bundled into every build. ffmpeg is a pinned build, downloaded once
+// (and again by Update tools); yt-dlp has to keep up with YouTube, so each
+// launch asks which release is the latest and downloads it when it's new.
+// Every download must match its SHA-256 (the pinned one, or the one its
+// release publishes) before it's unpacked or run; one that doesn't is
+// deleted, and the copy already in the cache stays. The archive extractor is
+// the only piece that ships with the app (see extraResources), because we
+// need it to unpack these downloads at runtime.
 //
 // The pure planning and decision logic lives in externalResourcesPlan.ts.
 // This module does the downloads, through createToolsManager, which takes
@@ -56,6 +61,11 @@ export interface AssetResponse {
   body: NodeJS.ReadableStream | null;
 }
 
+export interface FetchOptions {
+  // "manual": a redirect is the answer (its Location header), not followed.
+  redirect?: "manual";
+}
+
 export interface ToolsDeps {
   platform: NodeJS.Platform;
   // process.arch: which build of each tool to download.
@@ -67,8 +77,8 @@ export interface ToolsDeps {
   // KARAFRIENDS_YTDLP_PATH and KARAFRIENDS_FFMPEG_PATH, if set: those tools
   // are used as they are, and never downloaded.
   env: Record<string, string | undefined>;
-  // One GET with these headers. Rejects on a network error or a timeout.
-  fetch(url: string, headers: Record<string, string>): Promise<AssetResponse>;
+  // One GET. Rejects on a network error or a timeout.
+  fetch(url: string, options: FetchOptions): Promise<AssetResponse>;
   // Runs file with args; resolves with its stdout, or rejects if it can't
   // start, fails or runs longer than timeoutMs.
   exec(
@@ -79,8 +89,11 @@ export interface ToolsDeps {
   now(): number;
   // Where downloads are unpacked before they move into the cache.
   tmpDir: string;
-  // fetchAsset's retries (promise-retry's options).
+  // fetchOk's retries (promise-retry's options).
   retry?: { retries: number; minTimeout: number; factor?: number };
+  // Where a tool comes from instead of assetPlans' source: a test's own
+  // build, with its checksum.
+  sources?: Partial<Record<AssetPlan["id"], Source>>;
   // A first download (a tool that isn't in the cache yet) as it goes: how
   // far along all of them are, 0 to 100 (null while a size is unknown),
   // then null once none is running. Not for refreshes: a cached copy works
@@ -120,17 +133,54 @@ const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 
 const DEFAULT_RETRY = { retries: 5, minTimeout: 1000, factor: 2 };
 
+// A first download (see onFirstDownload): bytes so far, and in all (null
+// until the server says, or if it doesn't).
+interface FirstDownload {
+  received: number;
+  total: number | null;
+  done: boolean;
+}
+
+// The file a download fetches, and the SHA-256 it must have.
+interface Target {
+  url: string;
+  sha256: string;
+}
+
+// The tools' names, for the host.
+const TOOL_NAMES: Record<AssetPlan["id"], string> = {
+  ytdlp: "yt-dlp",
+  ffmpeg: "ffmpeg",
+};
+
+// A short text body (a checksums file), whole. Fails past maxBytes.
+async function readText(
+  res: AssetResponse,
+  url: string,
+  maxBytes = 1024 * 1024,
+): Promise<string> {
+  if (res.body === null) throw new Error(`${url} sent no body`);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of res.body) {
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    size += buffer.length;
+    if (size > maxBytes) {
+      (res.body as Readable).destroy?.();
+      throw new Error(`${url} is too big for a checksums file`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export function createToolsManager(deps: ToolsDeps): ToolsManager {
   const { cacheDir } = deps;
 
-  // The first downloads, by tool: bytes so far, and in all (null if the
-  // server didn't say). One being unpacked counts as all received; one
-  // that's done stays counted, so the percentage never goes back, until
-  // none is running.
-  const firstDownloads = new Map<
-    AssetPlan["id"],
-    { received: number; total: number | null; done: boolean }
-  >();
+  // The first downloads, by tool. One being unpacked counts as all
+  // received; one that's done stays counted, so the percentage never goes
+  // back, until none is running.
+  const firstDownloads = new Map<AssetPlan["id"], FirstDownload>();
   let lastPercent: number | null | undefined;
   const reportFirstDownloads = () => {
     if (!deps.onFirstDownload) return;
@@ -174,32 +224,63 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     }
   };
 
-  // Through a flushed temp file: a torn versions.json would lose every
-  // validator, and the tools would be downloaded again.
+  // Through a flushed temp file: a torn versions.json would lose where the
+  // tools came from, and they would be downloaded again.
   const writeVersions = (versions: Versions): void => {
     writeFileAtomic(versionsFile, JSON.stringify(versions, null, 2));
   };
 
-  // A GET that answers 200 (changed, or a first download) or 304
-  // (unchanged), retried with backoff. Some hosts (e.g. CDNs that
-  // rate-limit certain IPs) reset the connection instead of answering with
-  // an error, so a thrown error is retried too: promise-retry by itself
-  // only retries what is passed to retry().
-  const fetchAsset = (
+  // A GET that answers 200 (or, with redirect "manual", a redirect),
+  // retried with backoff. Some hosts (e.g. CDNs that rate-limit certain
+  // IPs) reset the connection instead of answering with an error, so a
+  // thrown error is retried too: promise-retry by itself only retries what
+  // is passed to retry().
+  const fetchOk = (
     url: string,
-    headers: Record<string, string>,
+    options: FetchOptions = {},
   ): Promise<AssetResponse> =>
     promiseRetry(async (retry) => {
       let res: AssetResponse;
       try {
-        res = await deps.fetch(url, headers);
+        res = await deps.fetch(url, options);
       } catch (err) {
         return retry(err);
       }
-      if (res.ok || res.status === 304) return res;
+      const redirect =
+        options.redirect === "manual" && res.status >= 300 && res.status < 400;
+      if (res.ok || redirect) return res;
       (res.body as Readable | null)?.destroy?.();
       return retry(new Error(`${res.status} from ${url}`));
     }, deps.retry ?? DEFAULT_RETRY);
+
+  // The tag of repo's latest release, from where its "latest" page
+  // redirects.
+  const latestTag = async (repo: string): Promise<string> => {
+    const url = latestReleaseUrl(repo);
+    const res = await fetchOk(url, { redirect: "manual" });
+    (res.body as Readable | null)?.destroy?.();
+    const tag = releaseTag(res.headers.get("location"), repo);
+    if (tag === null) {
+      throw new Error(`${url} didn't say which release is the latest`);
+    }
+    return tag;
+  };
+
+  // The SHA-256 a release's checksums file gives its asset.
+  const releaseSha256 = async (
+    source: Extract<Source, { kind: "latestRelease" }>,
+    tag: string,
+  ): Promise<string> => {
+    const url = releaseAssetUrl(source.repo, tag, source.sums);
+    const sha256 = sha256FromSums(
+      await readText(await fetchOk(url), url),
+      source.asset,
+    );
+    if (sha256 === null) {
+      throw new Error(`${url} has no checksum for ${source.asset}`);
+    }
+    return sha256;
+  };
 
   // 7za e: unpacks flat, so the binary is at the top of outDir. With only,
   // just the files of that name, from any folder (-r).
@@ -215,35 +296,47 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     );
   };
 
-  // Download an asset into `tmpDir`, unpack it per its plan, and return the
-  // path of the finished binary to move into place.
-  // onChunk: each chunk's size, as it comes.
+  // Download an asset into `tmpDir`, check it against its SHA-256, unpack
+  // it per its plan, and return the path of the finished binary to move
+  // into place. onChunk: each chunk's size, as it comes.
   const materialize = async (
     plan: AssetPlan,
+    target: Target,
     tmpDir: string,
     res: AssetResponse,
     onChunk?: (bytes: number) => void,
   ): Promise<string> => {
-    if (res.body === null) throw new Error(`${plan.url} sent no body`);
+    if (res.body === null) throw new Error(`${target.url} sent no body`);
+    const hash = crypto.createHash("sha256");
     const counter = new Transform({
       transform(chunk: Buffer, _encoding, done) {
+        hash.update(chunk);
         onChunk?.(chunk.length);
         done(null, chunk);
       },
     });
-    if (plan.download.kind === "binary") {
-      // Named as in the cache: Windows only runs a .exe.
-      const bin = path.join(tmpDir, path.basename(plan.dest));
-      await pipeline(res.body, counter, fs.createWriteStream(bin));
-      return bin;
-    }
-
-    const { archiveName, steps, binary } = plan.download;
-    await pipeline(
-      res.body,
-      counter,
-      fs.createWriteStream(path.join(tmpDir, archiveName)),
+    // A binary is named as in the cache: Windows only runs a .exe.
+    const file = path.join(
+      tmpDir,
+      plan.download.kind === "binary"
+        ? path.basename(plan.dest)
+        : plan.download.archiveName,
     );
+    await pipeline(res.body, counter, fs.createWriteStream(file));
+    // Before it's unpacked or run. The temp folder, and the download in
+    // it, are removed whatever happens.
+    const sha256 = hash.digest("hex");
+    if (sha256 !== target.sha256) {
+      console.error(
+        `${target.url} has SHA-256 ${sha256}, not ${target.sha256}`,
+      );
+      throw new Error(
+        `the downloaded ${TOOL_NAMES[plan.id]} doesn't match its checksum, so it wasn't installed`,
+      );
+    }
+    if (plan.download.kind === "binary") return file;
+
+    const { steps, binary } = plan.download;
     for (const step of steps) {
       await extract(
         path.join(tmpDir, step.input),
@@ -264,32 +357,58 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     force: boolean,
   ): Promise<boolean> => {
     const exists = fs.existsSync(plan.dest);
-    const otherSource = fromOtherSource(versions[plan.id], plan.url);
-    const stored = otherSource ? undefined : versions[plan.id];
-    const stale =
-      exists && !otherSource ? isStale(mtimeMs(plan.dest), deps.now()) : true;
-
-    // Without a stored validator we cannot make a conditional request, so a
-    // plain GET would re-download every launch. Skip until the cached copy
-    // is stale.
-    if (!force && canSkipUnvalidated(exists, stored, stale)) {
-      return false;
-    }
-    // ffmpeg is asked about only every so often.
     if (
       !force &&
-      exists &&
-      checkedRecently(stored, mtimeMs(plan.dest), deps.now(), plan.checkEveryMs)
+      cachedCopyStays(
+        exists,
+        versions[plan.id],
+        plan.source,
+        mtimeMs(plan.dest),
+        deps.now(),
+      )
     ) {
       return false;
     }
+    // A first download says how it goes (onFirstDownload), from before its
+    // release is looked up: the percentage waits for every size, so it
+    // never goes back.
+    const first = exists ? null : { received: 0, total: null, done: false };
+    if (first) {
+      firstDownloads.set(plan.id, first);
+      reportFirstDownloads();
+    }
+    try {
+      return await downloadAsset(plan, versions, force, exists, first);
+    } finally {
+      if (first) {
+        first.done = true;
+        reportFirstDownloads();
+      }
+    }
+  };
 
+  // ensureAsset's download: which file, fetched, checked, unpacked, tried
+  // and moved into place.
+  const downloadAsset = async (
+    plan: AssetPlan,
+    versions: Versions,
+    force: boolean,
+    exists: boolean,
+    first: FirstDownload | null,
+  ): Promise<boolean> => {
+    let target: Target;
     let res: AssetResponse;
     try {
-      res = await fetchAsset(
-        plan.url,
-        force ? {} : conditionalHeaders(exists, stored),
-      );
+      if (plan.source.kind === "pinned") {
+        target = { url: plan.source.url, sha256: plan.source.sha256 };
+      } else {
+        const tag = await latestTag(plan.source.repo);
+        const url = releaseAssetUrl(plan.source.repo, tag, plan.source.asset);
+        // The cache has this release already.
+        if (!force && exists && versions[plan.id]?.url === url) return false;
+        target = { url, sha256: await releaseSha256(plan.source, tag) };
+      }
+      res = await fetchOk(target.url);
     } catch (err) {
       // Offline or the server is unreachable. Keep whatever we already
       // have; only fail if there is nothing cached to fall back on.
@@ -302,38 +421,18 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       throw err;
     }
 
-    if (res.status === 304) {
-      const gated = plan.checkEveryMs !== undefined;
-      if (versions[plan.id]?.url === plan.url && !gated) return false;
-      // The URL, if it was recorded before URLs were, and when it was
-      // confirmed.
-      versions[plan.id] = {
-        ...versions[plan.id],
-        url: plan.url,
-        ...(gated && { checkedAt: deps.now() }),
-      };
-      return true;
-    }
-
     const tmpDir = fs.mkdtempSync(
       path.join(deps.tmpDir, "karafriends_externalResources"),
     );
-    // A first download says how it goes (onFirstDownload).
-    const first = exists
-      ? null
-      : {
-          received: 0,
-          total: Number(res.headers.get("content-length")) || null,
-          done: false,
-        };
     if (first) {
-      firstDownloads.set(plan.id, first);
+      first.total = Number(res.headers.get("content-length")) || null;
       reportFirstDownloads();
     }
     let version: string | null;
     try {
       const src = await materialize(
         plan,
+        target,
         tmpDir,
         res,
         first
@@ -364,19 +463,13 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
       throw err;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (first) {
-        first.done = true;
-        reportFirstDownloads();
-      }
     }
 
     versions[plan.id] = {
-      etag: res.headers.get("etag") ?? undefined,
-      lastModified: res.headers.get("last-modified") ?? undefined,
       version,
       updatedAt: deps.now(),
-      url: plan.url,
-      checkedAt: deps.now(),
+      url: target.url,
+      sha256: target.sha256,
     };
     return true;
   };
@@ -412,9 +505,12 @@ export function createToolsManager(deps: ToolsDeps): ToolsManager {
     fs.existsSync(resourcePaths.ffmpeg) && fs.existsSync(resourcePaths.ytdlp);
 
   const doEnsure = async (force: boolean): Promise<void> => {
-    const plans = assetPlans(deps.platform, deps.arch, resourcePaths).filter(
-      (plan) => !(plan.id in overrides),
-    );
+    const plans = assetPlans(deps.platform, deps.arch, resourcePaths)
+      .filter((plan) => !(plan.id in overrides))
+      .map((plan) => ({
+        ...plan,
+        source: deps.sources?.[plan.id] ?? plan.source,
+      }));
     const versions = readVersions();
     await Promise.all(plans.map((plan) => removeLeftovers(plan.dest)));
 
@@ -651,7 +747,8 @@ function tools(): ToolsManager {
     cacheDir: path.join(app.getPath("userData"), "externalResources"),
     extractorPath: path.join(extractorDir, extractorFileName(process.platform)),
     env: process.env,
-    fetch: (url, headers) => httpFetch(url, { headers, timeoutMs: SILENCE_MS }),
+    fetch: (url, options) =>
+      httpFetch(url, { redirect: options.redirect, timeoutMs: SILENCE_MS }),
     exec: async (file, args, options) =>
       (
         await execFileAsync(file, args, {
