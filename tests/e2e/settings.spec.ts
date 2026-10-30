@@ -720,6 +720,103 @@ test("a tab with something to look at gets a dot, until it's put right", async (
   }
 });
 
+test("About says the version, shows the license and the third-party notices, and opens the source", async ({
+  karafriends,
+  display,
+}) => {
+  const { app } = karafriends;
+  // The source's page goes to a list, not the system's browser: the test
+  // checks the list took its place before anything is clicked.
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = [];
+    Object.assign(globalThis, { openedExternally: opened });
+    shell.openExternal = async (url: string) => {
+      opened.push(url);
+    };
+  });
+  const openedExternally = () =>
+    app.evaluate(
+      () => (globalThis as { openedExternally?: string[] }).openedExternally,
+    );
+  expect(await openedExternally()).toEqual([]);
+  expect(
+    await app.evaluate(({ shell }) => shell.openExternal.toString()),
+  ).toContain("opened.push");
+
+  await openTab(display, "Advanced");
+  const about = display.getByRole("region", { name: "About" });
+  // What the main process says. (Started on build/prod/main/index.js, as
+  // here, Electron gives its own version; a packaged app, its package's.)
+  const version = await app.evaluate(({ app }) => app.getVersion());
+  await expect(about).toContainText(`karafriends ${version}`);
+  await expect(about).toContainText("Free software under the GNU GPL v3");
+
+  // The notices, in a box of their own, as the build wrote them.
+  const noticesButton = about.getByRole("button", {
+    name: "Third-party notices",
+  });
+  await expect(noticesButton).toHaveAttribute("aria-expanded", "false");
+  await noticesButton.click();
+  await expect(noticesButton).toHaveAttribute("aria-expanded", "true");
+  const notices = about.getByRole("region", { name: "Third-party notices" });
+  const packageVersion = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"),
+  ).version;
+  await expect(notices).toContainText(
+    `karafriends ${packageVersion}: third-party notices`,
+  );
+  for (const shipped of [
+    /\nreact 19\.[\d.]+\n {2}License: MIT\n/,
+    /\ncpal [\d.]+\n {2}License: Apache-2.0\n/,
+    /\nNoto Serif JP and Noto Serif KR/,
+    /\nFont Awesome Free 5\n {2}License: CC-BY-4.0\n/,
+    /\nmecab-ipadic /,
+    /LICENSES\.chromium\.html/,
+  ]) {
+    await expect(notices).toContainText(shipped);
+  }
+  if (process.platform === "win32") {
+    await expect(notices).toContainText(
+      "ASIO is a registered trademark of Steinberg Media Technologies GmbH.",
+    );
+  }
+  // It scrolls, and the keys scroll it.
+  await notices.focus();
+  await display.keyboard.press("End");
+  await expect
+    .poll(() => notices.evaluate((box) => box.scrollTop))
+    .toBeGreaterThan(0);
+
+  // The license takes its place; pressed again, it closes.
+  const licenseButton = about.getByRole("button", { name: "License" });
+  await licenseButton.click();
+  await expect(notices).toHaveCount(0);
+  await expect(noticesButton).toHaveAttribute("aria-expanded", "false");
+  const license = about.getByRole("region", { name: "License" });
+  await expect(license).toContainText("GNU GENERAL PUBLIC LICENSE");
+  await expect(license).toContainText("Version 3, 29 June 2007");
+  await licenseButton.click();
+  await expect(license).toHaveCount(0);
+
+  // Only those two, by name: never a path.
+  expect(
+    await display.evaluate(() =>
+      (
+        window as unknown as {
+          karafriends: {
+            about: { readText(which: string): Promise<string | null> };
+          };
+        }
+      ).karafriends.about.readText("../../package.json"),
+    ),
+  ).toBeNull();
+
+  await about.getByRole("button", { name: "Source code" }).click();
+  await expect
+    .poll(openedExternally)
+    .toEqual(["https://github.com/HyperBCS/karafriends"]);
+});
+
 test.describe("the pitch bars", () => {
   test("a DAM song without scoring data shows none, and no error", async ({
     karafriends,
