@@ -26,6 +26,97 @@ function bundleExtractor() {
   }
 }
 
+// Signed and notarized when the notarization key is given (the Release
+// workflow always gives it); a local build without the Developer ID
+// certificate is left unsigned, which runs on the building Mac. The key's
+// ID and issuer, and the certificate's name, can be given too (the Release
+// workflow passes its secrets); without them, the ones the project was set
+// up with.
+function macSigning() {
+  const keyPath = process.env.NOTARIZATION_KEY_PATH;
+  if (!keyPath) {
+    console.log("NOTARIZATION_KEY_PATH isn't set: the app is left unsigned.");
+    return {};
+  }
+  // Otherwise the app is signed, then notarytool fails minutes later with
+  // "The file couldn't be opened because it doesn't exist".
+  if (!fs.existsSync(keyPath)) {
+    throw new Error(
+      `NOTARIZATION_KEY_PATH is ${keyPath}, which doesn't exist. ` +
+        "Unset it for an unsigned build.",
+    );
+  }
+  return {
+    osxNotarize: {
+      appleApiKey: keyPath,
+      appleApiKeyId: process.env.NOTARIZATION_KEY_ID || "Z744X6G756",
+      appleApiIssuer:
+        process.env.NOTARIZATION_ISSUER_ID ||
+        "69a6de7c-6a99-47e3-e053-5b8c7c11a4d1",
+    },
+    osxSign: {
+      identity:
+        process.env.MACOS_SIGNING_IDENTITY ||
+        "Developer ID Application: Brandon Smith (JH8AT59Q63)",
+      // The mics open in the display's renderer, whose preload loads the
+      // native module. osx-sign gives a renderer helper only JIT, and under
+      // the hardened runtime a process without the audio-input entitlement
+      // hears nothing, so the renderer helper gets it too. Every other file
+      // keeps osx-sign's defaults (the app's own include audio-input).
+      optionsForFile: (filePath) =>
+        filePath.includes("(Renderer).app")
+          ? {
+              entitlements: [
+                "com.apple.security.cs.allow-jit",
+                "com.apple.security.device.audio-input",
+              ],
+            }
+          : undefined,
+    },
+  };
+}
+
+// Zips dist/karafriends-<platform>-<arch>/ into a .zip beside it, holding
+// karafriends-<platform>-<arch>/ (not dist/...). On macOS with ditto, as
+// Apple recommends: it keeps the app's framework symlinks and extended
+// attributes, which a signed app's seal depends on. Elsewhere with the
+// bundled 7za.
+function zipFolder(output) {
+  const zip = `${output}.zip`;
+  // `7za a` adds to an existing archive, so a zip left from an earlier run
+  // would keep files this build doesn't have.
+  fs.rmSync(zip, { force: true });
+  const [command, args] =
+    process.platform === "darwin"
+      ? [
+          "ditto",
+          [
+            "-c",
+            "-k",
+            "--sequesterRsrc",
+            "--keepParent",
+            path.basename(output),
+            path.basename(zip),
+          ],
+        ]
+      : [
+          sevenBin.path7za,
+          ["a", "-r", path.basename(zip), path.basename(output)],
+        ];
+  const zipped = spawnSync(command, args, {
+    cwd: path.dirname(output),
+    stdio: "inherit",
+  });
+  // A zipper that couldn't start, or failed part way, fails the release.
+  if (zipped.error) throw zipped.error;
+  if (zipped.status !== 0) {
+    throw new Error(
+      `${path.basename(command)} exited with ${zipped.status ?? zipped.signal} while zipping ${output}`,
+    );
+  }
+  return zip;
+}
+
 (async () => {
   bundleExtractor();
   const buildFiles = new Set([
@@ -50,47 +141,17 @@ function bundleExtractor() {
     ...(process.platform === "darwin" && {
       appBundleId: "party.karafriends",
       icon: "appIcons/icon.icns",
-      // Signed and notarized when the notarization key is given (the Release
-      // workflow always gives it); a local build without the Developer ID
-      // certificate is left unsigned, which runs on the building Mac.
-      ...(process.env.NOTARIZATION_KEY_PATH
-        ? {
-            osxNotarize: {
-              appleApiKey: process.env.NOTARIZATION_KEY_PATH,
-              appleApiKeyId: "Z744X6G756",
-              appleApiIssuer: "69a6de7c-6a99-47e3-e053-5b8c7c11a4d1",
-            },
-            osxSign: {
-              identity: "Developer ID Application: Brandon Smith (JH8AT59Q63)",
-            },
-          }
-        : (console.log(
-            "NOTARIZATION_KEY_PATH isn't set: the app is left unsigned.",
-          ),
-          {})),
+      // What macOS says when it asks for the microphone.
+      extendInfo: {
+        NSMicrophoneUsageDescription:
+          "karafriends plays your microphones through the speakers while you sing.",
+      },
+      ...macSigning(),
     }),
     ...(process.platform === "win32" && {
       icon: "appIcons/icon.ico",
     }),
   });
   console.log(`Built ${output}. Zipping...`);
-  // `7za a` adds to an existing archive, so a zip left from an earlier run
-  // would keep files this build doesn't have.
-  const zip = `${output}.zip`;
-  fs.rmSync(zip, { force: true });
-  // From dist/, so the zip holds karafriends-<platform>-<arch>/ and not
-  // dist/karafriends-<platform>-<arch>/.
-  const zipped = spawnSync(
-    sevenBin.path7za,
-    ["a", "-r", path.basename(zip), path.basename(output)],
-    { cwd: path.dirname(output), stdio: "inherit" },
-  );
-  // A 7za that couldn't start, or failed part way, fails the release.
-  if (zipped.error) throw zipped.error;
-  if (zipped.status !== 0) {
-    throw new Error(
-      `7za exited with ${zipped.status ?? zipped.signal} while zipping ${output}`,
-    );
-  }
-  console.log(`Built ${zip}.`);
+  console.log(`Built ${zipFolder(output)}.`);
 })();
