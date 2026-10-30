@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The noise gate's mark on a mic's meter is easier to see: wider, standing out above and below the meter, and edged so it shows over the level bar.
 - Settings opens on Accounts each time.
 - Settings › Sound has **Use ASIO**, off unless a mic or the mic output already used ASIO. While it's off, karafriends loads no ASIO driver. Opening Sound used to load them all, which could cut off another program's mic and make the sound crackle.
 - With a long queue, the idle screen lists only the next songs that fit, then how many more, and shows how many songs are queued. It used to run off the screen.

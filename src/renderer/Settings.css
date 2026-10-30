@@ -361,12 +361,14 @@
   border-radius: var(--kf-radius);
   background-color: var(--kf-field);
   box-shadow: var(--kf-shadow-track);
-  overflow: hidden;
 }
 
+/* Rounded as the track is (which can't clip it: the gate's mark stands out
+   of it). */
 .settingsMeterBar {
   width: 0;
   height: 100%;
+  border-radius: inherit;
   background-color: var(--kf-accent);
 }
 
@@ -378,11 +380,15 @@
   background-color: var(--kf-muted);
 }
 
+/* The noise gate: a light post standing out above and below the meter,
+   edged in the section's color so it shows on the bar as on the track. */
 .settingsMeterGate {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  margin-left: -1px;
+  top: -0.375rem;
+  bottom: -0.375rem;
+  width: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: 0.125rem;
   background-color: var(--kf-text);
+  box-shadow: 0 0 0 0.125rem var(--kf-surface);
 }
