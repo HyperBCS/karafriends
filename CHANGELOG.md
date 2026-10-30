@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-10-30)
 
-- In full screen, the display's mouse pointer hides after 3 seconds without moving, and comes back as the mouse moves; not while Settings or the setup screen is open.
-- Settings has **Quit**, under the tabs.
-- Out of full screen, the window (which has no frame) can be dragged by its top edge, on macOS and elsewhere.
+- The mouse pointer hides in full screen after 3 seconds without moving. It stays visible while Settings is open.
+- Settings has a **Quit** tab.
+- When the window isn't full screen, it can be moved by dragging its top edge.
 
 ## 0.2.0 (2026-10-29)
 
