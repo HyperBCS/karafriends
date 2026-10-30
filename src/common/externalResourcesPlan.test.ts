@@ -60,10 +60,10 @@ const EXPECT: Record<
     ffmpeg: "ffmpeg",
     ytdlp: "yt-dlp_macos",
     ytdlpAsset: "yt-dlp_macos",
-    // Martin Riedl's signed static build: Intel here, arm64 on Apple
-    // Silicon (see "by architecture").
+    // Martin Riedl's signed static build for Apple Silicon, the only Mac
+    // karafriends is built for.
     ffmpegUrl:
-      "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
+      "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
     archiveName: "ffmpeg.zip",
     steps: 1,
     binary: ["out", "ffmpeg"],
@@ -222,7 +222,7 @@ describe("assetPlans by architecture", () => {
     assert.equal(path.basename(ytdlp.dest), "yt-dlp");
   });
 
-  test("Apple Silicon gets an arm64 ffmpeg, not an Intel one", () => {
+  test("a Mac gets the Apple Silicon ffmpeg", () => {
     assert.equal(
       pinned(plan("darwin", "arm64", "ffmpeg")).url,
       "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",

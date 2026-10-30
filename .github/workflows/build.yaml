@@ -51,32 +51,6 @@ jobs:
         env:
           CARGO_INCREMENTAL: false
       - run: cargo clippy --manifest-path native/Cargo.toml --all-targets
-  # Intel Macs, cross-compiled on the same Apple Silicon runner. The unit
-  # tests already ran on it in the job above.
-  build-macos-x86_64:
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: stable
-          target: x86_64-apple-darwin
-          components: clippy
-          cache: false
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: yarn
-      - run: yarn install --immutable
-      - run: yarn build-dev
-        env:
-          CARGO_ARGS: --target x86_64-apple-darwin
-          CARGO_INCREMENTAL: false
-      - run: cargo clippy --manifest-path native/Cargo.toml --target x86_64-apple-darwin --all-targets
   build-windows-x86_64:
     runs-on: windows-latest
     timeout-minutes: 60
