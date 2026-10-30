@@ -2574,8 +2574,8 @@ test("Quit asks first, and quits only when told to", async ({
   await quit.click();
   await expect.poll(async () => (await asked()).length).toBe(1);
   expect((await asked())[0]).toMatchObject({
-    message: "Quit karafriends?",
-    buttons: ["Quit", "Cancel"],
+    message: "Are you sure you want to quit?",
+    buttons: ["Confirm", "Cancel"],
     cancelId: 1,
   });
   await expect(settings).toBeVisible();
