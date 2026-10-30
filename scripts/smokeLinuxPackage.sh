@@ -66,23 +66,38 @@ fi
 
 scratch="$(mktemp -d)"
 app_pid=""
+# On the way out, pass or fail. Nothing in here changes the result: the
+# exit status is the checks' own. (Under set -e, a failing command here used
+# to end the script with its status: a passed run failed when rm found the
+# profile still being written.)
 cleanup() {
   local status=$?
+  set +e
   # setsid made the app its own process group: xvfb-run, Xvfb, and
-  # Electron's processes.
-  if [[ -n "$app_pid" ]]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+  # Electron's processes. Electron writes to its profile as it quits, so wait
+  # for the group to go (10 s at most) before the profile is copied or
+  # removed.
+  if [[ -n "$app_pid" ]]; then
+    kill -- "-$app_pid" 2>/dev/null
+    for _ in $(seq 20); do
+      kill -0 -- "-$app_pid" 2>/dev/null || break
+      sleep 0.5
+    done
+    kill -KILL -- "-$app_pid" 2>/dev/null
+  fi
   if [[ $status -ne 0 && -n "${SMOKE_LOGS:-}" ]]; then
     mkdir -p "$SMOKE_LOGS"
-    cp "$scratch"/*.log "$SMOKE_LOGS"/ 2>/dev/null || true
+    cp "$scratch"/*.log "$SMOKE_LOGS"/ 2>/dev/null
     if [[ -d "$scratch/profile" ]]; then
       (cd "$scratch/profile" && find . -name "*.log" -o -name "*.json" -o -name "config.yaml") |
         while read -r file; do
           mkdir -p "$SMOKE_LOGS/profile/$(dirname "$file")"
-          cp "$scratch/profile/$file" "$SMOKE_LOGS/profile/$file"
+          cp "$scratch/profile/$file" "$SMOKE_LOGS/profile/$file" 2>/dev/null
         done
     fi
   fi
-  rm -rf "$scratch"
+  rm -rf "$scratch" 2>/dev/null || echo "smokeLinuxPackage: left $scratch behind" >&2
+  exit "$status"
 }
 trap cleanup EXIT
 
