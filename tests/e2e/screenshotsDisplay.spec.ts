@@ -313,6 +313,7 @@ test.describe("D1, four queued", () => {
       .selectOption("E2E Interface (USB), channel 2");
     await section.getByLabel("Gain 100%").first().fill("140");
     await section.getByLabel("Gain 140%").blur();
+    await section.getByLabel("Use ASIO").check();
     await section.getByLabel("Mic output").selectOption("E2E Interface (ASIO)");
     await section.evaluate((element) =>
       element.scrollIntoView({ block: "start" }),

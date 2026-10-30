@@ -50,6 +50,8 @@ declare module "*/native/index.node" {
     | "inputDevices"
     | "outputDevices"
     | "asioStatus"
+    | "setAsio"
+    | "asioDrivers"
     | "setOutputDevice"
     | "outputOptions"
     | "outputFormat"

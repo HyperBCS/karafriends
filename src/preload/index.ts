@@ -182,6 +182,8 @@ function faker(calls: FakeAudioCall[]) {
 function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
   let nextDeviceId = 0;
   let exclusive = false;
+  // Use ASIO: its interface is listed only while it's on, as natively.
+  let asio = false;
   // The mic output picked last (null for the default).
   let chosenOutput: string | null = null;
   const fake = faker(calls);
@@ -203,9 +205,15 @@ function fakeWindowsAudio(calls: FakeAudioCall[]): NativeAudio {
     linuxAudio: fake("linuxAudio", () => null),
     outputDevices: fake("outputDevices", () => [
       "E2E Speakers (Windows)",
-      "E2E Interface (ASIO)",
+      ...(asio ? ["E2E Interface (ASIO)"] : []),
     ]),
-    asioStatus: fake("asioStatus", () => "ASIO: E2E Interface"),
+    asioStatus: fake("asioStatus", () =>
+      asio ? "ASIO: E2E Interface" : "ASIO is off",
+    ),
+    setAsio: fake("setAsio", (on: boolean) => {
+      asio = on;
+    }),
+    asioDrivers: fake("asioDrivers", () => ["E2E Interface"]),
     setOutputDevice: fake("setOutputDevice", (name: string | null) => {
       if (failsToOpen(name)) throw new Error(`${name} won't open (fake)`);
       chosenOutput = name;
@@ -294,6 +302,7 @@ function fakeLinuxAudio(calls: FakeAudioCall[]): NativeAudio {
     }),
     outputDevices: fake("outputDevices", () => ["E2E Speakers (Linux)"]),
     asioStatus: fake("asioStatus", () => "ASIO isn't in this build"),
+    asioDrivers: fake("asioDrivers", () => []),
     outputOptions: fake("outputOptions", () => null),
     outputFormat: fake("outputFormat", () =>
       fakeMics.size > 0 ? `48 kHz, ${bufferSize ?? 128} samples` : undefined,
@@ -373,8 +382,10 @@ function realAudio(): NativeAudio {
     // Outputs are listed again each time Settings opens, so an interface
     // switched on after launch can be picked.
     outputDevices: nativeAudio.outputDevices,
-    // Found once, as the first device is listed.
+    // Found once, as the first device is listed while ASIO is on.
     asioStatus: nativeAudio.asioStatus,
+    setAsio: nativeAudio.setAsio,
+    asioDrivers: nativeAudio.asioDrivers,
     setOutputDevice: nativeAudio.setOutputDevice,
     outputOptions: nativeAudio.outputOptions,
     outputFormat: nativeAudio.outputFormat,

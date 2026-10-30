@@ -239,11 +239,35 @@ fn asio_drivers() -> String {
     format!("ASIO: {}", drivers.join(", "))
 }
 
+// Whether ASIO's devices are listed and opened: off until Settings' Use
+// ASIO turns it on. Loading an ASIO driver, which listing its devices does,
+// can reset its device for every program: on the host's PC, opening
+// Settings' Sound tab cut off a browser's mic and made the DAC crackle,
+// with no ASIO device in use. While it's off, no driver is loaded.
+static ASIO_ON: AtomicBool = AtomicBool::new(false);
+
+pub fn set_asio(on: bool) {
+    ASIO_ON.store(on, Relaxed);
+}
+
+// The registered ASIO drivers' names, read from the registry without
+// loading any: for Settings to offer Use ASIO. None without ASIO.
+pub fn asio_driver_names() -> Vec<String> {
+    #[cfg(all(windows, feature = "asio"))]
+    return asio_sys::Asio::new().driver_names();
+    #[cfg(not(all(windows, feature = "asio")))]
+    Vec::new()
+}
+
 // One line for Settings: "ASIO: <drivers>", "No ASIO drivers are
-// installed", or that this build has no ASIO.
+// installed", "ASIO is off", or that this build has no ASIO.
 pub fn asio_status() -> String {
     #[cfg(all(windows, feature = "asio"))]
-    return ASIO.status.clone();
+    return if ASIO_ON.load(Relaxed) {
+        ASIO.status.clone()
+    } else {
+        "ASIO is off".to_string()
+    };
     #[cfg(not(all(windows, feature = "asio")))]
     "ASIO isn't in this build".to_string()
 }
@@ -1567,10 +1591,14 @@ fn find_output(name: &str) -> Result<Option<(cpal::Device, DeviceType)>> {
 // would vanish from Settings. So they are listed while no ASIO stream is
 // open, and that list stands meanwhile. (A cpal ASIO device is only a
 // description: a stream loads its driver when it opens.)
+// None while ASIO is off (see ASIO_ON): nothing loads a driver then.
 #[cfg(all(windows, feature = "asio"))]
 fn asio_devices(
     wanted: fn(&cpal::Device) -> bool,
 ) -> std::vec::IntoIter<(cpal::Device, DeviceType)> {
+    if !ASIO_ON.load(Relaxed) {
+        return Vec::new().into_iter();
+    }
     let Some(host) = ASIO.host.as_ref() else {
         return Vec::new().into_iter();
     };
@@ -2442,10 +2470,31 @@ mod tests {
         assert_eq!(output_format(), None);
     }
 
+    // Off, as until Settings' Use ASIO: no driver is loaded, no ASIO device
+    // listed.
     #[test]
+    fn test_asio_off() {
+        let _devices = lock(&DEVICES);
+        set_asio(false);
+        if cfg!(all(windows, feature = "asio")) {
+            assert_eq!(asio_status(), "ASIO is off");
+            #[cfg(all(windows, feature = "asio"))]
+            assert_eq!(asio_devices(|_| true).count(), 0);
+        } else {
+            assert_eq!(asio_status(), "ASIO isn't in this build");
+            assert!(asio_driver_names().is_empty());
+        }
+    }
+
+    // On, the status loads every ASIO driver, which can interrupt the PC's
+    // sound: run it on purpose (cargo test -- --ignored).
+    #[test]
+    #[ignore = "loads every ASIO driver"]
     fn test_asio_status() {
         let _devices = lock(&DEVICES);
+        set_asio(true);
         let status = asio_status();
+        set_asio(false);
         if cfg!(all(windows, feature = "asio")) {
             assert!(
                 status == "No ASIO drivers are installed"

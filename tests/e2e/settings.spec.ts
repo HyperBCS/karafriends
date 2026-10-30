@@ -364,7 +364,7 @@ test("leaving Settings saves the field being edited: Escape keeps it, and Close 
   await expect(settings).toHaveCount(0);
 
   // The same from Escape.
-  await display.keyboard.press("s");
+  await openTab(display, "Party");
   await network.getByLabel("Port").fill("80801");
   await display.keyboard.press("Escape");
   await expect(network.getByRole("status")).toHaveText(
@@ -616,19 +616,16 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
   await display.keyboard.press("Tab");
   await expect(panel.getByLabel("UI scale")).toBeFocused();
 
-  // Closed, Settings opens again on the same tab, and keeps it on the
-  // display.
+  // Closed, Settings opens again on its first tab, however it opens.
   await display.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
   await display.keyboard.press("s");
-  await expect(tab("Display")).toHaveAttribute("aria-selected", "true");
-  await expect(tab("Display")).toBeFocused();
-  expect(
-    await display.evaluate(() => localStorage.getItem("settingsTab")),
-  ).toBe("display");
+  await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("Accounts")).toBeFocused();
+  await tab("Display").click();
   await settings.getByRole("button", { name: "Close" }).click();
   await display.getByRole("button", { name: "Settings" }).click();
-  await expect(tab("Display")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
 
   // A launch doesn't open it, even without a login.
   await display.reload();
@@ -642,7 +639,7 @@ test.describe("on a profile with a login", () => {
     appConfig: { damUsername: "e2e-dam-user", damPassword: "e2e-password" },
   });
 
-  test("Settings opens on the tab it was last on, after a reload too", async ({
+  test("Settings opens on Accounts, after a reload too", async ({
     display,
   }) => {
     const settings = display.getByRole("dialog", { name: "Settings" });
@@ -653,12 +650,11 @@ test.describe("on a profile with a login", () => {
     await display.reload();
     await expect(display.getByText("Scan to join")).toBeVisible();
     await display.keyboard.press("s");
-    await expect(settings.getByRole("tab", { name: "Sound" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
     await expect(
-      settings.getByRole("region", { name: "Microphones" }),
+      settings.getByRole("tab", { name: "Accounts" }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      settings.getByRole("region", { name: "DAM login" }),
     ).toBeVisible();
   });
 });
@@ -1436,9 +1432,14 @@ test.describe("the microphones", () => {
       0,
     ]);
 
-    // The mic output.
+    // The mic output: ASIO's once Use ASIO is on.
     const output = section.getByLabel("Mic output");
     await expect(output).toHaveValue("");
+    await expect(output.locator("option")).toHaveText([
+      "System default",
+      "E2E Speakers (Windows)",
+    ]);
+    await section.getByLabel("Use ASIO").check();
     await expect(output.locator("option")).toHaveText([
       "System default",
       "E2E Speakers (Windows)",
@@ -1459,8 +1460,7 @@ test.describe("the microphones", () => {
     const listed = await listings();
     await display.keyboard.press("Escape");
     await expect(settings).toHaveCount(0);
-    await display.keyboard.press("s");
-    // On Sound still.
+    await openTab(display, "Sound");
     await expect(section).toBeVisible();
     expect(await listings()).toBe(listed + 1);
 
@@ -1763,11 +1763,70 @@ test.describe("the microphones", () => {
     ).toBeNull();
   });
 
+  // Loading an ASIO driver, which listing ASIO's devices does, can cut off
+  // other programs' sound: off at first, nothing of ASIO's is listed.
+  test("Use ASIO is off at first, and lists ASIO's devices once on; it stays on while one is in use", async ({
+    display,
+  }) => {
+    const section = display.getByRole("region", { name: "Microphones" });
+    const output = section.getByLabel("Mic output");
+    const useAsio = section.getByLabel("Use ASIO");
+    await expect(useAsio).not.toBeChecked();
+    await expect(output.locator("option")).toHaveText([
+      "System default",
+      "E2E Speakers (Windows)",
+    ]);
+    // Off before anything was listed.
+    const calls = (await fakeAudioCalls(display)).map(([name, ...args]) =>
+      name === "setAsio" ? `setAsio ${args[0]}` : name,
+    );
+    expect(calls.indexOf("setAsio false")).toBeGreaterThanOrEqual(0);
+    expect(calls.indexOf("setAsio false")).toBeLessThan(
+      calls.indexOf("outputDevices"),
+    );
+
+    await useAsio.check();
+    await expect(output.locator("option")).toHaveText([
+      "System default",
+      "E2E Speakers (Windows)",
+      "E2E Interface (ASIO)",
+    ]);
+    await output.selectOption("E2E Interface (ASIO)");
+    // In use: it stays on, and says why.
+    await useAsio.click();
+    await expect(useAsio).toBeChecked();
+    await expect(
+      section.getByText("The mic output or a mic uses ASIO. Change it first."),
+    ).toBeVisible();
+    await output.selectOption("");
+    await useAsio.uncheck();
+    await expect(useAsio).not.toBeChecked();
+    await expect(output.locator("option")).toHaveText([
+      "System default",
+      "E2E Speakers (Windows)",
+    ]);
+    expect(await display.evaluate(() => localStorage.getItem("useAsio"))).toBe(
+      "off",
+    );
+
+    // Set up before the switch: an ASIO output saved, and nothing said about
+    // ASIO, has it on.
+    await display.evaluate(() => {
+      localStorage.removeItem("useAsio");
+      localStorage.setItem("micOutput", "E2E Interface (ASIO)");
+    });
+    await display.reload();
+    await openTab(display, "Sound");
+    await expect(useAsio).toBeChecked();
+    await expect(output).toHaveValue("E2E Interface (ASIO)");
+  });
+
   test("an ASIO mic output takes a buffer size and a sample rate, kept on the display; the mics say what they run at", async ({
     display,
   }) => {
     const section = display.getByRole("region", { name: "Microphones" });
     const output = section.getByLabel("Mic output");
+    await section.getByLabel("Use ASIO").check();
     // A Windows output has none: Windows sets them.
     await output.selectOption("E2E Speakers (Windows)");
     await expect(section.getByLabel("Buffer")).toHaveCount(0);
@@ -2145,11 +2204,11 @@ test.describe("devices that won't open", () => {
     const mic = section.getByRole("group", { name: MIC });
     await expect(mic).toBeVisible();
 
-    // Settings lists the devices again as it opens.
+    // Settings lists the devices again as its Sound tab opens.
     await failListing(display, true);
     await display.keyboard.press("Escape");
     await expect(settings).toHaveCount(0);
-    await display.keyboard.press("s");
+    await openTab(display, "Sound");
     await expect(
       section.getByText(
         "Couldn't list the sound devices: A device won't give its name (fake)",

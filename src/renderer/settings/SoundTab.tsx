@@ -19,6 +19,7 @@ import {
   useTick,
 } from "../MicrophoneSetting";
 import {
+  asioDrivers,
   type InputDevice,
   type MicMode,
   type MicOutput,
@@ -30,7 +31,7 @@ import { AV_OFFSETS } from "../playback";
 import type { OutputPlace } from "../songOutput";
 import type { SongOutput } from "../webAudio";
 import type { Message, Section } from "./actions";
-import { Hint, SettingsSection } from "./controls";
+import { Checkbox, Hint, SettingsSection } from "./controls";
 
 // What the Sound tab shows and changes, from App.
 export interface SoundProps {
@@ -45,6 +46,10 @@ export interface SoundProps {
   onMicOutputChange: (output: MicOutput) => string | null;
   micMode: MicMode;
   onMicModeChange: (mode: MicMode) => void;
+  // Off: no ASIO device is listed and no driver loaded. Returns why it
+  // wasn't turned off, if it wasn't.
+  useAsio: boolean;
+  onUseAsioChange: (on: boolean) => string | null;
   songOutput: SongOutput | null;
   onSongOutputChange: (output: SongOutput | null) => Promise<string | null>;
   // Where the songs play now (see songOutput.ts).
@@ -271,7 +276,12 @@ export default function SoundTab(
           </div>
         ) : null}
         {devices ? (
-          <Microphones {...props} devices={devices} onOpenAdd={onOpenAdd} />
+          <Microphones
+            {...props}
+            devices={devices}
+            onOpenAdd={onOpenAdd}
+            relist={() => relist()}
+          />
         ) : null}
       </SettingsSection>
     </>
@@ -324,9 +334,13 @@ function Microphones(
     devices: SoundDevices;
     report: (section: Section, problem: string | null) => void;
     onOpenAdd: () => void;
+    // Lists them again (Use ASIO adds or takes away ASIO's).
+    relist: () => void;
   },
 ) {
   const { devices, report } = props;
+  // Read from the registry: no driver is loaded for it.
+  const [drivers] = useState(asioDrivers);
   const { inputs, linux } = devices;
   // Shown only when a driver won't load or ASIO didn't start.
   const asioProblem = /won't load|didn't start/.test(devices.asioStatus)
@@ -338,6 +352,20 @@ function Microphones(
         <p className="settingsMessage problem" role="status">
           {devices.problem}
         </p>
+      ) : null}
+      {drivers.length > 0 ? (
+        <Checkbox
+          label="Use ASIO"
+          checked={props.useAsio}
+          hint="Lists ASIO devices. Loading their drivers can interrupt other programs' sound."
+          onChange={async (on) => {
+            const problem = props.onUseAsioChange(on);
+            report("mics", problem);
+            if (problem) return false;
+            props.relist();
+            return true;
+          }}
+        />
       ) : null}
       <MicOutputSetting
         outputs={devices.outputs}
