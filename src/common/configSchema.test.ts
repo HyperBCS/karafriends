@@ -60,11 +60,11 @@ describe("configFromFile", () => {
       ),
     );
     assert.deepEqual(problems, [
-      "Ignoring adminNicks in config.yaml (removed from the file): the " +
-        "admin lists are gone. Phones become admins with the admin password.",
+      "Ignoring adminNicks in config.yaml (removed from the file): admin " +
+        "lists were replaced by the admin password.",
       "Ignoring proxyEnable, proxyHost, proxyPort, proxyUser, proxyPass " +
-        "in config.yaml (removed from the file): karafriends no longer uses " +
-        "a proxy. Outside Japan, run a VPN to Japan on this computer.",
+        "in config.yaml (removed from the file): proxy support was removed. " +
+        "Use a VPN in Japan instead.",
     ]);
     assert.equal(config.damUsername, "me");
     assert.doesNotMatch(stringify(config), /proxy|secret/);

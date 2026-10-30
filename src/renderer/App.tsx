@@ -403,7 +403,7 @@ function App(props: { audio: KarafriendsAudio }) {
       await props.audio.setOutput(output?.id ?? "");
     } catch (err) {
       console.error(`Couldn't switch the songs to ${name}:`, err);
-      return `Couldn't play the songs on ${name}: ${reason(err)}`;
+      return `Couldn't switch the song output to ${name}: ${reason(err)}`;
     }
     if (output) localStorage.setItem(SONG_OUTPUT_KEY, JSON.stringify(output));
     else localStorage.removeItem(SONG_OUTPUT_KEY);
@@ -418,7 +418,7 @@ function App(props: { audio: KarafriendsAudio }) {
       !on &&
       (isAsio(micOutput.name) || mics.some((mic) => isAsio(mic.name)))
     ) {
-      return "The mic output or a mic uses ASIO. Change it first.";
+      return "A mic or the mic output is using ASIO. Change it first.";
     }
     setAsio(on);
     localStorage.setItem(USE_ASIO_KEY, on ? "on" : "off");

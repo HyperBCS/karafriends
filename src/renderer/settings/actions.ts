@@ -73,7 +73,7 @@ export const SERVICE_NAMES = { dam: "DAM", joysound: "Joysound" } as const;
 // The app names a setting by its config.yaml key when it refuses a value;
 // this screen, by its label.
 export const LABELS: Record<string, string> = {
-  paxSongQueueLimit: "Songs per phone",
+  paxSongQueueLimit: "Queue limit per phone",
   remoconPort: "Port",
 };
 
@@ -188,7 +188,7 @@ export function createSettingsActions(deps: SettingsDeps) {
     if (!/^\d+$/.test(value.trim())) {
       settle(section, saves++, false);
       say(section, {
-        text: `${LABELS[key]}: enter a whole number.`,
+        text: `${LABELS[key]} must be a whole number.`,
         tone: "problem",
         refused: key,
       });
@@ -234,8 +234,8 @@ export function createSettingsActions(deps: SettingsDeps) {
       await reload();
       return {
         text: password
-          ? "Saved. Phones signed in as admins must sign in again."
-          : "Cleared. No phone can be an admin now.",
+          ? "Password saved. Admins must sign in again."
+          : "Password cleared.",
       };
     });
 
@@ -245,13 +245,13 @@ export function createSettingsActions(deps: SettingsDeps) {
     act("joysound", async () => {
       if (unsaved.has("joysound")) return undefined;
       say("joysound", {
-        text: "Switching Joysound's TV link to karafriends…",
+        text: "Switching TV link…",
         tone: "busy",
       });
       const result = await call("switchJoysoundLink", {});
       if (!result.ok) return { text: result.reason, tone: "problem" };
       return {
-        text: result.note ? `Switched. ${result.note}` : "Switched.",
+        text: result.note ?? "Switched.",
       };
     });
 
@@ -280,7 +280,7 @@ export function createSettingsActions(deps: SettingsDeps) {
       const yaml = await deps.files.openTextFile();
       if (yaml === null) return null;
       say("config", {
-        text: "Importing, and testing the logins in it…",
+        text: "Importing…",
         tone: "busy",
       });
       const before = (await call("getSettings", {})).settings;
@@ -294,7 +294,7 @@ export function createSettingsActions(deps: SettingsDeps) {
       return result.ok
         ? { text: "Imported.", list: result.problems }
         : {
-            text: "Not imported: nothing changed.",
+            text: "Import failed. Nothing was changed.",
             list: result.problems,
             tone: "problem",
           };

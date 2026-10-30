@@ -35,7 +35,7 @@ export default function DisplayTab(props: DisplayProps) {
       </div>
       <Checkbox
         label="Pitch bars"
-        hint="On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them."
+        hint="Shows the melody and the singer's pitch on DAM and Joysound songs."
         checked={props.pitchBars}
         onChange={async (on) => {
           props.onPitchBarsChange(on);

@@ -160,16 +160,19 @@ function SongOutputPlace(props: {
   if (!props.output) {
     return (
       <p className="settingsHint" role="status">
-        No sound output is connected: the songs play silently until one is.
+        No audio output connected.
       </p>
     );
   }
-  const where = place === "silent" ? "silently" : "on System default";
+  let text = `${name} isn't connected. Using System default.`;
+  if (place === "silent") {
+    text = isMissing(props.output, outputs)
+      ? `${name} isn't connected.`
+      : `${name} disconnected.`;
+  }
   return (
     <p className="settingsHint" role="status">
-      {place === "silent" && !isMissing(props.output, outputs)
-        ? `${name} went away: the songs play silently until it's back.`
-        : `The songs play ${where} until ${name} is connected.`}
+      {text}
     </p>
   );
 }
@@ -178,7 +181,7 @@ function SongOutputPlace(props: {
 // a new output only once it has played on it a while.
 function OutputLatency(props: { latencyMs: () => number }) {
   useTick();
-  return <>Output latency: {props.latencyMs()} ms.</>;
+  return <>Output latency: {props.latencyMs()} ms</>;
 }
 
 // The songs' output and offset, and the mics: their output, their mode,
@@ -263,7 +266,7 @@ export default function SoundTab(
           place={props.songOutputPlace}
         />
         <Hint>
-          Plus delays the sound, minus delays the lyrics.{" "}
+          Positive values delay audio, negative values delay lyrics.{" "}
           <OutputLatency latencyMs={props.audioLatencyMs} />
         </Hint>
         <SongLevels />
@@ -272,7 +275,7 @@ export default function SoundTab(
       <SettingsSection title="Microphones" message={messages.mics}>
         {looking ? (
           <div className="settingsMessage busy" role="status">
-            <p>Looking for microphones…</p>
+            <p>Detecting microphones…</p>
           </div>
         ) : null}
         {devices ? (
@@ -320,9 +323,8 @@ function SongLevels() {
         />
       </div>
       <Hint>
-        For every song; an admin's phone has them too. The guide melody plays
-        with Joysound songs; on one queued with guide vocal, the guide vocal
-        plays at this level instead.
+        Guide melody is for Joysound songs. On songs queued with a guide vocal,
+        it sets the vocal&apos;s level.
       </Hint>
     </>
   );
@@ -357,7 +359,7 @@ function Microphones(
         <Checkbox
           label="Use ASIO"
           checked={props.useAsio}
-          hint="Lists ASIO devices. Loading their drivers interrupts sound for a moment, the mics' too."
+          hint="Loading ASIO drivers briefly interrupts all audio."
           onChange={async (on) => {
             const problem = props.onUseAsioChange(on);
             report("mics", problem);

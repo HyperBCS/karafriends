@@ -104,7 +104,7 @@ test("the display opens on its idle screen without console errors", async ({
   await settings.getByRole("tab", { name: "Party" }).click();
   await expect(settings.locator(`option[value="${address}"]`)).toHaveCount(1);
   await settings.getByRole("tab", { name: "Sound" }).click();
-  await expect(settings.getByLabel("Add a microphone")).toBeVisible();
+  await expect(settings.getByLabel("Add microphone")).toBeVisible();
   await settings.getByRole("button", { name: "Close" }).click();
   await expect(settings).toHaveCount(0);
   await display.getByRole("button", { name: "Settings" }).click();

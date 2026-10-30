@@ -76,9 +76,8 @@ export class TvLinkTakenError extends Error {
   readonly status = 409;
   constructor() {
     super(
-      "Another TV app is linked to the host's Joysound account, which links " +
-        "one at a time. The host can switch the link to karafriends: " +
-        "Settings › Accounts › Joysound, Test login.",
+      "Another TV app is linked to the host's Joysound account. The host " +
+        "can switch it in Settings › Accounts.",
     );
     this.name = "TvLinkTakenError";
   }
@@ -343,43 +342,38 @@ function statusOf(info: LinkInfo): LinkStatus {
 // do something about, a LoginWarning. Until karafriends is linked, it
 // offers the switch: the link may be another TV app's.
 export function linkStatusNote(status: LinkStatus): LoginNote {
-  const later = "the next time it gets a song or a search from Joysound";
-  const orSwitch =
-    "If another TV app holds the link (Joysound links one at a time), " +
-    "Switch takes it, unlinking the other one.";
+  const orSwitch = "If another TV app holds the link, use Switch TV link.";
   switch (status.state) {
     case "none":
       return {
-        note: `karafriends links itself to this account, as its JOYSOUND TV app, ${later}. ${orSwitch}`,
+        note: `Not linked as a TV app yet. Linking happens on first use. ${orSwitch}`,
         canSwitchLink: true,
       };
     case "pending":
       return {
-        note: `karafriends' link to this account isn't finished; it finishes ${later}. ${orSwitch}`,
+        note: `TV link pending. It completes on first use. ${orSwitch}`,
         canSwitchLink: true,
       };
     case "taken":
       throw new LoginWarning(
-        "Signed in, but another TV app is linked to this Joysound account, " +
-          "which links one at a time. Switching the link to karafriends " +
-          "unlinks the other one.",
+        "Signed in, but another TV app is linked to this account. " +
+          "Switching the TV link unlinks it.",
         { canSwitchLink: true },
       );
     case "ended":
       return {
-        note: `karafriends' link to this account has ended; it links again ${later}. ${orSwitch}`,
+        note: `TV link expired. It renews on first use. ${orSwitch}`,
         canSwitchLink: true,
       };
     case "linked":
       if (status.membershipType === "PAID") {
         return {
-          note: "karafriends is linked to this account, a paid member.",
+          note: "Linked as a TV app (paid membership).",
         };
       }
       throw new LoginWarning(
-        "Signed in, but the Joysound account isn't a paid member " +
-          `(membership: ${status.membershipType ?? "none"}), so karafriends ` +
-          "can't download its songs and leaves Joysound off.",
+        "Signed in, but this account has no paid membership " +
+          `(${status.membershipType ?? "none"}). Joysound stays off.`,
       );
   }
 }
@@ -553,7 +547,7 @@ export function createJoysoundLinker({
         linkStatus = await status(email);
       } catch (err) {
         return {
-          note: `Couldn't check karafriends' link to the account: ${
+          note: `Couldn't check the TV link: ${
             (err as Error)?.message ?? String(err)
           }`,
         };

@@ -40,7 +40,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
           }}
         >
           <h1>Something went wrong</h1>
-          <p>The karaoke display hit an unexpected error.</p>
+          <p>The display ran into an unexpected error.</p>
           <button
             style={{ fontSize: "1.25rem", padding: "0.5rem 1.5rem" }}
             onClick={() => window.location.reload()}

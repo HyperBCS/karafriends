@@ -62,7 +62,7 @@ describe("createConfigStore at launch", () => {
     // The settings screen says so: which line, and where the copy is.
     assert.match(
       store.loadProblem ?? "",
-      /couldn't be read \(line 1 isn't valid YAML\)/,
+      /Couldn't read config\.yaml \(line 1 isn't valid YAML\)/,
     );
     assert.ok(store.loadProblem?.includes(`${filePath}.broken`));
     // A save writes config.yaml; the copy stays.

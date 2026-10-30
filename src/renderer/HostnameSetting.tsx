@@ -37,7 +37,7 @@ export default function HostnameSetting(props: {
       >
         {listed || props.custom ? null : (
           <option value={props.hostname} disabled={true}>
-            {`${props.hostname.slice(0, props.hostname.lastIndexOf(":"))} (not on this network now)`}
+            {`${props.hostname.slice(0, props.hostname.lastIndexOf(":"))} (unavailable)`}
           </option>
         )}
         {names.map((name) => (
@@ -101,11 +101,9 @@ export function CustomUrlSetting(props: {
         </div>
       )}
       <Hint id={hintId}>
-        For phones that reach this computer another way: Tailscale, a port
-        forward, or a proxy to the Port here. The whole address
-        (https://karaoke.example.ts.net, or 203.0.113.5:8080 for http), with
-        nothing after the host and port. Anyone who can open it can queue songs,
-        so set an admin password if it's on the internet.
+        For access through Tailscale, port forwarding or a reverse proxy. Enter
+        the address only, with no path. If it&apos;s reachable from the
+        internet, set an admin password.
       </Hint>
     </div>
   );

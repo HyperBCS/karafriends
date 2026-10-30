@@ -9,7 +9,7 @@ import "./NoticeBar.css";
 // refused. Null for one that's fine, or off.
 function catalogNotice(status: CatalogStatus | undefined): string | null {
   if (status?.state === "unreachable") {
-    return `${status.reason} karafriends tries again by itself.`;
+    return `${status.reason} Retrying…`;
   }
   if (status?.state === "failed") return status.reason;
   return null;

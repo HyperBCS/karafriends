@@ -13,34 +13,21 @@ import { Checkbox, SettingsSection, TextSetting } from "./controls";
 
 // How a catalog stands (the live state's catalogs), in a line for the
 // host, and its tone: on, a problem, or neither.
-export function catalogLine(
-  service: LoginService,
-  status: CatalogStatus,
-): { text: string; tone: "on" | "problem" | "" } {
-  const name = SERVICE_NAMES[service];
+export function catalogLine(status: CatalogStatus): {
+  text: string;
+  tone: "on" | "problem" | "";
+} {
   switch (status.state) {
     case "disabled":
-      return {
-        text: `Turned off: guests don't see ${name} songs.`,
-        tone: "",
-      };
+      return { text: "Off", tone: "" };
     case "off":
-      return {
-        text: `Off: guests can't find ${name} songs until a login is set.`,
-        tone: "",
-      };
+      return { text: "Not signed in", tone: "" };
     case "checking":
-      return { text: `Signing in to ${name}…`, tone: "" };
+      return { text: "Signing in…", tone: "" };
     case "on":
-      return {
-        text: `On: guests can find and sing ${name} songs.`,
-        tone: "on",
-      };
+      return { text: "Signed in", tone: "on" };
     case "unreachable":
-      return {
-        text: `${status.reason} Trying again by itself.`,
-        tone: "problem",
-      };
+      return { text: `${status.reason} Retrying…`, tone: "problem" };
     case "failed":
       return { text: status.reason, tone: "problem" };
   }
@@ -50,7 +37,7 @@ export function catalogLine(
 export function CatalogStatusLine(props: { service: LoginService }) {
   const status = useLiveState((state) => state?.catalogs[props.service]);
   if (!status) return null;
-  const { text, tone } = catalogLine(props.service, status);
+  const { text, tone } = catalogLine(status);
   return (
     <p className={`settingsCatalog ${tone}`} aria-live="polite">
       <span className="settingsCatalogDot" aria-hidden="true" />
@@ -89,10 +76,7 @@ export default function AccountsTab(props: {
     const offersSwitch =
       service === "joysound" && (message?.offersSwitch || linkTaken);
     return (
-      <SettingsSection
-        title={`${SERVICE_NAMES[service]} login`}
-        message={message}
-      >
+      <SettingsSection title={SERVICE_NAMES[service]} message={message}>
         {/* The host can turn a catalog off whatever its login: it isn't
             signed in to, and phones don't show it. */}
         <Checkbox
@@ -118,7 +102,7 @@ export default function AccountsTab(props: {
         </div>
         {service === "dam" ? (
           <Checkbox
-            label="Stream at a low bitrate"
+            label="Low-bitrate streaming"
             checked={settings.useLowBitrateUrl}
             onChange={(checked) => save("dam", { useLowBitrateUrl: checked })}
           />
@@ -139,7 +123,7 @@ export default function AccountsTab(props: {
               className="kfButton"
               onClick={() => switchJoysoundLink()}
             >
-              Switch the TV link to karafriends
+              Switch TV link
             </button>
           ) : null}
         </div>

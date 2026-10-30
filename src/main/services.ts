@@ -158,9 +158,9 @@ const catalogs = createCatalogs({
       const link = await credentials.joysound();
       if (link.membershipType !== "PAID") {
         throw new LoginWarning(
-          "The Joysound account isn't a paid member " +
-            `(membership: ${link.membershipType ?? "none"}), so karafriends ` +
-            "can't download its songs.",
+          "This Joysound account has no paid membership " +
+            `(${link.membershipType ?? "none"}), so its songs can't be ` +
+            "downloaded.",
         );
       }
     },

@@ -57,8 +57,8 @@ export function catalogProblem(
     return {
       state: "failed",
       reason:
-        "Another TV app is linked to the Joysound account, which links one " +
-        "at a time. Switch the link to karafriends in Settings › Accounts.",
+        "Another TV app is linked to this Joysound account. Switch the TV " +
+        "link in Settings › Accounts.",
       canSwitchLink: true,
     };
   }
@@ -71,24 +71,24 @@ export function catalogProblem(
     const user = service === "dam" ? "username" : "email";
     return {
       state: "failed",
-      reason: `${name} refused the login: check the ${user} and password in Settings › Accounts.`,
+      reason: `${name} rejected the login. Check the ${user} and password in Settings › Accounts.`,
     };
   }
   if (err instanceof HttpStatusError && err.status === 403) {
     return {
       state: "unreachable",
-      reason: `${name} refused this connection: it only answers addresses in Japan. Turn on the VPN to Japan.`,
+      reason: `${name} is only available from Japan. Connect to a VPN in Japan.`,
     };
   }
   if (err instanceof TimeoutError || isTransient(err)) {
     return {
       state: "unreachable",
-      reason: `Can't reach ${name}. Check the internet connection and the VPN to Japan.`,
+      reason: `Can't reach ${name}. Check the internet connection and VPN.`,
     };
   }
   return {
     state: "failed",
-    reason: `Couldn't sign in to ${name}. Test login in Settings › Accounts says why.`,
+    reason: `Couldn't sign in to ${name}. Use Test login in Settings › Accounts for details.`,
   };
 }
 

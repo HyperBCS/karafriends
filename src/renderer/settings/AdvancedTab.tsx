@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 
-import { type AboutText, SOURCE_URL } from "../../common/about";
+import type { AboutText } from "../../common/about";
 import type { ApiOutput, ToolStatus, ToolsStatus } from "../../common/api";
 import { call } from "../../common/apiClient";
 import {
@@ -12,8 +12,8 @@ import {
 import { Hint, SettingsSection } from "./controls";
 
 function toolLine(tool: ToolStatus): string {
-  const version = tool.version ?? "Version not known yet";
-  if (tool.overridden) return `${version} · your own copy`;
+  const version = tool.version ?? "Unknown version";
+  if (tool.overridden) return `${version} · custom path`;
   if (tool.updatedAt === null) return version;
   const date = new Date(tool.updatedAt).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -45,7 +45,7 @@ function DownloadsSection() {
     try {
       const { bytes, kept } = await call("clearDownloads", {});
       setMessage({
-        text: `Freed ${megabytes(bytes)}${kept > 0 ? `. ${kept} kept: playing, queued or downloading` : ""}.`,
+        text: `Freed ${megabytes(bytes)}.${kept > 0 ? ` Kept ${kept} file${kept === 1 ? "" : "s"} in use.` : ""}`,
       });
       await refresh();
     } catch (err) {
@@ -104,7 +104,7 @@ function AboutSection() {
         }
         setOpen(null);
         setMessage({
-          text: "Not in this build: yarn build-prod writes it.",
+          text: "Not included in this build.",
           tone: "problem",
         });
       },
@@ -134,9 +134,7 @@ function AboutSection() {
     <SettingsSection title="About" message={message}>
       <div className="settingsField">
         <p className="settingsValue">karafriends {about.version()}</p>
-        <Hint>
-          Free software under the GNU GPL v3. Its source is at {SOURCE_URL}.
-        </Hint>
+        <Hint>Free software under the GNU GPL v3.</Hint>
       </div>
       <div className="settingsActions">
         <button type="button" className="kfButton" onClick={openSource}>
@@ -191,7 +189,7 @@ export function useTools(say: (section: Section, message: Message) => void) {
   const update = async () => {
     setUpdating(true);
     say("tools", {
-      text: "Downloading ffmpeg and yt-dlp. This can take about 5 minutes.",
+      text: "Downloading ffmpeg and yt-dlp. This may take a few minutes.",
       tone: "busy",
     });
     try {
@@ -249,7 +247,7 @@ export default function AdvancedTab(props: {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Config file" message={messages.config}>
+      <SettingsSection title="Configuration" message={messages.config}>
         <div className="settingsActions">
           <button
             type="button"
@@ -268,7 +266,7 @@ export default function AdvancedTab(props: {
             Import config
           </button>
         </div>
-        <Hint>Includes the logins and passwords.</Hint>
+        <Hint>Exported files include passwords.</Hint>
       </SettingsSection>
 
       <AboutSection />

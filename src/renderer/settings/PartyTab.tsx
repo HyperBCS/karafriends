@@ -10,7 +10,7 @@ import {
   type Section,
   type SettingsActions,
 } from "./actions";
-import { Checkbox, Hint, SettingsSection, TextSetting } from "./controls";
+import { Checkbox, SettingsSection, TextSetting } from "./controls";
 
 // The port phones use, when it isn't the Port field's: under yarn dev, they
 // load the remote from the Vite dev server, which passes /api on to the
@@ -62,7 +62,7 @@ export default function PartyTab(props: {
             hint={
               devPort === null
                 ? undefined
-                : `Running with yarn dev: phones use the dev server's port, ${devPort}.`
+                : `Dev server: phones use port ${devPort}.`
             }
             onCommit={(value) =>
               actions.saveNumber("network", "remoconPort", value)
@@ -75,10 +75,9 @@ export default function PartyTab(props: {
             onChange={props.onCustomUrlChange}
           />
         ) : null}
-        <Hint>The QR code sends phones to this address.</Hint>
         {loaded.needsRestart ? (
           <div className="settingsRestart">
-            <p>Restart karafriends to use the new port.</p>
+            <p>Restart to apply the new port.</p>
             <button
               type="button"
               className="kfButton primary"
@@ -101,7 +100,7 @@ export default function PartyTab(props: {
         />
         <Checkbox
           label="Everyone is an admin"
-          hint="Every phone gets the admin controls, no password needed."
+          hint="All phones get admin controls without a password."
           checked={settings.everyoneIsAdmin}
           onChange={(checked) =>
             actions.save("queue", { everyoneIsAdmin: checked })
@@ -110,7 +109,7 @@ export default function PartyTab(props: {
         <div className="settingsFields">
           <TextSetting
             label={LABELS.paxSongQueueLimit}
-            hint="Queued at once. 0 means no limit."
+            hint="0 for no limit."
             type="number"
             value={String(settings.paxSongQueueLimit)}
             refused={messages.queue?.refused === "paxSongQueueLimit"}

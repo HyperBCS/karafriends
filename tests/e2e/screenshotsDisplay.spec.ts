@@ -114,7 +114,7 @@ test.describe("phase D, with a login", () => {
     await expect(display.getByText("Scan to join")).toBeVisible();
     await display.keyboard.press("s");
     const settings = display.getByRole("dialog", { name: "Settings" });
-    const dam = settings.getByRole("region", { name: "DAM login" });
+    const dam = settings.getByRole("region", { name: "DAM", exact: true });
     await expect(dam.getByLabel("Username")).toHaveValue("karaoke-host");
     await shoot(display, "settings");
 
@@ -164,7 +164,7 @@ test.describe("U2, Settings", () => {
       await display.keyboard.press("s");
       const settings = display.getByRole("dialog", { name: "Settings" });
       await settings.getByRole("tab", { name: "Sound" }).click();
-      const add = settings.getByLabel("Add a microphone");
+      const add = settings.getByLabel("Add microphone");
       await add.selectOption("E2E Mic (USB), channel 1");
       await add.selectOption("E2E Interface (USB), channel 2");
       await expect(settings.getByRole("group")).toHaveCount(2);
@@ -306,10 +306,10 @@ test.describe("D1, four queued", () => {
     await settings.getByRole("tab", { name: "Sound" }).click();
     const section = settings.getByRole("region", { name: "Microphones" });
     await section
-      .getByLabel("Add a microphone")
+      .getByLabel("Add microphone")
       .selectOption("E2E Mic (USB), channel 1");
     await section
-      .getByLabel("Add a microphone")
+      .getByLabel("Add microphone")
       .selectOption("E2E Interface (USB), channel 2");
     await section.getByLabel("Gain 100%").first().fill("140");
     await section.getByLabel("Gain 140%").blur();

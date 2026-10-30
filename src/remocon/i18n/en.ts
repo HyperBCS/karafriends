@@ -11,7 +11,7 @@ export const en = {
   "common.tryAgain": "Try again",
   "common.loadFailed": "Couldn't load this: {reason}",
   "common.loadMoreFailed": "Couldn't load more: {reason}",
-  "common.offline": "Can't reach karafriends. Check the Wi-Fi.",
+  "common.offline": "Can't connect to the karaoke PC. Check your Wi-Fi.",
   "common.loading": "Loading",
   "common.more": "More",
   "common.cancel": "Cancel",
@@ -37,8 +37,8 @@ export const en = {
   // Search.
   "search.heading": "Find a song",
   "search.label": "Search",
-  "search.placeholder": "Song, artist, or a video link",
-  "search.linkHint": "Paste a YouTube or Niconico link to queue the video.",
+  "search.placeholder": "Song, artist or video link",
+  "search.linkHint": "Paste a YouTube or Niconico link to queue a video.",
   "search.byLabel": "Search by",
   "search.title": "Title",
   "search.artist": "Artist",
@@ -47,7 +47,7 @@ export const en = {
   "search.results": "Results",
   // A query that could be a video's ID: a row to open it, above the
   // results, since a title can look like one ("OneLastKiss").
-  "search.videoById": "Open the video with this ID",
+  "search.videoById": "Open as video ID",
   "search.noResults": "No results found",
   // A count's singular is its key with ".one" (countKey in index.ts).
   "search.songCount": "{count} songs",
@@ -57,26 +57,26 @@ export const en = {
 
   // A song's page.
   "song.background": "Background video",
-  "song.addBackground": "Play a YouTube video behind the lyrics",
+  "song.addBackground": "Add YouTube video",
   "song.backgroundLink": "YouTube link or video ID",
   "song.useVideo": "Use this video",
-  "song.removeBackground": "Remove the video",
+  "song.removeBackground": "Remove video",
 
   // A video's page.
   "video.views": "{count} views",
   "video.views.one": "{count} view",
   "video.infoFailed": "Couldn't get this video: {reason}",
-  "video.niconicoSlow": "Niconico videos take a while to download.",
+  "video.niconicoSlow": "Niconico downloads can be slow.",
 
   // Lyrics for a YouTube video, and sending them line by line.
   "lyrics.heading": "Lyrics",
   "lyrics.captions": "Captions",
   "lyrics.noCaptions": "None",
-  "lyrics.adhoc": "Your own lyrics",
-  "lyrics.adhocPlaceholder": "Paste the lyrics here, one line per line.",
+  "lyrics.adhoc": "Custom lyrics",
+  "lyrics.adhocPlaceholder": "Paste lyrics here",
   "lyrics.adhocHelp":
-    "When your song starts, this page turns into the controls that show these line by line. From another page, open Now playing and tap your song.",
-  "lyrics.sendLine": "Tap here to show the next line",
+    "When your song starts, use this page to show the lyrics line by line. You can also open it from Now playing.",
+  "lyrics.sendLine": "Show next line",
 
   // Queueing a song, and the download that comes before it.
   "queueButton.song": "Queue song",
@@ -90,7 +90,7 @@ export const en = {
   "queueButton.finished": "Downloaded",
   "queueButton.queued": "Queued, up in {eta}",
   "queueButton.failed": "Couldn't download: {reason}",
-  "queueButton.error": "Not queued: {reason}",
+  "queueButton.error": "Couldn't queue: {reason}",
 
   // The reasons the server gives in English (reasons.ts), inside
   // "Couldn't download: {reason}" and the like. Downloads first, as
@@ -106,20 +106,18 @@ export const en = {
   "reason.joysound": "Couldn't get the song from Joysound",
   "reason.noTools": "Couldn't get the download tools",
   "reason.toolFailedToStart": "Couldn't start the downloader",
-  "reason.videoProcessing": "Couldn't put the video together",
-  "reason.damSample": "DAM sent a sample, not the song",
+  "reason.videoProcessing": "Couldn't process the video",
+  "reason.damSample": "DAM sent a preview instead of the song",
   "reason.diskFull": "The karaoke PC's disk is full",
   "reason.other": "Download failed",
   "reason.alreadyAdding": "Someone is already adding this song",
   "reason.damOff": "DAM isn't available on this karaoke PC",
   "reason.joysoundOff": "Joysound isn't available on this karaoke PC",
-  "reason.nicoInfo": "Maybe the video ID is wrong.",
+  "reason.nicoInfo": "Invalid video ID",
   "reason.tooManyLyrics":
-    "The queue holds too many lyrics already. Try again after a few songs, or without lyrics.",
-  "reason.queueLimit":
-    "{nickname} already has {count} songs in the queue or downloading",
-  "reason.queueLimit.one":
-    "{nickname} already has {count} song in the queue or downloading",
+    "Too many queued songs have lyrics. Try again later, or queue without lyrics.",
+  "reason.queueLimit": "{nickname} already has {count} songs queued",
+  "reason.queueLimit.one": "{nickname} already has {count} song queued",
 
   // The now-playing sheet and the queue in it.
   "sheet.nowPlaying": "Now playing",
@@ -142,30 +140,30 @@ export const en = {
   "playback.pause": "Pause",
   "playback.restart": "Restart",
   "playback.skip": "Skip",
-  "playback.singerOnly": "Only its singer or an admin can control this song.",
+  "playback.singerOnly": "Only the singer or an admin can control this song.",
   "pitch.key": "Key",
-  "pitch.lower": "Lower the key",
-  "pitch.raise": "Raise the key",
-  "emotes.edit": "Change emotes",
-  "emotes.prompt": "Type the emoji to show here",
+  "pitch.lower": "Lower key",
+  "pitch.raise": "Raise key",
+  "emotes.edit": "Edit emotes",
+  "emotes.prompt": "Enter an emoji",
 
   // A DAM or Joysound page while that catalog isn't on: the host turned it
   // off or its login isn't set up (or doesn't work), it's signing in, or
   // it can't be reached.
   "catalog.off": "{source} isn't available on this karaoke PC.",
   "catalog.checking": "Connecting to {source}…",
-  "catalog.unreachable": "{source} can't be reached right now.",
+  "catalog.unreachable": "Can't reach {source} right now.",
   // History.
   "history.heading": "History",
   // Browse: Joysound's newest songs, genres and featured lists.
   "browse.heading": "Browse",
   "browse.newSongs": "New songs",
-  "browse.newSongsRow": "Joysound's newest songs",
+  "browse.newSongsRow": "New on Joysound",
   "browse.newSongsNote": "Newest first",
   "browse.genres": "Popular by genre",
   "browse.featured": "Featured",
   "history.empty": "No history",
-  "history.emptyMine": "Nothing sung from this phone yet",
+  "history.emptyMine": "No songs from this phone yet",
   "history.whose": "Whose songs",
   "history.all": "All",
   "history.mine": "Mine",
@@ -179,10 +177,9 @@ export const en = {
   "settings.heading": "Settings",
   "settings.you": "You",
   "settings.thisPhone": "This phone",
-  "settings.onTheTv": "On the TV",
+  "settings.onTheTv": "TV",
   "settings.tvLyrics": "Lyrics",
-  "settings.firstVisit":
-    "Pick a nickname. It shows next to the songs you queue.",
+  "settings.firstVisit": "Choose a nickname to show with your songs.",
   "settings.nickname": "Nickname",
   "settings.start": "Start",
   "settings.saveNickname": "Save nickname",
@@ -190,12 +187,12 @@ export const en = {
   "settings.adminPassword": "Admin password",
   "settings.signIn": "Sign in",
   "settings.signOut": "Sign out",
-  "settings.signedIn": "You're an admin",
+  "settings.signedIn": "Signed in as admin",
   // The host's "everyone is an admin": every phone is one, signed in or not.
-  "settings.everyoneAdmin": "Everyone is an admin right now",
-  "settings.wrongPassword": "Wrong password. Ask the host for it.",
+  "settings.everyoneAdmin": "Everyone has admin access",
+  "settings.wrongPassword": "Incorrect password. Ask the host.",
   "settings.noPassword": "The host hasn't set an admin password.",
-  "settings.tooManyTries": "Too many tries. Wait a minute, then try again.",
+  "settings.tooManyTries": "Too many attempts. Try again in a minute.",
   "settings.signInFailed": "Couldn't sign in: {reason}",
 
   // Reordering the queue by drag.
@@ -208,12 +205,11 @@ export const en = {
   "lyricsMode.kana": "Kana",
   "lyricsMode.romaji": "Romaji",
   "lyricsMode.both": "Both",
-  "lyricsMode.help":
-    "For Joysound songs. You can change it for one song on its page.",
+  "lyricsMode.help": "Joysound songs only. Can be changed on each song's page.",
 
   // Joysound's guide melody level, in the settings for admins.
   "guideMelody.label": "Guide melody",
-  "guideMelody.help": "For Joysound songs.",
+  "guideMelody.help": "Joysound songs only.",
 
   // The song's volume and the display's mics, in the settings for admins.
   "songVolume.label": "Song volume",
@@ -223,8 +219,7 @@ export const en = {
   "mics.echo": "Echo",
   "mics.gate": "Noise gate",
   "mics.gateOff": "Off",
-  "mics.gateHelp":
-    "Under its noise gate, a mic stays quiet and draws no pitch line, so small noises don't come through.",
+  "mics.gateHelp": "Mutes the mic below this level.",
   "readings.label": "Readings",
   "readings.written": "Written",
   "readings.kana": "Kana",

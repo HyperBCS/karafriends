@@ -84,7 +84,7 @@ export default function Settings(
         {header}
         <p className="settingsLoading">
           {loadError
-            ? `Couldn't load the settings: ${loadError}`
+            ? `Couldn't load settings: ${loadError}`
             : "Loading settings…"}
         </p>
       </div>

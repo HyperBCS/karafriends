@@ -1038,7 +1038,7 @@ test("a pasted YouTube or Niconico link opens the video's page", async ({
     );
   }
   const byId = remote.getByRole("list", {
-    name: "Open the video with this ID",
+    name: "Open as video ID",
   });
   await remote.getByRole("button", { name: "Back" }).click();
   await search.fill("sm9");
@@ -1090,8 +1090,8 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
     "Restart",
     "Play",
     "Skip",
-    "Lower the key",
-    "Raise the key",
+    "Lower key",
+    "Raise key",
   ].map(button);
   const key = remote.getByRole("status", { name: "Key" });
   const box = async (el: Locator) => (await el.boundingBox())!;
@@ -1160,7 +1160,7 @@ test("the sheet's toolbar: the switch, the transport and the key, in that order"
   const back = button("Show playback controls");
   expect(await box(back)).toEqual(before);
   const fire = await box(remote.getByRole("button", { name: "🔥" }));
-  const edit = await box(button("Change emotes"));
+  const edit = await box(button("Edit emotes"));
   expect(fire.x).toBeGreaterThanOrEqual(before.x + before.width);
   expect(edit.x).toBeGreaterThan(fire.x + fire.width);
   expect(edit.x + edit.width).toBeLessThanOrEqual(360);
@@ -1183,7 +1183,7 @@ test.describe("in supervised mode", () => {
     }
     await showQueue(remote);
     // Someone else's song, so the transport and the key are dimmed.
-    for (const name of ["Restart", "Play", "Skip", "Lower the key"]) {
+    for (const name of ["Restart", "Play", "Skip", "Lower key"]) {
       const control = remote.getByRole("button", { name, exact: true });
       await expect(control).toHaveAttribute("aria-disabled", "true");
       await control.focus();
@@ -1250,7 +1250,7 @@ test.describe("DAM and Joysound both off", () => {
         asked.push(new URL(request.url()).pathname);
     });
     const hint = remote.getByText(
-      "Paste a YouTube or Niconico link to queue the video.",
+      "Paste a YouTube or Niconico link to queue a video.",
     );
     await expect(hint).toBeVisible();
     await expect(remote.getByRole("radiogroup")).toHaveCount(0);
@@ -1350,7 +1350,7 @@ test.describe("Browse", () => {
     await remote.getByRole("button", { name: "Back" }).click();
 
     // The newest songs.
-    await main.getByRole("link", { name: /Joysound's newest songs/ }).click();
+    await main.getByRole("link", { name: /New on Joysound/ }).click();
     await expect(
       main.getByRole("link", { name: /Browse song 3/ }),
     ).toBeVisible();
@@ -1674,7 +1674,7 @@ test.describe("the now-playing bar", () => {
   test("quick ♯ taps each count", async ({ karafriends, remote }) => {
     await showQueue(remote);
     const raise = remote.getByRole("button", {
-      name: "Raise the key",
+      name: "Raise key",
       exact: true,
     });
     await expect(raise).toHaveAttribute("aria-disabled", "false", {
@@ -1746,9 +1746,7 @@ test("a Joysound song with a background keeps the way back", async ({
     .getByRole("main")
     .getByRole("link", { name: /E2E Joysound song 1/ })
     .click();
-  await remote
-    .getByRole("button", { name: "Play a YouTube video behind the lyrics" })
-    .click();
+  await remote.getByRole("button", { name: "Add YouTube video" }).click();
   await remote.getByLabel("YouTube link or video ID").fill("jNQXAC9IVRw");
   await remote.getByRole("button", { name: "Use this video" }).click();
   await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
@@ -1761,7 +1759,7 @@ test("a Joysound song with a background keeps the way back", async ({
   await remote.goBack();
   await expect(remote).toHaveURL(/#\/joysoundSong\/e2e-joy-1\/jNQXAC9IVRw$/);
   await expect(
-    remote.getByRole("button", { name: "Remove the video" }),
+    remote.getByRole("button", { name: "Remove video" }),
   ).toBeVisible();
   // The top bar's Back goes back in the history, to the search, not to an
   // empty one.
@@ -1943,7 +1941,7 @@ test("a song already queued says why it wasn't queued again", async ({
   await remote.getByRole("button", { name: "Queue video" }).click();
   await expect(
     remote.getByRole("button", {
-      name: "Not queued: That song is already in the queue",
+      name: "Couldn't queue: That song is already in the queue",
     }),
   ).toBeDisabled();
   await expect(
@@ -1965,7 +1963,7 @@ test.describe("with everyone an admin", () => {
     const signOut = admin.getByRole("button", { name: "Sign out" });
     await remote.getByRole("link", { name: "Settings" }).click();
     await expect(admin.getByRole("status")).toHaveText(
-      "Everyone is an admin right now",
+      "Everyone has admin access",
     );
     await expect(
       admin.getByRole("slider", { name: "Song volume" }),
@@ -1978,13 +1976,13 @@ test.describe("with everyone an admin", () => {
     await setEveryoneIsAdmin(false);
     await admin.getByLabel("Admin password").fill(PASSWORD);
     await admin.getByRole("button", { name: "Sign in" }).click();
-    await expect(admin.getByRole("status")).toHaveText("You're an admin");
+    await expect(admin.getByRole("status")).toHaveText("Signed in as admin");
     await expect(signOut).toBeVisible();
 
     // On again, the phone that signed in still can.
     await setEveryoneIsAdmin(true);
     await expect(admin.getByRole("status")).toHaveText(
-      "Everyone is an admin right now",
+      "Everyone has admin access",
     );
     await expect(signOut).toBeVisible();
   });
@@ -2094,7 +2092,7 @@ test.describe("an admin's queue", () => {
     await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
-    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(remote.getByText("Signed in as admin")).toBeVisible();
 
     // (The row stays open.)
     await queue.getByRole("button", { name: "Move to top" }).click();
@@ -2257,7 +2255,7 @@ test.describe("history, everyone's or mine", () => {
     );
     await remote.reload();
     await expect(
-      remote.getByText("Nothing sung from this phone yet"),
+      remote.getByText("No songs from this phone yet"),
     ).toBeVisible();
     await whose.getByRole("radio", { name: "All" }).click();
     await expect(songs).toHaveCount(4);
@@ -2703,7 +2701,7 @@ test.describe("the lyrics mode", () => {
         },
       });
     });
-    // "Lyrics" under "On the TV" in the settings; "Lyrics on the TV" on a
+    // "Lyrics" under "TV" in the settings; "Lyrics on the TV" on a
     // song's page.
     const choice = remote.getByRole("radiogroup", { name: /^Lyrics/ });
     const selected = choice.getByRole("radio", { checked: true });
@@ -2712,7 +2710,7 @@ test.describe("the lyrics mode", () => {
     await remote.getByRole("link", { name: "Settings" }).click();
     await expect(
       remote
-        .getByRole("region", { name: "On the TV" })
+        .getByRole("region", { name: "TV", exact: true })
         .getByRole("radiogroup", { name: "Lyrics", exact: true }),
     ).toBeVisible();
     await expect(choice.getByRole("radio")).toHaveText(Object.values(LABELS));
@@ -2784,7 +2782,7 @@ test.describe("the guide melody slider", () => {
     await showQueue(remote);
     await expect(remote.getByText("Nothing playing")).toBeVisible();
     await expect(
-      remote.getByRole("button", { name: "Raise the key" }),
+      remote.getByRole("button", { name: "Raise key" }),
     ).toBeVisible();
     await expect(slider).toHaveCount(0);
 
@@ -2795,7 +2793,7 @@ test.describe("the guide melody slider", () => {
 
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
-    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(remote.getByText("Signed in as admin")).toBeVisible();
     await expect(
       remote.getByRole("region", { name: "Admin" }).getByRole("slider", {
         name: "Guide melody",
@@ -2853,7 +2851,7 @@ test.describe("the song volume and mic sliders", () => {
     await remote.getByRole("link", { name: "Settings" }).click();
     await remote.getByLabel("Admin password").fill(PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
-    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(remote.getByText("Signed in as admin")).toBeVisible();
   }
 
   test("the host setting the admin password again signs the phone out at once", async ({
@@ -3004,7 +3002,7 @@ test.describe("the song volume and mic sliders", () => {
     await expect(remote.getByText("Noise gate Off")).toBeVisible();
     await expect(remote.getByText("Noise gate \u221245 dB")).toBeVisible();
     await expect(
-      remote.getByText("Under its noise gate, a mic stays quiet"),
+      remote.getByText("Mutes the mic below this level"),
     ).toBeVisible();
 
     await slider(mics[1], "Echo").fill("63");

@@ -35,15 +35,21 @@ describe("parseCustomUrl", () => {
       assert.ok("error" in parsed, typed);
       return parsed.error;
     };
-    assert.match(why(""), /Type the address/);
-    assert.match(why("   "), /Type the address/);
-    assert.match(why("ftp://example.com"), /Only http:\/\/ or https:\/\//);
-    assert.match(why("http://"), /isn't an address/);
-    assert.match(why("http://exa mple.com"), /isn't an address/);
-    assert.match(why("https://me:secret@example.com"), /user name or password/);
-    assert.match(why("https://example.com/karaoke"), /root/);
-    assert.match(why("https://example.com/?party=1"), /root/);
-    assert.match(why("https://example.com/#/history"), /root/);
+    assert.match(why(""), /Enter an address/);
+    assert.match(why("   "), /Enter an address/);
+    assert.match(why("ftp://example.com"), /http:\/\/ or https:\/\//);
+    assert.match(why("http://"), /valid address/);
+    assert.match(why("http://exa mple.com"), /valid address/);
+    assert.match(why("https://me:secret@example.com"), /username and password/);
+    assert.match(why("https://example.com/karaoke"), /after the host and port/);
+    assert.match(
+      why("https://example.com/?party=1"),
+      /after the host and port/,
+    );
+    assert.match(
+      why("https://example.com/#/history"),
+      /after the host and port/,
+    );
   });
 });
 

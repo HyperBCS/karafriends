@@ -151,7 +151,7 @@ test.describe("live state", () => {
       await expect(pause(bob)).toHaveAttribute("aria-disabled", "true");
 
       // The key.
-      const raise = alice.getByRole("button", { name: "Raise the key" });
+      const raise = alice.getByRole("button", { name: "Raise key" });
       await raise.click();
       await raise.click();
       for (const phone of [alice, bob]) {

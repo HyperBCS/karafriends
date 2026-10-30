@@ -133,7 +133,7 @@ describe("statusLabel", () => {
     );
     assert.equal(
       label({ is: "error", reason: "Invalid song ID" }),
-      "Not queued: Invalid song ID",
+      "Couldn't queue: Invalid song ID",
     );
     assert.equal(label({ is: "queued", eta: 252 }), "Queued, up in 4:12");
   });
