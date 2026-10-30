@@ -82,7 +82,7 @@ Needs an interface with a 64-bit ASIO driver.
 ### Party basics (A, G, I, K)
 
 - Leave the app idle with an empty queue for 15 minutes with the display's timeout shorter than that: the TV stays on, the QR code stays up, Windows doesn't lock or sleep.
-- Scan the QR code with an Android phone: `karafriends.local:8080` opens, with the Japan VPN off and on. An iPhone too.
+- Scan the QR code with an Android phone: the remote opens (the QR code holds the computer's LAN IP and port; `karafriends.local` went with mDNS), with the Japan VPN off and on. An iPhone too.
 - Queue a bass-heavy song. Key +1 and +2: the bass moves with the chords (before, nothing under about 200 Hz moved). Key −5: no hiss. Tap 0 → +1 → 0 mid-song: no gap or click. Key 0 and a shifted key sound about as loud.
 - Two mics on a DAM song: each singer's trace draws in its own pale colour and follows the bars; a key change mid-song keeps the trace on screen and lined up.
 - Let the queue run out: no lyrics or pitch bars linger behind the idle screen.

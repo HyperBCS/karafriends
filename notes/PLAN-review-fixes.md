@@ -138,7 +138,7 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 **Any machine, first party**
 
 - [ ] Left idle for 15 minutes with an empty queue, the TV stays on, the QR code stays up and the session doesn't lock. On Linux, `gnome-session-inhibit --list` shows karafriends' inhibitor. (A)
-- [ ] An Android phone opens the QR code's `karafriends.local` address, with the Japan VPN off and on. An iPhone does too. (A)
+- [ ] An Android phone opens the QR code's address (the computer's LAN IP: `karafriends.local` went with mDNS in `5567c46`), with the Japan VPN off and on. An iPhone does too. (A)
 - [ ] By ear, on a bass-heavy song: the key at ±1 and ±2 keeps the bass in tune with the chords; −5 and −7 add no hiss; tapping 0 → +1 → 0 mid-song gives no gap or click; key 0 and a shifted key are about as loud. (G)
 - [ ] With two mics on a DAM song, each trace draws in its own pale colour and follows the bars; a key change mid-song keeps the trace on screen and lined up. (I)
 - [ ] On an iPhone: search 恋, scroll far down, tap a row, then Back lands where you were; Settings opens at the top. The source button opens the iOS wheel (All, DAM, Joysound) and picking DAM shows "DAM" without zooming the page. On iOS 15 or 16 a long title rests at each end before sliding back. (M, N)
@@ -171,6 +171,8 @@ Every worker's "needs hardware" check, grouped by setup. Each line says which ph
 - [x] The build starts and Settings lists mics. A built-in or USB mic's "In use:" line shows 128 samples (or the device's minimum if larger) and sounds clean. Unplug and replug a USB mic mid-song: it returns. (O, F) 2026-10-28 and 29: the built-in mic and a Blue Yeti, which comes back when plugged in again ([report](MACOS-CHECKS-REPORT.md)).
 
 **Linux, Ubuntu 22.04 or Mint 21 (stock PipeWire 0.3.48)**
+
+The user tested karafriends on Linux before the 0.2.0 release (2026-10-29) and reported it working; which of the checks below that covered isn't recorded.
 
 - [ ] The release zip (built with the CI flag from R) starts. Settings → Sound says "Sound system: PulseAudio (PipeWire 0.3.48 is older than 0.3.50). Not real-time…", Mic buffer defaults to 512, a mic plays through the mic output without crackling, only real mics are listed. (E)
 - [ ] YouTube and Niconico songs download (the standalone yt-dlp). (B)

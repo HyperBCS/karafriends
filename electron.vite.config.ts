@@ -7,8 +7,7 @@
 //   build/<prod|dev>/main      the main process, plus the native module in chunks/
 //   build/<prod|dev>/preload   the display's preload
 //   build/<prod|dev>/web       renderer/ and remocon/ pages, their assets/,
-//                              and static/ (the kuromoji dict/ and the
-//                              remote's service worker)
+//                              and static/ (the kuromoji dict/)
 //
 // The remote runs in phone browsers, so the two pages are built for them,
 // back to iPhones on iOS 15 (REMOCON_TARGET); the display's Chromium runs
@@ -46,7 +45,7 @@ if (process.platform === "linux") process.env.NO_SANDBOX ??= "1";
 // server doesn't raise a firewall prompt either (see src/common/config.ts).
 const localOnly = process.env.KARAFRIENDS_LOCAL_ONLY === "1";
 
-// The static/ folder: the kuromoji dict/ and the remote's service worker.
+// The static/ folder: the kuromoji dictionary (dict/).
 const STATIC_DIR = path.resolve("static");
 
 const PAGES = {

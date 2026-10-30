@@ -40,8 +40,8 @@ Verified on the old PC: `yarn typecheck`, `yarn test:unit` (32 pass), `yarn buil
 
 - **The husky pre-commit hook** runs `cargo clippy` and `yarn lint-staged`, so `yarn` must be on PATH.
 - **If the Claude desktop app is the Microsoft Store/MSIX build**, anything Claude's shells write under `%APPDATA%`/`%LOCALAPPDATA%` is redirected into the app's private folder. Global installs Claude runs (`npm install -g`) won't exist for your own terminals; run those yourself. Terminal tabs inside the Claude app also keep the PATH from when the app launched, so restart the app after installing Node.
-- **DAM and Joysound only work from a Japanese IP.** Without the VPN, sound-cafe returns 403 and DAM login returns `NG`. Check with `curl -s https://ipinfo.io/country`.
-- **Joysound account has no subscription**, so songs come back as 45-second previews. That's the account, not the code.
+- **DAM and Joysound only work from a Japanese IP.** Without the VPN they refuse (DAM's login returns `NG`, as for a wrong password). Check with `curl -s https://ipinfo.io/country`.
+- **A free Joysound account can't download songs.** karafriends now goes through the JOYSOUND TV app's API (`38b6714`) and turns Joysound off for an account that isn't a paid member, saying so under the login. (Before, through sound-cafe.jp, songs came back as 45-second previews.)
 
 ## Reviews of the stack (read these next)
 
