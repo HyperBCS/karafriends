@@ -1,15 +1,16 @@
 name: Release
 on:
-  release:
-    types: [published]
+  # Pushing a tag v<package.json's version> builds every platform, then
+  # publishes the release with the zips, the CHANGELOG's section for that
+  # version as its notes. A tag with a "-" (v0.3.0-beta.1) is a prerelease.
+  push:
+    tags: ["v*"]
   # A trial run: it builds, signs and zips everything, and keeps each zip as
-  # a workflow artifact instead of uploading it to a release. To build a
-  # published release again, re-run that release's run.
+  # a workflow artifact, publishing nothing.
   workflow_dispatch:
-# Every job uploads its zip to the release. The repo's default token is
-# read-only.
+# Only the publish job writes (the release).
 permissions:
-  contents: write
+  contents: read
 # Mac signing and notarization, with the MACOS_* secrets (README › macOS
 # signing). "false" builds unsigned Mac zips (the README says how to open
 # one).
@@ -22,8 +23,30 @@ env:
 # RUSTFLAGS only when given some, and Linux gets some: see matrix.rustflags.
 
 jobs:
-  release:
+  # Before three platforms build: a tag that isn't package.json's version, or
+  # a version the CHANGELOG has no section for, stops here.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The zips' version (the macOS bundle's, the Windows exe's) is
+      # package.json's.
+      - name: Check the tag is package.json's version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p 'require("./package.json").version')"
+          if [[ "$TAG" != "$version" ]]; then
+            echo "::error::The tag is $TAG, but package.json's version makes it $version"
+            exit 1
+          fi
+      - name: Check the CHANGELOG has the version's notes
+        run: node scripts/releaseNotes.mjs
+
+  build:
     name: ${{ matrix.zip }}
+    needs: check
     strategy:
       # One platform failing doesn't stop the others' zips.
       fail-fast: false
@@ -55,19 +78,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      # The zips' version (the macOS bundle's, the Windows exe's) is
-      # package.json's.
-      - name: Check the tag is package.json's version
-        if: github.event_name == 'release'
-        shell: bash
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          version="v$(node -p 'require("./package.json").version')"
-          if [[ "$TAG" != "$version" ]]; then
-            echo "::error::The release's tag is $TAG, but package.json's version makes it $version"
-            exit 1
-          fi
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
@@ -155,22 +165,56 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: 7z a dist/asio-sdk-source.zip ./buildResources/asio/*
-      - if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/${{ matrix.zip }}
-          fail_on_unmatched_files: true
-      - if: github.event_name == 'release' && runner.os == 'Windows'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/asio-sdk-source.zip
-          fail_on_unmatched_files: true
-      # A trial run keeps each zip as it is, not wrapped in a zip of its
-      # own: the file a release uploads (macOS's Archive Utility can't open
-      # the wrapper).
-      - if: github.event_name != 'release'
-        uses: actions/upload-artifact@v7
+      # Each zip as it is, not wrapped in a zip of its own (macOS's Archive
+      # Utility can't open the wrapper): what a trial run keeps, and what
+      # the publish job attaches to the release.
+      - uses: actions/upload-artifact@v7
         with:
           path: dist/${{ matrix.zip }}
           archive: false
           if-no-files-found: error
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/asio-sdk-source.zip
+          archive: false
+          if-no-files-found: error
+
+  # Once every platform's zip is made, the release, with all of them: never
+  # one with a platform missing. If a platform fails, "Re-run failed jobs" on
+  # the run's page builds it again, and this runs after it. A trial run
+  # gathers the zips and the notes too, and stops short of publishing.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: node scripts/releaseNotes.mjs > "$RUNNER_TEMP/release-notes.md"
+      # skip-decompress: the zips are the files to attach, not to unpack.
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+          skip-decompress: true
+      - name: Gather the zips
+        run: |
+          mkdir release
+          for zip in karafriends-darwin-arm64.zip karafriends-win32-x64.zip karafriends-linux-x64.zip asio-sdk-source.zip; do
+            found="$(find artifacts -name "$zip" -type f | head -n 1)"
+            if [[ -z "$found" ]]; then
+              echo "::error::$zip wasn't among the build's artifacts"
+              exit 1
+            fi
+            mv "$found" release/
+          done
+          ls -l release
+      - if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          name: karafriends ${{ github.ref_name }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: release/*
+          fail_on_unmatched_files: true

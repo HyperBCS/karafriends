@@ -2,7 +2,7 @@
 
 ## 0.2.0 (2026-10-29)
 
-The first release published since the fork, so it also carries 0.1.0's changes below. The phone remote is rebuilt, the display gets a settings screen and a first-start setup, Joysound goes through its TV app's API and gets pitch bars, and the mics have less delay and keep working through a party.
+The first release published since the fork, so it also carries 0.1.0's changes (listed under 0.1.0 in CHANGELOG.md). The phone remote is rebuilt, the display gets a settings screen and a first-start setup, Joysound goes through its TV app's API and gets pitch bars, and the mics have less delay and keep working through a party.
 
 ### Phones
 
