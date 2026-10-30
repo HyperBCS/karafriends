@@ -119,9 +119,9 @@ The zip holds a `karafriends-<platform>-<arch>` folder; the app inside is what t
 
 ### Publishing a release
 
-1. Set the version in `package.json` and give the CHANGELOG's unreleased section that version and date. Commit and push.
-2. Try the workflow first: on GitHub, Actions → Release → Run workflow. It builds, signs and zips all three platforms (Windows, Apple Silicon Macs, Linux) and keeps each zip as a workflow artifact, the same file a release uploads. Download one and start it.
-3. Publish a GitHub Release whose tag is `v` followed by `package.json`'s version (`v0.2.0`). The Release workflow runs on publishing, refuses a tag that doesn't match the version, and uploads the three zips to the release. If one platform fails, the others still upload; fix it and re-run that release's workflow run.
+1. Set the version in `package.json` and give the CHANGELOG's unreleased section that version and date (`## 0.2.0 (2026-10-29)`). Commit and push, and wait for the Build workflow to go green.
+2. Try the workflow first: on GitHub, Actions → Release → Run workflow. It builds, signs and zips all three platforms (Windows, Apple Silicon Macs, Linux) and keeps each zip as a workflow artifact, the same file a release attaches. It publishes nothing. Download one and start it.
+3. Tag the commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0` (`v` and `package.json`'s version). The Release workflow stops at once if the tag isn't the version or the CHANGELOG has no section for it. Otherwise it builds the three zips and, once all three are made, publishes the release "karafriends v0.2.0" with them, the ASIO SDK's source, and the CHANGELOG's section as its notes. A tag with a `-` (`v0.3.0-beta.1`) makes a prerelease. If a platform fails, nothing is published: fix it, or press "Re-run failed jobs" on the run's page if it was a hiccup, and the release follows when it passes.
 
 The Build workflow runs on every push: typecheck, lint, the unit and Rust tests, a build on every platform, the smoke tests on Windows and Linux, and the packaged Linux zip on Ubuntu 22.04. A release should only be cut from a green master.
 
