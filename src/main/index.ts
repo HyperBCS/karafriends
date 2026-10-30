@@ -220,8 +220,8 @@ ipcMain.handle(IPC_CHANNELS.quit, async (event) => {
   confirmingQuit = true;
   try {
     const { response } = await dialog.showMessageBox(rendererWindow, {
-      message: "Quit karafriends?",
-      buttons: ["Quit", "Cancel"],
+      message: "Are you sure you want to quit?",
+      buttons: ["Confirm", "Cancel"],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
