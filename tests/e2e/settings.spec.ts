@@ -159,7 +159,7 @@ test("the settings screen saves as the host goes", async ({
     "true",
   );
   // A fresh config.yaml has no logins: both fields are empty.
-  const dam = settings.getByRole("region", { name: "DAM login" });
+  const dam = settings.getByRole("region", { name: "DAM", exact: true });
   await expect(dam.getByLabel("Username")).toHaveValue("");
   await expect(dam.getByLabel("Password")).toHaveValue("");
 
@@ -185,11 +185,11 @@ test("the settings screen saves as the host goes", async ({
   });
 
   // A field saves when the host leaves it; a refused value says why.
-  const limit = queue.getByLabel("Songs per phone");
+  const limit = queue.getByLabel("Queue limit per phone");
   await limit.fill("1001");
   await limit.press("Enter");
   await expect(queue.getByRole("status")).toHaveText(
-    "Songs per phone must be a whole number from 0 to 1000",
+    "Queue limit per phone must be a whole number from 0 to 1000",
   );
   await limit.fill("3");
   await limit.blur();
@@ -228,17 +228,15 @@ test.describe("a first start (no config.yaml)", () => {
       setup.getByRole("heading", { name: "Welcome to karafriends" }),
     ).toBeVisible();
     await expect(steps.getByRole("listitem")).toHaveText([
-      "1Logins",
-      "2Mics and speakers",
+      "1Accounts",
+      "2Sound",
       "3Admin password",
     ]);
-    await expect(step("Logins")).toHaveAttribute("aria-current", "step");
+    await expect(step("Accounts")).toHaveAttribute("aria-current", "step");
 
     // 1: the logins, each saying how its catalog stands, and Import config.
-    const dam = setup.getByRole("region", { name: "DAM login" });
-    await expect(
-      dam.getByText("Off: guests can't find DAM songs until a login is set."),
-    ).toBeVisible();
+    const dam = setup.getByRole("region", { name: "DAM", exact: true });
+    await expect(dam.getByText("Not signed in", { exact: true })).toBeVisible();
     await expect(
       setup.getByRole("button", { name: "Import config" }),
     ).toBeVisible();
@@ -246,10 +244,7 @@ test.describe("a first start (no config.yaml)", () => {
     await dam.getByLabel("Username").fill("e2e-first-user");
     // Next saves the field being edited.
     await setup.getByRole("button", { name: "Next" }).click();
-    await expect(step("Mics and speakers")).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
+    await expect(step("Sound")).toHaveAttribute("aria-current", "step");
     expect((await output(display, "getSettings")).settings.damUsername).toBe(
       "e2e-first-user",
     );
@@ -269,7 +264,7 @@ test.describe("a first start (no config.yaml)", () => {
     await admin.getByLabel("Password").fill("e2e admin");
     await admin.getByRole("button", { name: "Set password" }).click();
     await expect(admin.getByRole("status")).toHaveText(
-      "Saved. Phones signed in as admins must sign in again.",
+      "Password saved. Admins must sign in again.",
     );
     await setup.getByRole("button", { name: "Finish" }).click();
 
@@ -290,7 +285,7 @@ test.describe("a first start (no config.yaml)", () => {
     await setup.getByRole("button", { name: "Next" }).click();
     await setup.getByRole("button", { name: "Back" }).click();
     await expect(
-      setup.getByRole("region", { name: "DAM login" }),
+      setup.getByRole("region", { name: "DAM", exact: true }),
     ).toBeVisible();
     await setup.getByRole("button", { name: "Skip setup" }).click();
     await expect(setup).toHaveCount(0);
@@ -305,18 +300,14 @@ test("Use Joysound turns its songs off for the phones, and on again", async ({
   await openTab(display, "Accounts");
   const joysound = display
     .getByRole("dialog", { name: "Settings" })
-    .getByRole("region", { name: "Joysound login" });
+    .getByRole("region", { name: "Joysound", exact: true });
   const use = joysound.getByLabel("Use Joysound");
   // On, faked for the tests.
   await expect(use).toBeChecked();
-  await expect(
-    joysound.getByText("On: guests can find and sing Joysound songs."),
-  ).toBeVisible();
+  await expect(joysound.getByText("Signed in", { exact: true })).toBeVisible();
 
   await use.uncheck();
-  await expect(
-    joysound.getByText("Turned off: guests don't see Joysound songs."),
-  ).toBeVisible();
+  await expect(joysound.getByText("Off", { exact: true })).toBeVisible();
   expect((await configOnDisk(karafriends.app)).joysoundEnabled).toBe(false);
   expect((await phoneLiveState(karafriends.remoconUrl)).catalogs).toEqual({
     dam: { state: "on" },
@@ -324,9 +315,7 @@ test("Use Joysound turns its songs off for the phones, and on again", async ({
   });
 
   await use.check();
-  await expect(
-    joysound.getByText("On: guests can find and sing Joysound songs."),
-  ).toBeVisible();
+  await expect(joysound.getByText("Signed in", { exact: true })).toBeVisible();
   expect((await configOnDisk(karafriends.app)).joysoundEnabled).toBe(true);
 });
 
@@ -335,7 +324,10 @@ test("leaving Settings saves the field being edited: Escape keeps it, and Close 
 }) => {
   const settings = display.getByRole("dialog", { name: "Settings" });
   const close = settings.getByRole("button", { name: "Close" });
-  const joysound = settings.getByRole("region", { name: "Joysound login" });
+  const joysound = settings.getByRole("region", {
+    name: "Joysound",
+    exact: true,
+  });
   await openSettings(display);
   await joysound.getByLabel("Email").fill("e2e-escape@example.com");
   await display.keyboard.press("Escape");
@@ -398,13 +390,11 @@ test("the songs' output can be picked; a saved one that isn't connected says so"
   // output at all (CI).
   const sound = display.getByRole("region", { name: "Sound", exact: true });
   await expect(
-    sound.getByText(
-      /^The songs play (on System default|silently) until E2E Gone is connected\.$/,
-    ),
+    sound.getByText(/^E2E Gone isn't connected\.( Using System default\.)?$/),
   ).toBeVisible();
   await output.selectOption("System default");
   await expect(output).toHaveValue("");
-  await expect(sound.getByText(/until E2E Gone/)).toHaveCount(0);
+  await expect(sound.getByText(/^E2E Gone isn't connected/)).toHaveCount(0);
   await expect
     .poll(() => display.evaluate(() => localStorage.getItem("songOutput")))
     .toBeNull();
@@ -474,10 +464,10 @@ test("a custom URL takes the QR code's place until a LAN address is picked again
   await address.selectOption("Custom URL…");
   await expect(custom).toBeFocused();
   for (const [typed, why] of [
-    ["ftp://example.com", "Only http:// or https:// addresses."],
+    ["ftp://example.com", "The address must start with http:// or https://."],
     [
       "https://karaoke.example.ts.net/party",
-      "the remote has to be at its root",
+      "Remove everything after the host and port.",
     ],
   ]) {
     await custom.fill(typed);
@@ -585,16 +575,18 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
   await expect(tab("Accounts")).toBeFocused();
   await expect(tab("Accounts")).toHaveAttribute("aria-selected", "true");
   await expect(panel).toHaveAccessibleName("Accounts");
-  await expect(panel.getByRole("region", { name: "DAM login" })).toBeVisible();
+  await expect(
+    panel.getByRole("region", { name: "DAM", exact: true }),
+  ).toBeVisible();
   expect(await tabStops()).toEqual(["0", "-1", "-1", "-1", "-1"]);
 
   // Each key opens the tab it moves to.
   for (const [key, name, region] of [
     ["ArrowDown", "Party", "Queue"],
     ["End", "Advanced", "Tools"],
-    ["ArrowDown", "Accounts", "Joysound login"],
-    ["ArrowUp", "Advanced", "Config file"],
-    ["Home", "Accounts", "DAM login"],
+    ["ArrowDown", "Accounts", "Joysound"],
+    ["ArrowUp", "Advanced", "Configuration"],
+    ["Home", "Accounts", "DAM"],
     ["ArrowUp", "Advanced", "Downloads"],
     ["ArrowUp", "Display", "Display"],
   ]) {
@@ -605,9 +597,9 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
     await expect(panel.getByRole("region", { name: region })).toBeVisible();
   }
   expect(await tabStops()).toEqual(["-1", "-1", "-1", "0", "-1"]);
-  await expect(settings.getByRole("region", { name: "DAM login" })).toHaveCount(
-    0,
-  );
+  await expect(
+    settings.getByRole("region", { name: "DAM", exact: true }),
+  ).toHaveCount(0);
   // Tab goes on to Quit, under the tabs, then into the panel.
   await display.keyboard.press("Tab");
   await expect(
@@ -654,7 +646,7 @@ test.describe("on a profile with a login", () => {
       settings.getByRole("tab", { name: "Accounts" }),
     ).toHaveAttribute("aria-selected", "true");
     await expect(
-      settings.getByRole("region", { name: "DAM login" }),
+      settings.getByRole("region", { name: "DAM", exact: true }),
     ).toBeVisible();
   });
 });
@@ -669,7 +661,7 @@ test("a tab with something to look at gets a dot, until it's put right", async (
   await expect(party).not.toHaveAccessibleDescription("Needs a look");
 
   // A refused value, saved as the host leaves for another tab.
-  await queue.getByLabel("Songs per phone").fill("1001");
+  await queue.getByLabel("Queue limit per phone").fill("1001");
   await openTab(display, "Sound");
   await expect(party).toHaveAccessibleDescription("Needs a look");
   await expect(party.locator(".settingsTabDot")).toBeVisible();
@@ -678,27 +670,27 @@ test("a tab with something to look at gets a dot, until it's put right", async (
   await expect(party).not.toHaveAccessibleDescription("Needs a look");
   await expect(party.locator(".settingsTabDot")).toHaveCount(0);
   await expect(queue.getByRole("status")).toHaveText(
-    "Songs per phone must be a whole number from 0 to 1000",
+    "Queue limit per phone must be a whole number from 0 to 1000",
   );
   // Put back to the saved value: that clears it too.
   const saved = String(
     (await output(display, "getSettings")).settings.paxSongQueueLimit,
   );
-  await queue.getByLabel("Songs per phone").fill(saved);
-  await queue.getByLabel("Songs per phone").press("Enter");
+  await queue.getByLabel("Queue limit per phone").fill(saved);
+  await queue.getByLabel("Queue limit per phone").press("Enter");
   await expect(queue.getByRole("status")).toHaveText("Saved.");
   await openTab(display, "Sound");
   await expect(party).not.toHaveAccessibleDescription("Needs a look");
 
   // And a refused value put right with another.
   await openTab(display, "Party");
-  await queue.getByLabel("Songs per phone").fill("1001");
-  await queue.getByLabel("Songs per phone").press("Enter");
+  await queue.getByLabel("Queue limit per phone").fill("1001");
+  await queue.getByLabel("Queue limit per phone").press("Enter");
   await expect(queue.getByRole("status")).toHaveText(
-    "Songs per phone must be a whole number from 0 to 1000",
+    "Queue limit per phone must be a whole number from 0 to 1000",
   );
-  await queue.getByLabel("Songs per phone").fill("2");
-  await queue.getByLabel("Songs per phone").press("Enter");
+  await queue.getByLabel("Queue limit per phone").fill("2");
+  await queue.getByLabel("Queue limit per phone").press("Enter");
   await expect(queue.getByRole("status")).toHaveText("Saved.");
   await openTab(display, "Sound");
   await expect(party).not.toHaveAccessibleDescription("Needs a look");
@@ -957,7 +949,7 @@ test.describe("the pitch bars", () => {
       .getByLabel("Pitch bars", { exact: true });
     await expect(pitchBars).toBeChecked();
     await expect(pitchBars).toHaveAccessibleDescription(
-      "On DAM and Joysound songs: the melody as bars along the top, with the mics' pitch over them.",
+      "Shows the melody and the singer's pitch on DAM and Joysound songs.",
     );
     await pitchBars.uncheck();
     await expect(roll).toHaveCount(0);
@@ -1157,7 +1149,7 @@ test.describe("the pitch bars", () => {
     await openTab(display, "Sound");
     const section = settings.getByRole("region", { name: "Microphones" });
     await section
-      .getByLabel("Add a microphone")
+      .getByLabel("Add microphone")
       .selectOption("E2E Mic (USB), channel 1");
     const mic = section.getByRole("group", {
       name: "E2E Mic (USB), channel 1",
@@ -1375,7 +1367,7 @@ test.describe("the microphones", () => {
 
     // Every channel shows by its device's name. The ASIO line shows only a
     // driver that won't load.
-    const add = section.getByLabel("Add a microphone");
+    const add = section.getByLabel("Add microphone");
     await expect(add.locator("option")).toHaveText([
       "Select a microphone",
       "E2E Mic (USB), channel 1",
@@ -1519,13 +1511,13 @@ test.describe("the microphones", () => {
     ).toBeLessThan(calls.findIndex(([name]) => name === "inputDevice_new"));
   });
 
-  test("a mic plugged in while Sound is open can be added: listed as the system says so, or as Add a microphone opens; a slow listing says it's looking", async ({
+  test("a mic plugged in while Sound is open can be added: listed as the system says so, or as Add microphone opens; a slow listing says it's looking", async ({
     display,
   }) => {
     const section = display
       .getByRole("dialog", { name: "Settings" })
       .getByRole("region", { name: "Microphones" });
-    const options = section.getByLabel("Add a microphone").locator("option");
+    const options = section.getByLabel("Add microphone").locator("option");
     const fake = (method: "plugIn" | "slowListing", arg: string | number) =>
       display.evaluate(
         ([method, arg]) =>
@@ -1552,11 +1544,11 @@ test.describe("the microphones", () => {
     await deviceChange();
     await expect(options.last()).toHaveText("E2E Headset (USB), channel 1");
 
-    // One it says nothing of: pressing Add a microphone lists it first
+    // One it says nothing of: pressing Add microphone lists it first
     // (not within a second of the last listing).
     await display.waitForTimeout(1_100);
     await fake("plugIn", "E2E Lavalier");
-    await section.getByLabel("Add a microphone").dispatchEvent("mousedown");
+    await section.getByLabel("Add microphone").dispatchEvent("mousedown");
     await expect(options.last()).toHaveText("E2E Lavalier (USB), channel 1");
 
     // A listing that holds the page: the next one says it's looking first.
@@ -1565,7 +1557,7 @@ test.describe("the microphones", () => {
       const seen = window as unknown as { sawLooking: boolean };
       seen.sawLooking = false;
       new MutationObserver(() => {
-        if (document.body.textContent?.includes("Looking for microphones…")) {
+        if (document.body.textContent?.includes("Detecting microphones…")) {
           seen.sawLooking = true;
         }
       }).observe(document.body, { childList: true, subtree: true });
@@ -1580,7 +1572,7 @@ test.describe("the microphones", () => {
         () => (window as unknown as { sawLooking: boolean }).sawLooking,
       ),
     ).toBe(true);
-    await expect(section.getByText("Looking for microphones…")).toHaveCount(0);
+    await expect(section.getByText("Detecting microphones…")).toHaveCount(0);
     await fake("slowListing", 0);
   });
 
@@ -1627,7 +1619,7 @@ test.describe("the microphones", () => {
     const section = display
       .getByRole("dialog", { name: "Settings" })
       .getByRole("region", { name: "Microphones" });
-    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    await section.getByLabel("Add microphone").selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
     const mark = mic.locator(".settingsMeterGate");
     const off = mic.getByLabel("Noise gate Off");
@@ -1682,7 +1674,7 @@ test.describe("the microphones", () => {
     const section = display
       .getByRole("dialog", { name: "Settings" })
       .getByRole("region", { name: "Microphones" });
-    const add = section.getByLabel("Add a microphone");
+    const add = section.getByLabel("Add microphone");
     await add.selectOption(MIC.label);
     await add.selectOption(INTERFACE.label);
     const mic = section.getByRole("group", { name: MIC.label });
@@ -1796,7 +1788,9 @@ test.describe("the microphones", () => {
     await useAsio.click();
     await expect(useAsio).toBeChecked();
     await expect(
-      section.getByText("The mic output or a mic uses ASIO. Change it first."),
+      section.getByText(
+        "A mic or the mic output is using ASIO. Change it first.",
+      ),
     ).toBeVisible();
     await output.selectOption("");
     await useAsio.uncheck();
@@ -1859,7 +1853,7 @@ test.describe("the microphones", () => {
     );
 
     // What the output and a mic run at.
-    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    await section.getByLabel("Add microphone").selectOption(MIC.label);
     await expect(
       section.getByText("In use: 48 kHz, 256 samples (5.3 ms)"),
     ).toBeVisible();
@@ -1898,7 +1892,7 @@ test.describe("the microphones", () => {
     display,
   }) => {
     const section = display.getByRole("region", { name: "Microphones" });
-    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    await section.getByLabel("Add microphone").selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
     const mode = section.getByLabel("Mic mode");
     await expect(mode).toHaveValue("shared");
@@ -1925,7 +1919,7 @@ test.describe("the microphones", () => {
     );
     const buffer = section.getByLabel("Mic buffer");
     await expect(buffer.locator("option")).toHaveText([
-      "Smallest",
+      "Minimum",
       "128 samples",
       "256 samples",
       "512 samples",
@@ -2019,7 +2013,7 @@ test.describe("the microphones", () => {
     // The watchdog opens it once it can, at its levels.
     await failOpen(display, []);
     await expect(
-      mic.getByText("Reopened after: Error: The device is busy (fake)"),
+      mic.getByText("Reopened: Error: The device is busy (fake)"),
     ).toBeVisible();
     await expect(mic.getByText(/device is busy/)).toHaveCount(1);
     expect(
@@ -2033,13 +2027,13 @@ test.describe("the microphones", () => {
     display,
   }) => {
     const section = display.getByRole("region", { name: "Microphones" });
-    await section.getByLabel("Add a microphone").selectOption(MIC.label);
+    await section.getByLabel("Add microphone").selectOption(MIC.label);
     const mic = section.getByRole("group", { name: MIC.label });
     await expect(mic.getByText(/^In use:/)).toBeVisible();
 
     await stopMics(display, [MIC_DEVICE]);
     await expect(
-      mic.getByText("Reopened after: The mic stopped sending sound (fake)"),
+      mic.getByText("Reopened: The mic stopped sending sound (fake)"),
     ).toBeVisible();
 
     await failOpen(display, [MIC_DEVICE]);
@@ -2050,7 +2044,7 @@ test.describe("the microphones", () => {
 
     await failOpen(display, []);
     await expect(
-      mic.getByText("Reopened after: Error: The device is busy (fake)"),
+      mic.getByText("Reopened: Error: The device is busy (fake)"),
     ).toBeVisible();
     await expect(mic.getByText(/^In use:/)).toBeVisible();
   });
@@ -2099,7 +2093,7 @@ test.describe("devices that won't open", () => {
     await openTab(display, "Sound");
 
     // A new mic that won't open: its row says why.
-    const add = section.getByLabel("Add a microphone");
+    const add = section.getByLabel("Add microphone");
     await add.selectOption("E2E Interface (USB), channel 2");
     const down = section.getByRole("group", {
       name: "E2E Interface (USB), channel 2",
@@ -2143,7 +2137,7 @@ test.describe("devices that won't open", () => {
       .getByRole("dialog", { name: "Settings" })
       .getByRole("region", { name: "Microphones" });
     await section
-      .getByLabel("Add a microphone")
+      .getByLabel("Add microphone")
       .selectOption("E2E Mic (USB), channel 1");
     await section
       .getByLabel("Mic output")
@@ -2172,7 +2166,7 @@ test.describe("devices that won't open", () => {
       .getByRole("dialog", { name: "Settings" })
       .getByRole("region", { name: "Microphones" });
     await section
-      .getByLabel("Add a microphone")
+      .getByLabel("Add microphone")
       .selectOption("E2E Mic (USB), channel 1");
     const mic = section.getByRole("group", {
       name: "E2E Mic (USB), channel 1",
@@ -2187,7 +2181,7 @@ test.describe("devices that won't open", () => {
       .boundingBox())!;
     expect(gain.y).toBeGreaterThan(device.y + device.height);
     expect(remove.y + remove.height).toBeCloseTo(gain.y + gain.height, -1);
-    const add = (await section.getByLabel("Add a microphone").boundingBox())!;
+    const add = (await section.getByLabel("Add microphone").boundingBox())!;
     expect(add.width).toBeGreaterThan(row.width * 0.9);
   });
 
@@ -2200,7 +2194,7 @@ test.describe("devices that won't open", () => {
       name: "Something went wrong",
     });
     const MIC = "E2E Mic (USB), channel 1";
-    await section.getByLabel("Add a microphone").selectOption(MIC);
+    await section.getByLabel("Add microphone").selectOption(MIC);
     const mic = section.getByRole("group", { name: MIC });
     await expect(mic).toBeVisible();
 
@@ -2262,7 +2256,7 @@ test.describe("the microphones on Linux", () => {
     await expect(section.getByLabel("Mic mode")).toHaveCount(0);
 
     // Each channel of each mic, by its name.
-    const add = section.getByLabel("Add a microphone");
+    const add = section.getByLabel("Add microphone");
     await expect(add.locator("option")).toHaveText([
       "Select a microphone",
       DEFAULT_MIC,
@@ -2394,9 +2388,9 @@ test.describe("export, then import on a second launch", () => {
     expect(result).toEqual({
       ok: true,
       problems: [
-        "Phones signed in as admins must sign in again.",
-        "No DAM login is set: enter the username and password first.",
-        "No Joysound login is set: enter the email and password first.",
+        "Admins must sign in again.",
+        "Enter a DAM username and password first.",
+        "Enter a Joysound email and password first.",
       ],
     });
 
@@ -2580,8 +2574,8 @@ test("Quit asks first, and quits only when told to", async ({
   await quit.click();
   await expect.poll(async () => (await asked()).length).toBe(1);
   expect((await asked())[0]).toMatchObject({
-    message: "Are you sure you want to quit?",
-    buttons: ["Confirm", "Cancel"],
+    message: "Quit karafriends?",
+    buttons: ["Quit", "Cancel"],
     cancelId: 1,
   });
   await expect(settings).toBeVisible();

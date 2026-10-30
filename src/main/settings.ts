@@ -104,15 +104,12 @@ export function loginFailureReason(
   if (err instanceof LoginWarning) return err.message;
   if (err instanceof TimeoutError) {
     return (
-      `${name} didn't answer within ${timeoutMs / 1000} seconds. ` +
-      "Check this computer's internet connection and VPN."
+      `${name} didn't respond within ${timeoutMs / 1000} seconds. ` +
+      "Check the internet connection and VPN."
     );
   }
   if (err instanceof HttpStatusError && err.status === 403) {
-    return (
-      `${name} answered 403: this usually means no Japanese IP address. ` +
-      "Connect through a VPN to Japan."
-    );
+    return `${name} is only available from Japan. Connect to a VPN in Japan.`;
   }
   return `Couldn't sign in to ${name}: ${(err as Error)?.message ?? String(err)}`;
 }
@@ -158,7 +155,7 @@ export function createSettingsHandlers(
       const what = service === "dam" ? "username" : "email";
       return {
         ok: false,
-        reason: `No ${SERVICE_NAMES[service]} login is set: enter the ${what} and password first.`,
+        reason: `Enter a ${SERVICE_NAMES[service]} ${what} and password first.`,
       };
     }
     try {
@@ -244,8 +241,7 @@ export function createSettingsHandlers(
       if (!hasLogin(saved, "joysound")) {
         return {
           ok: false,
-          reason:
-            "No Joysound login is set: enter the email and password first.",
+          reason: "Enter a Joysound email and password first.",
         };
       }
       try {
@@ -295,8 +291,7 @@ export function createSettingsHandlers(
         return {
           ok: false,
           problems: [
-            `The file isn't valid YAML${line ? ` (line ${line})` : ""}. ` +
-              "Pick a file from Export config, or a config.yaml.",
+            `Not a valid config file${line ? ` (line ${line})` : ""}.`,
           ],
         };
       }
@@ -307,9 +302,7 @@ export function createSettingsHandlers(
       ) {
         return {
           ok: false,
-          problems: [
-            "The file has no settings in it. Pick a file from Export config, or a config.yaml.",
-          ],
+          problems: ["The file contains no settings."],
         };
       }
 
@@ -318,11 +311,11 @@ export function createSettingsHandlers(
       // An old config.yaml's YOUR_PASSWORD_HERE and the like mean nothing set.
       clearPlaceholders(values);
       const notes = dropObsoleteKeys(values).map(
-        ({ keys, why }) => `Dropped ${keys}: ${why}`,
+        ({ keys, why }) => `Ignored ${keys}: ${why}`,
       );
       for (const key of Object.keys(values)) {
         if (!isConfigKey(key)) {
-          notes.push(`Dropped ${key}: karafriends has no such setting.`);
+          notes.push(`Ignored unknown setting ${key}.`);
           delete values[key];
         }
       }
@@ -336,7 +329,7 @@ export function createSettingsHandlers(
         after.adminPasswordSalt !== before.adminPasswordSalt
       ) {
         // services.ts ends their sessions.
-        notes.push("Phones signed in as admins must sign in again.");
+        notes.push("Admins must sign in again.");
       }
 
       const results = await Promise.all(
@@ -344,7 +337,7 @@ export function createSettingsHandlers(
           const result = await testLogin(service);
           // Each reason names the service.
           if (!result.ok) return result.reason;
-          const works = `${SERVICE_NAMES[service]} login works.`;
+          const works = `Signed in to ${SERVICE_NAMES[service]}.`;
           return result.note ? `${works} ${result.note}` : works;
         }),
       );

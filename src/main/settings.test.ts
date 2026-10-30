@@ -347,7 +347,7 @@ describe("testLogin", () => {
       assert.deepEqual(await result, {
         ok: false,
         reason:
-          "DAM didn't answer within 15 seconds. Check this computer's internet connection and VPN.",
+          "DAM didn't respond within 15 seconds. Check the internet connection and VPN.",
       });
     } finally {
       console.warn = warn;
@@ -358,7 +358,7 @@ describe("testLogin", () => {
     const { api, tried } = setup();
     assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
       ok: false,
-      reason: "No Joysound login is set: enter the email and password first.",
+      reason: "Enter a Joysound email and password first.",
     });
     assert.deepEqual(tried, []);
   });
@@ -378,8 +378,7 @@ describe("testLogin", () => {
     assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
       ok: false,
       reason:
-        "Joysound answered 403: this usually means no Japanese IP address. " +
-        "Connect through a VPN to Japan.",
+        "Joysound is only available from Japan. Connect to a VPN in Japan.",
     });
     assert.deepEqual(await api.testLogin({ service: "dam" }, display), {
       ok: false,
@@ -393,13 +392,13 @@ describe("testLogin", () => {
 
   test("passes on a note on the Joysound link, and a warning as it is", async () => {
     let answer: () => Promise<LoginNote | void> = async () => ({
-      note: "karafriends is linked to this account, a paid member.",
+      note: "Linked as a TV app (paid membership).",
     });
     const { api, store } = setup({ logins: { joysound: () => answer() } });
     store.update(LOGINS);
     assert.deepEqual(await api.testLogin({ service: "joysound" }, display), {
       ok: true,
-      note: "karafriends is linked to this account, a paid member.",
+      note: "Linked as a TV app (paid membership).",
     });
     // Not linked yet: the display can offer Switch.
     answer = async () => ({ note: "Not linked yet.", canSwitchLink: true });
@@ -458,7 +457,7 @@ describe("switchJoysoundLink", () => {
     const { api, tried } = setup();
     assert.deepEqual(await api.switchJoysoundLink({}, display), {
       ok: false,
-      reason: "No Joysound login is set: enter the email and password first.",
+      reason: "Enter a Joysound email and password first.",
     });
     assert.deepEqual(tried, []);
   });
@@ -476,8 +475,7 @@ describe("switchJoysoundLink", () => {
       assert.deepEqual(await api.switchJoysoundLink({}, display), {
         ok: false,
         reason:
-          "Joysound answered 403: this usually means no Japanese IP address. " +
-          "Connect through a VPN to Japan.",
+          "Joysound is only available from Japan. Connect to a VPN in Japan.",
       });
     } finally {
       console.warn = warn;
@@ -517,9 +515,9 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(await second.api.importConfig({ yaml }, display), {
       ok: true,
       problems: [
-        "Phones signed in as admins must sign in again.",
-        "DAM login works.",
-        "Joysound login works.",
+        "Admins must sign in again.",
+        "Signed in to DAM.",
+        "Signed in to Joysound.",
       ],
     });
     assert.deepEqual(second.store.saved(), first.store.saved());
@@ -536,7 +534,7 @@ describe("exportConfig and importConfig", () => {
     // The same admin password again signs nobody out.
     assert.deepEqual(await second.api.importConfig({ yaml }, display), {
       ok: true,
-      problems: ["DAM login works.", "Joysound login works."],
+      problems: ["Signed in to DAM.", "Signed in to Joysound."],
     });
   });
 
@@ -555,10 +553,10 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(result, {
       ok: true,
       problems: [
-        "Dropped adminDeviceIds, adminNicks: the admin lists are gone. Phones become admins with the admin password.",
-        "Dropped proxyEnable, proxyHost, proxyPort, proxyUser, proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
-        "DAM login works.",
-        "No Joysound login is set: enter the email and password first.",
+        "Ignored adminDeviceIds, adminNicks: admin lists were replaced by the admin password.",
+        "Ignored proxyEnable, proxyHost, proxyPort, proxyUser, proxyPass: proxy support was removed. Use a VPN in Japan instead.",
+        "Signed in to DAM.",
+        "Enter a Joysound email and password first.",
       ],
     });
     assert.equal(store.get().damUsername, "dam-user");
@@ -586,9 +584,9 @@ describe("exportConfig and importConfig", () => {
     assert.deepEqual(result, {
       ok: true,
       problems: [
-        "Dropped proxyHost, proxyUser, proxyPass: karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan on this computer.",
-        "No DAM login is set: enter the username and password first.",
-        "No Joysound login is set: enter the email and password first.",
+        "Ignored proxyHost, proxyUser, proxyPass: proxy support was removed. Use a VPN in Japan instead.",
+        "Enter a DAM username and password first.",
+        "Enter a Joysound email and password first.",
       ],
     });
     const saved = store.saved();
@@ -612,10 +610,7 @@ describe("exportConfig and importConfig", () => {
       display,
     );
     assert.equal(result.ok, true);
-    assert.equal(
-      result.problems[0],
-      "Dropped futureSetting: karafriends has no such setting.",
-    );
+    assert.equal(result.problems[0], "Ignored unknown setting futureSetting.");
     assert.equal(onDisk().useLowBitrateUrl, true);
     assert.equal("futureSetting" in onDisk(), false);
   });
@@ -633,7 +628,7 @@ describe("exportConfig and importConfig", () => {
       display,
     );
     assert.equal(result.ok, true);
-    assert.match(result.problems[0], /^DAM answered 403/);
+    assert.match(result.problems[0], /^DAM is only available from Japan/);
     assert.equal(store.get().damUsername, "dam-user");
   });
 
@@ -641,9 +636,9 @@ describe("exportConfig and importConfig", () => {
     const { api, store, onDisk } = setup();
     const before = onDisk();
     for (const [yaml, problem] of [
-      ["damUsername: [unclosed\n", /^The file isn't valid YAML \(line \d+\)/],
-      ["- a list\n", /^The file has no settings in it/],
-      ["", /^The file has no settings in it/],
+      ["damUsername: [unclosed\n", /^Not a valid config file \(line \d+\)/],
+      ["- a list\n", /^The file contains no settings/],
+      ["", /^The file contains no settings/],
       [
         "supervisedMode: true\nremoconPort: 99999\n",
         /^remoconPort must be a whole number from 1 to 65535$/,

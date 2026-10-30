@@ -253,14 +253,14 @@ export function MicModeSetting(props: {
             value={mode.bufferSize}
             choices={EXCLUSIVE_BUFFERS}
             show={samples}
-            own="Smallest"
+            own="Minimum"
             onChange={(bufferSize) => props.onChange({ ...mode, bufferSize })}
           />
         ) : null}
       </div>
       {mode.exclusive ? (
         <p className="settingsHint">
-          Less delay, but other programs can&apos;t use the mics meanwhile.
+          Lower latency, but other apps can&apos;t use the mics.
         </p>
       ) : null}
     </>
@@ -291,9 +291,8 @@ function LinuxBufferSetting(props: {
         />
       </div>
       <p className="settingsHint">
-        For every mic and the mic output: smaller is less delay, bigger if the
-        mics crackle. With PipeWire, other programs run at it too while a mic is
-        open.
+        Applies to all mics and the mic output. Smaller lowers latency; raise it
+        if the mics crackle.
       </p>
     </>
   );
@@ -463,7 +462,7 @@ export function MicrophoneSetting(props: {
         </p>
       ) : mic.reopenedAfter ? (
         <p className="settingsHint" role="status">
-          Reopened after: {mic.reopenedAfter}
+          Reopened: {mic.reopenedAfter}
         </p>
       ) : null}
       {format ? <p className="settingsHint">In use: {format}</p> : null}
@@ -481,7 +480,7 @@ export function AddMicrophone(props: {
   return (
     <div className="settingsMicRow">
       <DeviceSelect
-        label="Add a microphone"
+        label="Add microphone"
         inputs={props.inputs}
         mic={null}
         onChange={props.onAdd}

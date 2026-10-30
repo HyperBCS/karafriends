@@ -467,8 +467,8 @@ async function fetchAudio(url: unknown, id: string): Promise<Buffer> {
 // paid member. withSession checks the link again once, in case it changed.
 function notPaid(membershipType: string | null | undefined): SessionLostError {
   return new SessionLostError(
-    `The Joysound account karafriends is linked to isn't a paid member ` +
-      `(membership: ${membershipType ?? "none"}), so Joysound sends only previews`,
+    `The linked Joysound account has no paid membership ` +
+      `(${membershipType ?? "none"}), so Joysound sends only previews`,
   );
 }
 

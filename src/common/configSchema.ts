@@ -70,11 +70,8 @@ export function clearPlaceholders(values: Record<string, unknown>): void {
 // password replaced the admin lists: anyone can take a nickname, and device
 // IDs were awkward to collect. The proxy went because a VPN on the computer
 // does its job for every request, the display's DAM streams included.
-const ADMIN_LISTS_GONE =
-  "the admin lists are gone. Phones become admins with the admin password.";
-const PROXY_GONE =
-  "karafriends no longer uses a proxy. Outside Japan, run a VPN to Japan " +
-  "on this computer.";
+const ADMIN_LISTS_GONE = "admin lists were replaced by the admin password.";
+const PROXY_GONE = "proxy support was removed. Use a VPN in Japan instead.";
 const OBSOLETE_KEYS: Readonly<Record<string, string>> = {
   adminDeviceIds: ADMIN_LISTS_GONE,
   adminNicks: ADMIN_LISTS_GONE,

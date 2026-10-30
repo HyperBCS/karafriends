@@ -42,7 +42,7 @@ describe("catalogProblem", () => {
       assert.equal(problem.state, "failed");
       assert.match(
         "reason" in problem ? problem.reason : "",
-        /refused the login: check the (username|email) and password/,
+        /rejected the login\. Check the (username|email) and password/,
       );
     }
   });
@@ -51,7 +51,7 @@ describe("catalogProblem", () => {
     assert.deepEqual(catalogProblem("joysound", new TvLinkTakenError()), {
       state: "failed",
       reason:
-        "Another TV app is linked to the Joysound account, which links one at a time. Switch the link to karafriends in Settings › Accounts.",
+        "Another TV app is linked to this Joysound account. Switch the TV link in Settings › Accounts.",
       canSwitchLink: true,
     });
     assert.deepEqual(
@@ -65,8 +65,7 @@ describe("catalogProblem", () => {
       catalogProblem("dam", new HttpStatusError(403, "https://x/login")),
       {
         state: "unreachable",
-        reason:
-          "DAM refused this connection: it only answers addresses in Japan. Turn on the VPN to Japan.",
+        reason: "DAM is only available from Japan. Connect to a VPN in Japan.",
       },
     );
   });
@@ -79,8 +78,7 @@ describe("catalogProblem", () => {
     ]) {
       assert.deepEqual(catalogProblem("joysound", err), {
         state: "unreachable",
-        reason:
-          "Can't reach Joysound. Check the internet connection and the VPN to Japan.",
+        reason: "Can't reach Joysound. Check the internet connection and VPN.",
       });
     }
   });

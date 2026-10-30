@@ -16,8 +16,8 @@ import "./Settings.css";
 import "./Setup.css";
 
 const STEPS = [
-  { id: "logins", name: "Logins" },
-  { id: "sound", name: "Mics and speakers" },
+  { id: "logins", name: "Accounts" },
+  { id: "sound", name: "Sound" },
   { id: "admin", name: "Admin password" },
 ] as const;
 
@@ -53,7 +53,7 @@ export default function Setup(props: SoundProps & { onDone: () => void }) {
     content = (
       <p className="settingsLoading">
         {loadError
-          ? `Couldn't load the settings: ${loadError}`
+          ? `Couldn't load settings: ${loadError}`
           : "Loading settings…"}
       </p>
     );
@@ -61,14 +61,10 @@ export default function Setup(props: SoundProps & { onDone: () => void }) {
     content = (
       <>
         <p className="settingsBanner">
-          Sign in to DAM and Joysound so guests can find and sing their songs.
-          Each login is checked as you enter it. YouTube and Niconico work
-          without one.
+          Sign in to DAM and Joysound to use their song catalogs. YouTube and
+          Niconico don&apos;t need an account.
         </p>
-        <SettingsSection
-          title="From another karaoke PC?"
-          message={messages.config}
-        >
+        <SettingsSection title="Import settings" message={messages.config}>
           <div className="settingsActions">
             <button
               type="button"
@@ -79,8 +75,7 @@ export default function Setup(props: SoundProps & { onDone: () => void }) {
               Import config
             </button>
             <p className="settingsHint">
-              A file from Export config (Settings › Advanced) brings its logins
-              and settings here.
+              Use a file exported from karafriends on another PC.
             </p>
           </div>
         </SettingsSection>
@@ -93,8 +88,8 @@ export default function Setup(props: SoundProps & { onDone: () => void }) {
     content = (
       <>
         <p className="settingsBanner">
-          An admin password lets phones sign in to skip, reorder and remove
-          anyone's songs. Without one, only this screen can.
+          Optional. Without an admin password, only this PC can skip, reorder
+          and remove other guests&apos; songs.
         </p>
         <AdminPasswordSection
           loaded={loaded}

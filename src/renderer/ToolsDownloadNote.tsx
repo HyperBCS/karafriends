@@ -10,7 +10,7 @@ export default function ToolsDownloadNote() {
   if (!download) return null;
   return (
     <p className="toolsDownload" role="status">
-      Getting YouTube ready
+      Setting up YouTube
       {download.percent === null ? "…" : `… ${download.percent}%`}
     </p>
   );

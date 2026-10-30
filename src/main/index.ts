@@ -220,8 +220,8 @@ ipcMain.handle(IPC_CHANNELS.quit, async (event) => {
   confirmingQuit = true;
   try {
     const { response } = await dialog.showMessageBox(rendererWindow, {
-      message: "Are you sure you want to quit?",
-      buttons: ["Confirm", "Cancel"],
+      message: "Quit karafriends?",
+      buttons: ["Quit", "Cancel"],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
@@ -429,8 +429,8 @@ async function askAfterCrashes(reason: string) {
   if (!rendererWindow || HIDE_WINDOW) return;
   const { response } = await dialog.showMessageBox(rendererWindow, {
     type: "error",
-    message: "The karaoke display keeps crashing",
-    detail: `It stopped 3 times in a minute (${reason}). Reload it to try again, or quit and start karafriends again.`,
+    message: "The display keeps crashing",
+    detail: `It crashed 3 times in one minute (${reason}). Reload to try again, or quit.`,
     buttons: ["Reload", "Quit"],
     defaultId: 0,
     cancelId: 0,
@@ -488,7 +488,7 @@ async function refreshRendererWindow() {
   confirmingReload = true;
   try {
     const { response } = await dialog.showMessageBox(rendererWindow, {
-      message: "Are you sure you want to reload the renderer window?",
+      message: "Reload the display?",
       buttons: ["Reload", "Cancel"],
       defaultId: 0,
       cancelId: 1,

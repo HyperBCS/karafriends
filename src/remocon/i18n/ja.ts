@@ -10,7 +10,7 @@ export const ja: Messages = {
   "common.tryAgain": "再試行",
   "common.loadFailed": "読み込めませんでした：{reason}",
   "common.loadMoreFailed": "続きを読み込めませんでした：{reason}",
-  "common.offline": "karafriendsに接続できません。Wi-Fiを確認してください。",
+  "common.offline": "カラオケPCに接続できません。Wi-Fiを確認してください。",
   "common.loading": "読み込み中",
   "common.more": "もっと見る",
   "common.cancel": "キャンセル",
@@ -32,16 +32,15 @@ export const ja: Messages = {
 
   "search.heading": "曲を探す",
   "search.label": "検索",
-  "search.placeholder": "曲名・歌手名・動画のURL",
-  "search.linkHint":
-    "YouTubeやニコニコのURLを貼り付けると、その動画を予約できます。",
+  "search.placeholder": "曲名・歌手名・動画URL",
+  "search.linkHint": "YouTubeやニコニコのURLを貼り付けて動画を予約できます。",
   "search.byLabel": "検索方法",
   "search.title": "曲名",
   "search.artist": "歌手名",
   "search.sourceLabel": "機種",
   "search.sourceAll": "すべて",
   "search.results": "検索結果",
-  "search.videoById": "このIDの動画を開く",
+  "search.videoById": "動画IDとして開く",
   "search.noResults": "見つかりませんでした",
   "search.songCount": "{count}曲",
   "search.songCount.one": "{count}曲",
@@ -49,25 +48,25 @@ export const ja: Messages = {
   "search.moreFailed": "{source}の続きを読み込めませんでした：{reason}",
 
   "song.background": "背景動画",
-  "song.addBackground": "YouTubeの動画を背景に流す",
+  "song.addBackground": "YouTube動画を追加",
   "song.backgroundLink": "YouTubeのURLまたは動画ID",
   "song.useVideo": "この動画にする",
-  "song.removeBackground": "背景動画を外す",
+  "song.removeBackground": "動画を外す",
 
   "video.views": "{count}回再生",
   "video.views.one": "{count}回再生",
   "video.infoFailed": "動画の情報を取得できませんでした：{reason}",
-  "video.niconicoSlow": "ニコニコの動画はダウンロードに時間がかかります。",
+  "video.niconicoSlow":
+    "ニコニコの動画はダウンロードに時間がかかることがあります。",
 
   "lyrics.heading": "歌詞",
   "lyrics.captions": "字幕",
   "lyrics.noCaptions": "なし",
   "lyrics.adhoc": "歌詞を貼り付ける",
-  "lyrics.adhocPlaceholder":
-    "ここに歌詞を貼り付けてください（1行ずつ表示します）",
+  "lyrics.adhocPlaceholder": "ここに歌詞を貼り付け",
   "lyrics.adhocHelp":
-    "曲が始まると、このページが歌詞を1行ずつ表示する操作画面に変わります。ほかのページからは、「演奏中」を開いて自分の曲をタップしてください。",
-  "lyrics.sendLine": "タップして次の行を表示",
+    "曲が始まると、このページで歌詞を1行ずつ表示できます。「演奏中」からも開けます。",
+  "lyrics.sendLine": "次の行を表示",
 
   "queueButton.song": "予約する",
   "queueButton.guide": "予約する（ガイドボーカル付き）",
@@ -93,20 +92,18 @@ export const ja: Messages = {
   "reason.joysound": "JOYSOUNDから曲を取得できませんでした",
   "reason.noTools": "ダウンロード用のツールを取得できませんでした",
   "reason.toolFailedToStart": "ダウンローダーを起動できませんでした",
-  "reason.videoProcessing": "動画を作成できませんでした",
+  "reason.videoProcessing": "動画を処理できませんでした",
   "reason.damSample": "DAMから曲ではなく試聴版が届きました",
   "reason.diskFull": "カラオケPCのディスクがいっぱいです",
   "reason.other": "ダウンロードに失敗しました",
   "reason.alreadyAdding": "ほかの人がこの曲を予約しているところです",
   "reason.damOff": "このカラオケPCではDAMを使えません",
   "reason.joysoundOff": "このカラオケPCではJOYSOUNDを使えません",
-  "reason.nicoInfo": "動画IDが正しくないかもしれません。",
+  "reason.nicoInfo": "動画IDが正しくありません",
   "reason.tooManyLyrics":
-    "予約リストの歌詞が多すぎます。何曲か終わってから、または歌詞なしで予約してください。",
-  "reason.queueLimit":
-    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
-  "reason.queueLimit.one":
-    "{nickname}さんはすでに{count}曲を予約またはダウンロード中です",
+    "歌詞付きの予約が多すぎます。しばらくしてから、または歌詞なしで予約してください。",
+  "reason.queueLimit": "{nickname}さんはすでに{count}曲予約しています",
+  "reason.queueLimit.one": "{nickname}さんはすでに{count}曲予約しています",
 
   "sheet.nowPlaying": "演奏中",
   "sheet.nothingPlaying": "演奏中の曲はありません",
@@ -136,7 +133,7 @@ export const ja: Messages = {
 
   "catalog.off": "このカラオケPCでは{source}を使えません。",
   "catalog.checking": "{source}に接続しています…",
-  "catalog.unreachable": "いまは{source}に接続できません。",
+  "catalog.unreachable": "現在{source}に接続できません。",
   "history.heading": "履歴",
   "browse.heading": "見つける",
   "browse.newSongs": "新曲",
@@ -167,11 +164,11 @@ export const ja: Messages = {
   "settings.signIn": "ログイン",
   "settings.signOut": "ログアウト",
   "settings.signedIn": "管理者としてログイン中",
-  "settings.everyoneAdmin": "今は全員が管理者です",
+  "settings.everyoneAdmin": "全員が管理者です",
   "settings.wrongPassword": "パスワードが違います。ホストに確認してください。",
   "settings.noPassword": "管理者パスワードは設定されていません。",
   "settings.tooManyTries":
-    "試行回数が多すぎます。1分待ってから再試行してください。",
+    "試行回数が多すぎます。1分後にもう一度お試しください。",
   "settings.signInFailed": "ログインできませんでした：{reason}",
 
   "queue.dragToReorder": "ドラッグで並べ替え",
@@ -181,8 +178,7 @@ export const ja: Messages = {
   "lyricsMode.kana": "ふりがな",
   "lyricsMode.romaji": "ローマ字",
   "lyricsMode.both": "両方",
-  "lyricsMode.help":
-    "JOYSOUNDの曲で使います。曲ごとに曲のページでも変えられます。",
+  "lyricsMode.help": "JOYSOUNDの曲のみ。曲のページで曲ごとに変更できます。",
   "guideMelody.label": "ガイドメロディ",
   "guideMelody.help": "JOYSOUNDの曲のみ。",
   "songVolume.label": "曲の音量",
@@ -192,8 +188,7 @@ export const ja: Messages = {
   "mics.echo": "エコー",
   "mics.gate": "ノイズゲート",
   "mics.gateOff": "オフ",
-  "mics.gateHelp":
-    "ノイズゲートより小さい音はマイクから出ず、音程の線も出ません。小さな雑音を拾わなくなります。",
+  "mics.gateHelp": "この音量より小さい音をミュートします。",
   "readings.label": "読み方",
   "readings.written": "そのまま",
   "readings.kana": "かな",

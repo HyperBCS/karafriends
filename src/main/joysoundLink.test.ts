@@ -448,10 +448,7 @@ describe("createJoysoundLinker's status and test", () => {
     const store = memoryStore();
     const linker = linkerWith(store);
     const before = await linker.test(EMAIL, PASSWORD);
-    assert.match(
-      before.note,
-      /links itself to this account, as its JOYSOUND TV app/,
-    );
+    assert.match(before.note, /Not linked as a TV app yet/);
     // Not linked yet: the link may be another TV app's, so Switch is offered.
     assert.equal(before.canSwitchLink, true);
     assert.ok(NOTHING_CHANGED(asked), asked.join(", "));
@@ -461,7 +458,7 @@ describe("createJoysoundLinker's status and test", () => {
     await linker.link(EMAIL, PASSWORD);
     asked.length = 0;
     assert.deepEqual(await linker.test(EMAIL, PASSWORD), {
-      note: "karafriends is linked to this account, a paid member.",
+      note: "Linked as a TV app (paid membership).",
     });
     assert.ok(NOTHING_CHANGED(asked), asked.join(", "));
 
@@ -470,7 +467,7 @@ describe("createJoysoundLinker's status and test", () => {
       linker.test(EMAIL, PASSWORD),
       (err) =>
         err instanceof LoginWarning &&
-        /isn't a paid member \(membership: FREE\)/.test(err.message),
+        /has no paid membership \(FREE\)/.test(err.message),
     );
   });
 
@@ -482,14 +479,11 @@ describe("createJoysoundLinker's status and test", () => {
   });
 
   test("linkStatusNote says what karafriends will do", () => {
-    assert.match(linkStatusNote({ state: "pending" }).note, /isn't finished/);
-    assert.match(
-      linkStatusNote({ state: "ended" }).note,
-      /has ended; it links again/,
-    );
+    assert.match(linkStatusNote({ state: "pending" }).note, /TV link pending/);
+    assert.match(linkStatusNote({ state: "ended" }).note, /TV link expired/);
     assert.throws(
       () => linkStatusNote({ state: "linked", membershipType: null }),
-      /membership: none/,
+      /no paid membership \(none\)/,
     );
   });
 });
@@ -546,7 +540,7 @@ describe("another TV app holding the link", () => {
   const isTaken = (err: unknown) =>
     err instanceof TvLinkTakenError &&
     err.status === 409 &&
-    /Settings › Accounts › Joysound/.test(err.message);
+    /Settings › Accounts/.test(err.message);
 
   test("isn't unlinked: the link fails, saying so, and waits a while to try again", async () => {
     site.otherTvLinked = true;
@@ -605,7 +599,7 @@ describe("another TV app holding the link", () => {
     asked.length = 0;
     assert.equal(
       await linker.switchLink(EMAIL, PASSWORD),
-      "karafriends is linked to this account, a paid member.",
+      "Linked as a TV app (paid membership).",
     );
     // As a browser: the link page, its question, then its switch.
     const page = asked.indexOf("GET /mypage/tvlink/SECRETCODE1");
@@ -630,7 +624,7 @@ describe("another TV app holding the link", () => {
     const linker = linkerWith(memoryStore());
     assert.equal(
       await linker.switchLink(EMAIL, PASSWORD),
-      "karafriends is linked to this account, a paid member.",
+      "Linked as a TV app (paid membership).",
     );
     assert.deepEqual(asked, NEW_LINK);
   });

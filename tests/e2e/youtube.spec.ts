@@ -117,9 +117,7 @@ async function queueVideo(remote: Page) {
   // video's page.
   await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
   await remote.getByRole("searchbox", { name: "Search" }).press("Enter");
-  await remote
-    .getByRole("link", { name: /Open the video with this ID/ })
-    .click();
+  await remote.getByRole("link", { name: /Open as video ID/ }).click();
 
   // YouTube sometimes answers a lookup with "Sign in to confirm you're not a
   // bot". Like a person would, reload the page (its address now names the

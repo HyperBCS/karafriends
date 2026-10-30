@@ -258,10 +258,7 @@ export function createApi(
       !isAdmin(caller) &&
       !owns(store.getState().currentSong, caller)
     ) {
-      throw new ApiError(
-        403,
-        "Supervised mode: only an admin or the current singer can do that",
-      );
+      throw new ApiError(403, "Only the singer or an admin can do that");
     }
   };
 
@@ -1016,7 +1013,7 @@ export function createApi(
       if (config.supervisedMode && !isAdmin(caller) && !owns(item, caller)) {
         throw new ApiError(
           403,
-          "Supervised mode: only an admin or whoever queued it can remove a song",
+          "Only the person who queued it or an admin can remove this song",
         );
       }
       return store.update((state) => {

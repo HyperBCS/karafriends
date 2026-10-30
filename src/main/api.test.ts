@@ -2405,7 +2405,8 @@ describe("a failed download", () => {
       );
     const problem = () => store.getState().toolsProblem;
     const PROBLEM = {
-      message: "YouTube downloads are failing; try Update tools in Settings",
+      message:
+        "YouTube downloads are failing. Try Update tools in Settings › Advanced.",
       since: 100,
     };
 

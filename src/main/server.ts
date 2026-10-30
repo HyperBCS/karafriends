@@ -322,7 +322,7 @@ export function apiRouter(
           .status(429)
           .set("Retry-After", String(ADMIN_LOGIN_LIMIT.windowMs / 1000))
           .json({
-            error: "Too many sign-in tries. Wait a minute, then try again.",
+            error: "Too many attempts. Try again in a minute.",
           });
         return;
       }

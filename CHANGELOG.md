@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Shorter, plainer text across Settings, the setup screen, the display's notices and the phone remote. For example, DAM's **Stream at a low bitrate** is now **Low-bitrate streaming**, and a signed-in catalog says **Signed in** instead of "On: guests can find and sing Joysound songs."
 - The noise gate's mark on a mic's meter is easier to see: wider, standing out above and below the meter, and edged so it shows over the level bar.
 - Settings opens on Accounts each time.
 - Settings › Sound has **Use ASIO**, off unless a mic or the mic output already used ASIO. While it's off, karafriends loads no ASIO driver. Opening Sound used to load them all, which could cut off another program's mic and make the sound crackle.

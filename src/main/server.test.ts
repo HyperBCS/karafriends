@@ -297,7 +297,7 @@ describe("adminLogin rate limit", () => {
     const refused = await login("right");
     assert.equal(refused.status, 429);
     assert.equal(refused.headers.get("retry-after"), "60");
-    assert.match((await refused.json()).error, /Too many sign-in tries/);
+    assert.match((await refused.json()).error, /Too many attempts/);
     // Other methods aren't limited.
     assert.equal((await post("whoami", "{}")).status, 200);
   });

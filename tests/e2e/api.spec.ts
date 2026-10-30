@@ -146,7 +146,7 @@ test.describe("admin sign-in", () => {
     );
     expect(sixth).toEqual({
       status: 429,
-      body: { error: "Too many sign-in tries. Wait a minute, then try again." },
+      body: { error: "Too many attempts. Try again in a minute." },
     });
     // The session from the fifth still works, and nothing else is limited.
     expect(
@@ -449,12 +449,12 @@ test.describe("supervised mode", () => {
       await password.fill("not it");
       await signIn.click();
       await expect(
-        page.getByText("Wrong password. Ask the host for it."),
+        page.getByText("Incorrect password. Ask the host."),
       ).toBeVisible();
 
       await password.fill(ADMIN_PASSWORD);
       await signIn.click();
-      await expect(page.getByText("You're an admin")).toBeVisible();
+      await expect(page.getByText("Signed in as admin")).toBeVisible();
       // No reload: the controls follow.
       await expect(pause).toHaveAttribute("aria-disabled", "false");
       expect(
@@ -463,7 +463,7 @@ test.describe("supervised mode", () => {
 
       // Still signed in after a reload.
       await page.reload();
-      await expect(page.getByText("You're an admin")).toBeVisible();
+      await expect(page.getByText("Signed in as admin")).toBeVisible();
       await expect(pause).toHaveAttribute("aria-disabled", "false");
       const token = await page.evaluate(() =>
         localStorage.getItem("adminToken"),
@@ -740,9 +740,7 @@ test.describe("supervised mode", () => {
             .getByRole("listbox", { name: "Lyrics" })
             .getByRole("option", { selected: true }),
         ).toHaveText(`0 | ${LYRICS[0]}`);
-        await page
-          .getByRole("button", { name: "Tap here to show the next line" })
-          .click();
+        await page.getByRole("button", { name: "Show next line" }).click();
 
         await expect(display.getByText(LYRICS[0])).toBeVisible();
         expect((await liveState(remoconUrl)).state.adhocLyrics).toEqual([

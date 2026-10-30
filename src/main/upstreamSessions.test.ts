@@ -352,7 +352,7 @@ describe("JoysoundAPI's downloads", () => {
     });
     await assert.rejects(
       joysound.getSongData("425691"),
-      /isn't a paid member \(membership: FREE\)/,
+      /has no paid membership \(FREE\)/,
     );
     assert.deepEqual(links, ["c1", "c2"]);
     // No audio: a preview's isn't the song.
@@ -365,7 +365,7 @@ describe("JoysoundAPI's downloads", () => {
     handle = soundCafe({});
     await assert.rejects(
       joysound.getSongData("425691"),
-      /isn't a paid member \(membership: FREE\)/,
+      /has no paid membership \(FREE\)/,
     );
     // Checked again once, in case the membership changed.
     assert.deepEqual(links, ["c1", "c2"]);

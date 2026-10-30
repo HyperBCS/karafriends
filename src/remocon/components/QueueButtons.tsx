@@ -126,7 +126,7 @@ type Props =
 const LYRICS_MODE_KEY = "lyricsMode";
 
 // The phone's choice of how Joysound lyrics show on the TV (in the
-// settings, under "On the TV"), kept in localStorage; kana without one.
+// settings, under "TV"), kept in localStorage; kana without one.
 export function savedLyricsMode(): LyricsMode {
   const saved = getItem(LYRICS_MODE_KEY);
   return LYRICS_MODES.find((mode) => mode === saved) ?? "kana";

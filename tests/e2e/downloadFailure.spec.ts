@@ -41,7 +41,7 @@ const VIDEO_INFO: YoutubeVideoInfo = {
 };
 
 const TOOLS_PROBLEM =
-  "YouTube downloads are failing; try Update tools in Settings";
+  "YouTube downloads are failing. Try Update tools in Settings › Advanced.";
 
 // Opens the video's page on the remote, with YouTube kept offline.
 async function openVideo(remote: Page) {
@@ -54,7 +54,7 @@ async function openVideo(remote: Page) {
   // that opens the video's page.
   await remote.getByRole("searchbox", { name: "Search" }).fill(VIDEO_ID);
   await remote
-    .getByRole("list", { name: "Open the video with this ID" })
+    .getByRole("list", { name: "Open as video ID" })
     .getByRole("link")
     .click();
   await expect(

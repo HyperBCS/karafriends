@@ -171,10 +171,9 @@ function loadAtLaunch(filePath: string): {
       return {
         config,
         loadProblem:
-          `config.yaml couldn't be read (${why}), so karafriends started ` +
-          `with the default settings. Your settings are still in ${copy}: ` +
-          "fix that line in config.yaml and restart karafriends. Saving a " +
-          "setting here writes a new config.yaml; the copy stays.",
+          `Couldn't read config.yaml (${why}), so default settings are in ` +
+          `use. A backup is at ${copy}. Fix config.yaml and restart ` +
+          "karafriends.",
         created,
       };
     }

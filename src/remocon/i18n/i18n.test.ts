@@ -87,18 +87,12 @@ describe("reasonText", () => {
     }
     const limit = "ken already has 3 song(s) in the queue or downloading";
     assert.match(limit, QUEUE_LIMIT);
-    assert.equal(
-      reasonText(limit, "en"),
-      "ken already has 3 songs in the queue or downloading",
-    );
+    assert.equal(reasonText(limit, "en"), "ken already has 3 songs queued");
     assert.equal(
       reasonText(limit.replace("3", "1"), "en"),
-      "ken already has 1 song in the queue or downloading",
+      "ken already has 1 song queued",
     );
-    assert.equal(
-      reasonText(limit, "ja"),
-      "kenさんはすでに3曲を予約またはダウンロード中です",
-    );
+    assert.equal(reasonText(limit, "ja"), "kenさんはすでに3曲予約しています");
   });
 
   test("passes any other reason through", () => {

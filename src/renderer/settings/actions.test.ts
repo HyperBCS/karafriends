@@ -83,13 +83,13 @@ describe("Settings' actions", () => {
     const { actions, last } = setUp({
       testLogin: () => ({
         ok: true,
-        note: "karafriends is linked to this account, a paid member.",
+        note: "Linked as a TV app (paid membership).",
       }),
     });
     await actions.testLogin("joysound");
     assert.equal(
       last("joysound")?.text,
-      "Signed in to Joysound. karafriends is linked to this account, a paid member.",
+      "Signed in to Joysound. Linked as a TV app (paid membership).",
     );
     assert.notEqual(last("joysound")?.tone, "problem");
   });
@@ -103,7 +103,7 @@ describe("Settings' actions", () => {
       }),
       switchJoysoundLink: () => ({
         ok: true,
-        note: "karafriends is linked to this account, a paid member.",
+        note: "Linked as a TV app (paid membership).",
       }),
     });
     await actions.testLogin("joysound");
@@ -115,7 +115,7 @@ describe("Settings' actions", () => {
     await actions.switchJoysoundLink();
     assert.equal(methods().at(-1), "switchJoysoundLink");
     assert.deepEqual(last("joysound"), {
-      text: "Switched. karafriends is linked to this account, a paid member.",
+      text: "Linked as a TV app (paid membership).",
     });
   });
 
@@ -188,7 +188,7 @@ describe("Settings' actions", () => {
     actions.saveNumber("network", "remoconPort", "80x");
     assert.equal(await actions.failedSince(from), true);
     assert.deepEqual(methods(), []);
-    assert.deepEqual(shown("network"), ["Port: enter a whole number."]);
+    assert.deepEqual(shown("network"), ["Port must be a whole number."]);
   });
 
   test("a refusal names the setting it is about, so its field can save the saved value again", async () => {
@@ -200,7 +200,7 @@ describe("Settings' actions", () => {
     });
     await actions.save("queue", { paxSongQueueLimit: 1001 });
     assert.deepEqual(last("queue"), {
-      text: "Songs per phone must be a whole number from 0 to 1000",
+      text: "Queue limit per phone must be a whole number from 0 to 1000",
       tone: "problem",
       refused: "paxSongQueueLimit",
     });
@@ -223,15 +223,12 @@ describe("Settings' actions", () => {
     const done = actions.importConfig();
     await new Promise((resolve) => setTimeout(resolve));
     assert.deepEqual(last("config"), {
-      text: "Importing, and testing the logins in it…",
+      text: "Importing…",
       tone: "busy",
     });
     answer({ ok: true, problems: ["The DAM login didn't sign in"] });
     await done;
-    assert.deepEqual(shown("config"), [
-      "Importing, and testing the logins in it…",
-      "Imported.",
-    ]);
+    assert.deepEqual(shown("config"), ["Importing…", "Imported."]);
     assert.deepEqual(last("config")?.list, ["The DAM login didn't sign in"]);
   });
 });

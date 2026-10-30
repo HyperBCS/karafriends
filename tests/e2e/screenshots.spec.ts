@@ -541,7 +541,7 @@ test.describe("phase P2", () => {
       .click();
     await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
-    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(remote.getByText("Signed in as admin")).toBeVisible();
     await remote.getByRole("link", { name: "Home" }).click();
     // The display starts the first song within 5 seconds.
     await expect(nowPlaying(remote, "黒うさP")).toBeVisible({
@@ -647,7 +647,7 @@ test.describe("phase R1", () => {
     await remote.getByRole("button", { name: "Save nickname" }).click();
     await remote.getByLabel("Admin password").fill(ADMIN_PASSWORD);
     await remote.getByRole("button", { name: "Sign in" }).click();
-    await expect(remote.getByText("You're an admin")).toBeVisible();
+    await expect(remote.getByText("Signed in as admin")).toBeVisible();
     await expect(
       remote.getByRole("slider", { name: "Song volume" }),
     ).toHaveValue("80");

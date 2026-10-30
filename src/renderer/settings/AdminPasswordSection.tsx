@@ -53,9 +53,7 @@ export default function AdminPasswordSection(props: {
         ) : null}
       </form>
       <Hint>
-        {settings.adminPasswordSet
-          ? "Admins can reorder, skip and remove any song."
-          : "Set one to let phones sign in as admins."}
+        Lets phones sign in as admin to skip, reorder and remove any song.
       </Hint>
     </SettingsSection>
   );

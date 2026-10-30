@@ -10,7 +10,7 @@ export function parseCustomUrl(
   text: string,
 ): { url: string } | { error: string } {
   const typed = text.trim();
-  if (typed === "") return { error: "Type the address phones open." };
+  if (typed === "") return { error: "Enter an address." };
   let url: URL;
   try {
     url = new URL(
@@ -18,25 +18,22 @@ export function parseCustomUrl(
     );
   } catch {
     return {
-      error: "That isn't an address. Type it as a phone's browser opens it.",
+      error: "Enter a valid address.",
     };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return { error: "Only http:// or https:// addresses." };
+    return { error: "The address must start with http:// or https://." };
   }
   if (url.hostname === "") {
     return {
-      error: "That isn't an address. Type it as a phone's browser opens it.",
+      error: "Enter a valid address.",
     };
   }
   if (url.username !== "" || url.password !== "") {
-    return { error: "No user name or password in it." };
+    return { error: "Remove the username and password." };
   }
   if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
-    return {
-      error:
-        "Just the site's address, with nothing after the host and port: the remote has to be at its root.",
-    };
+    return { error: "Remove everything after the host and port." };
   }
   return { url: `${url.protocol}//${url.host}` };
 }

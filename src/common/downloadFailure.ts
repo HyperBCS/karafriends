@@ -16,8 +16,8 @@ export const REASONS = {
   joysound: "Couldn't get the song from Joysound",
   noTools: "Couldn't get the download tools",
   toolFailedToStart: "Couldn't start the downloader",
-  videoProcessing: "Couldn't put the video together",
-  damSample: "DAM sent a sample, not the song",
+  videoProcessing: "Couldn't process the video",
+  damSample: "DAM sent a preview instead of the song",
   diskFull: "The karaoke PC's disk is full",
   other: "Download failed",
 } as const;
@@ -52,7 +52,7 @@ export function isDamSample(
 // What the display says after a YouTube or Niconico download fails with
 // isToolProblem.
 export const TOOLS_PROBLEM =
-  "YouTube downloads are failing; try Update tools in Settings";
+  "YouTube downloads are failing. Try Update tools in Settings › Advanced.";
 
 // Whether a YouTube or Niconico download that failed for reason points at
 // yt-dlp rather than the video: YouTube's bot check (an old yt-dlp, often),
