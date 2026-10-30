@@ -10,6 +10,11 @@ on:
 # read-only.
 permissions:
   contents: write
+# Mac signing and notarization are off for now, so the Mac zips are
+# unsigned (the README says how to open one). To sign them, set the MACOS_*
+# secrets (README › macOS signing) and make this "true".
+env:
+  MACOS_SIGN: "false"
 # The Rust toolchain steps keep the old actions-rs/toolchain behaviour: no
 # cache (a release builds from scratch) and warnings allowed, hence
 # build-warnings: warn (a new compiler warning shouldn't stop a release; the
@@ -81,7 +86,7 @@ jobs:
           node-version: lts/*
           cache: yarn
       - name: Setup code signing cert
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.MACOS_SIGN == 'true'
         env:
           MACOS_NOTARIZATION_API_KEY_BASE64: ${{ secrets.MACOS_NOTARIZATION_API_KEY_BASE64 }}
           MACOS_SIGNING_CERT_BASE64: ${{ secrets.MACOS_SIGNING_CERT_BASE64 }}
@@ -126,7 +131,7 @@ jobs:
       - run: yarn package-prod
         env:
           PACKAGER_ARCH: ${{ matrix.arch }}
-          NOTARIZATION_KEY_PATH: ${{ runner.temp }}/notarization_key.p8
+          NOTARIZATION_KEY_PATH: ${{ env.MACOS_SIGN == 'true' && format('{0}/notarization_key.p8', runner.temp) || '' }}
           NOTARIZATION_KEY_ID: ${{ secrets.MACOS_NOTARIZATION_KEY_ID }}
           NOTARIZATION_ISSUER_ID: ${{ secrets.MACOS_NOTARIZATION_ISSUER_ID }}
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
@@ -134,7 +139,7 @@ jobs:
       # (with the ticket stapled), and Gatekeeper takes it. The renderer
       # helper, where the mics open, has the microphone entitlement.
       - name: Check the Mac app's signature
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.MACOS_SIGN == 'true'
         env:
           ZIP: dist/${{ matrix.zip }}
         run: |
