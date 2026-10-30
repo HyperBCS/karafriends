@@ -105,13 +105,28 @@ function setup() {
   return { devices, context, keeper };
 }
 
-// Long enough for the keeper's timers and the fake's events.
+// Waits for what a test expects to happen, which a slow machine (a busy CI
+// runner) can take a while to get to. Gives up after 5 s and lets the
+// assertions after it say what's wrong.
+async function until(happened: () => boolean) {
+  const giveUp = Date.now() + 5000;
+  while (!happened() && Date.now() < giveUp) await wait(5);
+}
+
+// For checking that nothing more happens: long enough for the keeper's
+// timers and the fake's events on a machine that isn't busy. (Waiting for
+// something that should happen is until's job.)
 const settled = () => wait(100);
+
+const playsOn = (context: FakeContext, sinkId: SinkId) => () =>
+  JSON.stringify(context.sinkId) === JSON.stringify(sinkId) &&
+  context.state === "running";
 
 describe("the songs' output", () => {
   test("switching outputs doesn't count as losing one", async () => {
     const { context, keeper } = setup();
     await keeper.choose("tv");
+    await until(playsOn(context, "tv"));
     await settled();
     assert.equal(context.sinkId, "tv");
     assert.equal(context.state, "running");
@@ -122,10 +137,10 @@ describe("the songs' output", () => {
   test("a chosen output that goes away plays silently, and comes back by itself", async () => {
     const { devices, context, keeper } = setup();
     await keeper.choose("tv");
-    await settled();
+    await until(playsOn(context, "tv"));
 
     devices.unplug("tv", context);
-    await settled();
+    await until(playsOn(context, { type: "none" }));
     // The video's clock runs again, on the silent sink, so the song goes
     // on without blasting the laptop speakers.
     assert.deepEqual(context.sinkId, { type: "none" });
@@ -133,7 +148,7 @@ describe("the songs' output", () => {
     assert.equal(keeper.place(), "silent");
 
     devices.plug("tv");
-    await settled();
+    await until(playsOn(context, "tv"));
     assert.equal(context.sinkId, "tv");
     assert.equal(context.state, "running");
     assert.equal(keeper.place(), "chosen");
@@ -143,11 +158,11 @@ describe("the songs' output", () => {
     const { devices, context, keeper } = setup();
     await keeper.choose("tv");
     devices.unplug("tv", context);
-    await settled();
+    await until(playsOn(context, { type: "none" }));
     assert.deepEqual(context.sinkId, { type: "none" });
     devices.lagging = true;
     devices.plug("tv");
-    await settled();
+    await until(playsOn(context, "tv"));
     assert.equal(context.sinkId, "tv");
     assert.equal(context.state, "running");
     // Chosen, refused once, then taken.
@@ -171,7 +186,7 @@ describe("the songs' output", () => {
     assert.equal(context.sinkId, "");
 
     devices.plug("tv");
-    await settled();
+    await until(playsOn(context, "tv"));
     assert.equal(context.sinkId, "tv");
     assert.equal(keeper.place(), "chosen");
   });
@@ -195,7 +210,7 @@ describe("the songs' output", () => {
     await assert.rejects(keeper.want("e2e-gone"), /not found/);
     // With nothing to render on, the context errors at launch.
     context.dispatchEvent(new Event("error"));
-    await settled();
+    await until(playsOn(context, { type: "none" }));
     assert.equal(keeper.place(), "silent");
     await keeper.choose("");
     await settled();
@@ -208,9 +223,9 @@ describe("the songs' output", () => {
     const { devices, context, keeper } = setup();
     await keeper.choose("tv");
     devices.unplug("tv", context);
-    await settled();
+    await until(playsOn(context, { type: "none" }));
     await keeper.choose("");
-    await settled();
+    await until(playsOn(context, ""));
     assert.equal(context.sinkId, "");
     assert.equal(context.state, "running");
     assert.equal(keeper.place(), "chosen");
@@ -220,7 +235,7 @@ describe("the songs' output", () => {
     const { context, keeper } = setup();
     context.state = "suspended";
     context.dispatchEvent(new Event("statechange"));
-    await settled();
+    await until(() => context.state === "running");
     assert.equal(context.state, "running");
     // Nothing went away: it stays on its output.
     assert.equal(context.sinkId, "");

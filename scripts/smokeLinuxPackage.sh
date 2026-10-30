@@ -25,6 +25,10 @@
 #
 # What it can't check: sound (there's no sound server or device here), the
 # display's WebGL, and a real desktop session.
+#
+# With SMOKE_LOGS=<dir>, a failed run leaves its logs there (the app's
+# output, the native module's load, and the profile's own logs), for CI to
+# keep: the job's log is only shown to the repo's admins.
 
 set -euo pipefail
 
@@ -61,9 +65,21 @@ fi
 scratch="$(mktemp -d)"
 app_pid=""
 cleanup() {
+  local status=$?
   # setsid made the app its own process group: xvfb-run, Xvfb, and
   # Electron's processes.
   if [[ -n "$app_pid" ]]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+  if [[ $status -ne 0 && -n "${SMOKE_LOGS:-}" ]]; then
+    mkdir -p "$SMOKE_LOGS"
+    cp "$scratch"/*.log "$SMOKE_LOGS"/ 2>/dev/null || true
+    if [[ -d "$scratch/profile" ]]; then
+      (cd "$scratch/profile" && find . -name "*.log" -o -name "*.json" -o -name "config.yaml") |
+        while read -r file; do
+          mkdir -p "$SMOKE_LOGS/profile/$(dirname "$file")"
+          cp "$scratch/profile/$file" "$SMOKE_LOGS/profile/$file"
+        done
+    fi
+  fi
   rm -rf "$scratch"
 }
 trap cleanup EXIT
@@ -122,7 +138,7 @@ fi
 KARAFRIENDS_HIDE_WINDOW=1 KARAFRIENDS_LOCAL_ONLY=1 KARAFRIENDS_REMOCON_PORT="$port" \
   TMPDIR="$scratch/tmp" XDG_RUNTIME_DIR="$scratch/run" \
   setsid xvfb-run --auto-servernum "$app/karafriends" --no-sandbox --mute-audio \
-  --enable-unsafe-swiftshader --user-data-dir="$profile" \
+  --enable-unsafe-swiftshader --disable-dev-shm-usage --user-data-dir="$profile" \
   >"$scratch/app.log" 2>&1 &
 app_pid=$!
 show_log() {
