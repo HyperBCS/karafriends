@@ -357,7 +357,7 @@ function Microphones(
         <Checkbox
           label="Use ASIO"
           checked={props.useAsio}
-          hint="Lists ASIO devices. Loading their drivers can interrupt other programs' sound."
+          hint="Lists ASIO devices. Loading their drivers interrupts sound for a moment, the mics' too."
           onChange={async (on) => {
             const problem = props.onUseAsioChange(on);
             report("mics", problem);

@@ -246,8 +246,17 @@ fn asio_drivers() -> String {
 // with no ASIO device in use. While it's off, no driver is loaded.
 static ASIO_ON: AtomicBool = AtomicBool::new(false);
 
+// Set as ASIO is turned on: the next listing lists ASIO's devices even with
+// streams open (see asio_devices). Its list was never made while ASIO was
+// off, and the mics are likely open by then, so it would stay empty. Open
+// WASAPI mics stop for a moment and reopen by themselves.
+static ASIO_RELIST: AtomicBool = AtomicBool::new(false);
+
 pub fn set_asio(on: bool) {
-    ASIO_ON.store(on, Relaxed);
+    let was_on = ASIO_ON.swap(on, Relaxed);
+    if on && !was_on {
+        ASIO_RELIST.store(true, Relaxed);
+    }
 }
 
 // The registered ASIO drivers' names, read from the registry without
@@ -1603,9 +1612,11 @@ fn asio_devices(
         return Vec::new().into_iter();
     };
     // As last listed while any stream is open: listing them again would
-    // stop the open WASAPI mics (see OPEN_STREAMS).
+    // stop the open WASAPI mics (see OPEN_STREAMS). Listed anyway just after
+    // ASIO is turned on (see ASIO_RELIST).
     let mut devices = lock(&ASIO.devices);
-    if OPEN_STREAMS.load(Relaxed) == 0 {
+    let relist = ASIO_RELIST.swap(false, Relaxed);
+    if relist || OPEN_STREAMS.load(Relaxed) == 0 {
         match host.devices() {
             Ok(listed) => *devices = listed.collect(),
             Err(e) => eprintln!("The ASIO devices are left out: {e}"),
@@ -2468,6 +2479,21 @@ mod tests {
         assert!(InputDevice::new(missing, 0).is_err());
         assert_eq!(lock(&mixer::MIXER).opens, opens);
         assert_eq!(output_format(), None);
+    }
+
+    // Turning ASIO on (not again while it's on) has the next listing list
+    // ASIO's devices, open streams or not.
+    #[test]
+    fn test_asio_on_lists_again() {
+        let _devices = lock(&DEVICES);
+        set_asio(false);
+        ASIO_RELIST.store(false, Relaxed);
+        set_asio(true);
+        assert!(ASIO_RELIST.swap(false, Relaxed));
+        set_asio(true);
+        assert!(!ASIO_RELIST.load(Relaxed));
+        set_asio(false);
+        assert!(!ASIO_RELIST.load(Relaxed));
     }
 
     // Off, as until Settings' Use ASIO: no driver is loaded, no ASIO device
