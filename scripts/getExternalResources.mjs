@@ -1,5 +1,6 @@
 #!/usr/bin/node
 import { execFile } from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -75,7 +76,24 @@ function copyExtractor() {
   }
 }
 
+// The ASIO SDK, pinned: the zip of one version, and its SHA-256.
+// https://www.steinberg.net/asiosdk redirects to whichever is newest, so the
+// version's own file is named here. 2.3.4 is the first offered under GPLv3
+// too. To move to another SDK, check its licence, and change both on purpose.
+const ASIO_SDK = {
+  url: "https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip",
+  sha256: "d5ebf0c20dd2c5f43771fd0c1418f4b361bf52434ee670097cfa6b3a335e2eca",
+};
+
+// What to do when the pinned SDK can't be had.
+const ASIO_SDK_HELP =
+  "If Steinberg changed or removed it, get the current SDK from " +
+  "https://www.steinberg.net/asiosdk, check it and its licence, and update " +
+  "ASIO_SDK (its URL and SHA-256) in scripts/getExternalResources.mjs on " +
+  "purpose. Or put an SDK in buildResources/asio yourself.";
+
 // The ASIO SDK is a Windows-only compile-time dependency of the native module.
+// Exits with the reason if it can't be had.
 async function getAsioSdk() {
   const asioHeader = `${buildResourcesDir}/asio/asiosdk/common/asio.h`;
   if (fs.existsSync(asioHeader)) {
@@ -84,19 +102,36 @@ async function getAsioSdk() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "karafriends_asio"));
   const archive = path.join(tmpDir, "asio.zip");
   fs.mkdirSync(`${buildResourcesDir}/asio`, { recursive: true });
+  let problem = null;
   try {
-    await downloadFile("https://www.steinberg.net/asiosdk", archive);
-    await execFileAsync(pathTo7zip, [
-      "x",
-      archive,
-      "-y",
-      `-o${buildResourcesDir}/asio`,
-    ]);
+    await downloadFile(ASIO_SDK.url, archive);
+    // Before it's unpacked.
+    const sha256 = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(archive))
+      .digest("hex");
+    if (sha256 !== ASIO_SDK.sha256) {
+      problem =
+        `The ASIO SDK from ${ASIO_SDK.url} has SHA-256 ${sha256}, not the ` +
+        `pinned ${ASIO_SDK.sha256}, so it wasn't used.`;
+    } else {
+      await execFileAsync(pathTo7zip, [
+        "x",
+        archive,
+        "-y",
+        `-o${buildResourcesDir}/asio`,
+      ]);
+    }
+  } catch (err) {
+    problem = `Couldn't get the ASIO SDK from ${ASIO_SDK.url}: ${err}`;
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
-  if (!fs.existsSync(asioHeader)) {
-    console.error("The ASIO SDK wasn't successfully downloaded!");
+  if (problem === null && !fs.existsSync(asioHeader)) {
+    problem = `The ASIO SDK from ${ASIO_SDK.url} has no common/asio.h.`;
+  }
+  if (problem !== null) {
+    console.error(`${problem}\n${ASIO_SDK_HELP}`);
     process.exit(1);
   }
 }

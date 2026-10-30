@@ -10,6 +10,7 @@ import { REASONS } from "../../common/downloadFailure";
 import type { DownloadQueueItem } from "../state";
 import { runDownload } from "./queue";
 import {
+  LINUX_CERTIFICATES,
   MAC_CERTIFICATES,
   parseDuration,
   runTool,
@@ -158,7 +159,6 @@ test("on macOS the tools get the system's certificates, unless SSL_CERT_FILE is 
   assert.equal(own.SSL_CERT_FILE, "/my/cert.pem");
 
   for (const [platform, exists] of [
-    ["linux", there],
     ["win32", there],
     ["darwin", () => false],
   ] as const) {
@@ -166,4 +166,46 @@ test("on macOS the tools get the system's certificates, unless SSL_CERT_FILE is 
     useSystemCertificates(left, platform, exists);
     assert.equal(left.SSL_CERT_FILE, undefined, platform);
   }
+});
+
+test("on Linux the tools get the first of the system's certificate bundles, unless SSL_CERT_FILE is set", () => {
+  const only =
+    (...files: string[]) =>
+    (file: string) =>
+      files.includes(file);
+
+  // Debian and Ubuntu.
+  const debian: NodeJS.ProcessEnv = {};
+  useSystemCertificates(
+    debian,
+    "linux",
+    only("/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem"),
+  );
+  assert.equal(debian.SSL_CERT_FILE, "/etc/ssl/certs/ca-certificates.crt");
+
+  // Fedora.
+  const fedora: NodeJS.ProcessEnv = {};
+  useSystemCertificates(
+    fedora,
+    "linux",
+    only(
+      "/etc/pki/tls/certs/ca-bundle.crt",
+      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+    ),
+  );
+  assert.equal(fedora.SSL_CERT_FILE, "/etc/pki/tls/certs/ca-bundle.crt");
+
+  for (const file of LINUX_CERTIFICATES) {
+    const env: NodeJS.ProcessEnv = {};
+    useSystemCertificates(env, "linux", only(file));
+    assert.equal(env.SSL_CERT_FILE, file);
+  }
+
+  const own: NodeJS.ProcessEnv = { SSL_CERT_FILE: "/my/cert.pem" };
+  useSystemCertificates(own, "linux", () => true);
+  assert.equal(own.SSL_CERT_FILE, "/my/cert.pem");
+
+  const none: NodeJS.ProcessEnv = {};
+  useSystemCertificates(none, "linux", () => false);
+  assert.equal(none.SSL_CERT_FILE, undefined);
 });

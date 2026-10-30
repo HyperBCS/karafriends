@@ -2,6 +2,7 @@
 // gets a fake network and fake child processes, and a temp folder for its
 // cache: nothing is downloaded and no tool runs.
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
   createToolsManager,
   replaceFile,
   type AssetResponse,
+  type FetchOptions,
   type ReplaceOps,
   type ToolsDeps,
 } from "./externalResources";
@@ -29,45 +31,103 @@ afterEach(() => {
 const YTDLP = "2026.10.26\n";
 const FFMPEG = "ffmpeg version 9.0.2 Copyright (c) 2000-2026\n";
 
+const sha256 = (text: string) =>
+  crypto.createHash("sha256").update(text).digest("hex");
+
+const RELEASES = "https://github.com/yt-dlp/yt-dlp/releases";
+// The pinned ffmpeg build the tests' manager downloads (its checksum is
+// FFMPEG's, unless a test pins another).
+const FFMPEG_URL = "https://example.com/ffmpeg-9.0.2-linux64-gpl.tar.xz";
+
+// What the fake network is asked for: which release is yt-dlp's latest, a
+// release's SHA2-256SUMS or yt-dlp (with the release's tag), or ffmpeg.
+type Request =
+  | { kind: "latest" }
+  | { kind: "sums"; tag: string }
+  | { kind: "ytdlp"; tag: string }
+  | { kind: "ffmpeg" };
+
+function request(url: string): Request {
+  if (url === `${RELEASES}/latest`) return { kind: "latest" };
+  const file = url.match(/\/releases\/download\/([^/]+)\/([^/]+)$/);
+  if (file && file[2] === "SHA2-256SUMS") return { kind: "sums", tag: file[1] };
+  if (file && file[2] === "yt-dlp_linux")
+    return { kind: "ytdlp", tag: file[1] };
+  assert.equal(url, FFMPEG_URL);
+  return { kind: "ffmpeg" };
+}
+
 type Answer =
-  | { status: 200; body: string; etag?: string }
-  | { status: 304 | 404 | 500 }
+  | { status: 200; body: string }
+  | { status: 302; location: string }
+  | { status: 404 | 500 }
   | AssetResponse
   | Error;
 
 function response(answer: Exclude<Answer, Error>): AssetResponse {
   if ("headers" in answer) return answer;
   const headers = new Map<string, string>();
-  if ("etag" in answer && answer.etag) headers.set("etag", answer.etag);
-  if (answer.status === 200) {
+  if ("location" in answer) headers.set("location", answer.location);
+  if ("body" in answer) {
     headers.set("content-length", String(Buffer.byteLength(answer.body)));
   }
   return {
     status: answer.status,
     ok: answer.status === 200,
     headers: { get: (name) => headers.get(name) ?? null },
-    body: Readable.from(
-      answer.status === 200 ? [Buffer.from(answer.body)] : [],
-    ),
+    body: Readable.from("body" in answer ? [Buffer.from(answer.body)] : []),
   };
 }
 
-// A manager for Linux x64 whose network answers from `answers`: a function
-// of the asset (ytdlp or ffmpeg) and the request's headers. Each fetch is
-// recorded.
+// yt-dlp's releases on the fake GitHub, by tag: what the binary prints, and
+// the SHA2-256SUMS (the binary's real checksum unless given).
+type Releases = Record<string, { ytdlp: string; sums?: string }>;
+
+// A fake upstream: yt-dlp's releases, which one is the latest, and the
+// pinned ffmpeg's contents.
+function upstream(
+  options: { releases?: Releases; latest?: string; ffmpeg?: string } = {},
+) {
+  const releases = options.releases ?? { "2026.10.26": { ytdlp: YTDLP } };
+  const latest = options.latest ?? Object.keys(releases)[0];
+  return (req: Request): Answer => {
+    switch (req.kind) {
+      case "latest":
+        return { status: 302, location: `${RELEASES}/tag/${latest}` };
+      case "sums": {
+        const release = releases[req.tag];
+        if (!release) return { status: 404 };
+        return {
+          status: 200,
+          body:
+            release.sums ??
+            `${sha256("not this one")}  yt-dlp.exe\n` +
+              `${sha256(release.ytdlp)}  yt-dlp_linux\n`,
+        };
+      }
+      case "ytdlp": {
+        const release = releases[req.tag];
+        return release ? { status: 200, body: release.ytdlp } : { status: 404 };
+      }
+      case "ffmpeg":
+        return { status: 200, body: options.ffmpeg ?? FFMPEG };
+    }
+  };
+}
+
+// A manager for Linux x64 whose network answers from `answers`, with
+// ffmpeg pinned to FFMPEG_URL and options.ffmpegSha256 (FFMPEG's checksum
+// by default). Each fetch is recorded.
 function setup(
-  answers: (
-    id: "ytdlp" | "ffmpeg",
-    headers: Record<string, string>,
-  ) => Answer | Promise<Answer>,
+  answers: (req: Request) => Answer | Promise<Answer> = upstream(),
   options: {
     env?: Record<string, string>;
     now?: () => number;
     onFirstDownload?: ToolsDeps["onFirstDownload"];
+    ffmpegSha256?: string;
   } = {},
 ) {
-  const fetches: { id: "ytdlp" | "ffmpeg"; headers: Record<string, string> }[] =
-    [];
+  const fetches: (Request & { url: string; options: FetchOptions })[] = [];
   const extracts: string[][] = [];
   const deps: ToolsDeps = {
     platform: "linux",
@@ -75,10 +135,10 @@ function setup(
     cacheDir: path.join(dir, "cache"),
     extractorPath: "7za",
     env: options.env ?? {},
-    fetch: async (url, headers) => {
-      const id = url.includes("yt-dlp") ? "ytdlp" : "ffmpeg";
-      fetches.push({ id, headers });
-      const answer = await answers(id, headers);
+    fetch: async (url, fetchOptions) => {
+      const req = request(url);
+      fetches.push({ ...req, url, options: fetchOptions });
+      const answer = await answers(req);
       if (answer instanceof Error) throw answer;
       return response(answer);
     },
@@ -102,6 +162,13 @@ function setup(
     tmpDir: dir,
     retry: { retries: 2, minTimeout: 1, factor: 1 },
     onFirstDownload: options.onFirstDownload,
+    sources: {
+      ffmpeg: {
+        kind: "pinned",
+        url: FFMPEG_URL,
+        sha256: options.ffmpegSha256 ?? sha256(FFMPEG),
+      },
+    },
   };
   const manager = createToolsManager(deps);
   const read = (id: "ytdlp" | "ffmpeg") =>
@@ -110,28 +177,26 @@ function setup(
     JSON.parse(
       fs.readFileSync(path.join(dir, "cache", "versions.json"), "utf8"),
     );
-  return { manager, fetches, extracts, read, versions };
+  const kinds = () => fetches.map((f) => f.kind);
+  return { manager, fetches, kinds, extracts, read, versions };
 }
+
+// What's in the test's folder besides the cache: downloads left behind.
+const leftovers = () => fs.readdirSync(dir).filter((name) => name !== "cache");
 
 const DAY = 24 * 60 * 60 * 1000;
 const WEEK = 7 * DAY;
 
-const fresh = (id: "ytdlp" | "ffmpeg"): Answer => ({
-  status: 200,
-  body: id === "ytdlp" ? YTDLP : FFMPEG,
-  etag: `"${id}-1"`,
-});
-
 describe("createToolsManager", () => {
   test("loads nothing and touches nothing until used", () => {
-    const { fetches } = setup(fresh);
+    const { fetches } = setup();
     assert.equal(fetches.length, 0);
     assert.equal(fs.existsSync(path.join(dir, "cache")), false);
   });
 
   test("a first download says how far along it is, then that it's done; a refresh doesn't", async () => {
     const reports: ({ percent: number | null } | null)[] = [];
-    const { manager } = setup(fresh, {
+    const { manager } = setup(upstream(), {
       onFirstDownload: (progress) => reports.push(progress),
     });
     await manager.ensure();
@@ -146,25 +211,40 @@ describe("createToolsManager", () => {
       assert.ok((percents[i] ?? 0) >= (percents[i - 1] ?? 0), String(percents));
       assert.ok((percents[i] ?? 0) <= 100);
     }
-    // The tools are there now: a week on, a refresh says nothing.
+    // The tools are there now: a new yt-dlp release says nothing.
     reports.length = 0;
-    const later = setup(fresh, {
-      now: () => Date.now() + 2 * WEEK,
-      onFirstDownload: (progress) => reports.push(progress),
-    });
+    const later = setup(
+      upstream({ releases: { "2026.11.01": { ytdlp: "2026.11.01\n" } } }),
+      { onFirstDownload: (progress) => reports.push(progress) },
+    );
     await later.manager.ensure();
+    assert.equal(later.read("ytdlp"), "2026.11.01\n");
     assert.deepEqual(reports, []);
   });
 
-  test("a first launch downloads both tools and records their versions", async () => {
-    const { manager, read, versions } = setup(fresh);
+  test("a first launch downloads both tools, checks them, and records them", async () => {
+    const { manager, read, versions, fetches } = setup();
     await manager.ensure();
     assert.equal(read("ytdlp"), YTDLP);
     assert.equal(read("ffmpeg"), FFMPEG);
-    const stored = versions();
-    assert.equal(stored.ytdlp.etag, '"ytdlp-1"');
-    assert.equal(stored.ytdlp.version, "2026.10.26");
-    assert.equal(stored.ffmpeg.version, "9.0.2");
+    assert.deepEqual(versions(), {
+      ytdlp: {
+        version: "2026.10.26",
+        updatedAt: versions().ytdlp.updatedAt,
+        url: `${RELEASES}/download/2026.10.26/yt-dlp_linux`,
+        sha256: sha256(YTDLP),
+      },
+      ffmpeg: {
+        version: "9.0.2",
+        updatedAt: versions().ffmpeg.updatedAt,
+        url: FFMPEG_URL,
+        sha256: sha256(FFMPEG),
+      },
+    });
+    // "latest" is asked without following its redirect.
+    assert.deepEqual(fetches.find((f) => f.kind === "latest")!.options, {
+      redirect: "manual",
+    });
     assert.notEqual(manager.status().lastCheck, null);
     // Written through a temp file, renamed into place.
     assert.deepEqual(fs.readdirSync(path.join(dir, "cache")).sort(), [
@@ -172,28 +252,164 @@ describe("createToolsManager", () => {
       "versions.json",
       "ytdlp",
     ]);
+    assert.deepEqual(leftovers(), []);
   });
 
   test("concurrent and repeat calls share one check", async () => {
-    const { manager, fetches } = setup(fresh);
+    const { manager, fetches } = setup();
     await Promise.all([manager.ensure(), manager.ensure(), manager.ensure()]);
     await manager.ensure();
-    assert.equal(fetches.length, 2);
+    // yt-dlp's latest release, its sums and itself; and ffmpeg.
+    assert.equal(fetches.length, 4);
   });
 
-  test("a 304 keeps the cached copy and asks with its validator", async () => {
-    await setup(fresh).manager.ensure();
-    const { manager, fetches, read } = setup(() => ({ status: 304 }));
+  test("the same yt-dlp release isn't downloaded again, and the pinned ffmpeg isn't asked about", async () => {
+    await setup().manager.ensure();
+    const { manager, kinds, read } = setup();
     await manager.ensure();
-    const ytdlp = fetches.find((f) => f.id === "ytdlp")!;
-    assert.equal(ytdlp.headers["If-None-Match"], '"ytdlp-1"');
+    assert.deepEqual(kinds(), ["latest"]);
     assert.equal(read("ytdlp"), YTDLP);
+  });
+
+  test("a new yt-dlp release is downloaded, and checked against its own sums", async () => {
+    await setup().manager.ensure();
+    const { manager, fetches, read, versions } = setup(
+      upstream({
+        releases: {
+          "2026.10.26": { ytdlp: YTDLP },
+          "2026.11.01": { ytdlp: "2026.11.01\n" },
+        },
+        latest: "2026.11.01",
+      }),
+    );
+    await manager.ensure();
+    assert.equal(read("ytdlp"), "2026.11.01\n");
+    assert.deepEqual(
+      fetches.map((f) => ("tag" in f ? [f.kind, f.tag] : [f.kind])),
+      [["latest"], ["sums", "2026.11.01"], ["ytdlp", "2026.11.01"]],
+    );
+    assert.equal(versions().ytdlp.sha256, sha256("2026.11.01\n"));
+  });
+
+  test("yt-dlp and its checksum come from one release, even if another is published meanwhile", async () => {
+    // 2026.11.01 is published just after "latest" said 2026.10.26.
+    let latest = "2026.10.26";
+    const releases: Releases = {
+      "2026.10.26": { ytdlp: YTDLP },
+      "2026.11.01": { ytdlp: "2026.11.01\n" },
+    };
+    const { manager, fetches, read, versions } = setup((req) => {
+      const answer = upstream({ releases, latest })(req);
+      if (req.kind === "latest") latest = "2026.11.01";
+      return answer;
+    });
+    await manager.ensure();
+    assert.equal(read("ytdlp"), YTDLP);
+    for (const f of fetches) {
+      if ("tag" in f) assert.equal(f.tag, "2026.10.26", f.url);
+    }
+    assert.equal(
+      versions().ytdlp.url,
+      `${RELEASES}/download/2026.10.26/yt-dlp_linux`,
+    );
+  });
+
+  test("a download that doesn't match its checksum is deleted, and the cached copy stays", async () => {
+    await setup().manager.ensure();
+    const before = setup().versions();
+    // A release whose yt-dlp isn't the one its sums describe.
+    const tampered = upstream({
+      releases: {
+        "2026.11.01": {
+          ytdlp: "2026.11.01 but not quite\n",
+          sums: `${sha256("2026.11.01\n")}  yt-dlp_linux\n`,
+        },
+      },
+    });
+    // At launch: kept, and the check passes.
+    const launch = setup(tampered);
+    await launch.manager.ensure();
+    assert.equal(launch.read("ytdlp"), YTDLP);
+    assert.deepEqual(launch.versions(), before);
+    assert.deepEqual(leftovers(), []);
+    // Update tools: kept, and the host is told. ffmpeg, served right, is
+    // installed again.
+    const update = setup(tampered);
+    await assert.rejects(
+      update.manager.update(),
+      /the downloaded yt-dlp doesn't match its checksum, so it wasn't installed/,
+    );
+    assert.equal(update.read("ytdlp"), YTDLP);
+    assert.equal(update.read("ffmpeg"), FFMPEG);
+    assert.deepEqual(leftovers(), []);
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(update.manager.resourcePaths.ytdlp)),
+      ["yt-dlp"],
+    );
+  });
+
+  test("an ffmpeg archive that doesn't match isn't unpacked, and the old ffmpeg stays", async () => {
+    await setup().manager.ensure();
+    // As if an older karafriends had downloaded another build.
+    const file = path.join(dir, "cache", "versions.json");
+    const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+    stored.ffmpeg.url =
+      "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z";
+    fs.writeFileSync(file, JSON.stringify(stored));
+    const { manager, kinds, extracts, read, versions } = setup(
+      upstream({ ffmpeg: "ffmpeg version 9.0.3 from somewhere else\n" }),
+    );
+    await manager.ensure();
+    assert.ok(kinds().includes("ffmpeg"));
+    assert.deepEqual(extracts, []);
+    assert.equal(read("ffmpeg"), FFMPEG);
+    assert.equal(versions().ffmpeg.url, stored.ffmpeg.url);
+    assert.deepEqual(leftovers(), []);
+  });
+
+  test("a first download that doesn't match fails the check and installs nothing", async () => {
+    const { manager } = setup(upstream({ ffmpeg: "something else" }));
+    await assert.rejects(manager.ensure(), /ffmpeg doesn't match its checksum/);
+    assert.equal(fs.existsSync(manager.resourcePaths.ffmpeg), false);
+    assert.deepEqual(leftovers(), []);
+  });
+
+  test("a release whose sums don't list yt-dlp isn't downloaded", async () => {
+    const { manager, kinds } = setup(
+      upstream({
+        releases: {
+          "2026.10.26": {
+            ytdlp: YTDLP,
+            sums: `${sha256(YTDLP)}  yt-dlp.exe\n`,
+          },
+        },
+      }),
+    );
+    await assert.rejects(manager.ensure(), /has no checksum for yt-dlp_linux/);
+    assert.ok(!kinds().includes("ytdlp"));
+    assert.equal(fs.existsSync(manager.resourcePaths.ytdlp), false);
+  });
+
+  test("a 'latest' that doesn't name a release fails like the network", async () => {
+    await setup().manager.ensure();
+    const answers = (req: Request): Answer =>
+      req.kind === "latest"
+        ? { status: 302, location: "https://github.com/login" }
+        : upstream()(req);
+    // At launch the cached copy stays; Update tools says why.
+    await setup(answers).manager.ensure();
+    await assert.rejects(
+      setup(answers).manager.update(),
+      /didn't say which release is the latest/,
+    );
   });
 
   test("a thrown network error is retried", async () => {
     let calls = 0;
-    const { manager, read } = setup((id) =>
-      id === "ytdlp" && calls++ === 0 ? new Error("ECONNRESET") : fresh(id),
+    const { manager, read } = setup((req) =>
+      req.kind === "ytdlp" && calls++ === 0
+        ? new Error("ECONNRESET")
+        : upstream()(req),
     );
     await manager.ensure();
     assert.equal(read("ytdlp"), YTDLP);
@@ -201,21 +417,20 @@ describe("createToolsManager", () => {
   });
 
   test("offline: the cached copies are kept, and the check passes", async () => {
-    await setup(fresh).manager.ensure();
-    // Over a week later, so ffmpeg is asked too.
-    const { manager, fetches, read } = setup(() => new Error("offline"), {
-      now: () => Date.now() + 2 * WEEK,
-    });
+    await setup().manager.ensure();
+    const { manager, kinds, read } = setup(() => new Error("offline"));
     await manager.ensure();
+    assert.equal(read("ytdlp"), YTDLP);
     assert.equal(read("ffmpeg"), FFMPEG);
-    // promise-retry: the first try and two retries, for each tool.
-    assert.equal(fetches.length, 6);
+    // promise-retry: the first try and two retries, for yt-dlp's latest
+    // release. The pinned ffmpeg isn't asked about.
+    assert.deepEqual(kinds(), ["latest", "latest", "latest"]);
   });
 
   test("with nothing cached a failed check rejects, and the next call tries again", async () => {
     let online = false;
-    const { manager, read } = setup((id) =>
-      online ? fresh(id) : { status: 500 },
+    const { manager, read } = setup((req) =>
+      online ? upstream()(req) : { status: 500 },
     );
     await assert.rejects(manager.ensure());
     online = true;
@@ -224,40 +439,48 @@ describe("createToolsManager", () => {
   });
 
   test("a failed refresh keeps the working cached copy", async () => {
-    await setup(fresh).manager.ensure();
-    // A 200 whose body breaks off.
-    const { manager, read } = setup(() => ({
-      status: 200,
-      ok: true,
-      headers: { get: () => null },
-      body: Readable.from(
-        (async function* () {
-          yield Buffer.from("half");
-          throw new Error("reset");
-        })(),
-      ),
-    }));
+    await setup().manager.ensure();
+    // A new release whose download breaks off.
+    const { manager, read } = setup((req) =>
+      req.kind === "ytdlp"
+        ? {
+            status: 200,
+            ok: true,
+            headers: { get: () => null },
+            body: Readable.from(
+              (async function* () {
+                yield Buffer.from("half");
+                throw new Error("reset");
+              })(),
+            ),
+          }
+        : upstream({ releases: { "2026.11.01": { ytdlp: "2026.11.01\n" } } })(
+            req,
+          ),
+    );
     await manager.ensure();
     assert.equal(read("ytdlp"), YTDLP);
   });
 
   test("a download that won't start (wrong CPU, broken) doesn't replace the cached copy", async () => {
-    await setup(fresh).manager.ensure();
-    const broken = (id: "ytdlp" | "ffmpeg"): Answer => ({
-      status: 200,
-      body: `broken ${id}`,
-      etag: `"${id}-2"`,
+    await setup().manager.ensure();
+    // Checksums that match: the builds themselves are broken.
+    const broken = upstream({
+      releases: { "2026.11.01": { ytdlp: "broken ytdlp" } },
+      ffmpeg: "broken ffmpeg",
     });
-    // At launch: kept, and the old validator stays so it's tried again.
-    const launch = setup(broken);
+    const options = { ffmpegSha256: sha256("broken ffmpeg") };
+    // At launch: kept, and the old release stays recorded, so it's tried
+    // again.
+    const launch = setup(broken, options);
     await launch.manager.ensure();
     assert.equal(launch.read("ytdlp"), YTDLP);
-    assert.equal(launch.read("ffmpeg"), FFMPEG);
-    assert.equal(launch.versions().ytdlp.etag, '"ytdlp-1"');
+    assert.match(launch.versions().ytdlp.url, /\/2026\.10\.26\//);
     // Update tools: kept, and the host is told.
-    const update = setup(broken);
+    const update = setup(broken, options);
     await assert.rejects(update.manager.update(), /won't start/);
     assert.equal(update.read("ytdlp"), YTDLP);
+    assert.equal(update.read("ffmpeg"), FFMPEG);
     // Nothing left behind next to the tools.
     assert.deepEqual(
       fs.readdirSync(path.dirname(update.manager.resourcePaths.ytdlp)),
@@ -266,73 +489,53 @@ describe("createToolsManager", () => {
   });
 
   test("a first download that won't start fails the check", async () => {
-    const { manager } = setup((id) => ({ status: 200, body: `broken ${id}` }));
+    const { manager } = setup(
+      upstream({
+        releases: { "2026.10.26": { ytdlp: "broken ytdlp" } },
+        ffmpeg: "broken ffmpeg",
+      }),
+      { ffmpegSha256: sha256("broken ffmpeg") },
+    );
     await assert.rejects(manager.ensure(), /won't start/);
     assert.equal(fs.existsSync(manager.resourcePaths.ffmpeg), false);
   });
 
-  test("a tool from another source is downloaded again, whatever its validator", async () => {
-    await setup(fresh).manager.ensure();
-    // As if an older version had cached it from another URL.
+  test("a tool from another source is replaced by the pinned build", async () => {
+    await setup().manager.ensure();
+    // As if an older karafriends had cached it from another URL.
     const file = path.join(dir, "cache", "versions.json");
     const stored = JSON.parse(fs.readFileSync(file, "utf8"));
-    stored.ffmpeg.url = "https://evermeet.cx/ffmpeg/ffmpeg-6.1.1.zip";
-    fs.writeFileSync(file, JSON.stringify(stored));
-    const { manager, fetches, versions } = setup((id) => ({
-      status: 200,
-      body: id === "ytdlp" ? YTDLP : "ffmpeg version 9.0.3\n",
-    }));
-    await manager.ensure();
-    const ffmpeg = fetches.find((f) => f.id === "ffmpeg")!;
-    assert.deepEqual(ffmpeg.headers, {});
-    assert.equal(versions().ffmpeg.version, "9.0.3");
-    assert.match(versions().ffmpeg.url, /ffmpeg-master-latest/);
-  });
-
-  test("ffmpeg is asked about at most once a week, yt-dlp at every launch", async () => {
-    let now = Date.now();
-    const launch = (answer: (id: "ytdlp" | "ffmpeg") => Answer) => {
-      const tools = setup(answer, { now: () => now });
-      return tools.manager.ensure().then(() => tools);
+    stored.ffmpeg = {
+      etag: '"old"',
+      url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+      version: "N-127000-gabcdef0-20260930",
     };
-    await launch(fresh);
-
-    // The next day, BtbN's daily rebuild has a new etag: not downloaded.
-    now += DAY;
-    const nextDay = await launch((id) => ({ ...fresh(id), etag: '"new"' }));
-    assert.deepEqual(
-      nextDay.fetches.map((f) => f.id),
-      ["ytdlp"],
-    );
-
-    // A week on, it's asked with its validator. A 304 counts as asked.
-    now += WEEK;
-    const weekOn = await launch(() => ({ status: 304 }));
-    assert.deepEqual(
-      weekOn.fetches.map((f) => [f.id, f.headers["If-None-Match"]]),
-      [
-        ["ytdlp", '"new"'],
-        ["ffmpeg", '"ffmpeg-1"'],
-      ],
-    );
-    now += DAY;
-    const after = await launch(fresh);
-    assert.deepEqual(
-      after.fetches.map((f) => f.id),
-      ["ytdlp"],
-    );
-
-    // Update tools asks for both, whenever.
-    const update = setup(fresh, { now: () => now });
-    await update.manager.update();
-    assert.deepEqual(update.fetches.map((f) => f.id).sort(), [
-      "ffmpeg",
-      "ytdlp",
-    ]);
+    fs.writeFileSync(file, JSON.stringify(stored));
+    const { manager, fetches, versions } = setup();
+    await manager.ensure();
+    assert.deepEqual(fetches.find((f) => f.kind === "ffmpeg")!.options, {});
+    assert.equal(versions().ffmpeg.version, "9.0.2");
+    assert.equal(versions().ffmpeg.url, FFMPEG_URL);
+    assert.equal(versions().ffmpeg.etag, undefined);
   });
 
-  test("only the ffmpeg binary is unpacked from BtbN's archive", async () => {
-    const { manager, extracts, read } = setup(fresh);
+  test("a copy whose source wasn't recorded stays a week without asking, then is replaced", async () => {
+    // As a test's stand-ins, or an old karafriends' tools: no versions.json.
+    const first = setup();
+    for (const file of Object.values(first.manager.resourcePaths)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, "");
+    }
+    await first.manager.ensure();
+    assert.deepEqual(first.fetches, []);
+    const later = setup(upstream(), { now: () => Date.now() + 2 * WEEK });
+    await later.manager.ensure();
+    assert.equal(later.read("ytdlp"), YTDLP);
+    assert.equal(later.read("ffmpeg"), FFMPEG);
+  });
+
+  test("only the ffmpeg binary is unpacked from its .tar.xz", async () => {
+    const { manager, extracts, read } = setup();
     await manager.ensure();
     assert.equal(extracts.length, 2);
     // The .tar.xz to the .tar, whole; then just the files named ffmpeg.
@@ -341,23 +544,27 @@ describe("createToolsManager", () => {
     assert.equal(read("ffmpeg"), FFMPEG);
   });
 
-  test("Update tools downloads again, without validators", async () => {
-    await setup(fresh).manager.ensure();
-    const { manager, fetches, read } = setup((id) => ({
-      status: 200,
-      body: id === "ytdlp" ? "2026.11.01\n" : FFMPEG,
-    }));
+  test("Update tools installs the pinned ffmpeg again, and the latest checked yt-dlp", async () => {
+    await setup().manager.ensure();
+    const { manager, kinds, read } = setup(
+      upstream({ releases: { "2026.11.01": { ytdlp: "2026.11.01\n" } } }),
+    );
     await manager.update();
     assert.equal(read("ytdlp"), "2026.11.01\n");
-    assert.deepEqual(
-      fetches.map((f) => f.headers),
-      [{}, {}],
-    );
+    assert.equal(read("ffmpeg"), FFMPEG);
+    assert.deepEqual(kinds().sort(), ["ffmpeg", "latest", "sums", "ytdlp"]);
     assert.equal(manager.status().ytdlp.version, "2026.11.01");
   });
 
+  test("Update tools downloads yt-dlp again even when its release is the same", async () => {
+    await setup().manager.ensure();
+    const { manager, kinds } = setup();
+    await manager.update();
+    assert.deepEqual(kinds().sort(), ["ffmpeg", "latest", "sums", "ytdlp"]);
+  });
+
   test("a failed Update tools rejects, but downloads go on with the cached tools", async () => {
-    await setup(fresh).manager.ensure();
+    await setup().manager.ensure();
     const { manager, read } = setup(() => ({ status: 500 }));
     const update = manager.update();
     // Queued during the update: waits for it, and isn't failed by it.
@@ -380,12 +587,12 @@ describe("createToolsManager", () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     let first = true;
-    const { manager, fetches } = setup(async (id) => {
+    const { manager, fetches } = setup(async (req) => {
       if (first) {
         first = false;
         await gate;
       }
-      return fresh(id);
+      return upstream()(req);
     });
     const launch = manager.ensure();
     const update = manager.update();
@@ -393,20 +600,18 @@ describe("createToolsManager", () => {
     assert.equal(manager.update(), update);
     release();
     await Promise.all([launch, update]);
-    assert.equal(fetches.length, 4);
+    // Each check: yt-dlp's latest release, its sums and itself; and ffmpeg.
+    assert.equal(fetches.length, 8);
   });
 
   test("an overridden tool is never downloaded, and its version is asked", async () => {
     const fake = path.join(dir, "my-yt-dlp");
     fs.writeFileSync(fake, "2026.12.01\n");
-    const { manager, fetches } = setup(fresh, {
+    const { manager, kinds } = setup(upstream(), {
       env: { KARAFRIENDS_YTDLP_PATH: fake },
     });
     await manager.ensure();
-    assert.deepEqual(
-      fetches.map((f) => f.id),
-      ["ffmpeg"],
-    );
+    assert.deepEqual(kinds(), ["ffmpeg"]);
     assert.equal(manager.resourcePaths.ytdlp, fake);
     assert.deepEqual(manager.status().ytdlp, {
       version: "2026.12.01",
@@ -506,8 +711,8 @@ describe("replaceFile", () => {
   });
 
   test("a check removes the copies set aside and .part files", async () => {
-    await setup(fresh).manager.ensure();
-    const { manager } = setup(fresh);
+    await setup().manager.ensure();
+    const { manager } = setup();
     const tools = path.dirname(manager.resourcePaths.ffmpeg);
     fs.writeFileSync(path.join(tools, "ffmpeg.1700000000000.old"), "old");
     fs.writeFileSync(path.join(tools, "ffmpeg.part"), "part");
