@@ -154,19 +154,14 @@ export const FFMPEG_BUILDS = {
     url: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build.7z",
     sha256: "f0e46253c70dfe902bac915dfb4224f0cf1b7c6eeab9da2ccc9a5581f9a71b13",
   },
-  // Martin Riedl's static builds of FFmpeg 9.0.2, one per architecture,
-  // signed (which Apple Silicon requires of arm64 code). His release builds
-  // stay at their versioned URLs (5.0's, from 2022, still download). The zip
-  // holds just the ffmpeg binary.
+  // Martin Riedl's static build of FFmpeg 9.0.2 for Apple Silicon, signed
+  // (which Apple Silicon requires of arm64 code). (karafriends isn't built
+  // for Intel Macs.) His release builds stay at their versioned URLs (5.0's,
+  // from 2022, still download). The zip holds just the ffmpeg binary.
   darwinArm64: {
     kind: "pinned",
     url: "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
     sha256: "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
-  },
-  darwinX64: {
-    kind: "pinned",
-    url: "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
-    sha256: "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
   },
   // Jellyfin's portable build of FFmpeg 8.1.3 (FFmpeg with Jellyfin's
   // patches, built with BtbN's scripts: static, for glibc 2.28 or newer).
@@ -295,10 +290,7 @@ export function assetPlans(
         },
         {
           id: "ffmpeg",
-          source:
-            arch === "arm64"
-              ? FFMPEG_BUILDS.darwinArm64
-              : FFMPEG_BUILDS.darwinX64,
+          source: FFMPEG_BUILDS.darwinArm64,
           dest: paths.ffmpeg,
           download: {
             kind: "archive",

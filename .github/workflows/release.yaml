@@ -34,12 +34,6 @@ jobs:
             arch: arm64
             cargo_args: --target aarch64-apple-darwin
             zip: karafriends-darwin-arm64.zip
-          # Intel Macs, cross-compiled on Apple Silicon.
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            arch: x64
-            cargo_args: --target x86_64-apple-darwin
-            zip: karafriends-darwin-x64.zip
           # ASIO is a default feature of the native crates.
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -171,9 +165,12 @@ jobs:
         with:
           files: dist/asio-sdk-source.zip
           fail_on_unmatched_files: true
+      # A trial run keeps each zip as it is, not wrapped in a zip of its
+      # own: the file a release uploads (macOS's Archive Utility can't open
+      # the wrapper).
       - if: github.event_name != 'release'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.zip }}
           path: dist/${{ matrix.zip }}
+          archive: false
           if-no-files-found: error
