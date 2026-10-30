@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-10-30)
 
 - Settings › Advanced › Tools has **Check for updates**, which shows the newest version beside each tool that has one. **Update tools** then downloads only those tools, so a tool that's already the newest isn't downloaded again. The download date is gone.
 
