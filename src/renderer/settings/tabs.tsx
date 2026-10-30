@@ -29,13 +29,15 @@ const TAB_KEYS: Record<string, (at: number) => number> = {
 // The tabs down the left. Up and Down (Home and End too) open the one
 // before or after, round the ends; only the open one is in the Tab order. A
 // dot marks one with something to look at. Focused when it appears, so the
-// keys work as soon as Settings opens.
+// keys work as soon as Settings opens. children go under the tabs, outside
+// the keys' round (Quit).
 export function SettingsTabs(props: {
   tab: SettingsTab;
   onChange: (tab: SettingsTab) => void;
   needsLook: (tab: SettingsTab) => boolean;
   tabId: (tab: SettingsTab) => string;
   panelId: string;
+  children?: React.ReactNode;
 }) {
   const buttons = useRef(new Map<SettingsTab, HTMLButtonElement>());
   const open = useRef(props.tab);
@@ -51,40 +53,43 @@ export function SettingsTabs(props: {
     buttons.current.get(tab)?.focus();
   };
   return (
-    <div
-      className="settingsTabs"
-      role="tablist"
-      aria-label="Sections"
-      aria-orientation="vertical"
-      onKeyDown={onKeyDown}
-    >
-      {SETTINGS_TABS.map((tab) => {
-        const selected = tab === props.tab;
-        const needsLook = !selected && props.needsLook(tab);
-        return (
-          <button
-            key={tab}
-            ref={(button) => {
-              if (button) buttons.current.set(tab, button);
-              else buttons.current.delete(tab);
-            }}
-            type="button"
-            role="tab"
-            id={props.tabId(tab)}
-            className="settingsTab"
-            aria-selected={selected}
-            aria-controls={selected ? props.panelId : undefined}
-            aria-description={needsLook ? "Needs a look" : undefined}
-            tabIndex={selected ? 0 : -1}
-            onClick={() => props.onChange(tab)}
-          >
-            {TAB_NAMES[tab]}
-            {needsLook ? (
-              <span className="settingsTabDot" aria-hidden="true" />
-            ) : null}
-          </button>
-        );
-      })}
+    <div className="settingsTabs">
+      <div
+        className="settingsTabList"
+        role="tablist"
+        aria-label="Sections"
+        aria-orientation="vertical"
+        onKeyDown={onKeyDown}
+      >
+        {SETTINGS_TABS.map((tab) => {
+          const selected = tab === props.tab;
+          const needsLook = !selected && props.needsLook(tab);
+          return (
+            <button
+              key={tab}
+              ref={(button) => {
+                if (button) buttons.current.set(tab, button);
+                else buttons.current.delete(tab);
+              }}
+              type="button"
+              role="tab"
+              id={props.tabId(tab)}
+              className="settingsTab"
+              aria-selected={selected}
+              aria-controls={selected ? props.panelId : undefined}
+              aria-description={needsLook ? "Needs a look" : undefined}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => props.onChange(tab)}
+            >
+              {TAB_NAMES[tab]}
+              {needsLook ? (
+                <span className="settingsTabDot" aria-hidden="true" />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {props.children}
     </div>
   );
 }

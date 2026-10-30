@@ -208,7 +208,7 @@ ipcMain.handle(IPC_CHANNELS.openSource, async (event) => {
   if (displayIpc.isFromDisplay(event)) await shell.openExternal(SOURCE_URL);
 });
 
-// Settings' Quit button: asks first, in a dialog that doesn't block the main
+// Settings' Quit: asks first, in a dialog that doesn't block the main
 // process (as F5's), so phones and downloads carry on while it's up. A
 // second click while it's up does nothing. The queue is in queue.json
 // already, and will-quit stops the tools.
@@ -220,12 +220,11 @@ ipcMain.handle(IPC_CHANNELS.quit, async (event) => {
   confirmingQuit = true;
   try {
     const { response } = await dialog.showMessageBox(rendererWindow, {
-      message: "Quit karafriends?",
-      detail:
-        "Phones can't connect until it's started again. The queue is kept.",
-      buttons: ["Quit", "Cancel"],
+      message: "Are you sure you want to quit?",
+      buttons: ["Confirm", "Cancel"],
       defaultId: 0,
       cancelId: 1,
+      noLink: true,
     });
     if (response === 0) app.quit();
   } finally {

@@ -608,7 +608,11 @@ test("Settings is in tabs: the arrows, Home and End move through them, the panel
   await expect(settings.getByRole("region", { name: "DAM login" })).toHaveCount(
     0,
   );
-  // Tab goes on into the panel.
+  // Tab goes on to Quit, under the tabs, then into the panel.
+  await display.keyboard.press("Tab");
+  await expect(
+    settings.getByRole("button", { name: "Quit", exact: true }),
+  ).toBeFocused();
   await display.keyboard.press("Tab");
   await expect(panel.getByLabel("UI scale")).toBeFocused();
 
@@ -2479,10 +2483,10 @@ test.describe("a queue an older version saved in the temp folder", () => {
   });
 });
 
-// Quit karafriends, in Settings' header, asks first: Cancel leaves it be,
-// Quit quits. The main process's dialog is swapped for one that answers as
+// Quit, under Settings' tabs, asks first: Cancel leaves it be, Confirm
+// quits. The main process's dialog is swapped for one that answers as
 // the test says, so nothing pops up.
-test("Quit karafriends asks first, and quits only when told to", async ({
+test("Quit asks first, and quits only when told to", async ({
   karafriends,
   display,
 }) => {
@@ -2507,20 +2511,24 @@ test("Quit karafriends asks first, and quits only when told to", async ({
 
   await openSettings(display);
   const settings = display.getByRole("dialog", { name: "Settings" });
-  const quit = settings.getByRole("button", { name: "Quit karafriends" });
+  const quit = settings.getByRole("button", { name: "Quit", exact: true });
+  // Not a tab: the arrow keys pass it by.
+  await expect(
+    settings.getByRole("tablist").getByRole("button", { name: "Quit" }),
+  ).toHaveCount(0);
 
   // Cancel: asked, and still here.
   await quit.click();
   await expect.poll(async () => (await asked()).length).toBe(1);
   expect((await asked())[0]).toMatchObject({
-    message: "Quit karafriends?",
-    buttons: ["Quit", "Cancel"],
+    message: "Are you sure you want to quit?",
+    buttons: ["Confirm", "Cancel"],
     cancelId: 1,
   });
   await expect(settings).toBeVisible();
   expect(app.process().exitCode).toBeNull();
 
-  // Quit: the app goes.
+  // Confirm: the app goes.
   await app.evaluate(() => {
     (
       globalThis as { quitAnswers?: { response: number } }

@@ -3,7 +3,7 @@
 ## Unreleased
 
 - In full screen, the display's mouse pointer hides after 3 seconds without moving, and comes back as the mouse moves; not while Settings or the setup screen is open.
-- Settings has **Quit karafriends** next to Close. It asks first, then quits; the queue is kept for next time.
+- Settings has **Quit**, under the tabs.
 - Out of full screen, the window (which has no frame) can be dragged by its top edge, on macOS and elsewhere.
 
 ## 0.2.0 (2026-10-29)
