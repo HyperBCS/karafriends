@@ -11,7 +11,7 @@ This part is for the host: the person whose computer plays the songs on the TV. 
 Download the zip for your computer from the [Releases page](https://github.com/HyperBCS/karafriends/releases): `win32-x64` for Windows, `darwin-arm64` for an Apple Silicon Mac, `darwin-x64` for an Intel Mac, `linux-x64` for Linux. Unzip it anywhere (it unzips to a `karafriends-<platform>` folder) and run `karafriends` inside (`karafriends.app` on a Mac). There's no installer; to update, unzip the new version over the old one or next to it.
 
 - **Windows**: the app isn't signed, so the first start may bring up "Windows protected your PC": click **More info**, then **Run anyway**. A console window with the app's log opens beside it. Leave it be: closing it closes karafriends, and it goes away when the app quits.
-- **Mac**: the app is signed and notarized by Apple, so it opens like any downloaded app. macOS asks once whether karafriends may use the microphone: allow it, or the mics stay silent (System Settings › Privacy & Security › Microphone turns it on later).
+- **Mac**: the app isn't signed yet, so macOS won't open it as downloaded (it says karafriends "is damaged" or can't be checked). Once, in Terminal, in the unzipped folder: `xattr -dr com.apple.quarantine karafriends.app`, then open it. macOS asks once whether karafriends may use the microphone: allow it, or the mics stay silent (System Settings › Privacy & Security › Microphone turns it on later).
 
 ### On Linux
 
@@ -112,7 +112,7 @@ yarn package-prod    # dist/karafriends-<platform>-<arch>/ and its .zip
 The zip holds a `karafriends-<platform>-<arch>` folder; the app inside is what the Releases page ships. Per platform:
 
 - **Windows**: `yarn build-prod` downloads Steinberg's ASIO SDK the first time and needs LLVM (see Building). The zip is `dist\karafriends-win32-x64.zip`, unsigned, like the released one.
-- **macOS**: `CARGO_ARGS="--target aarch64-apple-darwin" yarn build-prod`, then `PACKAGER_ARCH=arm64 yarn package-prod` for Apple Silicon. For Intel Macs, on the same Apple Silicon machine: `rustup target add x86_64-apple-darwin`, then `CARGO_ARGS="--target x86_64-apple-darwin" yarn build-prod` and `PACKAGER_ARCH=x64 yarn package-prod`. The released zips are signed and notarized; a local one is left unsigned (it says so) unless `NOTARIZATION_KEY_PATH` points at the App Store Connect API key and the Developer ID certificate is in the keychain, as the workflow arranges. An unsigned build runs on the Mac that built it; Gatekeeper may refuse it on another Mac.
+- **macOS**: `CARGO_ARGS="--target aarch64-apple-darwin" yarn build-prod`, then `PACKAGER_ARCH=arm64 yarn package-prod` for Apple Silicon. For Intel Macs, on the same Apple Silicon machine: `rustup target add x86_64-apple-darwin`, then `CARGO_ARGS="--target x86_64-apple-darwin" yarn build-prod` and `PACKAGER_ARCH=x64 yarn package-prod`. The released zips are unsigned for now (see macOS signing); a local one is left unsigned (it says so) unless `NOTARIZATION_KEY_PATH` points at the App Store Connect API key and the Developer ID certificate is in the keychain, as the workflow arranges. An unsigned build runs on the Mac that built it; Gatekeeper may refuse it on another Mac.
 - **Linux**: build on the oldest distribution the zip is for (Ubuntu 24.04 for the released one). After `yarn build-prod`, `scripts/checkLazyPipewire.sh native/index.node` checks the module will load with an older PipeWire; after `yarn package-prod`, `scripts/smokeLinuxPackage.sh dist/karafriends-linux-x64.zip` starts the packaged app hidden and checks it (CI runs it in an Ubuntu 22.04 container). If `RUSTFLAGS` is set in your shell, add `-C relro-level=partial` to it (see Building).
 
 `yarn build-prod` fetches nothing from the network except the ASIO SDK on Windows (version 2.3.4, checked against its SHA-256 in `scripts/getExternalResources.mjs`): ffmpeg and yt-dlp are downloaded by the app itself at its first launch.
@@ -127,7 +127,7 @@ The Build workflow runs on every push: typecheck, lint, the unit and Rust tests,
 
 ### macOS signing
 
-The Release workflow signs the Mac zips with a Developer ID Application certificate and has Apple notarize them, so they open on any Mac without a warning. It needs these repository secrets (on GitHub, Settings → Secrets and variables → Actions):
+Signing is off for now: `MACOS_SIGN` at the top of `.github/workflows/release.yaml` is `"false"`, and the Mac zips are unsigned. Turned on, the Release workflow signs them with a Developer ID Application certificate and has Apple notarize them, so they open on any Mac without a warning. It then needs these repository secrets (on GitHub, Settings → Secrets and variables → Actions), and `MACOS_SIGN` set to `"true"`:
 
 | Secret                                                      | What it is                                                                                                                                             |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
