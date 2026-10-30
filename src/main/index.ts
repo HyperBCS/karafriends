@@ -44,15 +44,17 @@ import {
   ipcMain,
   powerSaveBlocker,
   protocol,
+  shell,
 } from "electron";
 import isDev from "electron-is-dev";
 import express from "express";
 
+import { ABOUT_FILES, isAboutText, SOURCE_URL } from "../common/about";
 import karafriendsConfig, { HIDE_WINDOW, LOCAL_ONLY } from "../common/config";
 import { ensureExternalResources } from "./../common/externalResources";
 import { stopAllTools, DOWNLOADS_FOLDER } from "./downloads";
 import { useSystemCertificates } from "./downloads/run";
-import { IPC_CHANNELS, REMOCON_PORT_ARG } from "../common/ipc";
+import { IPC_CHANNELS, REMOCON_PORT_ARG, VERSION_ARG } from "../common/ipc";
 import { startHttpServer } from "./httpServer";
 import { createDisplayIpc } from "./ipc";
 import { createCrashReloads } from "./rendererRecovery";
@@ -113,6 +115,9 @@ const crashReloads = createCrashReloads();
 
 // The built pages, next to this bundle (see electron.vite.config.ts).
 const WEB_DIR = path.join(__dirname, "..", "web");
+
+// Where the build puts karafriends' license and the third-party notices.
+const ABOUT_DIR = path.join(__dirname, "..");
 
 // `electron-vite dev` serves the pages from the Vite dev server, and says
 // where in ELECTRON_RENDERER_URL.
@@ -176,6 +181,25 @@ ipcMain.handle(IPC_CHANNELS.openTextFile, async (event) => {
   return fs.promises.readFile(filePaths[0], "utf8");
 });
 
+// About in Settings, for the display only: the license or the notices, by
+// name, never a path; and the source's page, the one address it opens.
+ipcMain.handle(IPC_CHANNELS.readAboutText, async (event, which: unknown) => {
+  if (!displayIpc.isFromDisplay(event) || !isAboutText(which)) return null;
+  try {
+    return await fs.promises.readFile(
+      path.join(ABOUT_DIR, ABOUT_FILES[which]),
+      "utf8",
+    );
+  } catch (err) {
+    // `yarn dev` writes none.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+});
+ipcMain.handle(IPC_CHANNELS.openSource, async (event) => {
+  if (displayIpc.isFromDisplay(event)) await shell.openExternal(SOURCE_URL);
+});
+
 // Once, at launch: the display's window, the karafriends:// protocol and the
 // phones' server. (Closing the window quits the app.)
 function createWindow() {
@@ -193,8 +217,11 @@ function createWindow() {
       nodeIntegrationInWorker: false,
       preload: path.join(__dirname, "..", "preload", "index.js"),
       // The preload reads the port from its process.argv, for the remote's
-      // address in the QR code.
-      additionalArguments: [`${REMOCON_PORT_ARG}${phonePort}`],
+      // address in the QR code, and the version, for About.
+      additionalArguments: [
+        `${REMOCON_PORT_ARG}${phonePort}`,
+        `${VERSION_ARG}${app.getVersion()}`,
+      ],
       sandbox: false,
       webSecurity: true,
     },

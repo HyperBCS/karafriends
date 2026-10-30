@@ -1,4 +1,4 @@
-import type { DisplayApi, DisplayFiles } from "../common/ipc";
+import type { DisplayAbout, DisplayApi, DisplayFiles } from "../common/ipc";
 
 // On Linux: the sound system the mics use ("Sound system: PipeWire
 // 1.6.2"), the buffer sizes in frames it takes for the mics and their
@@ -95,6 +95,8 @@ declare global {
       // The phones' server port, for the remote's address.
       remoconPort(): number;
       api: DisplayApi;
+      // About in Settings.
+      about: DisplayAbout;
       nativeAudio: NativeAudio;
     };
   }

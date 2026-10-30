@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 
+import { type AboutText, SOURCE_URL } from "../../common/about";
 import type { ApiOutput, ToolStatus, ToolsStatus } from "../../common/api";
 import { call } from "../../common/apiClient";
 import {
@@ -75,6 +76,104 @@ function DownloadsSection() {
   );
 }
 
+const ABOUT_TEXT_NAMES: Record<AboutText, string> = {
+  license: "License",
+  notices: "Third-party notices",
+};
+
+// karafriends' version, its license and where its source is, and the work
+// of others it's built with. The license and the notices open here, in a
+// box that scrolls; the source opens in the system's browser.
+function AboutSection() {
+  const { about } = window.karafriends;
+  const [open, setOpen] = useState<AboutText | null>(null);
+  const [text, setText] = useState<string | null>(null);
+  const [message, setMessage] = useState<Message | undefined>();
+  const textId = useId();
+
+  // Read each time it opens. A slow read for one closed since is dropped.
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    about.readText(open).then(
+      (read) => {
+        if (!current) return;
+        if (read !== null) {
+          setText(read);
+          return;
+        }
+        setOpen(null);
+        setMessage({
+          text: "Not in this build: yarn build-prod writes it.",
+          tone: "problem",
+        });
+      },
+      (err) => {
+        if (!current) return;
+        setOpen(null);
+        setMessage(problemMessage(err));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [open]);
+
+  const toggle = (which: AboutText) => {
+    setMessage(undefined);
+    setText(null);
+    setOpen(open === which ? null : which);
+  };
+
+  const openSource = () => {
+    setMessage(undefined);
+    about.openSource().catch((err) => setMessage(problemMessage(err)));
+  };
+
+  return (
+    <SettingsSection title="About" message={message}>
+      <div className="settingsField">
+        <p className="settingsValue">karafriends {about.version()}</p>
+        <Hint>
+          Free software under the GNU GPL v3. Its source is at {SOURCE_URL}.
+        </Hint>
+      </div>
+      <div className="settingsActions">
+        <button type="button" className="kfButton" onClick={openSource}>
+          Source code
+        </button>
+        {(["license", "notices"] as const).map((which) => (
+          <button
+            key={which}
+            type="button"
+            className="kfButton"
+            aria-expanded={open === which}
+            aria-controls={open === which ? textId : undefined}
+            onClick={() => toggle(which)}
+          >
+            {ABOUT_TEXT_NAMES[which]}
+          </button>
+        ))}
+      </div>
+      {open ? (
+        <div className="settingsAboutBox">
+          <pre
+            id={textId}
+            className="settingsAboutText"
+            role="region"
+            aria-label={ABOUT_TEXT_NAMES[open]}
+            aria-busy={text === null}
+            // Focused, the arrows and Page Up and Down scroll it.
+            tabIndex={0}
+          >
+            {text ?? "Loading…"}
+          </pre>
+        </div>
+      ) : null}
+    </SettingsSection>
+  );
+}
+
 // ffmpeg's and yt-dlp's versions, and Update tools. Held by Settings, not
 // the tab, so an update keeps going (and its button stays off) while
 // another tab is open.
@@ -116,7 +215,8 @@ export function useTools(say: (section: Section, message: Message) => void) {
 
 export type Tools = ReturnType<typeof useTools>;
 
-// The downloads, the tools, and the config file's export and import.
+// The downloads, the tools, the config file's export and import, and
+// About.
 export default function AdvancedTab(props: {
   messages: Partial<Record<Section, Message | null>>;
   actions: SettingsActions;
@@ -170,6 +270,8 @@ export default function AdvancedTab(props: {
         </div>
         <Hint>Includes the logins and passwords.</Hint>
       </SettingsSection>
+
+      <AboutSection />
     </>
   );
 }

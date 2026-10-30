@@ -7,6 +7,8 @@ import type { LiveEvent } from "../common/api";
 import {
   IPC_CHANNELS,
   REMOCON_PORT_ARG,
+  VERSION_ARG,
+  type DisplayAbout,
   type DisplayApi,
   type DisplayFiles,
 } from "../common/ipc";
@@ -21,12 +23,12 @@ const inputDevices: { [deviceId: number]: Mic } = {};
 // The inputs as last listed (see inputDevices below).
 let inputList: [string, string, number][] | null = null;
 
-// The phones' server port, from the main process (see index.ts).
-const remoconPort = Number(
-  process.argv
-    .find((arg) => arg.startsWith(REMOCON_PORT_ARG))
-    ?.slice(REMOCON_PORT_ARG.length),
-);
+// What the main process gives on the command line (see index.ts).
+const argument = (name: string) =>
+  process.argv.find((arg) => arg.startsWith(name))?.slice(name.length);
+
+// The phones' server port.
+const remoconPort = Number(argument(REMOCON_PORT_ARG));
 
 // The live events, from the main process. This page asks for them once, as
 // it loads, and the live state comes first; the latest one (with the latest
@@ -71,6 +73,15 @@ const files: DisplayFiles = {
   saveTextFile: (suggestedName, text) =>
     ipcRenderer.invoke(IPC_CHANNELS.saveTextFile, suggestedName, text),
   openTextFile: () => ipcRenderer.invoke(IPC_CHANNELS.openTextFile),
+};
+
+// About in Settings: the version, and the license, the notices and the
+// source's page, handled in src/main/index.ts.
+const version = argument(VERSION_ARG) ?? "";
+const about: DisplayAbout = {
+  version: () => version,
+  readText: (which) => ipcRenderer.invoke(IPC_CHANNELS.readAboutText, which),
+  openSource: () => ipcRenderer.invoke(IPC_CHANNELS.openSource),
 };
 
 // KARAFRIENDS_FAKE_AUDIO=1 (the e2e fixture sets it): no real mic or output
@@ -308,6 +319,7 @@ contextBridge.exposeInMainWorld("karafriends", {
   remoconPort: (): number => remoconPort,
   api,
   ...files,
+  about,
   nativeAudio: fakeAudioCalls ? fakeNativeAudio(fakeAudioCalls) : realAudio(),
 });
 
