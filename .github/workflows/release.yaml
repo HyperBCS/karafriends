@@ -130,8 +130,7 @@ jobs:
         run: scripts/checkLazyPipewire.sh native/index.node
       # The notarization key is only there on macOS; packager.js uses it only
       # there. The key's ID and issuer, and the certificate's name, are
-      # optional secrets: packager.js falls back to the ones the project was
-      # set up with.
+      # optional secrets (see packager.js).
       - run: yarn package-prod
         env:
           PACKAGER_ARCH: ${{ matrix.arch }}

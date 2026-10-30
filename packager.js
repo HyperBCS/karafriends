@@ -29,9 +29,9 @@ function bundleExtractor() {
 // Signed and notarized when the notarization key is given (the Release
 // workflow always gives it); a local build without the Developer ID
 // certificate is left unsigned, which runs on the building Mac. The key's
-// ID and issuer, and the certificate's name, can be given too (the Release
-// workflow passes its secrets); without them, the ones the project was set
-// up with.
+// ID and issuer can be given too (the Release workflow passes its secrets;
+// without them, the ones the project was set up with), and the
+// certificate's name if the keychain holds more than one.
 function macSigning() {
   const keyPath = process.env.NOTARIZATION_KEY_PATH;
   if (!keyPath) {
@@ -56,8 +56,9 @@ function macSigning() {
     },
     osxSign: {
       identity:
-        process.env.MACOS_SIGNING_IDENTITY ||
-        "Developer ID Application: Brandon Smith (JH8AT59Q63)",
+        // osx-sign takes the first certificate whose name contains this, and
+        // the Release workflow's keychain holds just the one.
+        process.env.MACOS_SIGNING_IDENTITY || "Developer ID Application",
       // The mics open in the display's renderer, whose preload loads the
       // native module. osx-sign gives a renderer helper only JIT, and under
       // the hardened runtime a process without the audio-input entitlement

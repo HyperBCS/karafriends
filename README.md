@@ -136,7 +136,7 @@ The Release workflow signs the Mac zips with a Developer ID Application certific
 | `MACOS_KEYCHAIN_PASSWORD`                                   | Any password, for the workflow's temporary keychain                                                                                                    |
 | `MACOS_NOTARIZATION_API_KEY_BASE64`                         | An App Store Connect API key (the `.p8` file), in base64                                                                                               |
 | `MACOS_NOTARIZATION_KEY_ID`, `MACOS_NOTARIZATION_ISSUER_ID` | Optional: that key's Key ID and the Issuer ID shown above the keys list. Without them, the ones in `packager.js` (the key the project was set up with) |
-| `MACOS_SIGNING_IDENTITY`                                    | Optional: the certificate's name, if it isn't `Developer ID Application: Brandon Smith (JH8AT59Q63)`                                                   |
+| `MACOS_SIGNING_IDENTITY`                                    | Optional: the certificate's name, if the keychain holds more than one Developer ID Application certificate                                             |
 
 On a Mac, `base64 -i file.p12 | pbcopy` copies a file as base64. The workflow stops at once, naming them, if any of the four required secrets is missing. After signing, it unzips the zip as a user would and checks the signature, the stapled notarization ticket, Gatekeeper's verdict, and the microphone entitlement.
 
