@@ -198,7 +198,12 @@ jobs:
         with:
           name: karafriends-linux-x64
           path: dist
-      - run: bash scripts/smokeLinuxPackage.sh --install-deps dist/karafriends-linux-x64.zip
+      # Its whole output goes in smoke-logs/ too, so a failure says why
+      # whatever stage it stopped at (the packages, the zip, the app).
+      - shell: bash
+        run: |
+          mkdir -p smoke-logs
+          bash scripts/smokeLinuxPackage.sh --install-deps dist/karafriends-linux-x64.zip 2>&1 | tee smoke-logs/output.txt
         env:
           SMOKE_TOOLS: download
           SMOKE_LOGS: smoke-logs

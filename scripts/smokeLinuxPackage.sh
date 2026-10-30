@@ -35,11 +35,13 @@ set -euo pipefail
 if [[ "${1:-}" == "--install-deps" ]]; then
   shift
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update
+  # A mirror mid-sync answers with a hash mismatch or a failed fetch now and
+  # then: try those again rather than fail the check.
+  apt-get -o Acquire::Retries=5 update
   # Electron's runtime libraries (as Ubuntu's desktop has them), the native
   # module's (libasound2, libdbus-1-3, libpipewire-0.3-0 and libpulse0), a
   # virtual display, and the tools this script uses.
-  apt-get install -y --no-install-recommends \
+  apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     ca-certificates curl unzip xvfb xauth \
     libgtk-3-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libgbm1 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
