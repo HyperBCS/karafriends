@@ -325,6 +325,7 @@ export const validators: {
       "position",
       "length",
       "playing",
+      "lyricsStart",
     ]);
     return {
       songId: string(input, "songId", 64),
@@ -333,6 +334,11 @@ export const validators: {
       length:
         input.length === null ? null : number(input, "length", 0, 24 * 60 * 60),
       playing: boolean(input, "playing"),
+      // Missing (an older display's report) and null both mean unknown.
+      lyricsStart:
+        input.lyricsStart == null
+          ? null
+          : number(input, "lyricsStart", 0, 24 * 60 * 60),
     };
   },
   setPitchShiftSemis: (raw) => {

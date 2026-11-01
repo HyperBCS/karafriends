@@ -127,16 +127,13 @@ const ConfirmCommand = ({
   );
 };
 
-// The transport and the key, for the current song (each command names it,
-// so a tap that crosses the song's end can't land on the next one). Restart
-// and skip ask first; play, pause and the key don't. Dimmed
-// while nothing plays or the TV loads the song (WAITING), and in supervised
-// mode for anyone but an admin and the current singer, as the server would
-// refuse them (setPlaybackState in src/main/api.ts), with a line under them
-// saying so. (The guide melody's level is in Settings, for admins.)
-const PlaybackControls = () => {
+// Who may control the current song from this phone, as the server sees it
+// (setPlaybackState in src/main/api.ts): its key (null with none), whether
+// it's playing or paused (not WAITING: none, or the TV still loads it), and
+// whether this phone may (anyone, outside supervised mode; else an admin or
+// the song's singer). isAdmin: undefined until whoami answers.
+export function usePlaybackControl() {
   const { playbackState, setPlaybackState } = usePlaybackState();
-  const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const song = useLiveState((state) =>
     state?.currentSong ? songKey(state.currentSong) : null,
   );
@@ -145,8 +142,34 @@ const PlaybackControls = () => {
   );
   const isMine = useLiveState((state) => state?.currentSong?.isMine === true);
   const isAdmin = useIsAdmin();
-  const isEntitled = !supervisedMode || isAdmin === true || isMine;
-  const active = song !== null && ["PLAYING", "PAUSED"].includes(playbackState);
+  return {
+    song,
+    playbackState,
+    setPlaybackState,
+    active: song !== null && ["PLAYING", "PAUSED"].includes(playbackState),
+    isEntitled: !supervisedMode || isAdmin === true || isMine,
+    // Says why not: supervised mode, for a guest's phone that's sure.
+    singerOnly: supervisedMode && isAdmin === false && !isMine,
+  };
+}
+
+// The transport and the key, for the current song (each command names it,
+// so a tap that crosses the song's end can't land on the next one). Restart
+// and skip ask first; play, pause and the key don't. Dimmed
+// while nothing plays or the TV loads the song (WAITING), and in supervised
+// mode for anyone but an admin and the current singer, as the server would
+// refuse them, with a line under them saying so. (The guide melody's level
+// is in Settings, for admins.)
+const PlaybackControls = () => {
+  const {
+    song,
+    playbackState,
+    setPlaybackState,
+    active,
+    isEntitled,
+    singerOnly,
+  } = usePlaybackControl();
+  const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const disabled = !active || !isEntitled;
   const playing = playbackState === "PLAYING";
   const play = (next: PlaybackCommand) => {
@@ -189,7 +212,7 @@ const PlaybackControls = () => {
           if (song !== null) setPitchShiftSemis(semis, song);
         }}
       />
-      {active && supervisedMode && isAdmin === false && !isMine && (
+      {active && singerOnly && (
         <p className={styles.note}>{t("playback.singerOnly")}</p>
       )}
     </>

@@ -916,10 +916,16 @@ export const SEEDED_CAPTION = "E2E caption";
 // The seeded queue's Niconico and YouTube songs come "downloaded" as a
 // minute of black video (tests/fixtures/black.mp4), so the display plays
 // them: a song whose file is missing is skipped as one that can't play. A
-// YouTube song with hasCaptions also gets captions, SEEDED_CAPTION from
-// start to end. DAM and Joysound songs get no files.
+// YouTube song with hasCaptions also gets captions: the WebVTT in its
+// `captions` (a test's own field, which the app's queue leaves out), else
+// SEEDED_CAPTION from start to end. DAM and Joysound songs get no files.
 function seedVideos(queueDir: string, seed: object) {
-  type Song = { kind: string; songId: string; hasCaptions?: boolean } | null;
+  type Song = {
+    kind: string;
+    songId: string;
+    hasCaptions?: boolean;
+    captions?: string;
+  } | null;
   const { currentSong, songQueue } = seed as {
     currentSong?: Song;
     songQueue?: Song[];
@@ -934,7 +940,8 @@ function seedVideos(queueDir: string, seed: object) {
     if (song.kind === "youtube" && song.hasCaptions) {
       fs.writeFileSync(
         path.join(queueDir, `yt-${song.songId}.vtt`),
-        `WEBVTT\n\n00:00.000 --> 01:00.000\n${SEEDED_CAPTION}\n`,
+        song.captions ??
+          `WEBVTT\n\n00:00.000 --> 01:00.000\n${SEEDED_CAPTION}\n`,
       );
     }
   }

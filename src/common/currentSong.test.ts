@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { secondsLeft, secondsPlayed, songKey } from "./currentSong";
+import {
+  introEnd,
+  introLeft,
+  secondsLeft,
+  secondsPlayed,
+  songKey,
+} from "./currentSong";
 
 const timing = (
   currentSongStartedAt: number | null,
@@ -38,5 +44,20 @@ describe("secondsLeft", () => {
     // A phone whose clock is behind the server's.
     assert.equal(secondsLeft(100, timing(1000), 0), 100);
     assert.equal(secondsLeft(100, timing(1000), 21_400), 80);
+  });
+});
+
+describe("Skip intro", () => {
+  test("goes 5 seconds before the singing, never before the start", () => {
+    assert.equal(introEnd(40), 35);
+    assert.equal(introEnd(3), 0);
+  });
+
+  test("is offered while it would skip 10 seconds or more", () => {
+    assert.equal(introLeft(40, 0), 35);
+    assert.equal(introLeft(40, 25), 10);
+    assert.equal(introLeft(40, 25.5), null);
+    assert.equal(introLeft(12, 0), null);
+    assert.equal(introLeft(null, 0), null);
   });
 });

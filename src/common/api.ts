@@ -29,9 +29,16 @@ export const ADMIN_TOKEN_HEADER = "X-Karafriends-Admin-Token";
 
 // WAITING: nothing plays, or popSong has made the next song current and the
 // display is still loading it (a DAM song may wait for DAM). The display's
-// PLAYING, once it has started the song, ends it.
+// PLAYING, once it has started the song, ends it. SKIPPING_INTRO: to a few
+// seconds before the singing starts (introEnd in currentSong.ts); the
+// display then plays from there, as after RESTARTING.
 export type PlaybackState =
-  "PAUSED" | "PLAYING" | "RESTARTING" | "SKIPPING" | "WAITING";
+  | "PAUSED"
+  | "PLAYING"
+  | "RESTARTING"
+  | "SKIPPING"
+  | "SKIPPING_INTRO"
+  | "WAITING";
 
 // What setPlaybackState may set: WAITING is the server's own (popSong).
 export type PlaybackCommand = Exclude<PlaybackState, "WAITING">;
@@ -41,6 +48,7 @@ export const PLAYBACK_COMMANDS: readonly PlaybackCommand[] = [
   "PLAYING",
   "RESTARTING",
   "SKIPPING",
+  "SKIPPING_INTRO",
 ];
 
 // One page of a list. Pass `nextOffset` back as `offset` to get the next page;
@@ -250,6 +258,12 @@ export interface LiveState {
   // src/common/currentSong.ts).
   currentSongStartedAt: number | null;
   currentSongPausedSince: number | null;
+  // When the singing starts in the current song, in seconds of its video,
+  // once the display knows (reportSongPosition): from DAM's scoring data, a
+  // Joysound song's lyrics or a YouTube song's captions. Null without them
+  // (Niconico, YouTube without captions, DAM without scoring data), or
+  // until then. Skip intro goes by it (introLeft in currentSong.ts).
+  currentSongLyricsStart: number | null;
   // The songs after currentSong. Clients work out ETAs from playtime and the
   // timing above.
   queue: SharedQueueItem[];
@@ -328,7 +342,7 @@ export type LiveEventType = LiveEvent["type"];
 
 // What a phone did to a song, for the display's corner (a songAction
 // event).
-export type SongAction = "skipped" | "restarted" | "removed";
+export type SongAction = "skipped" | "restarted" | "introSkipped" | "removed";
 
 // The query parameter GET /api/events takes the phone's device ID in.
 // (EventSource can't send headers.)
@@ -642,9 +656,12 @@ export interface Api {
   // The display only (a phone gets 403): where the current song's video
   // really is, for the countdowns: position seconds in, of length seconds
   // (null until it knows), and whether it is moving (false while paused or
-  // stalled). The display sends it as the song loads, starts, pauses,
-  // stalls, seeks and resumes, and every 10 seconds. False if songId and
-  // timestamp aren't the current song (any more).
+  // stalled); and when its singing starts, seconds in (null until it knows,
+  // or for a song it can't tell: see LiveState's currentSongLyricsStart).
+  // The display sends it as the song loads, starts, pauses, stalls, seeks
+  // and resumes, once it knows when the singing starts, and every 10
+  // seconds. False if songId and timestamp aren't the current song (any
+  // more).
   reportSongPosition: {
     input: {
       songId: string;
@@ -652,6 +669,7 @@ export interface Api {
       position: number;
       length: number | null;
       playing: boolean;
+      lyricsStart: number | null;
     };
     output: boolean;
   };

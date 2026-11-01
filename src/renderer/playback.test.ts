@@ -9,6 +9,7 @@ import {
   UI_SCALES,
   audioDelay,
   drawTime,
+  firstSungCue,
   lowBitrateFallback,
   pitchTime,
   retryFragment,
@@ -155,5 +156,45 @@ describe("songGain", () => {
       gainValue: 3.16,
     };
     assert.equal(songGain(youtube), 3.16);
+  });
+});
+
+describe("firstSungCue", () => {
+  test("is the first cue with words, past the intro's [Music] and ♪", () => {
+    const vtt = [
+      "WEBVTT",
+      "Kind: captions",
+      "Language: ja",
+      "",
+      "00:00:01.000 --> 00:00:20.000 align:start position:0%",
+      "[Music]",
+      "",
+      "00:00:20.000 --> 00:00:23.500",
+      "♪～",
+      "",
+      "2",
+      "00:00:23.500 --> 00:00:27.000",
+      "<c>光る</c>なら",
+      "",
+      "00:00:27.000 --> 00:00:30.000",
+      "next line",
+    ].join("\r\n");
+    assert.equal(firstSungCue(vtt), 23.5);
+  });
+
+  test("takes minutes alone, and hours", () => {
+    assert.equal(firstSungCue("WEBVTT\n\n01:02.250 --> 01:05.000\nla"), 62.25);
+    assert.equal(
+      firstSungCue("WEBVTT\n\n1:00:00.000 --> 1:00:01.000\nla"),
+      3600,
+    );
+  });
+
+  test("is null with no sung cue", () => {
+    assert.equal(firstSungCue("WEBVTT\n"), null);
+    assert.equal(
+      firstSungCue("WEBVTT\n\n00:00.000 --> 00:30.000\n(Intro)\n"),
+      null,
+    );
   });
 });

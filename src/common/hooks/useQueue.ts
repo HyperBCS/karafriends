@@ -55,7 +55,7 @@ const NOT_TICKING = () => () => {};
 // afresh on each render, which comes with each of the ticker's ticks while
 // it plays (live) and whenever its timing changes (a pause, a seek); not
 // live, always 0.
-function usePlayed(live: boolean): number {
+export function usePlayed(live: boolean): number {
   const playtime = useLiveState((state) => state?.currentSong?.playtime || 0);
   const startedAt = useLiveState(
     (state) => state?.currentSongStartedAt ?? null,

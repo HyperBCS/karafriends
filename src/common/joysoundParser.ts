@@ -924,6 +924,24 @@ async function parseJoysoundData(
   };
 }
 
+// When a song's singing starts: its first wipe (a block's scroll starting,
+// event 0 or 12), in ms of the song. From the timing section alone, so it
+// needs no kuroshiro. Null with no wipe, or a telop it can't read.
+export function firstWipeMs(data: ArrayBuffer): number | null {
+  try {
+    const timingOffset = new DataView(data, 6, 3 * 4).getUint32(2 * 4, true);
+    const timeline = parseJoy02TimingData(
+      data,
+      timingOffset,
+      data.byteLength - timingOffset,
+    );
+    const wipe = timeline.find(({ payload }) => [0, 12].includes(payload[0]));
+    return wipe?.currTime ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSongDuration(data: Uint8Array): number {
   // Respect the view's offset: a small Node Buffer is a slice of a shared pool,
   // so data.buffer on its own does not start at the JOY-02 header.

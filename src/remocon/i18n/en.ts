@@ -145,6 +145,7 @@ export const en = {
   "playback.singerOnly": "Only the singer or an admin can control this song.",
   "playback.confirmRestart": "Restart this song?",
   "playback.confirmSkip": "Skip this song?",
+  "playback.skipIntro": "Skip intro",
   "pitch.key": "Key",
   "pitch.lower": "Lower key",
   "pitch.raise": "Raise key",

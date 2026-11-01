@@ -34,7 +34,7 @@ import {
 } from "../common/downloadFailure";
 import { isNicoVideoId } from "../common/nicoVideoInfo";
 import type { KarafriendsConfig } from "../common/config";
-import { songKey } from "../common/currentSong";
+import { introEnd, songKey } from "../common/currentSong";
 import { songFilesOf, type SongFiles } from "../common/songFiles";
 import type { AdminSessions } from "./adminAuth";
 import type { Catalogs } from "./catalogs";
@@ -215,6 +215,7 @@ const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
 const PHONE_ACTIONS: Partial<Record<PlaybackCommand, SongAction>> = {
   SKIPPING: "skipped",
   RESTARTING: "restarted",
+  SKIPPING_INTRO: "introSkipped",
 };
 
 // Why a phone can't have a catalog's songs: the host turned it off, or
@@ -282,6 +283,19 @@ export function createApi(
       songKey(currentSong) === song &&
       (caller.isDisplay || playbackState !== "WAITING")
     );
+  };
+
+  // Whether the current song is still before where Skip intro goes, by the
+  // display's last report: there's an intro left to skip. (The phones offer
+  // it only for a long one; this only stops a tap that comes too late, or a
+  // second one, from rewinding the song.)
+  const inIntro = () => {
+    const state = store.getState();
+    const start = state.currentSongLyricsStart;
+    const startedAt = state.currentSongStartedAt;
+    if (start === null || startedAt === null) return false;
+    const played = ((state.currentSongPausedSince ?? now()) - startedAt) / 1000;
+    return played < introEnd(start) - 1;
   };
 
   // server.ts refuses the display's methods to phones; this checks again.
@@ -1065,6 +1079,7 @@ export function createApi(
       if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
       const { currentSong, playbackState: before } = store.getState();
+      if (playbackState === "SKIPPING_INTRO" && !inIntro()) return false;
       // Only the state: the song's clock follows the display's video, which
       // reports each start, pause, restart and seek (reportSongPosition).
       store.update((state) => {
@@ -1091,7 +1106,7 @@ export function createApi(
     },
 
     async reportSongPosition(
-      { songId, timestamp, position, length, playing },
+      { songId, timestamp, position, length, playing, lyricsStart },
       caller,
     ) {
       requireDisplay(caller);
@@ -1110,9 +1125,16 @@ export function createApi(
           POSITION_SLACK_MS;
       const songLength =
         length === null ? state.currentSongLength : Math.round(length);
-      if (inStep && songLength === state.currentSongLength) return true;
+      if (
+        inStep &&
+        songLength === state.currentSongLength &&
+        lyricsStart === state.currentSongLyricsStart
+      ) {
+        return true;
+      }
       store.update((state) => {
         state.currentSongLength = songLength;
+        state.currentSongLyricsStart = lyricsStart;
         if (inStep) return;
         // From scratch: position played by now, and paused since now unless
         // it's moving.
@@ -1259,6 +1281,7 @@ export function createApi(
         before.currentSongStartedAt === null &&
         before.currentSongPausedSince === null &&
         before.currentSongLength === null &&
+        before.currentSongLyricsStart === null &&
         before.currentSongAdhocLyrics.length === 0
       ) {
         return null;
@@ -1274,6 +1297,7 @@ export function createApi(
         state.currentSongStartedAt = null;
         state.currentSongPausedSince = null;
         state.currentSongLength = null;
+        state.currentSongLyricsStart = null;
         const current = state.currentSong;
         if (
           resume &&

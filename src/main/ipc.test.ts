@@ -18,6 +18,7 @@ const liveState: LiveState = {
   currentSong: null,
   currentSongStartedAt: null,
   currentSongPausedSince: null,
+  currentSongLyricsStart: null,
   queue: [],
   playbackState: "WAITING",
   pitchShiftSemis: 0,

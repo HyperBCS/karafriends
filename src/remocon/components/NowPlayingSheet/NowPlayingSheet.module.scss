@@ -294,6 +294,53 @@ $play: 52px;
   font-variant-numeric: tabular-nums;
 }
 
+// Skip intro: a raised accent pill over the screen, centred just above the
+// sheet (the footer places it), above the sheet's shadow. Its countdown in
+// fixed-width digits, so the pill holds still as it counts.
+.skipIntro {
+  position: absolute;
+  bottom: calc(100% + #{$kf-space-3});
+  left: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: $kf-space-2;
+  min-height: $kf-tap;
+  padding: 0 $kf-space-5 0 $kf-space-4;
+  border: none;
+  border-radius: 999px;
+  background-color: $kf-accent-fill;
+  color: $kf-on-accent;
+  box-shadow: $kf-shadow-raise;
+  font: inherit;
+  font-size: $kf-text-body;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: translateX(-50%);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+
+  @include kf-focus-visible;
+
+  @include kf-pressed {
+    background-color: $kf-accent-pressed;
+    box-shadow: none;
+  }
+}
+
+.skipIntroIcon {
+  display: inline-flex;
+  font-size: $kf-text-control;
+}
+
+.skipIntroLeft {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
 // A song in a confirm dialog: its title, then its artist.
 .dialogTitle {
   font-weight: 600;

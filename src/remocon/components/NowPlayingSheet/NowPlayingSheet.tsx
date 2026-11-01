@@ -13,6 +13,7 @@ import EmoteButtons from "./EmoteButtons";
 import * as styles from "./NowPlayingSheet.module.scss";
 import PlaybackControls from "./PlaybackControls";
 import QueueList, { nicknameOf, SingerBadge, sourceOf } from "./QueueList";
+import SkipIntro from "./SkipIntro";
 
 // A setting of the sheet's kept on the phone ("expanded", "showEmotes"),
 // so it stays as it was across a reload.
@@ -132,35 +133,42 @@ export const ModeSwitch = ({
 
 // The now-playing sheet at the bottom of every screen. Expanded, it shows
 // three blocks: the bar, the queue under "Up next" in a well, and a toolbar
-// with the playback controls or the emotes.
+// with the playback controls or the emotes. Skip intro floats over it during
+// a long intro, open or folded.
 const NowPlayingSheet = () => {
   const [expanded, setExpanded] = useStoredFlag("expanded");
   const [showEmotes, setShowEmotes] = useStoredFlag("showEmotes");
 
   return (
-    <Sheet
-      label={t("sheet.nowPlaying")}
-      header={
-        <NowPlaying expanded={expanded} onOpenSong={() => setExpanded(false)} />
-      }
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-    >
-      <h2 className={styles.heading}>{t("queue.upNext")}</h2>
-      <section aria-label={t("queue.label")} className={styles.queue}>
-        <QueueList onOpenSong={() => setExpanded(false)} />
-      </section>
-      <div
-        className={styles.controls}
-        data-showing={showEmotes ? "emotes" : "playback"}
+    <>
+      <SkipIntro />
+      <Sheet
+        label={t("sheet.nowPlaying")}
+        header={
+          <NowPlaying
+            expanded={expanded}
+            onOpenSong={() => setExpanded(false)}
+          />
+        }
+        expanded={expanded}
+        onExpandedChange={setExpanded}
       >
-        <ModeSwitch
-          showEmotes={showEmotes}
-          onToggle={() => setShowEmotes(!showEmotes)}
-        />
-        {showEmotes ? <EmoteButtons /> : <PlaybackControls />}
-      </div>
-    </Sheet>
+        <h2 className={styles.heading}>{t("queue.upNext")}</h2>
+        <section aria-label={t("queue.label")} className={styles.queue}>
+          <QueueList onOpenSong={() => setExpanded(false)} />
+        </section>
+        <div
+          className={styles.controls}
+          data-showing={showEmotes ? "emotes" : "playback"}
+        >
+          <ModeSwitch
+            showEmotes={showEmotes}
+            onToggle={() => setShowEmotes(!showEmotes)}
+          />
+          {showEmotes ? <EmoteButtons /> : <PlaybackControls />}
+        </div>
+      </Sheet>
+    </>
   );
 };
 

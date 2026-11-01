@@ -5,6 +5,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 
 import {
   adminPasswordConfig,
+  apiCall,
   confirmAction,
   currentSongKey,
   displayCall,
@@ -1267,6 +1268,76 @@ test.describe("restart and skip", () => {
       .poll(async () => (await liveState(karafriends.remoconUrl)).currentSong)
       .toBe(null);
     expect(sent).toEqual(["PAUSED", "PLAYING", "SKIPPING"]);
+  });
+});
+
+test.describe("skip intro", () => {
+  // A YouTube song (a minute of black video) whose captions have "[Music]"
+  // until the singing starts, 40 seconds in.
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "youtube",
+          songId: "e2eIntroVid",
+          name: "E2E long intro",
+          artistName: "",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-someone", nickname: "someone" },
+          hasAdhocLyrics: false,
+          hasCaptions: true,
+          gainValue: 1,
+          captions: [
+            "WEBVTT",
+            "",
+            "00:00.000 --> 00:40.000",
+            "[Music]",
+            "",
+            "00:40.000 --> 00:45.000",
+            "E2E first line",
+            "",
+          ].join("\n"),
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("shows during a long intro, and goes to 5 seconds before the singing", async ({
+    karafriends,
+    remote,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    // Above the sheet, folded: the TV has told the phones where the singing
+    // starts.
+    const skipIntro = remote.getByRole("button", { name: "Skip intro" });
+    await expect(skipIntro).toBeVisible();
+    expect((await liveState(remoconUrl)).currentSongLyricsStart).toBe(40);
+    // How much it skips, counting down from 0:35.
+    await expect(skipIntro).toContainText(/0:3[0-5]/);
+
+    await skipIntro.click();
+    const position = () =>
+      display.locator("video").evaluate((v: HTMLVideoElement) => v.currentTime);
+    await expect.poll(position).toBeGreaterThanOrEqual(35);
+    expect(await position()).toBeLessThan(40);
+    await expect(skipIntro).toHaveCount(0);
+    await expect(
+      display.getByRole("status").filter({ hasText: "Intro skipped by e2e" }),
+    ).toContainText("E2E long intro");
+    // Past the intro, the server takes no more: a late tap can't rewind.
+    expect(
+      (
+        await apiCall(remoconUrl, "setPlaybackState", {
+          playbackState: "SKIPPING_INTRO",
+          song: await currentSongKey(remoconUrl),
+        })
+      ).body,
+    ).toBe(false);
   });
 });
 

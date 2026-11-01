@@ -80,6 +80,40 @@ const DAM_GAIN = 1.0;
 const JOYSOUND_GAIN = 1.0;
 const NICO_GAIN = 0.8;
 
+// When a YouTube song's singing starts, by its captions (WebVTT): the start
+// of the first cue with words in it, in seconds. Not one that is only
+// "[Music]", "(Intro)" or "♪", as many videos caption their intro. Null
+// with none.
+export function firstSungCue(vtt: string): number | null {
+  for (const cue of vtt.replace(/\r\n?/g, "\n").split(/\n{2,}/)) {
+    const lines = cue.split("\n");
+    const timing = lines.findIndex((line) => line.includes("-->"));
+    if (timing === -1) continue;
+    const start = vttSeconds(lines[timing].split("-->")[0].trim());
+    const words = lines
+      .slice(timing + 1)
+      .join(" ")
+      .replace(/<[^>]*>/g, "")
+      .replace(/[[(（【][^\])）】]*[\])）】]/g, "")
+      .replace(/[\s\p{P}\p{S}]/gu, "");
+    if (start !== null && words !== "") return start;
+  }
+  return null;
+}
+
+// A WebVTT timestamp ("01:02.500", "1:01:02.500") in seconds.
+function vttSeconds(stamp: string): number | null {
+  const match = /^(?:(\d+):)?(\d{2}):(\d{2})\.(\d{3})$/.exec(stamp);
+  if (!match) return null;
+  const [, hours = "0", minutes, seconds, ms] = match;
+  return (
+    Number(hours) * 3600 +
+    Number(minutes) * 60 +
+    Number(seconds) +
+    Number(ms) / 1000
+  );
+}
+
 export function songGain(song: PoppedSong): number {
   switch (song.kind) {
     case "dam":
