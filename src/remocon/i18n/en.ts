@@ -204,7 +204,6 @@ export const en = {
   "lyricsMode.label": "Lyrics on the TV",
   "lyricsMode.kana": "Kana",
   "lyricsMode.romaji": "Romaji",
-  "lyricsMode.both": "Both",
   "lyricsMode.help": "Joysound songs only. Can be changed on each song's page.",
 
   // Joysound's guide melody level, in the settings for admins.

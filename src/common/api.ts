@@ -90,9 +90,17 @@ export interface DamQueueItem extends QueueItemBase {
 }
 
 // How a Joysound song's lyrics show on the display: kanji with kana ruby,
-// romaji, or the romaji line under the kanji line.
-export const LYRICS_MODES = ["kana", "romaji", "both"] as const;
+// or with romaji in the ruby's place.
+export const LYRICS_MODES = ["kana", "romaji"] as const;
 export type LyricsMode = (typeof LYRICS_MODES)[number];
+
+// A lyrics mode saved by this version or an older one; null for anything
+// else. An older "both" (the romaji under the kanji and the ruby, gone
+// since) shows the romaji.
+export function savedLyricsModeOf(saved: unknown): LyricsMode | null {
+  if (saved === "both") return "romaji";
+  return LYRICS_MODES.find((mode) => mode === saved) ?? null;
+}
 
 export interface JoysoundQueueItem extends QueueItemBase {
   kind: "joysound";
