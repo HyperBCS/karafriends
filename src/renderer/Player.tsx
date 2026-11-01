@@ -15,6 +15,14 @@ import KarafriendsAudio from "./webAudio";
 const showsRomaji = (song: SharedQueueItem | null) =>
   song?.kind === "joysound" && song.lyricsMode !== "kana";
 
+// A captions track, on from the start. It's in the video only while its
+// song plays: a <track> kept from song to song and given a new src (or
+// none) let go of its cues, but Chromium went on drawing the one showing
+// over the next song.
+const showTrack = (track: HTMLTrackElement | null) => {
+  if (track) track.track.mode = "showing";
+};
+
 // The video, with the song's lyrics and pitch bars over it.
 function Player(props: {
   mics: InputDevice[];
@@ -25,10 +33,8 @@ function Player(props: {
   pitchBars: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const trackRef = useRef<HTMLTrackElement>(null);
   const { overlay, pitchShiftSemis } = useSongPlayer({
     videoRef,
-    trackRef,
     audio: props.audio,
     announce: props.announce,
   });
@@ -88,7 +94,15 @@ function Player(props: {
         controlsList="nodownload noplaybackrate"
         disablePictureInPicture
       >
-        <track ref={trackRef} kind="subtitles" default />
+        {overlay?.kind === "youtube" && overlay.captions !== null ? (
+          <track
+            key={overlay.captions}
+            ref={showTrack}
+            kind="subtitles"
+            src={overlay.captions}
+            default
+          />
+        ) : null}
       </video>
       {overlay?.kind === "youtube" && overlay.adhocLyrics ? (
         <AdhocLyrics />

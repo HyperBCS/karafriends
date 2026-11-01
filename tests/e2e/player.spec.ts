@@ -18,6 +18,7 @@ import {
   fakeTool,
   liveState,
   NICKNAME,
+  SEEDED_CAPTION,
   test,
 } from "./fixtures";
 
@@ -562,5 +563,120 @@ test.describe("a YouTube song's adhoc lyrics", () => {
       container!.y + container!.height,
     );
     expect(newest!.y).toBeGreaterThan(container!.y);
+  });
+});
+
+test.describe("a YouTube song's captions", () => {
+  const user = { deviceId: "e2e-player-device", nickname: "e2e" };
+  // Two YouTube songs with captions, then a Niconico song without.
+  const youtube = (n: number) => ({
+    kind: "youtube",
+    songId: `e2eCaption${n}`,
+    name: `E2E captions song ${n}`,
+    artistName: "",
+    playtime: 60,
+    timestamp: String(Date.UTC(2026, 0, 1) + n),
+    user,
+    hasAdhocLyrics: false,
+    hasCaptions: true,
+    gainValue: 1,
+  });
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        youtube(1),
+        youtube(2),
+        {
+          kind: "nico",
+          songId: "sm8200",
+          name: "E2E song after captions",
+          artistName: "E2E artist",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1) + 3),
+          user,
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  // The captions the video shows now: the cues of its showing tracks that
+  // are on at this point of the song.
+  const shownCaptions = (display: Page) =>
+    display.locator("video").evaluate((v: HTMLVideoElement) =>
+      Array.from(v.textTracks)
+        .filter((track) => track.mode === "showing")
+        .flatMap((track) =>
+          Array.from(track.activeCues ?? []).map((cue) => (cue as VTTCue).text),
+        ),
+    );
+
+  // The light pixels in the lower half of the video, where a caption shows
+  // (and the video's controls, while the mouse moved or as a song starts).
+  // A screenshot's: the caption the video draws isn't in the page.
+  const lightPixels = async (display: Page) => {
+    const box = (await display.locator("video").boundingBox())!;
+    const png = await display.screenshot({
+      clip: {
+        x: box.x + box.width / 4,
+        y: box.y + box.height / 2,
+        width: box.width / 2,
+        height: box.height / 2,
+      },
+    });
+    return display.evaluate(
+      async (src) => {
+        const image = new Image();
+        image.src = src;
+        await image.decode();
+        const canvas = new OffscreenCanvas(image.width, image.height);
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const { data } = context.getImageData(0, 0, image.width, image.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (Math.min(data[i], data[i + 1], data[i + 2]) > 128) count++;
+        }
+        return count;
+      },
+      `data:image/png;base64,${png.toString("base64")}`,
+    );
+  };
+
+  test("show while it plays, and go with it", async ({
+    karafriends,
+    display,
+  }) => {
+    const { remoconUrl } = karafriends;
+    const skip = async () =>
+      expect(
+        await call(remoconUrl, "setPlaybackState", {
+          playbackState: "SKIPPING",
+          song: await currentSongKey(remoconUrl),
+        }),
+      ).toBe(true);
+    await expect
+      .poll(() => nowPlaying(remoconUrl))
+      .toEqual(["E2E captions song 1", "PLAYING"]);
+    await expect.poll(() => shownCaptions(display)).toEqual([SEEDED_CAPTION]);
+
+    // The next song's captions show too.
+    await skip();
+    await expect
+      .poll(() => nowPlaying(remoconUrl))
+      .toEqual(["E2E captions song 2", "PLAYING"]);
+    await expect.poll(() => shownCaptions(display)).toEqual([SEEDED_CAPTION]);
+
+    await skip();
+    await expect
+      .poll(() => nowPlaying(remoconUrl))
+      .toEqual(["E2E song after captions", "PLAYING"]);
+    // The next song has none: none is on, and none is drawn (Chromium
+    // drew the last one on until the track went). Black once the controls
+    // hide, a few seconds in.
+    expect(await shownCaptions(display)).toEqual([]);
+    await expect.poll(() => lightPixels(display), { timeout: 15_000 }).toBe(0);
   });
 });
