@@ -16,6 +16,7 @@ import type {
   LiveState,
   QueueItem,
   SharedQueueItem,
+  SongAction,
   UserIdentity,
 } from "../common/api";
 import type { State, StateStore } from "./state";
@@ -26,6 +27,12 @@ export type HubMessage =
   | { type: "emote"; emote: string; user: UserIdentity }
   | { type: "queueAdded"; item: QueueItem }
   | { type: "queueFailed"; item: QueueItem; reason: string }
+  | {
+      type: "songAction";
+      action: SongAction;
+      item: QueueItem;
+      by: string | null;
+    }
   | {
       type: "micLevels";
       id: string;
@@ -205,6 +212,13 @@ function messageEvent(message: HubMessage): LiveEvent {
         type: "queueFailed",
         item: shareQueueItem(message.item, null),
         reason: message.reason,
+      };
+    case "songAction":
+      return {
+        type: "songAction",
+        action: message.action,
+        item: shareQueueItem(message.item, null),
+        by: message.by === null ? null : { nickname: message.by },
       };
     case "micLevels":
       return { ...message };

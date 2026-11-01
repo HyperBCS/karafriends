@@ -23,6 +23,7 @@ import {
 } from "../../icons";
 import songLink, { sourceName } from "../../songLink";
 import {
+  ConfirmDialog,
   EmptyState,
   IconButton,
   IconLink,
@@ -53,6 +54,21 @@ export const SingerBadge = ({ nickname }: { nickname: string }) => (
     <Initial nickname={nickname} />
     <Marquee className={styles.singerName}>{nickname}</Marquee>
   </span>
+);
+
+// The song a confirm dialog asks about: its title, and its artist, as the
+// rows show them.
+export const DialogSong = ({ item }: { item: SharedQueueItem }) => (
+  <>
+    <span className={styles.dialogTitle}>
+      <WithReading text={item.name} yomi={item.nameYomi} />
+    </span>
+    {item.artistName && (
+      <span className={styles.dialogArtist}>
+        <WithReading text={item.artistName} yomi={item.artistNameYomi} />
+      </span>
+    )}
+  </>
 );
 
 // The small label: where the song comes from, and for Joysound, its
@@ -88,8 +104,9 @@ interface RowProps {
 // A queued song. Tapping it shows who queued it, in place of the artist and
 // the source, and what this phone may do with it: open the song's page (to
 // queue it again, say), remove it (its singer, or an admin; anyone outside
-// supervised mode), and for an admin, move it to the top. An admin also
-// drags it by its handle. It renders again only when its props change.
+// supervised mode), once the phone says yes, and for an admin, move it to
+// the top. An admin also drags it by its handle. It renders again only when
+// its props change.
 const QueueRow = memo(function QueueRow({
   item,
   eta,
@@ -100,6 +117,7 @@ const QueueRow = memo(function QueueRow({
   handleProps,
 }: RowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const readings = useReadings();
   const supervisedMode = useLiveState(
     (state) => state?.config.supervisedMode ?? false,
@@ -136,42 +154,57 @@ const QueueRow = memo(function QueueRow({
           label={t("queue.remove")}
           icon={<MdClose />}
           tone="danger"
-          onClick={() => removeSong.mutate(song)}
+          onClick={() => setConfirmingRemove(true)}
         />
       )}
     </>
   );
 
   return (
-    <ListRow
-      leading={<Initial nickname={nickname} />}
-      title={<WithReading text={item.name} yomi={item.nameYomi} />}
-      subtitle={
-        expanded ? (
-          queuedBy
-        ) : (
-          <WithReading text={item.artistName} yomi={item.artistNameYomi} />
-        )
-      }
-      source={expanded ? undefined : sourceOf(item)}
-      onPress={() => setExpanded(!expanded)}
-      expanded={expanded}
-      // The title as the row shows it, so "Tap koi" finds it.
-      aria-label={`${reading(item.name, item.nameYomi, readings) ?? item.name}, ${queuedBy}`}
-      trailing={
-        <>
-          {expanded ? actions : <Wait eta={eta} />}
-          {isAdmin && (
-            <IconButton
-              label={t("queue.dragToReorder")}
-              icon={<MdDragIndicator />}
-              className={styles.handle}
-              {...handleProps(index)}
-            />
-          )}
-        </>
-      }
-    />
+    <>
+      <ListRow
+        leading={<Initial nickname={nickname} />}
+        title={<WithReading text={item.name} yomi={item.nameYomi} />}
+        subtitle={
+          expanded ? (
+            queuedBy
+          ) : (
+            <WithReading text={item.artistName} yomi={item.artistNameYomi} />
+          )
+        }
+        source={expanded ? undefined : sourceOf(item)}
+        onPress={() => setExpanded(!expanded)}
+        expanded={expanded}
+        // The title as the row shows it, so "Tap koi" finds it.
+        aria-label={`${reading(item.name, item.nameYomi, readings) ?? item.name}, ${queuedBy}`}
+        trailing={
+          <>
+            {expanded ? actions : <Wait eta={eta} />}
+            {isAdmin && (
+              <IconButton
+                label={t("queue.dragToReorder")}
+                icon={<MdDragIndicator />}
+                className={styles.handle}
+                {...handleProps(index)}
+              />
+            )}
+          </>
+        }
+      />
+      {/* Gone with the row, if the song starts or leaves the queue. */}
+      <ConfirmDialog
+        open={confirmingRemove}
+        title={t("queue.confirmRemove")}
+        confirmLabel={t("queue.removeAction")}
+        onConfirm={() => {
+          setConfirmingRemove(false);
+          removeSong.mutate(song);
+        }}
+        onCancel={() => setConfirmingRemove(false)}
+      >
+        <DialogSong item={item} />
+      </ConfirmDialog>
+    </>
   );
 });
 

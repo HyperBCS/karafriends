@@ -294,6 +294,15 @@ $play: 52px;
   font-variant-numeric: tabular-nums;
 }
 
+// A song in a confirm dialog: its title, then its artist.
+.dialogTitle {
+  font-weight: 600;
+}
+
+.dialogArtist {
+  color: $kf-muted;
+}
+
 // Under the controls, when this phone may not use them.
 .note {
   grid-column: 1 / -1;

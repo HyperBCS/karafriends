@@ -8,6 +8,7 @@ export type {
   IconButtonProps,
   IconLinkProps,
 } from "./Button";
+export { ConfirmDialog } from "./ConfirmDialog";
 export { EmptyState } from "./EmptyState";
 export { InlineError } from "./InlineError";
 export { List, ListRow } from "./ListRow";

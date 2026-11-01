@@ -1,0 +1,55 @@
+@use "../../tokens" as *;
+
+// Above every layer, the sheet's included: the sheet's color and its
+// rounder corners, in the middle of the screen, the screen dimmed around
+// it. The dialog itself is only a frame for the card: a tap on it is a tap
+// outside the card.
+.dialog {
+  width: min(100% - 2 * $kf-card-inset, 400px);
+  max-width: none;
+  margin: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: $kf-text;
+  font-family: $kf-font;
+  line-height: $kf-line-height;
+
+  &::backdrop {
+    background-color: rgba(0, 0, 0, 0.55);
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-3;
+  padding: $kf-space-5 $kf-space-4 $kf-space-4;
+  border-radius: $kf-radius-sheet;
+  background-color: $kf-panel;
+  box-shadow: $kf-shadow-sheet;
+}
+
+.title {
+  margin: 0;
+  font-size: $kf-text-control;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+// The song: its title, then its artist in muted text.
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: $kf-space-1;
+  min-width: 0;
+  font-size: $kf-text-body;
+  overflow-wrap: anywhere;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $kf-space-3;
+  margin-top: $kf-space-2;
+}

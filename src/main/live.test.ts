@@ -289,6 +289,8 @@ describe("createLiveHub: who sees what", () => {
     hub.publish({ type: "queueAdded", item });
     hub.publish({ type: "emote", emote: "🎉", user: item.user });
     hub.publish({ type: "queueFailed", item, reason: "Video unavailable" });
+    hub.publish({ type: "songAction", action: "skipped", item, by: "bob" });
+    hub.publish({ type: "songAction", action: "removed", item, by: null });
     hub.publish({ type: "micLevels", id: "Mic#0", echo: 30 });
     stops.forEach((stop) => stop());
 
@@ -296,6 +298,13 @@ describe("createLiveHub: who sees what", () => {
       { type: "queueAdded", item: shared(false) },
       { type: "emote", emote: "🎉", user: { nickname: "n" } },
       { type: "queueFailed", item: shared(false), reason: "Video unavailable" },
+      {
+        type: "songAction",
+        action: "skipped",
+        item: shared(false),
+        by: { nickname: "bob" },
+      },
+      { type: "songAction", action: "removed", item: shared(false), by: null },
       { type: "micLevels", id: "Mic#0", echo: 30 },
     ]);
     assert.deepEqual(messages.get("d"), []);

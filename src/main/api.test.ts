@@ -281,6 +281,21 @@ describe("admin checks", () => {
       await api.removeSong({ songId: "sm2", timestamp: "2" }, bob),
       true,
     );
+    // The display's corner says who took it off the queue; a second try
+    // (another phone's, say) finds it gone, and says nothing.
+    assert.deepEqual(published, [
+      {
+        type: "songAction",
+        action: "removed",
+        item: song(2, alice),
+        by: "bob",
+      },
+    ]);
+    assert.equal(
+      await api.removeSong({ songId: "sm2", timestamp: "2" }, alice),
+      false,
+    );
+    assert.equal(published.length, 1);
     assert.equal(
       await api.setPlaybackState(
         { playbackState: "PAUSED", song: "sm1@1" },
@@ -1226,6 +1241,30 @@ describe("commands for the current song", () => {
       display,
     );
   };
+
+  test("a phone's skip and restart go to the display's corner with who did it, once", async () => {
+    const api = makeApi();
+    await start(api);
+    const command = (playbackState: PlaybackCommand, caller: Caller) =>
+      api.setPlaybackState({ playbackState, song: "sm1@1" }, caller);
+    // Pausing and playing aren't announced.
+    await command("PAUSED", alice);
+    await command("PLAYING", bob);
+    assert.deepEqual(published, []);
+
+    await command("RESTARTING", bob);
+    // A second tap before the display has restarted it changes nothing.
+    await command("RESTARTING", alice);
+    // The display restarts it, and says so.
+    await command("PLAYING", display);
+    await command("SKIPPING", alice);
+    await command("SKIPPING", bob);
+    const item = song(1, alice);
+    assert.deepEqual(published, [
+      { type: "songAction", action: "restarted", item, by: "bob" },
+      { type: "songAction", action: "skipped", item, by: "alice" },
+    ]);
+  });
 
   test("a skip meant for the song before doesn't skip the next one", async () => {
     const api = makeApi();

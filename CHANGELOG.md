@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The phone remote asks before **Restart**, **Skip** and **Remove from queue**: "Skip this song?" with the song's title and artist, and **Cancel** beside the action. Play, pause and the key don't ask.
+- When a phone restarts or skips the song, or takes one off the queue, the TV says so in its top-right corner with who did it: "Skipped by Alex".
 - A YouTube song's last caption no longer stays on the screen through the next song.
 - A search typed in romaji also searches DAM and Joysound in kana, so "hikarunara" or "hikaru nara" finds 光るなら, and "yonezu" finds 米津玄師. Both catalogs match a song's reading in kana, never romaji. English that isn't romaji ("lemon") is searched for as typed only.
 - The lyrics choice for Joysound songs is **Kana** or **Romaji**. **Both** is gone: a phone or a queued song that had it shows romaji.

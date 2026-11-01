@@ -10,6 +10,7 @@ import {
 
 import {
   adminPasswordConfig,
+  confirmAction,
   expect,
   firstLiveEvent,
   showQueue,
@@ -160,13 +161,18 @@ test.describe("live state", () => {
         );
       }
 
-      // Pause, then restart: the display gets RESTARTING, rewinds and sets
-      // PLAYING again, which Bob sees.
+      // Pause, then restart, once Alice says yes: the display gets
+      // RESTARTING, rewinds and sets PLAYING again, which Bob sees, and says
+      // who restarted it in its corner.
       await pause(alice).click();
       await expect(play(bob)).toBeVisible();
       await alice.getByRole("button", { name: "Restart", exact: true }).click();
+      await confirmAction(alice, "Restart this song?", "Restart");
       await expect(pause(bob)).toBeVisible();
       await expect(pause(alice)).toBeVisible();
+      await expect(
+        display.getByRole("status").filter({ hasText: "Restarted by alice" }),
+      ).toContainText(title(1));
 
       // Taking a song off the queue. Only Alice may remove song 2, and Bob
       // song 3.
@@ -196,7 +202,11 @@ test.describe("live state", () => {
       await queue(alice)
         .getByRole("button", { name: "Remove from queue" })
         .click();
+      await confirmAction(alice, "Remove this song from the queue?", "Remove");
       await expect(queue(bob).getByText(title(2))).toHaveCount(0);
+      await expect(
+        display.getByRole("status").filter({ hasText: "Removed by alice" }),
+      ).toContainText(title(2));
       await expect(displayQueue.getByText(title(2))).toHaveCount(0);
       await expect(displayQueue.getByText(title(3)).first()).toBeVisible();
 
