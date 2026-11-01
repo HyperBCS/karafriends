@@ -2666,8 +2666,8 @@ describe("validators", () => {
         }),
       /"guideVocal" must be true or false/,
     );
-    for (const lyricsMode of ["romaji", "both"]) {
-      const input = validators.queueSong({
+    const joysound = (lyricsMode: string) =>
+      validators.queueSong({
         kind: "joysound",
         songId: "123",
         name: "Song",
@@ -2675,8 +2675,15 @@ describe("validators", () => {
         lyricsMode,
         youtubeVideoId: null,
       });
+    for (const lyricsMode of ["kana", "romaji"]) {
+      const input = joysound(lyricsMode);
       assert.equal(input.kind === "joysound" && input.lyricsMode, lyricsMode);
     }
+    // Gone from the choices.
+    assert.throws(
+      () => joysound("both"),
+      /"lyricsMode" must be one of kana, romaji/,
+    );
     assert.equal(
       validators.queueSong({
         kind: "youtube",

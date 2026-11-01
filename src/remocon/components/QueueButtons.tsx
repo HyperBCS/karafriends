@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 
 import {
   LYRICS_MODES,
+  savedLyricsModeOf,
   type DamSongDetail,
   type JoysoundSongDetail,
   type LyricsMode,
@@ -128,14 +129,13 @@ const LYRICS_MODE_KEY = "lyricsMode";
 // The phone's choice of how Joysound lyrics show on the TV (in the
 // settings, under "TV"), kept in localStorage; kana without one.
 export function savedLyricsMode(): LyricsMode {
-  const saved = getItem(LYRICS_MODE_KEY);
-  return LYRICS_MODES.find((mode) => mode === saved) ?? "kana";
+  return savedLyricsModeOf(getItem(LYRICS_MODE_KEY)) ?? "kana";
 }
 
 export const saveLyricsMode = (mode: LyricsMode) =>
   setItem(LYRICS_MODE_KEY, mode);
 
-// Kana, romaji or both: on a Joysound song's page, and in the settings.
+// Kana or romaji: on a Joysound song's page, and in the settings.
 export const LyricsModeChoice = (props: {
   label: string;
   selected: LyricsMode;

@@ -339,7 +339,8 @@ describe("loadState", () => {
       loadState(file).songQueue.map(
         (item) => item.kind === "joysound" && item.lyricsMode,
       ),
-      ["romaji", "kana", "kana", "both", "romaji", "romaji"],
+      // "both" is gone: its songs show the romaji.
+      ["romaji", "kana", "kana", "romaji", "romaji", "romaji"],
     );
   });
 

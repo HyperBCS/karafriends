@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A YouTube song's last caption no longer stays on the screen through the next song.
+- The lyrics choice for Joysound songs is **Kana** or **Romaji**. **Both** is gone: a phone or a queued song that had it shows romaji.
+
 ## 0.2.3 (2026-10-30)
 
 - Settings › Advanced › Tools has **Check for updates**, which shows the newest version beside each tool that has one. **Update tools** then downloads only those tools, so a tool that's already the newest isn't downloaded again. The download date is gone.

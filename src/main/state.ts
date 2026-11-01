@@ -16,7 +16,6 @@ import type {
   AdhocLyricsEntry,
   CatalogStatus,
   LoginService,
-  LyricsMode,
   MicInfo,
   PlaybackState,
   QueueItem,
@@ -24,7 +23,7 @@ import type {
   ReadingsMode,
   UserIdentity,
 } from "../common/api";
-import { LYRICS_MODES, READINGS_MODES } from "../common/api";
+import { READINGS_MODES, savedLyricsModeOf } from "../common/api";
 import { isCaptionCode } from "../common/captionCode";
 import { secondsLeft, songKey } from "../common/currentSong";
 
@@ -459,12 +458,10 @@ function parseQueueItem(raw: unknown): QueueItem | null {
       return {
         kind,
         ...base,
-        // Items saved before the three modes had isRomaji instead.
-        lyricsMode: LYRICS_MODES.includes(raw.lyricsMode as LyricsMode)
-          ? (raw.lyricsMode as LyricsMode)
-          : raw.isRomaji === true
-            ? "romaji"
-            : "kana",
+        // Items saved before the modes had isRomaji instead.
+        lyricsMode:
+          savedLyricsModeOf(raw.lyricsMode) ??
+          (raw.isRomaji === true ? "romaji" : "kana"),
         youtubeVideoId:
           typeof raw.youtubeVideoId === "string" ? raw.youtubeVideoId : null,
         // Items saved before it are the guide-melody version.

@@ -177,7 +177,6 @@ export const ja: Messages = {
   "lyricsMode.label": "テレビの歌詞",
   "lyricsMode.kana": "ふりがな",
   "lyricsMode.romaji": "ローマ字",
-  "lyricsMode.both": "両方",
   "lyricsMode.help": "JOYSOUNDの曲のみ。曲のページで曲ごとに変更できます。",
   "guideMelody.label": "ガイドメロディ",
   "guideMelody.help": "JOYSOUNDの曲のみ。",

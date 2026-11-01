@@ -2677,7 +2677,7 @@ test.describe("dragging the queue", () => {
 // its lyrics, without lines, and a minute of black video), so queueSong
 // queues it at once.
 test.describe("the lyrics mode", () => {
-  // Three songs from one phone.
+  // Two songs from one phone.
   test.use({ appConfig: { paxSongQueueLimit: 0 } });
 
   test("a Joysound song is queued with the lyrics mode picked, preset from the settings", async ({
@@ -2685,7 +2685,7 @@ test.describe("the lyrics mode", () => {
     remote,
   }) => {
     const { app, remoconUrl } = karafriends;
-    const LABELS = { kana: "Kana", romaji: "Romaji", both: "Both" };
+    const LABELS = { kana: "Kana", romaji: "Romaji" };
     for (const mode of Object.keys(LABELS)) {
       await fakeJoysoundDownload(app, `e2e-${mode}`);
     }
@@ -2720,8 +2720,12 @@ test.describe("the lyrics mode", () => {
     expect(
       await remote.evaluate(() => localStorage.getItem("lyricsMode")),
     ).toBe("romaji");
+    // A phone that picked "Both" before it went shows the romaji.
+    await remote.evaluate(() => localStorage.setItem("lyricsMode", "both"));
+    await remote.reload();
+    await expect(selected).toHaveText("Romaji");
 
-    for (const mode of ["romaji", "kana", "both"] as const) {
+    for (const mode of ["romaji", "kana"] as const) {
       await remote.goto(new URL(`#/joysoundSong/e2e-${mode}`, remoconUrl).href);
       await expect(
         remote.getByRole("heading", { name: `E2E Joysound e2e-${mode}` }),
@@ -2749,11 +2753,7 @@ test.describe("the lyrics mode", () => {
             .map((item) => [item.songId, item.lyricsMode]),
         );
       })
-      .toEqual({
-        "e2e-romaji": "romaji",
-        "e2e-kana": "kana",
-        "e2e-both": "both",
-      });
+      .toEqual({ "e2e-romaji": "romaji", "e2e-kana": "kana" });
     // The open sheet shows each one's mode by its source: the one playing
     // on the bar (its link), the others on their rows in the queue.
     await showQueue(remote);

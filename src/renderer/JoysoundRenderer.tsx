@@ -101,14 +101,10 @@ interface LineSize {
 const lineHeight = (line: LineSize) => line.size + line.stroke * 2;
 
 // "kana" draws the ruby above the main line, "romaji" the romaji there
-// instead. "both" adds the romaji under the main line, in the same height
-// (so it can't run into the next line): its three lines are smaller.
+// instead.
 const RUBY_LINE = { size: RUBY_FONT_SIZE, stroke: RUBY_FONT_STROKE };
 const MAIN_LINE = { size: MAIN_FONT_SIZE, stroke: MAIN_FONT_STROKE };
 const ROMAJI_LINE = { size: ROMAJI_FONT_SIZE, stroke: ROMAJI_FONT_STROKE };
-// "both": the ruby and the romaji line.
-const BOTH_SMALL_LINE = { size: 14, stroke: 2 };
-const BOTH_MAIN_LINE = { size: 36, stroke: 3 };
 
 const SCREEN_WIDTH = 720;
 const SCREEN_HEIGHT = 480;
@@ -445,28 +441,11 @@ function createLyricsBlockTexture(
 ): WebGLTexture {
   setupTextCanvas(textCtx, lyricsBlock, fillColor, strokeColor);
 
-  if (lyricsMode === "both") {
-    const mainY = lineHeight(BOTH_SMALL_LINE);
-    drawFuriganaTextToCanvas(textCtx, lyricsBlock, BOTH_SMALL_LINE);
-    drawMainTextToCanvas(textCtx, lyricsBlock, BOTH_MAIN_LINE, mainY);
-    drawRomajiTextToCanvas(
-      textCtx,
-      lyricsBlock,
-      BOTH_SMALL_LINE,
-      mainY + lineHeight(BOTH_MAIN_LINE),
-    );
+  drawMainTextToCanvas(textCtx, lyricsBlock, MAIN_LINE, lineHeight(RUBY_LINE));
+  if (lyricsMode === "romaji") {
+    drawRomajiTextToCanvas(textCtx, lyricsBlock, ROMAJI_LINE, 0);
   } else {
-    drawMainTextToCanvas(
-      textCtx,
-      lyricsBlock,
-      MAIN_LINE,
-      lineHeight(RUBY_LINE),
-    );
-    if (lyricsMode === "romaji") {
-      drawRomajiTextToCanvas(textCtx, lyricsBlock, ROMAJI_LINE, 0);
-    } else {
-      drawFuriganaTextToCanvas(textCtx, lyricsBlock, RUBY_LINE);
-    }
+    drawFuriganaTextToCanvas(textCtx, lyricsBlock, RUBY_LINE);
   }
 
   return createTextureFromImage(gl, textCtx.canvas);
