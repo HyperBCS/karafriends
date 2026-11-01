@@ -894,12 +894,16 @@ export const test = base.extend<Options & Fixtures>({
 
 export { expect };
 
+// The caption a seeded YouTube song with hasCaptions shows the whole minute.
+export const SEEDED_CAPTION = "E2E caption";
+
 // The seeded queue's Niconico and YouTube songs come "downloaded" as a
 // minute of black video (tests/fixtures/black.mp4), so the display plays
-// them: a song whose file is missing is skipped as one that can't play.
-// DAM and Joysound songs get no files.
+// them: a song whose file is missing is skipped as one that can't play. A
+// YouTube song with hasCaptions also gets captions, SEEDED_CAPTION from
+// start to end. DAM and Joysound songs get no files.
 function seedVideos(queueDir: string, seed: object) {
-  type Song = { kind: string; songId: string } | null;
+  type Song = { kind: string; songId: string; hasCaptions?: boolean } | null;
   const { currentSong, songQueue } = seed as {
     currentSong?: Song;
     songQueue?: Song[];
@@ -911,5 +915,11 @@ function seedVideos(queueDir: string, seed: object) {
       path.join(REPO_ROOT, "tests", "fixtures", "black.mp4"),
       path.join(queueDir, `${prefixes[song.kind]}-${song.songId}.mp4`),
     );
+    if (song.kind === "youtube" && song.hasCaptions) {
+      fs.writeFileSync(
+        path.join(queueDir, `yt-${song.songId}.vtt`),
+        `WEBVTT\n\n00:00.000 --> 01:00.000\n${SEEDED_CAPTION}\n`,
+      );
+    }
   }
 }

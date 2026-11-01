@@ -65,7 +65,8 @@ export type Overlay =
       lyricsMode: LyricsMode;
       guideVocal: boolean;
     }
-  | { kind: "youtube"; adhocLyrics: boolean }
+  // captions: the song's captions file, if it has one.
+  | { kind: "youtube"; adhocLyrics: boolean; captions: string | null }
   | { kind: "nico" }
   | null;
 
@@ -88,12 +89,10 @@ export interface Announcement {
 // asks again when a song ends.
 export default function useSongPlayer({
   videoRef,
-  trackRef,
   audio,
   announce,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
-  trackRef: RefObject<HTMLTrackElement | null>;
   audio: KarafriendsAudio;
   announce: (announcement: Announcement) => void;
 }) {
@@ -161,13 +160,17 @@ export default function useSongPlayer({
   };
 
   // Lets go of the song before: its stream, its overlay (the lyrics' and
-  // pitch bars' draw loops and mic polls) and the video's media. Then
-  // nothing draws or holds buffers behind the idle screen, and a PLAYING
-  // before the next song loads can't restart the ended video.
+  // pitch bars' draw loops and mic polls), its captions and the video's
+  // media. Then nothing draws or holds buffers behind the idle screen, and
+  // a PLAYING before the next song loads can't restart the ended video.
   const release = (video: HTMLVideoElement) => {
     hlsRef.current?.destroy();
     hlsRef.current = null;
     setOverlay(null);
+    // Off before the media goes: Chromium redraws the captions only while
+    // the video has media, so the caption showing would stay on screen
+    // over the next song.
+    for (const track of Array.from(video.textTracks)) track.mode = "disabled";
     if (video.hasAttribute("src")) {
       video.removeAttribute("src");
       video.load();
@@ -323,12 +326,12 @@ export default function useSongPlayer({
     video: HTMLVideoElement,
     song: Extract<PoppedSong, { kind: "youtube" }>,
   ) => {
-    setOverlay({ kind: "youtube", adhocLyrics: song.hasAdhocLyrics });
+    setOverlay({
+      kind: "youtube",
+      adhocLyrics: song.hasAdhocLyrics,
+      captions: song.hasCaptions ? localFile(song, "captions") : null,
+    });
     video.src = localFile(song, "video");
-    if (trackRef.current && song.hasCaptions) {
-      trackRef.current.default = true;
-      trackRef.current.src = localFile(song, "captions");
-    }
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
     play(video);
   };
@@ -353,12 +356,8 @@ export default function useSongPlayer({
     }
     const key = songKey(song);
 
-    // Reset the captions and the key only for a song to play; doing it on
-    // every empty poll would spam the pitch-shift mutation while idle.
-    if (trackRef.current) {
-      trackRef.current.default = false;
-      trackRef.current.src = "";
-    }
+    // Reset the key only for a song to play; doing it on every empty poll
+    // would spam the pitch-shift mutation while idle.
     setPitchShiftSemis(0, key);
     audio.setJoysoundMode(song.kind === "joysound");
     audio.gain(songGain(song));
