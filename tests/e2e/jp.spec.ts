@@ -3,6 +3,7 @@ import fs from "fs";
 import type { Page } from "@playwright/test";
 
 import {
+  confirmAction,
   currentSongKey,
   displayCall,
   downloadsFolder,
@@ -68,6 +69,7 @@ async function removeFromQueue(remote: Page, title: string) {
     .getByRole("button", { name: `${title}, Queued by ${NICKNAME}` })
     .click();
   await queue.getByRole("button", { name: "Remove from queue" }).click();
+  await confirmAction(remote, "Remove this song from the queue?", "Remove");
   expect(await (await removal).json()).toBe(true);
   await expect(queue.getByText(title)).toHaveCount(0);
   await expect(queue.getByText("The queue is empty")).toBeVisible();

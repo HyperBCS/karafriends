@@ -16,8 +16,10 @@ import type {
   LoginService,
   NicoQueueItem,
   NicoVideoInfo,
+  PlaybackCommand,
   PoppedSong,
   QueueItem,
+  SongAction,
   UserIdentity,
   VocalType,
   YoutubeQueueItem,
@@ -208,6 +210,12 @@ const SONG_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const NICO_INFO_FAILED = "Failed getting video info. Maybe an invalid VideoID?";
 
 const DEFAULT_LIMIT = { dam: 30, joysound: 100, history: 30 };
+
+// The commands the display's corner says a phone gave, with who gave it.
+const PHONE_ACTIONS: Partial<Record<PlaybackCommand, SongAction>> = {
+  SKIPPING: "skipped",
+  RESTARTING: "restarted",
+};
 
 // Why a phone can't have a catalog's songs: the host turned it off, or
 // its login isn't set up or doesn't work (catalogs.ts). The remote says it
@@ -1016,11 +1024,17 @@ export function createApi(
           "Only the person who queued it or an admin can remove this song",
         );
       }
-      return store.update((state) => {
+      store.update((state) => {
         state.songQueue.splice(state.songQueue.indexOf(item), 1);
         delete state.idToAdhocLyrics[songKey(item)];
-        return true;
       });
+      deps.publish({
+        type: "songAction",
+        action: "removed",
+        item,
+        by: caller.nickname,
+      });
+      return true;
     },
 
     async moveSong({ song, before, toIndex }, caller) {
@@ -1050,11 +1064,29 @@ export function createApi(
     async setPlaybackState({ playbackState, song }, caller) {
       if (!isForCurrentSong(song, caller)) return false;
       requirePlaybackControl(caller);
+      const { currentSong, playbackState: before } = store.getState();
       // Only the state: the song's clock follows the display's video, which
       // reports each start, pause, restart and seek (reportSongPosition).
       store.update((state) => {
         state.playbackState = playbackState;
       });
+      // A phone's skip or restart, in the display's corner with who did it.
+      // Once: a second phone's tap before the display has acted on the
+      // first changes nothing.
+      const action = PHONE_ACTIONS[playbackState];
+      if (
+        action &&
+        currentSong &&
+        !caller.isDisplay &&
+        before !== playbackState
+      ) {
+        deps.publish({
+          type: "songAction",
+          action,
+          item: currentSong,
+          by: caller.nickname,
+        });
+      }
       return true;
     },
 

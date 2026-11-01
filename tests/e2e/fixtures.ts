@@ -167,6 +167,22 @@ export async function showQueue(page: Page) {
   await sheetSettled(page);
 }
 
+// Says yes to the remote's question before a restart, a skip or a removal:
+// presses action ("Skip") in the dialog asking question ("Skip this
+// song?"), and waits for the dialog to go.
+export async function confirmAction(
+  page: Page,
+  question: string,
+  action: string,
+  options: { timeout?: number } = {},
+) {
+  const dialog = page.getByRole("dialog", { name: question });
+  await dialog
+    .getByRole("button", { name: action, exact: true })
+    .click(options);
+  await expect(dialog).toHaveCount(0, options);
+}
+
 // The address the display's QR code shows by default: this computer's first
 // LAN address (localhost with none), with the remote's port.
 export async function defaultAddress(display: Page): Promise<string> {

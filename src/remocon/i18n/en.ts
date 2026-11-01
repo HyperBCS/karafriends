@@ -134,6 +134,8 @@ export const en = {
   "queue.moveToTop": "Move to top",
   "queue.openSong": "Song page",
   "queue.guideVocal": "Guide vocal",
+  "queue.confirmRemove": "Remove this song from the queue?",
+  "queue.removeAction": "Remove",
 
   // Playback and key.
   "playback.play": "Play",
@@ -141,6 +143,8 @@ export const en = {
   "playback.restart": "Restart",
   "playback.skip": "Skip",
   "playback.singerOnly": "Only the singer or an admin can control this song.",
+  "playback.confirmRestart": "Restart this song?",
+  "playback.confirmSkip": "Skip this song?",
   "pitch.key": "Key",
   "pitch.lower": "Lower key",
   "pitch.raise": "Raise key",

@@ -5,6 +5,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 
 import {
   adminPasswordConfig,
+  confirmAction,
   currentSongKey,
   displayCall,
   expect,
@@ -1196,6 +1197,79 @@ test.describe("in supervised mode", () => {
   });
 });
 
+test.describe("restart and skip", () => {
+  // A song the display starts at once (a minute of black video).
+  test.use({
+    seedQueue: {
+      currentSong: null,
+      songQueue: [
+        {
+          kind: "nico",
+          songId: "sm6200",
+          name: "E2E asked song",
+          artistName: "E2E asked artist",
+          playtime: 60,
+          timestamp: String(Date.UTC(2026, 0, 1)),
+          user: { deviceId: "e2e-someone", nickname: "someone" },
+        },
+      ],
+      songHistory: [],
+      playbackState: "WAITING",
+    },
+  });
+
+  test("ask first, naming the song; only a yes sends the command", async ({
+    karafriends,
+    remote,
+  }) => {
+    const sent: string[] = [];
+    remote.on("request", (req) => {
+      if (req.url().endsWith("/api/setPlaybackState")) {
+        sent.push(req.postDataJSON().playbackState);
+      }
+    });
+    await showQueue(remote);
+    const button = (name: string) =>
+      remote.getByRole("button", { name, exact: true });
+    await expect(button("Pause")).toHaveAttribute("aria-disabled", "false");
+    const skipDialog = remote.getByRole("dialog", { name: "Skip this song?" });
+
+    // Cancel, Escape and a tap outside the card each say no.
+    await button("Skip").click();
+    await expect(skipDialog).toContainText("E2E asked song");
+    await expect(skipDialog).toContainText("E2E asked artist");
+    await skipDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(skipDialog).toHaveCount(0);
+    await button("Restart").click();
+    const restartDialog = remote.getByRole("dialog", {
+      name: "Restart this song?",
+    });
+    await expect(restartDialog).toBeVisible();
+    await remote.keyboard.press("Escape");
+    await expect(restartDialog).toHaveCount(0);
+    await button("Skip").click();
+    await expect(skipDialog).toBeVisible();
+    await remote.mouse.click(4, 4);
+    await expect(skipDialog).toHaveCount(0);
+    await remote.waitForTimeout(300);
+    expect(sent).toEqual([]);
+
+    // Play and pause don't ask.
+    await button("Pause").click();
+    await expect(button("Play")).toBeVisible();
+    await button("Play").click();
+    await expect(button("Pause")).toBeVisible();
+    expect(sent).toEqual(["PAUSED", "PLAYING"]);
+
+    await button("Skip").click();
+    await confirmAction(remote, "Skip this song?", "Skip");
+    await expect
+      .poll(async () => (await liveState(karafriends.remoconUrl)).currentSong)
+      .toBe(null);
+    expect(sent).toEqual(["PAUSED", "PLAYING", "SKIPPING"]);
+  });
+});
+
 test.describe("Joysound off (turned off, or no working login)", () => {
   test.use({ catalogs: "dam" });
 
@@ -2108,6 +2182,7 @@ test.describe("an admin's queue", () => {
       queue.getByRole("button", { name: "Move to top" }),
     ).toBeDisabled();
     await queue.getByRole("button", { name: "Remove from queue" }).click();
+    await confirmAction(remote, "Remove this song from the queue?", "Remove");
     await expect(queue.getByText("E2E queue song 4")).toHaveCount(0);
   });
 });

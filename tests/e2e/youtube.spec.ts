@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, NICKNAME, showQueue, test } from "./fixtures";
+import { confirmAction, expect, NICKNAME, showQueue, test } from "./fixtures";
 
 // "Me at the zoo": 19 seconds long and unlikely to ever go away. The app is
 // launched with --mute-audio, so playing it makes no sound.
@@ -56,9 +56,20 @@ test.describe("YouTube", { tag: "@net" }, () => {
         await remoteQueue
           .getByRole("button", { name: "Remove from queue" })
           .click({ timeout: 2_000 });
+        await confirmAction(
+          remote,
+          "Remove this song from the queue?",
+          "Remove",
+          {
+            timeout: 2_000,
+          },
+        );
         tookOffBy = "removed from the queue";
       } else if ((await nowPlaying.count()) > 0) {
         await skipButton(remote).click({ timeout: 2_000 });
+        await confirmAction(remote, "Skip this song?", "Skip", {
+          timeout: 2_000,
+        });
         tookOffBy = "skipped while playing";
       }
       await expect(
@@ -102,6 +113,7 @@ test.describe("YouTube", { tag: "@net" }, () => {
       .toEqual({ src: true, playing: true });
 
     await skipButton(remote).click();
+    await confirmAction(remote, "Skip this song?", "Skip");
     await expect
       .poll(() => videoState(display))
       .toEqual({ src: true, playing: false });

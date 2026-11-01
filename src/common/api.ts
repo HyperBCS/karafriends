@@ -306,6 +306,14 @@ export type LiveEvent =
   // A song's download failed, so it won't join the queue. (The phone that
   // queued it sees the failure in the state's downloads.)
   | { type: "queueFailed"; item: SharedQueueItem; reason: string }
+  // A phone skipped or restarted the current song, or took a song off the
+  // queue: by whom (null for a phone that gave no nickname).
+  | {
+      type: "songAction";
+      action: SongAction;
+      item: SharedQueueItem;
+      by: PublicUser | null;
+    }
   // An admin's setMicLevels, with just the levels it gave. The display
   // applies them, and its setMics shows them to the phones.
   | {
@@ -317,6 +325,10 @@ export type LiveEvent =
     };
 
 export type LiveEventType = LiveEvent["type"];
+
+// What a phone did to a song, for the display's corner (a songAction
+// event).
+export type SongAction = "skipped" | "restarted" | "removed";
 
 // The query parameter GET /api/events takes the phone's device ID in.
 // (EventSource can't send headers.)

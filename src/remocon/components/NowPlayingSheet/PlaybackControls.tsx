@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 import type { PlaybackCommand } from "../../../common/api";
 import { useIsAdmin, useLiveState } from "../../../common/apiClient";
@@ -7,8 +7,9 @@ import usePitchShiftSemis from "../../../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import { t } from "../../i18n";
 import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "../../icons";
-import { IconButton } from "../ui";
+import { ConfirmDialog, IconButton } from "../ui";
 import * as styles from "./NowPlayingSheet.module.scss";
+import { DialogSong } from "./QueueList";
 
 // The key change with its sign: "+2", "−1" (a minus sign), "0".
 export function signedKey(semis: number): string {
@@ -99,8 +100,36 @@ export const KeyStepper = ({ semis, disabled, onChange }: KeyStepperProps) => (
   </div>
 );
 
+type Confirmed = Extract<PlaybackCommand, "RESTARTING" | "SKIPPING">;
+
+// The question before a restart or a skip, with the song playing.
+const ConfirmCommand = ({
+  command,
+  onConfirm,
+  onCancel,
+}: {
+  command: Confirmed;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) => {
+  const item = useLiveState((state) => state?.currentSong ?? null);
+  const skip = command === "SKIPPING";
+  return (
+    <ConfirmDialog
+      open
+      title={t(skip ? "playback.confirmSkip" : "playback.confirmRestart")}
+      confirmLabel={t(skip ? "playback.skip" : "playback.restart")}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    >
+      {item && <DialogSong item={item} />}
+    </ConfirmDialog>
+  );
+};
+
 // The transport and the key, for the current song (each command names it,
-// so a tap that crosses the song's end can't land on the next one). Dimmed
+// so a tap that crosses the song's end can't land on the next one). Restart
+// and skip ask first; play, pause and the key don't. Dimmed
 // while nothing plays or the TV loads the song (WAITING), and in supervised
 // mode for anyone but an admin and the current singer, as the server would
 // refuse them (setPlaybackState in src/main/api.ts), with a line under them
@@ -123,16 +152,36 @@ const PlaybackControls = () => {
   const play = (next: PlaybackCommand) => {
     if (song !== null) setPlaybackState(next, song);
   };
+  // The restart or skip waiting for a yes, and the song it's for: a song
+  // that ends meanwhile takes the question with it.
+  const [confirming, setConfirming] = useState<{
+    command: Confirmed;
+    song: string;
+  } | null>(null);
+  const ask = (command: Confirmed) => {
+    if (song !== null) setConfirming({ command, song });
+  };
+  const asking = confirming?.song === song ? confirming : null;
 
   return (
     <>
       <Transport
         playing={playing}
         disabled={disabled}
-        onRestart={() => play("RESTARTING")}
+        onRestart={() => ask("RESTARTING")}
         onPlayPause={() => play(playing ? "PAUSED" : "PLAYING")}
-        onSkip={() => play("SKIPPING")}
+        onSkip={() => ask("SKIPPING")}
       />
+      {asking && (
+        <ConfirmCommand
+          command={asking.command}
+          onConfirm={() => {
+            setConfirming(null);
+            setPlaybackState(asking.command, asking.song);
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
       <KeyStepper
         semis={pitchShiftSemis}
         disabled={disabled}

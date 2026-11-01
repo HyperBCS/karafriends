@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import type { MicInfo } from "../common/api";
+import type { MicInfo, SongAction } from "../common/api";
 import { call, useLiveEvent, useLiveState } from "../common/apiClient";
 import { GATE_OFF_DB, gateThreshold } from "../common/micGate";
 import "./ui.css";
@@ -41,6 +41,13 @@ import KarafriendsAudio, { type SongOutput } from "./webAudio";
 const ANNOUNCE_MS = 4000;
 // The most announcements shown at once; older ones go first.
 const MAX_ANNOUNCEMENTS = 3;
+
+// A songAction's card: "Skipped by Alex".
+const SONG_ACTION_LABELS: Record<SongAction, string> = {
+  skipped: "Skipped",
+  restarted: "Restarted",
+  removed: "Removed",
+};
 
 // The noise gate starts off.
 const DEFAULT_LEVELS: MicLevels = { gain: 100, echo: 40, gate: GATE_OFF_DB };
@@ -576,6 +583,12 @@ function App(props: { audio: KarafriendsAudio }) {
       detail: reason,
       tone: "problem",
     });
+  });
+
+  // A phone skipped or restarted the song, or took one off the queue.
+  useLiveEvent("songAction", ({ action, item, by }) => {
+    const done = SONG_ACTION_LABELS[action];
+    announce({ label: by ? `${done} by ${by.nickname}` : done, song: item });
   });
 
   // The Sound tab's, in Settings and on the setup screen.
