@@ -4,7 +4,7 @@ import React, { memo, useMemo } from "react";
 import type { Page } from "../../common/api";
 import { call } from "../../common/apiClient";
 import { countKey, t } from "../i18n";
-import { rank } from "../rank";
+import { kanaQuery, rank } from "../rank";
 import songLink, { artistLink, sourceName } from "../songLink";
 import Loader from "./Loader";
 import MoreButton from "./MoreButton";
@@ -66,31 +66,53 @@ interface Props {
 
 // DAM's and Joysound's answers to a search in one list, best match first
 // (see rank), ranked again as each page comes in. Each row says which
-// catalog it's from.
+// catalog it's from. A query typed in romaji is searched for in kana too
+// (kanaQuery), and those results join the query's.
 const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
   const on = { dam: damOn, joysound: joysoundOn };
   const catalogs = (["dam", "joysound"] as const).filter(
     (catalog) => on[catalog] && (source === "all" || source === catalog),
   );
-  const searches = {
-    dam: useCatalogSearch("dam", by, query, catalogs.includes("dam")),
-    joysound: useCatalogSearch(
-      "joysound",
-      by,
-      query,
-      catalogs.includes("joysound"),
-    ),
+  const kana = kanaQuery(query);
+  const searchesOf = {
+    dam: [
+      useCatalogSearch("dam", by, query, catalogs.includes("dam")),
+      useCatalogSearch(
+        "dam",
+        by,
+        kana ?? "",
+        kana !== null && catalogs.includes("dam"),
+      ),
+    ],
+    joysound: [
+      useCatalogSearch("joysound", by, query, catalogs.includes("joysound")),
+      useCatalogSearch(
+        "joysound",
+        by,
+        kana ?? "",
+        kana !== null && catalogs.includes("joysound"),
+      ),
+    ],
   };
-  // Each catalog's loaded pages, without the repeats a shifting catalog
-  // can put on a later page.
-  // Ranked again only when a page comes in (or the query changes).
-  const damPages = searches.dam.data?.pages;
-  const joysoundPages = searches.joysound.data?.pages;
+  // A catalog's searches that run: the query's, then the kana's if any.
+  const searches = (catalog: Catalog) =>
+    kana === null ? searchesOf[catalog].slice(0, 1) : searchesOf[catalog];
+  // Each catalog's loaded pages, the query's first, without the repeats a
+  // shifting catalog can put on a later page or the kana's search finds
+  // too. Ranked again only when a page comes in (or the query changes).
+  const damPages = searchesOf.dam[0].data?.pages;
+  const damKanaPages = searchesOf.dam[1].data?.pages;
+  const joysoundPages = searchesOf.joysound[0].data?.pages;
+  const joysoundKanaPages = searchesOf.joysound[1].data?.pages;
   const ranked = useMemo(() => {
-    const pages = { dam: damPages, joysound: joysoundPages };
+    const pages = {
+      dam: [damPages, kana === null ? undefined : damKanaPages],
+      joysound: [joysoundPages, kana === null ? undefined : joysoundKanaPages],
+    };
     const found = catalogs.map((catalog) => {
       const seen = new Set<string>();
-      return (pages[catalog] ?? [])
+      return pages[catalog]
+        .flatMap((list) => list ?? [])
         .flatMap((page) => page.items)
         .filter((item) => {
           if (seen.has(item.id)) return false;
@@ -100,7 +122,17 @@ const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
         .map((item) => ({ ...item, catalog }));
     });
     return rank(query, found);
-  }, [query, source, damOn, joysoundOn, damPages, joysoundPages]);
+  }, [
+    query,
+    kana,
+    source,
+    damOn,
+    joysoundOn,
+    damPages,
+    damKanaPages,
+    joysoundPages,
+    joysoundKanaPages,
+  ]);
   const rows = ranked.map((item) => (
     <ListRow
       key={`${item.catalog}_${item.id}`}
@@ -124,12 +156,17 @@ const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
     />
   ));
 
-  const active = catalogs.map((catalog) => searches[catalog]);
+  const active = catalogs.flatMap(searches);
   const loading = active.some((search) => search.isPending);
-  const failed = catalogs.filter((catalog) => searches[catalog].isLoadingError);
-  const failedMore = catalogs.filter(
-    (catalog) => searches[catalog].isFetchNextPageError,
+  // A catalog's failed searches: one line for the catalog, whichever failed.
+  const failedOf = (catalog: Catalog) =>
+    searches(catalog).filter((search) => search.isLoadingError);
+  const failed = catalogs.filter((catalog) => failedOf(catalog).length > 0);
+  const failedMore = catalogs.filter((catalog) =>
+    searches(catalog).some((search) => search.isFetchNextPageError),
   );
+  const reason = (catalog: Catalog) =>
+    searches(catalog).find((search) => search.error)?.error?.message ?? "";
 
   return (
     <>
@@ -137,11 +174,13 @@ const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
         <InlineError
           key={catalog}
           className={styles.error}
-          onRetry={() => void searches[catalog].refetch()}
+          onRetry={() => {
+            for (const search of failedOf(catalog)) void search.refetch();
+          }}
         >
           {t("search.failed", {
             source: sourceName(catalog),
-            reason: searches[catalog].error?.message ?? "",
+            reason: reason(catalog),
           })}
         </InlineError>
       ))}
@@ -154,7 +193,7 @@ const SearchResults = ({ query, by, source, damOn, joysoundOn }: Props) => {
         <InlineError key={catalog} className={styles.error}>
           {t("search.moreFailed", {
             source: sourceName(catalog),
-            reason: searches[catalog].error?.message ?? "",
+            reason: reason(catalog),
           })}
         </InlineError>
       ))}

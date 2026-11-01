@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { normalize } from "../common/readings";
-import { type Candidate, rank } from "./rank";
+import { type Candidate, kanaQuery, rank } from "./rank";
 
 const song = (
   name: string,
@@ -30,6 +30,33 @@ describe("normalize", () => {
     assert.equal(normalize("らーめん"), "らあめん");
     assert.equal(normalize("ラーメン"), "らあめん");
     assert.equal(normalize("ﾗｰﾒﾝ"), "らあめん");
+  });
+});
+
+describe("kanaQuery", () => {
+  test("romaji, in hiragana, a word at a time", () => {
+    assert.equal(kanaQuery("hikarunara"), "ひかるなら");
+    assert.equal(kanaQuery("Hikaru nara"), "ひかる なら");
+    assert.equal(kanaQuery("  YORU ni kakeru "), "よる に かける");
+    assert.equal(kanaQuery("ｈｉｋａｒｕ"), "ひかる");
+    assert.equal(kanaQuery("hikaru-nara!"), "ひかるなら");
+  });
+
+  test("Kunrei and other spellings that read as kana", () => {
+    assert.equal(kanaQuery("tu"), "つ");
+    assert.equal(kanaQuery("hu"), "ふ");
+    assert.equal(kanaQuery("onna"), "おんな");
+    assert.equal(kanaQuery("toukyou"), "とうきょう");
+  });
+
+  test("none for kana, kanji, digits or English that isn't romaji", () => {
+    assert.equal(kanaQuery("ひかるなら"), null);
+    assert.equal(kanaQuery("光る nara"), null);
+    assert.equal(kanaQuery("hikaru 2"), null);
+    assert.equal(kanaQuery("lemon"), null);
+    assert.equal(kanaQuery("love"), null);
+    assert.equal(kanaQuery("let it go"), null);
+    assert.equal(kanaQuery("   "), null);
   });
 });
 
