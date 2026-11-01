@@ -1,4 +1,4 @@
-import { isKana, isRomaji, toHiragana, toRomaji } from "wanakana";
+import { isHiragana, isKana, isRomaji, toHiragana, toRomaji } from "wanakana";
 
 import { normalize } from "../common/readings";
 
@@ -38,6 +38,30 @@ function queryForms(query: string): Query[] {
     .map((words) => words.filter(Boolean))
     .filter((words) => words.length > 0)
     .map((tokens) => ({ whole: tokens.join(""), tokens }));
+}
+
+// The query in hiragana, for searching the catalogs a second time: DAM and
+// Joysound match a song's or an artist's reading, never romaji, so
+// "hikaru nara" finds 光るなら only as ひかる なら. The words stay apart:
+// both catalogs want each word somewhere in the reading. Null unless every
+// word is romaji that reads as kana: not English that wanakana makes into
+// small kana ("lemon": ぇもん, which reads back as えもん). An English word
+// that is also romaji ("one": おね) gets a kana search too, which only adds
+// rows below the ones that match the word.
+export function kanaQuery(query: string): string | null {
+  const words = query
+    .normalize("NFKC")
+    .split(/\s+/)
+    .map(normalize)
+    .filter(Boolean);
+  if (words.length === 0 || !words.every((word) => /^[a-z]+$/.test(word))) {
+    return null;
+  }
+  const kana = words.map((word) => toHiragana(word));
+  const readsAsKana = kana.every(
+    (word) => isHiragana(word) && toHiragana(toRomaji(word)) === word,
+  );
+  return readsAsKana ? kana.join(" ") : null;
 }
 
 // The best points any form of the query earns against any of the texts.

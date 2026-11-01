@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A YouTube song's last caption no longer stays on the screen through the next song.
+- A search typed in romaji also searches DAM and Joysound in kana, so "hikarunara" or "hikaru nara" finds 光るなら, and "yonezu" finds 米津玄師. Both catalogs match a song's reading in kana, never romaji. English that isn't romaji ("lemon") is searched for as typed only.
 - The lyrics choice for Joysound songs is **Kana** or **Romaji**. **Both** is gone: a phone or a queued song that had it shows romaji.
 
 ## 0.2.3 (2026-10-30)

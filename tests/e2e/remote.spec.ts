@@ -2465,6 +2465,57 @@ test("a title search ranks both catalogs' results together, best match first", a
   ]);
 });
 
+test("a search typed in romaji also searches each catalog in kana", async ({
+  remote,
+}) => {
+  // As DAM and Joysound do: the reading matches kana, never romaji.
+  const asked: string[] = [];
+  for (const catalog of ["dam", "joysound"]) {
+    await remote.route(`**/api/${catalog}SearchSongs`, (route) => {
+      const { query } = route.request().postDataJSON();
+      asked.push(`${catalog} ${query}`);
+      return route.fulfill({
+        json: {
+          items:
+            query === "ひかる なら"
+              ? [
+                  {
+                    id: `e2e-${catalog}`,
+                    name: "光るなら",
+                    nameYomi: catalog === "dam" ? "ひかるなら" : undefined,
+                    artistName: "Goose house",
+                  },
+                ]
+              : [],
+          nextOffset: null,
+        },
+      });
+    });
+  }
+
+  const box = remote.getByRole("searchbox", { name: "Search" });
+  await box.fill("Hikaru nara");
+  const results = remote
+    .getByRole("list", { name: "Results" })
+    .getByRole("link");
+  await expect(results).toHaveText([
+    "光るならDAMGoose house",
+    "光るならJoysoundGoose house",
+  ]);
+  expect(asked.sort()).toEqual([
+    "dam Hikaru nara",
+    "dam ひかる なら",
+    "joysound Hikaru nara",
+    "joysound ひかる なら",
+  ]);
+
+  // English that isn't romaji is searched for as typed only.
+  asked.length = 0;
+  await box.fill("lemon");
+  await expect(remote.getByText("No results")).toBeVisible();
+  expect(asked.sort()).toEqual(["dam lemon", "joysound lemon"]);
+});
+
 test.describe("dragging the queue", () => {
   const song = (n: number) => ({
     kind: "nico",
