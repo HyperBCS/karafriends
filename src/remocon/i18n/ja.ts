@@ -129,6 +129,7 @@ export const ja: Messages = {
   "playback.singerOnly": "この曲を操作できるのは、歌う人と管理者だけです。",
   "playback.confirmRestart": "この曲を最初から再生しますか？",
   "playback.confirmSkip": "この曲をスキップしますか？",
+  "playback.skipIntro": "イントロをスキップ",
   "pitch.key": "キー",
   "pitch.lower": "キーを下げる",
   "pitch.raise": "キーを上げる",

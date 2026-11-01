@@ -176,6 +176,9 @@ export interface State {
   // reports it (null until then). The countdowns use it in place of the
   // playtime the song was queued with. Not saved either.
   currentSongLength: number | null;
+  // When its singing starts, in seconds, once the display reports it (see
+  // LiveState). Not saved.
+  currentSongLyricsStart: number | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   // The lines of each queued (or current) YouTube song with adhoc lyrics, by
   // songKey: the queue item, not the video, since anyone may queue the same
@@ -248,6 +251,7 @@ export function emptyState(): State {
     currentSongStartedAt: null,
     currentSongPausedSince: null,
     currentSongLength: null,
+    currentSongLyricsStart: null,
     currentSongAdhocLyrics: [],
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,

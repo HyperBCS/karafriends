@@ -14,6 +14,7 @@ import {
   joy02Events as at,
 } from "../../tests/fixtures/joy02";
 import parseJoysoundData, {
+  firstWipeMs,
   getSongDuration,
   type KuroshiroSingleton,
 } from "./joysoundParser";
@@ -47,6 +48,32 @@ function romajiOf(data: Awaited<ReturnType<typeof parseJoysoundData>>) {
       .map(({ phrase, xPos }) => `${phrase}@${xPos}`),
   );
 }
+
+describe("firstWipeMs", () => {
+  const block = { x: 0, y: 0, text: "あ" };
+  test("is the first block's wipe, after the title card and fade-ins", () => {
+    assert.equal(
+      firstWipeMs(
+        telop(
+          [block, block],
+          [
+            at.titleOut(6_000),
+            at.fadeIn(18_000, 2),
+            at.scroll(21_500, 30),
+            at.scrollMore(22_000, 40),
+            at.scroll(25_000, 30),
+          ],
+        ),
+      ),
+      21_500,
+    );
+  });
+
+  test("is null with no wipe, or for data that isn't a telop", () => {
+    assert.equal(firstWipeMs(telop([block], [at.fadeIn(1_000, 1)])), null);
+    assert.equal(firstWipeMs(new ArrayBuffer(4)), null);
+  });
+});
 
 describe("a JOY-02 telop's layout", () => {
   const blocks: Joy02Block[] = [

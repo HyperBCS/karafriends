@@ -13,6 +13,12 @@
   > footer {
     flex: none;
   }
+
+  // What floats over the screen just above the sheet (Skip intro) is placed
+  // from here.
+  > footer {
+    position: relative;
+  }
 }
 
 .main {

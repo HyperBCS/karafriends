@@ -10,8 +10,9 @@ import {
 
 import type { LyricsMode, PoppedDamSong, PoppedSong } from "../common/api";
 import { call, useLiveState } from "../common/apiClient";
-import { songKey } from "../common/currentSong";
+import { introEnd, songKey } from "../common/currentSong";
 import { isDamSample } from "../common/downloadFailure";
+import { firstWipeMs } from "../common/joysoundParser";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import {
@@ -22,6 +23,7 @@ import {
 import { damMelody, type Melody } from "./melody";
 import {
   FRAGMENT_RETRIES,
+  firstSungCue,
   lowBitrateFallback,
   retryFragment,
   songGain,
@@ -113,6 +115,9 @@ export default function useSongPlayer({
   const songRef = useRef<PoppedSong | null>(null);
   // The DAM stream, while one plays.
   const hlsRef = useRef<Hls | null>(null);
+  // When the song playing's singing starts, in seconds, once it's known
+  // (null until then, or for a song that can't tell): for Skip intro.
+  const lyricsStartRef = useRef<number | null>(null);
   // True until this page's first popSong answers. That one asks to resume:
   // after a reload (a renderer crash, or F5) the server's current song is
   // the one that was playing, and it plays again from the start.
@@ -120,6 +125,38 @@ export default function useSongPlayer({
 
   const schedulePoll = () => {
     pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
+  };
+
+  // Tells the server where the song really is, for every countdown, and
+  // when its singing starts. Not the video before a new song's loads (it
+  // has ended), nor one that failed.
+  const reportPosition = useEffectEvent(() => {
+    const video = videoRef.current;
+    const song = songRef.current;
+    if (
+      !video ||
+      !song ||
+      video.ended ||
+      video.readyState < video.HAVE_METADATA
+    ) {
+      return;
+    }
+    call("reportSongPosition", {
+      songId: song.songId,
+      timestamp: song.timestamp,
+      position: video.currentTime,
+      length: isFinite(video.duration) ? video.duration : null,
+      playing: !video.paused && video.readyState >= video.HAVE_FUTURE_DATA,
+      lyricsStart: lyricsStartRef.current,
+    }).catch((err) => console.error("Couldn't report the position:", err));
+  });
+
+  // The singing in song starts seconds in (null: it can't tell), if it's
+  // still the one playing; the phones hear at once.
+  const knowLyricsStart = (song: PoppedSong, seconds: number | null) => {
+    if (songRef.current !== song) return;
+    lyricsStartRef.current = seconds;
+    reportPosition();
   };
 
   // Takes the next song off the queue and starts it. With none, or no
@@ -246,7 +283,10 @@ export default function useSongPlayer({
   // (one downloaded before the server checked): it goes, and the song
   // streams.
   const loadDam = async (video: HTMLVideoElement, song: PoppedDamSong) => {
-    setOverlay({ kind: "dam", melody: damMelody(song.scoringData) });
+    const melody = damMelody(song.scoringData);
+    setOverlay({ kind: "dam", melody });
+    // Its first sung note.
+    knowLyricsStart(song, melody?.notes[0]?.startTime ?? null);
     const fileUrl = localFile(song, "video");
     let downloaded = false;
     try {
@@ -319,6 +359,8 @@ export default function useSongPlayer({
     // Skipped, or the video failed, while loading.
     if (songRef.current !== song) return;
     setOverlay({ ...overlay, telop });
+    const wipe = firstWipeMs(telop);
+    knowLyricsStart(song, wipe === null ? null : wipe / 1000);
     play(video);
   };
 
@@ -334,6 +376,14 @@ export default function useSongPlayer({
     video.src = localFile(song, "video");
     console.log(`Using ${song.gainValue} for gain on Youtube queue item`);
     play(video);
+    if (song.hasCaptions) {
+      fetch(localFile(song, "captions"))
+        .then((resp) => resp.text())
+        .then(
+          (vtt) => knowLyricsStart(song, firstSungCue(vtt)),
+          (err) => console.error(`Couldn't read the captions:`, err),
+        );
+    }
   };
 
   const loadNico = (
@@ -362,6 +412,7 @@ export default function useSongPlayer({
     audio.setJoysoundMode(song.kind === "joysound");
     audio.gain(songGain(song));
     songRef.current = song;
+    lyricsStartRef.current = null;
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.name,
@@ -417,26 +468,13 @@ export default function useSongPlayer({
     // Only on mount: the poll keeps itself going from then on.
   }, []);
 
-  // Tells the server where the song really is, for every countdown: as it
-  // loads, starts, pauses, stalls, seeks (the video's own controls) and
-  // resumes, and every 10 s in case one went missing. Not the video before
-  // a new song's loads (it has ended), nor one that failed.
+  // Where the song really is (reportPosition): as it loads, starts,
+  // pauses, stalls, seeks (the video's own controls) and resumes, and every
+  // 10 s in case one went missing.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const report = () => {
-      const song = songRef.current;
-      if (!song || video.ended || video.readyState < video.HAVE_METADATA) {
-        return;
-      }
-      call("reportSongPosition", {
-        songId: song.songId,
-        timestamp: song.timestamp,
-        position: video.currentTime,
-        length: isFinite(video.duration) ? video.duration : null,
-        playing: !video.paused && video.readyState >= video.HAVE_FUTURE_DATA,
-      }).catch((err) => console.error("Couldn't report the position:", err));
-    };
+    const report = () => reportPosition();
     const events = ["loadedmetadata", "playing", "pause", "waiting", "seeked"];
     for (const event of events) video.addEventListener(event, report);
     const timer = setInterval(report, POSITION_REPORT_MS);
@@ -475,6 +513,16 @@ export default function useSongPlayer({
         video.currentTime = 0;
         setPlaybackState("PLAYING", songKey(song));
         break;
+      case "SKIPPING_INTRO": {
+        // To a few seconds before the singing, then on as after a restart.
+        // (The server takes it only before there.)
+        const start = lyricsStartRef.current;
+        if (start !== null && video.currentTime < introEnd(start)) {
+          video.currentTime = introEnd(start);
+        }
+        setPlaybackState("PLAYING", songKey(song));
+        break;
+      }
       case "SKIPPING":
         // To the end, which starts the next song; a video that never loaded
         // has no end, so the next song starts here.

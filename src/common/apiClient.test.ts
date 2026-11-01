@@ -49,6 +49,7 @@ const state = (overrides: Partial<LiveState> = {}): LiveState => ({
   currentSong: null,
   currentSongStartedAt: null,
   currentSongPausedSince: null,
+  currentSongLyricsStart: null,
   queue: [song(1), song(2)],
   playbackState: "WAITING",
   pitchShiftSemis: 0,

@@ -46,6 +46,7 @@ const MAX_ANNOUNCEMENTS = 3;
 const SONG_ACTION_LABELS: Record<SongAction, string> = {
   skipped: "Skipped",
   restarted: "Restarted",
+  introSkipped: "Intro skipped",
   removed: "Removed",
 };
 

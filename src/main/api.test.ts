@@ -21,7 +21,7 @@ import {
   createApi,
 } from "./api";
 import { runMethod } from "./dispatch";
-import { shareQueueItem, type HubMessage } from "./live";
+import { shareQueueItem, toLiveState, type HubMessage } from "./live";
 import { damPageWindow, nextOffset } from "./paging";
 import {
   createStateStore,
@@ -502,6 +502,7 @@ describe("admin checks", () => {
           position: 0,
           length: 100,
           playing: true,
+          lyricsStart: null,
         },
         display,
       );
@@ -613,7 +614,14 @@ describe("admin checks", () => {
       timestamp = "1",
     ) =>
       api().reportSongPosition(
-        { songId: "sm1", timestamp, position, length, playing },
+        {
+          songId: "sm1",
+          timestamp,
+          position,
+          length,
+          playing,
+          lyricsStart: null,
+        },
         display,
       );
     // Seconds played at the clock, as the phones work it out.
@@ -644,7 +652,14 @@ describe("admin checks", () => {
       // Its video has loaded (loadedmetadata), and then plays.
       const report2 = (position: number, playing: boolean) =>
         api().reportSongPosition(
-          { songId: "sm2", timestamp: "2", position, length: 99.6, playing },
+          {
+            songId: "sm2",
+            timestamp: "2",
+            position,
+            length: 99.6,
+            playing,
+            lyricsStart: null,
+          },
           display,
         );
       clock = 3000;
@@ -768,6 +783,7 @@ describe("admin checks", () => {
               position: 40,
               length: null,
               playing: true,
+              lyricsStart: null,
             },
             admin(ADMIN_NICK),
           ),
@@ -1241,6 +1257,69 @@ describe("commands for the current song", () => {
       display,
     );
   };
+
+  test("Skip intro works only before where it goes, once the display says where the singing starts", async () => {
+    let clock = 1000;
+    const api = makeApi({}, { now: () => clock });
+    await start(api);
+    const report = (position: number, lyricsStart: number | null) =>
+      api.reportSongPosition(
+        {
+          songId: "sm1",
+          timestamp: "1",
+          position,
+          length: 100,
+          playing: true,
+          lyricsStart,
+        },
+        display,
+      );
+    const skipIntro = (caller: Caller) =>
+      api.setPlaybackState(
+        { playbackState: "SKIPPING_INTRO", song: "sm1@1" },
+        caller,
+      );
+
+    // Not known yet: nothing to skip.
+    await report(0, null);
+    assert.equal(await skipIntro(alice), false);
+    assert.equal(store.getState().playbackState, "PLAYING");
+
+    // The singing starts 40 s in, which the phones see.
+    await report(0, 40);
+    assert.equal(
+      toLiveState(store.getState(), {
+        supervisedMode: false,
+        everyoneIsAdmin: false,
+      }).currentSongLyricsStart,
+      40,
+    );
+    clock += 12_000;
+    assert.equal(await skipIntro(alice), true);
+    assert.equal(store.getState().playbackState, "SKIPPING_INTRO");
+    assert.deepEqual(published, [
+      {
+        type: "songAction",
+        action: "introSkipped",
+        item: song(1, alice),
+        by: "alice",
+      },
+    ]);
+    // The display goes to 35 s, plays on, and says where it is: a late tap
+    // can't take it back to 35 s.
+    await api.setPlaybackState(
+      { playbackState: "PLAYING", song: "sm1@1" },
+      display,
+    );
+    await report(35, 40);
+    clock += 1_000;
+    assert.equal(await skipIntro(bob), false);
+    assert.equal(published.length, 1);
+
+    // The next song starts with no singing start known.
+    await api.popSong({}, display);
+    assert.equal(store.getState().currentSongLyricsStart, null);
+  });
 
   test("a phone's skip and restart go to the display's corner with who did it, once", async () => {
     const api = makeApi();
@@ -2945,12 +3024,20 @@ describe("validators", () => {
       position: 12.25,
       length: 245.5,
       playing: true,
+      lyricsStart: 21.5,
     };
     assert.deepEqual(validators.reportSongPosition(position), position);
     assert.deepEqual(
       validators.reportSongPosition({ ...position, length: null }),
       { ...position, length: null },
     );
+    // An older display's report has no lyricsStart: unknown.
+    const { lyricsStart: _, ...older } = position;
+    assert.deepEqual(validators.reportSongPosition(older), {
+      ...position,
+      lyricsStart: null,
+    });
+    invalid("reportSongPosition", { ...position, lyricsStart: -1 });
     invalid("reportSongPosition", { ...position, length: undefined });
     invalid("reportSongPosition", { ...position, position: -1 });
     invalid("reportSongPosition", { ...position, position: Infinity });
